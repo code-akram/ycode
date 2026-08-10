@@ -1,6 +1,10 @@
 # ycode repository instructions
 
 - ycode is a terminal-only product.
+- Remove the entire existing stateful MCP implementation and its integrations
+  only in a later dedicated phase; do not subtract it piecemeal.
+- Design a new stateless MCP client in a later dedicated phase; do not introduce
+  that replacement during unrelated work.
 - Support macOS and Linux only. Do not add or maintain Windows support.
 - Apply the principle of subtraction: prefer removing unnecessary code and
   infrastructure over adding compatibility layers or replacement machinery.
