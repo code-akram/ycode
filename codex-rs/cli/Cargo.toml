@@ -120,6 +120,5 @@ wiremock = { workspace = true }
 zstd = { workspace = true }
 
 [package.metadata.cargo-shear]
-# These Rust sources are intentionally Bazel-only macrobenchmarks rather than
-# Cargo targets.
+# These Rust sources are not registered as Cargo targets.
 ignored-paths = ["e2e_benches/*.rs"]

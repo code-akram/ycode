@@ -6,10 +6,8 @@ description: Testing against remote executors in integration tests.
 Remote executor tests exercise the app-server/exec-server split to ensure that agent features work
 in both local and remote execution environments.
 
-Remote executor tests currently require an x86_64 Linux host machine. There are two flavors:
-
-1. Docker (Linux exec-server)
-2. Wine (Windows exec-server)
+Remote executor tests currently require an x86_64 Linux host machine and a
+Docker-based Linux exec-server.
 
 ## Test Fixtures
 
@@ -77,23 +75,6 @@ bash -c '
   cd codex-rs
   just test -p codex-app-server --test all
 '
-```
-
-## Wine
-
-These tests build an exec-server for Windows and run it under Wine, with the app-server staying on
-the Linux host. The cross-platform build dependency means they only run in Bazel.
-
-For core integration tests:
-
-```sh
-bazel test //codex-rs/core:core-all-wine-exec-test
-```
-
-For app-server integration tests:
-
-```sh
-bazel test //codex-rs/app-server:app-server-all-wine-exec-test
 ```
 
 ## Devboxes
