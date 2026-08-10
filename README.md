@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **ycode** is an independent experimental terminal-only project based on
+> OpenAI Codex `rust-v0.147.0`. It is not official OpenAI software and is
+> currently undergoing deliberate subtraction.
+
 <p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
 <p align="center">
   <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
