@@ -67,8 +67,9 @@ their raw names:
 - `rusty_v8_ptrcomp_sandbox_release_<target>.lib.gz` on Windows MSVC
 - `src_binding_ptrcomp_sandbox_release_<target>.rs`
 
-The dedicated publishing workflow is `.github/workflows/rusty-v8-release.yml`.
-Tagged runs build release artifacts from the Bazel graph itself:
+The upstream publishing workflow is recorded in
+[`rusty-v8-release.yml`](https://github.com/openai/codex/blob/rust-v0.147.0/.github/workflows/rusty-v8-release.yml).
+Tagged upstream runs build release artifacts from the Bazel graph itself:
 
 - `//third_party/v8:rusty_v8_release_pair_x86_64_apple_darwin`
 - `//third_party/v8:rusty_v8_release_pair_aarch64_apple_darwin`
@@ -77,7 +78,7 @@ Tagged runs build release artifacts from the Bazel graph itself:
 - `//third_party/v8:rusty_v8_release_pair_x86_64_unknown_linux_musl`
 - `//third_party/v8:rusty_v8_release_pair_aarch64_unknown_linux_musl`
 
-The same run also builds the matching sandbox pair targets:
+The same upstream run also builds the matching sandbox pair targets:
 
 - `//third_party/v8:rusty_v8_sandbox_release_pair_x86_64_apple_darwin`
 - `//third_party/v8:rusty_v8_sandbox_release_pair_aarch64_apple_darwin`
@@ -86,7 +87,7 @@ The same run also builds the matching sandbox pair targets:
 - `//third_party/v8:rusty_v8_sandbox_release_pair_x86_64_unknown_linux_musl`
 - `//third_party/v8:rusty_v8_sandbox_release_pair_aarch64_unknown_linux_musl`
 
-The workflow also builds sandbox-enabled
+The upstream workflow also builds sandbox-enabled
 `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` archive/binding pairs
 from upstream `rusty_v8` source. Those ABI-specific outputs cannot be produced
 by Codex's Bazel Windows GNU toolchain.

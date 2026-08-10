@@ -28,7 +28,6 @@ CANARY_PATH_PATTERNS = {
     ".github/scripts/setup-dev-drive.ps1",
     ".github/scripts/v8_canary_changes.py",
     ".github/workflows/postmerge-ci.yml",
-    ".github/workflows/rusty-v8-release.yml",
     ".github/workflows/v8-canary.yml",
     "MODULE.bazel",
     "MODULE.bazel.lock",
@@ -47,7 +46,6 @@ WINDOWS_SOURCE_BUILD_PATHS = {
     ".github/scripts/rusty_v8_module_bazel.py",
     ".github/scripts/setup-dev-drive.ps1",
     ".github/scripts/v8_canary_changes.py",
-    ".github/workflows/rusty-v8-release.yml",
     ".github/workflows/v8-canary.yml",
 }
 
