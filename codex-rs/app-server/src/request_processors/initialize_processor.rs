@@ -70,11 +70,6 @@ impl InitializeRequestProcessor {
         let capabilities = params.capabilities.unwrap_or_default();
         let experimental_api_enabled = capabilities.experimental_api;
         let request_attestation = capabilities.request_attestation;
-        let extensions = capabilities.extensions.as_ref();
-        let client_mcp_extensions = codex_mcp::client_mcp_extensions(
-            extensions,
-            capabilities.mcp_server_openai_form_elicitation,
-        );
         let opt_out_notification_methods = capabilities
             .opt_out_notification_methods
             .unwrap_or_default();
@@ -101,7 +96,6 @@ impl InitializeRequestProcessor {
                 app_server_client_name: name.clone(),
                 client_version: version,
                 request_attestation,
-                client_mcp_extensions,
             })
             .is_err()
         {

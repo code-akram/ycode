@@ -99,7 +99,6 @@ def validate_manifest_shape(
         "description",
         "skills",
         "apps",
-        "mcpServers",
         "interface",
         "author",
         "homepage",
@@ -126,7 +125,6 @@ def validate_manifest_shape(
 
     validate_optional_contract_path(manifest, "skills", "skills", errors)
     validate_optional_contract_path(manifest, "apps", ".app.json", errors)
-    validate_manifest_mcp_servers(plugin_root, manifest, errors)
 
     if manifest.get("apps") is not None:
         validate_app_manifest(
@@ -282,32 +280,6 @@ def validate_optional_contract_path(
         errors.append(f"plugin.json field `{key}` must resolve to `{expected}`")
 
 
-def validate_manifest_mcp_servers(
-    plugin_root: Path,
-    manifest: dict[str, Any],
-    errors: list[str],
-) -> None:
-    value = manifest.get("mcpServers")
-    if value is None:
-        return
-    if isinstance(value, str):
-        validate_optional_contract_path(manifest, "mcpServers", ".mcp.json", errors)
-        validate_mcp_manifest(
-            plugin_root / ".mcp.json",
-            errors,
-        )
-        return
-    if isinstance(value, dict):
-        validate_mcp_server_entries(
-            value,
-            "plugin.json field `mcpServers`",
-            "plugin.json field `mcpServers`",
-            errors,
-        )
-        return
-    errors.append("plugin.json field `mcpServers` must be a string path or object")
-
-
 def normalize_contract_path(raw_path: str) -> str | None:
     path = Path(raw_path)
     if path.is_absolute():
@@ -340,36 +312,6 @@ def validate_app_manifest(path: Path, errors: list[str]) -> None:
             errors.append(
                 f"`.app.json` app `{key}` field `category` must be a non-empty string"
             )
-
-
-def validate_mcp_manifest(path: Path, errors: list[str]) -> None:
-    payload = load_companion_json_object(path, "`.mcp.json`", errors)
-    if payload is None:
-        return
-    reject_companion_unknown_fields(payload, {"mcpServers"}, "`.mcp.json`", errors)
-    servers = payload.get("mcpServers")
-    validate_mcp_server_entries(
-        servers,
-        "`.mcp.json`",
-        "`.mcp.json` field `mcpServers`",
-        errors,
-    )
-
-
-def validate_mcp_server_entries(
-    servers: Any,
-    source_label: str,
-    field_label: str,
-    errors: list[str],
-) -> None:
-    if not isinstance(servers, dict):
-        errors.append(f"{field_label} must be an object")
-        return
-    for key, value in servers.items():
-        if not isinstance(key, str) or not key.strip():
-            errors.append(f"{source_label} server names must be non-empty strings")
-        if not isinstance(value, dict):
-            errors.append(f"{source_label} server `{key}` must be an object")
 
 
 def load_companion_json_object(

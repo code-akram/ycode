@@ -94,7 +94,7 @@ Valid `personality` values are `friendly`, `pragmatic`, and `none`. When `none` 
 - `text` – Plain text plus optional UI text elements.
 - `image` / `local_image` – Image inputs.
 - `skill` – Explicit skill selection (`name`, `path` to `SKILL.md`).
-- `mention` – Explicit app/connector selection (`name`, `path` in `app://{connector_id}` form).
+- `mention` – Explicit plugin selection (`name`, `path` in `plugin://{plugin_id}` form).
 
 Note: For v1 wire compatibility, `EventMsg::TurnStarted` and `EventMsg::TurnComplete` serialize as `task_started` / `task_complete`. The deserializer accepts both `task_*` and `turn_*` tags.
 

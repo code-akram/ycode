@@ -6,15 +6,6 @@ impl ChatWidget {
         notification: ServerNotification,
         replay_kind: Option<ReplayKind>,
     ) {
-        // Reject misrouted child updates before shared notification handling mutates parent state.
-        if let ServerNotification::McpServerStatusUpdated(notification) = &notification
-            && let (Some(notification_thread_id), Some(thread_id)) =
-                (notification.thread_id.as_deref(), self.thread_id())
-            && notification_thread_id != thread_id.to_string()
-        {
-            return;
-        }
-
         let from_replay = replay_kind.is_some();
         let is_resume_initial_replay =
             matches!(replay_kind, Some(ReplayKind::ResumeInitialMessages));
@@ -163,9 +154,6 @@ impl ChatWidget {
                     .map(|details| format!("{}: {details}", notification.summary))
                     .unwrap_or(notification.summary),
             ),
-            ServerNotification::McpServerStatusUpdated(notification) => {
-                self.on_mcp_server_status_updated(notification)
-            }
             ServerNotification::ItemGuardianApprovalReviewStarted(notification) => {
                 self.on_guardian_review_notification(
                     notification.review_id,
@@ -205,9 +193,6 @@ impl ChatWidget {
             | ServerNotification::ProcessOutputDelta(_)
             | ServerNotification::ProcessExited(_)
             | ServerNotification::FileChangePatchUpdated(_)
-            | ServerNotification::McpToolCallProgress(_)
-            | ServerNotification::McpServerOauthLoginCompleted(_)
-            | ServerNotification::AppListUpdated(_)
             | ServerNotification::EnvironmentConnected(_)
             | ServerNotification::EnvironmentDisconnected(_)
             | ServerNotification::RemoteControlStatusChanged(_)
@@ -321,7 +306,6 @@ impl ChatWidget {
             ThreadItem::FileChange { id: _, changes, .. } => {
                 self.on_patch_apply_begin(file_update_changes_to_display(changes));
             }
-            item @ ThreadItem::McpToolCall { .. } => self.on_mcp_tool_call_started(item),
             ThreadItem::WebSearch(item) => {
                 self.on_web_search_begin(item.id);
             }

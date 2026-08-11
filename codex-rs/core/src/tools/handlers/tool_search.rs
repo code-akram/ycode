@@ -200,25 +200,29 @@ impl ToolSearchHandler {
 mod tests {
     use super::*;
     use crate::tools::handlers::DynamicToolHandler;
-    use crate::tools::handlers::McpHandler;
-    use codex_mcp::ToolInfo;
     use codex_protocol::dynamic_tools::DynamicToolFunctionSpec;
     use codex_protocol::dynamic_tools::DynamicToolNamespaceSpec;
-    use codex_tools::ResponsesApiNamespace;
-    use codex_tools::ResponsesApiNamespaceTool;
-    use codex_tools::ResponsesApiTool;
-    use pretty_assertions::assert_eq;
-    use rmcp::model::Tool;
     use std::sync::Arc;
 
     #[test]
     fn cache_reuses_handler_for_identical_search_infos_and_rebuilds_for_changes() {
         let cache = ToolSearchHandlerCache::default();
+        let namespace = DynamicToolNamespaceSpec {
+            name: "calendar".to_string(),
+            description: "Calendar tools".to_string(),
+            tools: Vec::new(),
+        };
+        let tool = DynamicToolFunctionSpec {
+            name: "create_event".to_string(),
+            description: "Create events".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+            defer_loading: true,
+        };
         let search_infos = vec![
-            McpHandler::new(tool_info("calendar", "create_event", "Create events"))
-                .expect("MCP tool should convert")
+            DynamicToolHandler::new_in_namespace(&namespace, &tool)
+                .expect("dynamic tool should convert")
                 .search_info()
-                .expect("MCP handler should return search info"),
+                .expect("dynamic handler should return search info"),
         ];
 
         let first = cache.get_or_build(search_infos.clone(), ToolSearchSourceListing::Include);
@@ -236,136 +240,5 @@ mod tests {
             .push_str(" changed");
         let changed = cache.get_or_build(changed_search_infos, ToolSearchSourceListing::Omit);
         assert!(!Arc::ptr_eq(&first, &changed));
-    }
-
-    #[test]
-    fn mixed_search_results_coalesce_mcp_namespaces() {
-        let dynamic_namespace = DynamicToolNamespaceSpec {
-            name: "codex_app".to_string(),
-            description: "Tools in the codex_app namespace.".to_string(),
-            tools: Vec::new(),
-        };
-        let dynamic_tools = [DynamicToolFunctionSpec {
-            name: "automation_update".to_string(),
-            description: "Create, update, view, or delete recurring automations.".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "mode": { "type": "string" },
-                },
-                "required": ["mode"],
-                "additionalProperties": false,
-            }),
-            defer_loading: true,
-        }];
-        let mcp_tools = [
-            tool_info("calendar", "create_event", "Create events"),
-            tool_info("calendar", "list_events", "List events"),
-        ];
-        let mut search_infos = mcp_tools
-            .iter()
-            .map(|tool| {
-                McpHandler::new(tool.clone())
-                    .expect("MCP tool should convert")
-                    .search_info()
-                    .expect("MCP handler should return search info")
-            })
-            .collect::<Vec<_>>();
-        search_infos.extend(dynamic_tools.iter().map(|tool| {
-            DynamicToolHandler::new_in_namespace(&dynamic_namespace, tool)
-                .expect("dynamic tool should convert")
-                .search_info()
-                .expect("dynamic handler should return search info")
-        }));
-        let handler = ToolSearchHandler::new(search_infos, ToolSearchSourceListing::Include);
-        let results = [
-            &handler.search_infos[0].entry,
-            &handler.search_infos[2].entry,
-            &handler.search_infos[1].entry,
-        ];
-
-        let tools = handler
-            .search_output_tools(results)
-            .expect("mixed search output should serialize");
-
-        assert_eq!(
-            tools,
-            vec![
-                LoadableToolSpec::Namespace(ResponsesApiNamespace {
-                    name: "mcp__calendar".to_string(),
-                    description: "Tools in the mcp__calendar namespace.".to_string(),
-                    tools: vec![
-                        ResponsesApiNamespaceTool::Function(ResponsesApiTool {
-                            name: "create_event".to_string(),
-                            description: "Create events desktop tool".to_string(),
-                            strict: false,
-                            defer_loading: Some(true),
-                            parameters: codex_tools::JsonSchema::object(
-                                Default::default(),
-                                /*required*/ None,
-                                Some(false.into()),
-                            ),
-                            output_schema: None,
-                        }),
-                        ResponsesApiNamespaceTool::Function(ResponsesApiTool {
-                            name: "list_events".to_string(),
-                            description: "List events desktop tool".to_string(),
-                            strict: false,
-                            defer_loading: Some(true),
-                            parameters: codex_tools::JsonSchema::object(
-                                Default::default(),
-                                /*required*/ None,
-                                Some(false.into()),
-                            ),
-                            output_schema: None,
-                        }),
-                    ],
-                }),
-                LoadableToolSpec::Namespace(ResponsesApiNamespace {
-                    name: "codex_app".to_string(),
-                    description: "Tools in the codex_app namespace.".to_string(),
-                    tools: vec![ResponsesApiNamespaceTool::Function(ResponsesApiTool {
-                        name: "automation_update".to_string(),
-                        description: "Create, update, view, or delete recurring automations."
-                            .to_string(),
-                        strict: false,
-                        defer_loading: Some(true),
-                        parameters: codex_tools::JsonSchema::object(
-                            std::collections::BTreeMap::from([(
-                                "mode".to_string(),
-                                codex_tools::JsonSchema::string(/*description*/ None),
-                            )]),
-                            Some(vec!["mode".to_string()]),
-                            Some(false.into()),
-                        ),
-                        output_schema: None,
-                    })],
-                }),
-            ],
-        );
-    }
-
-    fn tool_info(server_name: &str, tool_name: &str, description_prefix: &str) -> ToolInfo {
-        ToolInfo {
-            server_name: server_name.to_string(),
-            supports_parallel_tool_calls: false,
-            server_origin: None,
-            callable_name: tool_name.to_string(),
-            callable_namespace: format!("mcp__{server_name}"),
-            namespace_description: None,
-            tool: Tool::new(
-                tool_name.to_string(),
-                format!("{description_prefix} desktop tool"),
-                Arc::new(rmcp::model::object(serde_json::json!({
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": false,
-                }))),
-            ),
-            openai_file_input_optional_fields: Default::default(),
-            connector_id: None,
-            connector_name: None,
-            plugin_display_names: Vec::new(),
-        }
     }
 }

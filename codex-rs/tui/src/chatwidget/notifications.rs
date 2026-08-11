@@ -28,7 +28,6 @@ pub(super) enum Notification {
     AgentTurnComplete { response: String },
     ExecApprovalRequested { command: String },
     EditApprovalRequested { cwd: PathBuf, changes: Vec<PathBuf> },
-    ElicitationRequested { server_name: String },
     PlanModePrompt { title: String },
 }
 
@@ -56,9 +55,6 @@ impl Notification {
                     }
                 )
             }
-            Notification::ElicitationRequested { server_name } => {
-                format!("Approval requested by {server_name}")
-            }
             Notification::PlanModePrompt { title } => {
                 format!("Plan mode prompt: {title}")
             }
@@ -69,8 +65,7 @@ impl Notification {
         match self {
             Notification::AgentTurnComplete { .. } => "agent-turn-complete",
             Notification::ExecApprovalRequested { .. }
-            | Notification::EditApprovalRequested { .. }
-            | Notification::ElicitationRequested { .. } => "approval-requested",
+            | Notification::EditApprovalRequested { .. } => "approval-requested",
             Notification::PlanModePrompt { .. } => "plan-mode-prompt",
         }
     }
@@ -80,7 +75,6 @@ impl Notification {
             Notification::AgentTurnComplete { .. } => 0,
             Notification::ExecApprovalRequested { .. }
             | Notification::EditApprovalRequested { .. }
-            | Notification::ElicitationRequested { .. }
             | Notification::PlanModePrompt { .. } => 1,
         }
     }

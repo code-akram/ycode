@@ -14,7 +14,7 @@ expression: "serde_json::to_string_pretty(&snapshot).expect(\"serialize catalog 
           "command": null,
           "description": "Deployment server.",
           "transport": null,
-          "type": "mcp",
+          "type": "cli",
           "url": null,
           "value": "deployer"
         }

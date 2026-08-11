@@ -1,7 +1,5 @@
 use anyhow::Result;
 use codex_config::config_toml::ConfigLockfileToml;
-use codex_config::types::McpServerConfig;
-use codex_config::types::McpServerTransportConfig;
 use codex_core::config::Config;
 use codex_core::config::TokenBudgetConfig;
 use codex_extension_api::ExtensionRegistryBuilder;
@@ -46,19 +44,15 @@ use core_test_support::responses::sse;
 use core_test_support::responses::sse_completed;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
-use core_test_support::stdio_server_bin;
 use core_test_support::test_codex::local;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
-use core_test_support::wait_for_mcp_server;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 use tempfile::TempDir;
 
 const CONFIGURED_CONTEXT_WINDOW: i64 = 128_000;
@@ -671,91 +665,6 @@ async fn model_token_budget_defaults_do_not_enable_disabled_feature() -> Result<
             .message_input_texts("developer")
             .iter()
             .any(|text| text.contains("Use the model-owned context-window guidance."))
-    );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn token_budget_context_injects_plain_thread_hint_text() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-    let rmcp_test_server_bin = stdio_server_bin()?;
-    let test = test_codex()
-        .with_config(move |config| {
-            config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
-            config
-                .features
-                .enable(Feature::TokenBudget)
-                .expect("test config should allow token budget");
-            let mut servers = config.mcp_servers.get().clone();
-            servers.insert(
-                "notes".to_string(),
-                McpServerConfig {
-                    auth: Default::default(),
-                    transport: McpServerTransportConfig::Stdio {
-                        command: rmcp_test_server_bin,
-                        args: Vec::new(),
-                        env: None,
-                        env_vars: Vec::new(),
-                        cwd: None,
-                    },
-                    environment_id: "local".to_string(),
-                    enabled: true,
-                    required: false,
-                    supports_parallel_tool_calls: false,
-                    omit_tools_from: None,
-                    disabled_reason: None,
-                    startup_timeout_sec: Some(Duration::from_secs(10)),
-                    tool_timeout_sec: None,
-                    default_tools_approval_mode: None,
-                    enabled_tools: None,
-                    disabled_tools: None,
-                    scopes: None,
-                    oauth: None,
-                    oauth_resource: None,
-                    tools: HashMap::new(),
-                },
-            );
-            config
-                .mcp_servers
-                .set(servers)
-                .expect("test mcp servers should accept any configuration");
-        })
-        .build(&server)
-        .await?;
-    wait_for_mcp_server(&test.codex, "notes").await?;
-    let responses = mount_sse_sequence(
-        &server,
-        vec![sse(vec![
-            ev_response_created("resp-1"),
-            ev_completed("resp-1"),
-        ])],
-    )
-    .await;
-
-    test.submit_turn("inject the history hint").await?;
-
-    let request = responses.single_request();
-    let thread_id = test.session_configured.thread_id;
-    let token_budgets = token_budget_contexts(&request);
-    assert_eq!(token_budgets.len(), 1);
-    let captures = assert_regex_match(
-        &format!(
-            r"^{CONTEXT_WINDOW_OPEN_TAG}\nThread id: {thread_id}\nFirst context window id: ([0-9a-f-]{{36}})\nCurrent context window id: ([0-9a-f-]{{36}})\nmanual history hint for thread {thread_id}\nunstructured notes/thread_hint fixture result\n{CONTEXT_WINDOW_CLOSE_TAG}$"
-        ),
-        &token_budgets[0],
-    );
-    assert_eq!(
-        captures.get(1).expect("first window id capture").as_str(),
-        captures.get(2).expect("current window id capture").as_str()
-    );
-    assert!(
-        !tool_names(&request)
-            .iter()
-            .any(|name| name == "mcp__notes__thread_hint"),
-        "thread_hint should be hidden from model tool exposure"
     );
 
     Ok(())

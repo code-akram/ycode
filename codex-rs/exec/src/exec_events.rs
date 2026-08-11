@@ -1,7 +1,6 @@
 use codex_protocol::models::WebSearchAction;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use ts_rs::TS;
 
@@ -116,9 +115,6 @@ pub enum ThreadItemDetails {
     /// Represents a set of file changes by the agent. The item is emitted only as a
     /// completed event once the patch succeeds or fails.
     FileChange(FileChangeItem),
-    /// Represents a call to an MCP tool. The item starts when the invocation is
-    /// dispatched and completes when the MCP server reports success or failure.
-    McpToolCall(McpToolCallItem),
     /// Represents a call to a collab tool. The item starts when the collab tool is
     /// invoked and completes when the collab tool reports success or failure.
     CollabToolCall(CollabToolCallItem),
@@ -197,16 +193,6 @@ pub enum PatchChangeKind {
     Update,
 }
 
-/// The status of an MCP tool call.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum McpToolCallStatus {
-    #[default]
-    InProgress,
-    Completed,
-    Failed,
-}
-
 /// The status of a collab tool call.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, TS)]
 #[serde(rename_all = "snake_case")]
@@ -256,41 +242,6 @@ pub struct CollabToolCallItem {
     pub prompt: Option<String>,
     pub agents_states: HashMap<String, CollabAgentState>,
     pub status: CollabToolCallStatus,
-}
-
-/// Result payload produced by an MCP tool invocation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-pub struct McpToolCallItemResult {
-    // NOTE: `rmcp::model::Content` (and its `RawContent` variants) would be a
-    // more precise Rust representation of MCP content blocks. We intentionally
-    // use `serde_json::Value` here because this crate exports JSON schema + TS
-    // types (`schemars`/`ts-rs`), and the rmcp model types aren't set up to be
-    // schema/TS friendly (and would introduce heavier coupling to rmcp's Rust
-    // representations). Using `JsonValue` keeps the payload wire-shaped and
-    // easy to export.
-    pub content: Vec<JsonValue>,
-    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub meta: Option<JsonValue>,
-    pub structured_content: Option<JsonValue>,
-}
-
-/// Error details reported by a failed MCP tool invocation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-pub struct McpToolCallItemError {
-    pub message: String,
-}
-
-/// A call to an MCP tool.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
-pub struct McpToolCallItem {
-    pub server: String,
-    pub tool: String,
-    #[serde(default)]
-    pub arguments: JsonValue,
-    pub result: Option<McpToolCallItemResult>,
-    pub error: Option<McpToolCallItemError>,
-    pub status: McpToolCallStatus,
 }
 
 /// A web search request.

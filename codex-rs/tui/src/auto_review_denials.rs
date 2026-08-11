@@ -58,15 +58,6 @@ pub(crate) fn action_summary(action: &GuardianAssessmentAction) -> String {
         GuardianAssessmentAction::NetworkAccess { target, .. } => {
             format!("network access to {target}")
         }
-        GuardianAssessmentAction::McpToolCall {
-            server,
-            tool_name,
-            connector_name,
-            ..
-        } => {
-            let label = connector_name.as_deref().unwrap_or(server.as_str());
-            format!("MCP {tool_name} on {label}")
-        }
         GuardianAssessmentAction::RequestPermissions { reason, .. } => reason
             .as_deref()
             .map(|reason| format!("permission request: {reason}"))

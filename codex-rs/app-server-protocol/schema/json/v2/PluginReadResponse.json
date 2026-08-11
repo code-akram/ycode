@@ -5,109 +5,6 @@
       "description": "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
       "type": "string"
     },
-    "AppSummary": {
-      "description": "EXPERIMENTAL - app metadata summary for plugin responses.",
-      "properties": {
-        "category": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "installUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "name"
-      ],
-      "type": "object"
-    },
-    "AppTemplateSummary": {
-      "properties": {
-        "canonicalConnectorId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "category": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "logoUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "logoUrlDark": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "materializedAppIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "name": {
-          "type": "string"
-        },
-        "reason": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AppTemplateUnavailableReason"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "templateId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "materializedAppIds",
-        "name",
-        "templateId"
-      ],
-      "type": "object"
-    },
-    "AppTemplateUnavailableReason": {
-      "enum": [
-        "NOT_CONFIGURED_FOR_WORKSPACE",
-        "NO_ACTIVE_WORKSPACE"
-      ],
-      "type": "string"
-    },
     "HookEventName": {
       "enum": [
         "preToolUse",
@@ -150,18 +47,6 @@
     },
     "PluginDetail": {
       "properties": {
-        "appTemplates": {
-          "items": {
-            "$ref": "#/definitions/AppTemplateSummary"
-          },
-          "type": "array"
-        },
-        "apps": {
-          "items": {
-            "$ref": "#/definitions/AppSummary"
-          },
-          "type": "array"
-        },
         "description": {
           "type": [
             "string",
@@ -186,12 +71,6 @@
               "type": "null"
             }
           ]
-        },
-        "mcpServers": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "scheduledTasks": {
           "items": {
@@ -219,11 +98,8 @@
         }
       },
       "required": [
-        "appTemplates",
-        "apps",
         "hooks",
         "marketplaceName",
-        "mcpServers",
         "skills",
         "summary"
       ],

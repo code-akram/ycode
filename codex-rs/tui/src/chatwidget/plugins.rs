@@ -8,17 +8,12 @@ use super::plugin_catalog::marketplace_tab_id;
 use super::plugin_catalog::marketplace_tab_id_from_path;
 use super::plugin_catalog::marketplace_tab_id_matching_saved_id;
 use super::plugin_catalog::merge_remote_marketplaces;
-use super::plugin_catalog::plugin_detail_hint_line;
 use crate::app_event::AppEvent;
 use crate::app_event::PluginLocation;
 use crate::app_event::PluginRemoteSectionError;
-use crate::bottom_pane::ColumnWidthMode;
-use crate::bottom_pane::SelectionItem;
-use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::custom_prompt_view::CustomPromptView;
 use crate::history_cell;
 use crate::key_hint;
-use crate::render::renderable::ColumnRenderable;
 use codex_app_server_protocol::MarketplaceAddResponse;
 use codex_app_server_protocol::MarketplaceRemoveResponse;
 use codex_app_server_protocol::MarketplaceUpgradeResponse;
@@ -31,8 +26,6 @@ use codex_features::Feature;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
 
 pub(super) const PLUGINS_SELECTION_VIEW_ID: &str = "plugins-selection";
 pub(super) const ALL_PLUGINS_TAB_ID: &str = "all-plugins";
@@ -43,12 +36,6 @@ pub(super) struct PluginListFetchState {
     pub(super) cache_cwd: Option<PathBuf>,
     pub(super) in_flight_cwd: Option<PathBuf>,
     pub(super) vertical_section_requested: bool,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct PluginInstallAuthFlowState {
-    plugin_display_name: String,
-    next_app_index: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -102,20 +89,18 @@ impl ChatWidget {
             return;
         }
 
-        let auth_flow_active = self.plugin_install_auth_flow.is_some();
-        let should_refresh_plugins_popup = !auth_flow_active
-            && (self
+        let should_refresh_plugins_popup = self
+            .bottom_pane
+            .active_tab_id_for_active_view(PLUGINS_SELECTION_VIEW_ID)
+            .is_some()
+            || self
                 .bottom_pane
-                .active_tab_id_for_active_view(PLUGINS_SELECTION_VIEW_ID)
+                .selected_index_for_active_view(PLUGINS_SELECTION_VIEW_ID)
                 .is_some()
-                || self
-                    .bottom_pane
-                    .selected_index_for_active_view(PLUGINS_SELECTION_VIEW_ID)
-                    .is_some()
-                || !matches!(
-                    self.plugins_cache_for_current_cwd(),
-                    PluginsCacheState::Ready(_)
-                ));
+            || !matches!(
+                self.plugins_cache_for_current_cwd(),
+                PluginsCacheState::Ready(_)
+            );
 
         match result {
             Ok(response) => {
@@ -456,40 +441,11 @@ impl ChatWidget {
         }
 
         match result {
-            Ok(response) => {
-                self.plugin_install_apps_needing_auth = response.apps_needing_auth;
-                self.plugin_install_auth_flow = None;
-                if self.plugin_install_apps_needing_auth.is_empty() {
-                    self.add_info_message(
-                        format!("Installed {plugin_display_name} plugin."),
-                        Some("No additional app authentication is required.".to_string()),
-                    );
-                    true
-                } else {
-                    let app_names = self
-                        .plugin_install_apps_needing_auth
-                        .iter()
-                        .map(|app| app.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    self.add_info_message(
-                        format!("Installed {plugin_display_name} plugin."),
-                        Some(format!(
-                            "{} app(s) still need authentication: {app_names}",
-                            self.plugin_install_apps_needing_auth.len()
-                        )),
-                    );
-                    self.plugin_install_auth_flow = Some(PluginInstallAuthFlowState {
-                        plugin_display_name,
-                        next_app_index: 0,
-                    });
-                    self.open_plugin_install_auth_popup();
-                    false
-                }
+            Ok(_response) => {
+                self.add_info_message(format!("Installed {plugin_display_name} plugin."), None);
+                true
             }
             Err(err) => {
-                self.plugin_install_apps_needing_auth.clear();
-                self.plugin_install_auth_flow = None;
                 let plugins_response = match self.plugins_cache_for_current_cwd() {
                     PluginsCacheState::Ready(response) => Some(response),
                     _ => None,
@@ -796,12 +752,7 @@ impl ChatWidget {
 
         match result {
             Ok(_response) => {
-                self.plugin_install_apps_needing_auth.clear();
-                self.plugin_install_auth_flow = None;
-                self.add_info_message(
-                    format!("Uninstalled {plugin_display_name} plugin."),
-                    Some("Bundled apps remain installed.".to_string()),
-                );
+                self.add_info_message(format!("Uninstalled {plugin_display_name} plugin."), None);
             }
             Err(err) => {
                 let plugins_response = match self.plugins_cache_for_current_cwd() {
@@ -813,190 +764,6 @@ impl ChatWidget {
                     self.plugin_detail_error_popup_params(&err, plugins_response.as_ref()),
                 );
             }
-        }
-    }
-
-    pub(crate) fn advance_plugin_install_auth_flow(&mut self) {
-        let should_finish = {
-            let Some(flow) = self.plugin_install_auth_flow.as_mut() else {
-                return;
-            };
-            flow.next_app_index += 1;
-            flow.next_app_index >= self.plugin_install_apps_needing_auth.len()
-        };
-
-        if should_finish {
-            self.finish_plugin_install_auth_flow(/*abandoned*/ false);
-            return;
-        }
-
-        self.open_plugin_install_auth_popup();
-    }
-
-    pub(crate) fn abandon_plugin_install_auth_flow(&mut self) {
-        self.finish_plugin_install_auth_flow(/*abandoned*/ true);
-    }
-
-    fn open_plugin_install_auth_popup(&mut self) {
-        let Some(params) = self.plugin_install_auth_popup_params() else {
-            self.finish_plugin_install_auth_flow(/*abandoned*/ false);
-            return;
-        };
-        if !self
-            .bottom_pane
-            .replace_selection_view_if_active(PLUGINS_SELECTION_VIEW_ID, params)
-            && let Some(params) = self.plugin_install_auth_popup_params()
-        {
-            self.bottom_pane.show_selection_view(params);
-        }
-    }
-
-    fn plugin_install_auth_popup_params(&self) -> Option<SelectionViewParams> {
-        let flow = self.plugin_install_auth_flow.as_ref()?;
-        let app = self
-            .plugin_install_apps_needing_auth
-            .get(flow.next_app_index)?;
-        let total = self.plugin_install_apps_needing_auth.len();
-        let current = flow.next_app_index + 1;
-        let is_installed = self.plugin_install_auth_app_is_installed(app.id.as_str());
-        let status_label = if is_installed {
-            "Already installed in this session."
-        } else {
-            "Install the required Apps in ChatGPT to continue:"
-        };
-        let mut header = ColumnRenderable::new();
-        header.push(Line::from("Plugins".bold()));
-        header.push(Line::from(
-            format!("{} plugin installed.", flow.plugin_display_name).bold(),
-        ));
-        header.push(Line::from(
-            format!("App setup {current}/{total}: {}", app.name).dim(),
-        ));
-        header.push(Line::from(status_label.dim()));
-
-        let mut items = Vec::new();
-
-        if let Some(install_url) = app.install_url.clone() {
-            let install_label = if is_installed {
-                "Manage on ChatGPT"
-            } else {
-                "Install on ChatGPT"
-            };
-            items.push(SelectionItem {
-                name: install_label.to_string(),
-                description: Some("Open the ChatGPT app management page".to_string()),
-                selected_description: Some("Open the app page in your browser.".to_string()),
-                actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::OpenUrlInBrowser {
-                        url: install_url.clone(),
-                    });
-                })],
-                ..Default::default()
-            });
-        } else {
-            items.push(SelectionItem {
-                name: "ChatGPT apps link unavailable".to_string(),
-                description: Some("This app did not provide an install/manage URL.".to_string()),
-                is_disabled: true,
-                ..Default::default()
-            });
-        }
-
-        if is_installed {
-            items.push(SelectionItem {
-                name: "Continue".to_string(),
-                description: Some("This app is already installed.".to_string()),
-                selected_description: Some("Advance to the next app.".to_string()),
-                actions: vec![Box::new(|tx| {
-                    tx.send(AppEvent::PluginInstallAuthAdvance {
-                        refresh_connectors: false,
-                    });
-                })],
-                ..Default::default()
-            });
-        } else {
-            items.push(SelectionItem {
-                name: "I've installed it".to_string(),
-                description: Some(
-                    "Trust your confirmation and continue to the next app.".to_string(),
-                ),
-                selected_description: Some(
-                    "Continue without waiting for refresh to complete.".to_string(),
-                ),
-                actions: vec![Box::new(|tx| {
-                    tx.send(AppEvent::PluginInstallAuthAdvance {
-                        refresh_connectors: true,
-                    });
-                })],
-                ..Default::default()
-            });
-        }
-
-        items.push(SelectionItem {
-            name: "Skip remaining app setup".to_string(),
-            description: Some("Stop this follow-up flow for this plugin.".to_string()),
-            selected_description: Some("Abandon remaining required app setup.".to_string()),
-            actions: vec![Box::new(|tx| {
-                tx.send(AppEvent::PluginInstallAuthAbandon);
-            })],
-            ..Default::default()
-        });
-
-        Some(SelectionViewParams {
-            view_id: Some(PLUGINS_SELECTION_VIEW_ID),
-            header: Box::new(header),
-            footer_hint: Some(plugin_detail_hint_line()),
-            items,
-            col_width_mode: ColumnWidthMode::AutoAllRows,
-            ..Default::default()
-        })
-    }
-
-    fn plugin_install_auth_app_is_installed(&self, app_id: &str) -> bool {
-        self.connectors_for_mentions().is_some_and(|connectors| {
-            connectors
-                .iter()
-                .any(|connector| connector.id == app_id && connector.is_accessible)
-        })
-    }
-
-    fn finish_plugin_install_auth_flow(&mut self, abandoned: bool) {
-        let Some(flow) = self.plugin_install_auth_flow.take() else {
-            return;
-        };
-        self.plugin_install_apps_needing_auth.clear();
-        if abandoned {
-            self.add_info_message(
-                format!(
-                    "Skipped remaining app setup for {} plugin.",
-                    flow.plugin_display_name
-                ),
-                Some("The plugin may not be usable until required apps are installed.".to_string()),
-            );
-        } else {
-            self.add_info_message(
-                format!(
-                    "Completed app setup flow for {} plugin.",
-                    flow.plugin_display_name
-                ),
-                Some("You can now continue managing plugins from /plugins.".to_string()),
-            );
-        }
-
-        let plugins_response = match self.plugins_cache_for_current_cwd() {
-            PluginsCacheState::Ready(response) => Some(response),
-            _ => None,
-        };
-        if let Some(plugins_response) = plugins_response {
-            let tab_id = self.plugins_active_tab_id.clone();
-            let _ = self.bottom_pane.replace_selection_view_if_active(
-                PLUGINS_SELECTION_VIEW_ID,
-                self.plugins_popup_params(
-                    &plugins_response,
-                    tab_id,
-                    /*initial_selected_idx*/ None,
-                ),
-            );
         }
     }
 

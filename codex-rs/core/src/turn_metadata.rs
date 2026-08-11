@@ -39,7 +39,7 @@ const REASONING_EFFORT_KEY: &str = "reasoning_effort";
 const USER_INPUT_REQUESTED_DURING_TURN_KEY: &str = "user_input_requested_during_turn";
 const WORKSPACE_KIND_KEY: &str = "workspace_kind";
 
-pub(crate) struct McpTurnMetadataContext<'a> {
+pub(crate) struct ExtensionToolMetadataContext<'a> {
     pub(crate) model: &'a str,
     pub(crate) reasoning_effort: Option<ReasoningEffortConfig>,
 }
@@ -156,16 +156,16 @@ impl TurnMetadataState {
         }
     }
 
-    pub(crate) fn current_meta_value_for_mcp_request(
+    pub(crate) fn current_meta_value_for_extension_tool(
         &self,
-        context: McpTurnMetadataContext<'_>,
+        context: ExtensionToolMetadataContext<'_>,
     ) -> Option<serde_json::Value> {
         let Value::Object(mut metadata) =
             self.responses_metadata_template().turn_metadata_value()?
         else {
             return None;
         };
-        metadata.remove(CODE_MODE_TOOL_NAMES_KEY); // Precaution: avoid exposing tool data to external MCPs.
+        metadata.remove(CODE_MODE_TOOL_NAMES_KEY); // Precaution: avoid exposing tool data to extensions.
         metadata.remove(PARENT_TURN_ID_KEY);
         metadata.insert(
             MODEL_KEY.to_string(),

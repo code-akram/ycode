@@ -341,22 +341,6 @@ mod thread_processor_behavior_tests {
     }
 
     #[test]
-    fn validate_dynamic_tools_rejects_reserved_namespace() {
-        let tools = vec![dynamic_tool(
-            Some("mcp__server__"),
-            "my_tool",
-            json!({
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            }),
-            /*defer_loading*/ false,
-        )];
-        let err = validate_dynamic_tools(&tools).expect_err("reserved namespace");
-        assert!(err.contains("reserved"), "unexpected error: {err}");
-    }
-
-    #[test]
     fn validate_dynamic_tools_rejects_name_not_supported_by_responses() {
         let tools = vec![dynamic_tool(
             /*namespace*/ None,
@@ -618,7 +602,7 @@ mod thread_processor_behavior_tests {
 
     #[test]
     fn config_load_error_leaves_non_cloud_config_bundle_failures_unmarked() {
-        let err = std::io::Error::other("required MCP servers failed to initialize");
+        let err = std::io::Error::other("a local dependency failed to initialize");
 
         let error = config_load_error(&err);
 

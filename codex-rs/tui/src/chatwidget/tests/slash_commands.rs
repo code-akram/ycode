@@ -710,7 +710,7 @@ async fn goal_slash_command_uses_plain_text_for_mentions() {
         vec![MentionBinding {
             sigil: '$',
             mention: "figma".to_string(),
-            path: "app://figma".to_string(),
+            path: "/tmp/figma/SKILL.md".to_string(),
         }],
     );
 
@@ -1023,7 +1023,7 @@ fn merged_history_record_preserves_raw_text_and_rebased_elements() {
         mention_bindings: vec![MentionBinding {
             sigil: '$',
             mention: "figma".to_string(),
-            path: "app://figma".to_string(),
+            path: "/tmp/figma/SKILL.md".to_string(),
         }],
     };
     let second = UserMessage::from("internal prompt");
@@ -1141,7 +1141,7 @@ async fn interrupted_merged_message_history_encodes_mentions_once() {
         vec![MentionBinding {
             sigil: '$',
             mention: "figma".to_string(),
-            path: "app://figma".to_string(),
+            path: "/tmp/figma/SKILL.md".to_string(),
         }],
     );
 
@@ -1161,7 +1161,7 @@ async fn interrupted_merged_message_history_encodes_mentions_once() {
         }
         other => panic!("expected user turn, got {other:?}"),
     }
-    let encoded = "use [$figma](app://figma) now";
+    let encoded = "use [$figma](/tmp/figma/SKILL.md) now";
     assert_eq!(next_add_to_history_event(&mut rx), encoded);
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -2237,64 +2237,6 @@ async fn slash_memory_drop_reports_stubbed_feature() {
 }
 
 #[tokio::test]
-async fn slash_mcp_requests_inventory_via_app_server() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let thread_id = ThreadId::new();
-    chat.thread_id = Some(thread_id);
-
-    chat.dispatch_command(SlashCommand::Mcp);
-
-    assert!(active_blob(&chat).contains("Loading MCP inventory"));
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::FetchMcpInventory {
-            detail: McpServerStatusDetail::ToolsAndAuthOnly,
-            thread_id: Some(actual_thread_id)
-        }) if actual_thread_id == thread_id
-    );
-    assert!(op_rx.try_recv().is_err(), "expected no core op to be sent");
-}
-
-#[tokio::test]
-async fn slash_mcp_verbose_requests_full_inventory_via_app_server() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let thread_id = ThreadId::new();
-    chat.thread_id = Some(thread_id);
-
-    submit_composer_text(&mut chat, "/mcp verbose");
-
-    assert!(active_blob(&chat).contains("Loading MCP inventory"));
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::FetchMcpInventory {
-            detail: McpServerStatusDetail::Full,
-            thread_id: Some(actual_thread_id)
-        }) if actual_thread_id == thread_id
-    );
-    assert!(op_rx.try_recv().is_err(), "expected no core op to be sent");
-}
-
-#[tokio::test]
-async fn slash_mcp_invalid_args_show_usage() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    submit_composer_text(&mut chat, "/mcp full");
-
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|cell| lines_to_single_string(cell))
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(
-        rendered.contains("Usage: /mcp [verbose]"),
-        "expected usage message, got: {rendered:?}"
-    );
-    assert_eq!(recall_latest_after_clearing(&mut chat), "/mcp full");
-    assert!(op_rx.try_recv().is_err(), "expected no core op to be sent");
-}
-
-#[tokio::test]
 async fn slash_memories_opens_memory_menu() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_feature_enabled(Feature::MemoryTool, /*enabled*/ true);
@@ -2324,16 +2266,6 @@ async fn slash_memory_update_reports_stubbed_feature() {
         op_rx.try_recv().is_err(),
         "expected no memory op to be sent"
     );
-}
-
-#[tokio::test]
-async fn slash_resume_opens_picker_while_mcp_startup_is_running() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.bottom_pane.set_task_running(/*running*/ true);
-
-    chat.dispatch_command(SlashCommand::Resume);
-
-    assert_matches!(rx.try_recv(), Ok(AppEvent::OpenResumePicker));
 }
 
 #[tokio::test]
@@ -2382,25 +2314,6 @@ async fn slash_delete_confirmation_requests_current_thread_delete() {
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
     assert_matches!(rx.try_recv(), Ok(AppEvent::DeleteCurrentThread));
-}
-
-#[tokio::test]
-async fn slash_resume_with_arg_requests_named_session_while_mcp_startup_is_running() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.bottom_pane.set_task_running(/*running*/ true);
-
-    chat.bottom_pane.set_composer_text(
-        "/resume my-saved-thread".to_string(),
-        Vec::new(),
-        Vec::new(),
-    );
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::ResumeSessionByIdOrName(id_or_name)) if id_or_name == "my-saved-thread"
-    );
-    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 
 #[tokio::test]

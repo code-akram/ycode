@@ -1111,7 +1111,7 @@ async fn disabled_slash_command_while_task_running_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     handle_turn_started(&mut chat, "turn-1");
 
-    // Resume remains available during MCP startup, but not while an agent turn is active.
+    // Resume remains available while idle, but not while an agent turn is active.
     chat.dispatch_command(SlashCommand::Resume);
 
     // Drain history and snapshot the rendered error line(s)

@@ -212,14 +212,14 @@ mod tests {
         assert!(matches_matcher(Some("Bash"), Some("Bash")));
         assert!(!matches_matcher(Some("Bash"), Some("BashOutput")));
         assert!(matches_matcher(
-            Some("mcp__memory__create_entities"),
-            Some("mcp__memory__create_entities")
+            Some("memory__create_entities"),
+            Some("memory__create_entities")
         ));
         assert!(!matches_matcher(
-            Some("mcp__memory"),
-            Some("mcp__memory__create_entities")
+            Some("memory"),
+            Some("memory__create_entities")
         ));
-        assert_eq!(validate_matcher_pattern("mcp__memory"), Ok(()));
+        assert_eq!(validate_matcher_pattern("memory"), Ok(()));
     }
 
     #[test]
@@ -229,20 +229,20 @@ mod tests {
     }
 
     #[test]
-    fn mcp_matchers_support_regex_wildcards() {
+    fn namespaced_matchers_support_regex_wildcards() {
         assert!(matches_matcher(
-            Some("mcp__memory__.*"),
-            Some("mcp__memory__create_entities")
+            Some("memory__.*"),
+            Some("memory__create_entities")
         ));
         assert!(matches_matcher(
-            Some("mcp__.*__write.*"),
-            Some("mcp__filesystem__write_file")
+            Some("tool__.*__write.*"),
+            Some("tool__filesystem__write_file")
         ));
         assert!(!matches_matcher(
-            Some("mcp__.*__write.*"),
-            Some("mcp__filesystem__read_file")
+            Some("tool__.*__write.*"),
+            Some("tool__filesystem__read_file")
         ));
-        assert_eq!(validate_matcher_pattern("mcp__memory__.*"), Ok(()));
+        assert_eq!(validate_matcher_pattern("memory__.*"), Ok(()));
     }
 
     #[test]

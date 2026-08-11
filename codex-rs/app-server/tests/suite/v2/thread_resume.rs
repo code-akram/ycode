@@ -26,7 +26,6 @@ use codex_app_server_protocol::FileChangeRequestApprovalResponse;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCResponse;
-use codex_app_server_protocol::McpToolCallAppContext;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::RequestId;
@@ -74,7 +73,6 @@ use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::Settings;
-use codex_protocol::mcp::CallToolResult;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -82,8 +80,6 @@ use codex_protocol::protocol::AgentMessageEvent;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ImageGenerationEndEvent;
-use codex_protocol::protocol::McpInvocation;
-use codex_protocol::protocol::McpToolCallEndEvent;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionMeta;
@@ -1475,45 +1471,6 @@ async fn thread_resume_redacts_payloads_for_chatgpt_remote_clients() -> Result<(
             .first()
             .expect("remote initial turns page should include a turn");
         for remote_turn in [remote_turn, remote_page_turn] {
-            let remote_mcp_item = remote_turn
-                .items
-                .iter()
-                .find(|item| matches!(item, ThreadItem::McpToolCall { .. }))
-                .expect("remote resume should include redacted MCP item");
-            let ThreadItem::McpToolCall {
-                arguments,
-                app_context,
-                read_only_hint,
-                result,
-                error,
-                ..
-            } = remote_mcp_item
-            else {
-                unreachable!("matched MCP item");
-            };
-            assert_eq!(arguments, &json!("[redacted]"));
-            assert_eq!(
-                app_context,
-                &Some(McpToolCallAppContext {
-                    connector_id: "calendar".to_string(),
-                    link_id: Some("link_calendar".to_string()),
-                    resource_uri: Some("ui://widget/lookup.html".to_string()),
-                    app_name: Some("Calendar".to_string()),
-                    action_name: Some("lookup".to_string()),
-                })
-            );
-            assert_eq!(read_only_hint, &Some(false));
-            let result = result.as_ref().expect("redacted MCP result");
-            assert_eq!(
-                result.content,
-                vec![json!({
-                    "type": "text",
-                    "text": "[redacted]",
-                })]
-            );
-            assert_eq!(result.structured_content, None);
-            assert_eq!(result.meta, None);
-            assert_eq!(error, &None);
             assert!(
                 !remote_turn
                     .items
@@ -1530,46 +1487,6 @@ async fn thread_resume_redacts_payloads_for_chatgpt_remote_clients() -> Result<(
         .turns
         .first()
         .expect("normal resume should include a turn");
-    let normal_mcp_item = normal_turn
-        .items
-        .iter()
-        .find(|item| matches!(item, ThreadItem::McpToolCall { .. }))
-        .expect("normal resume should include MCP item");
-    let ThreadItem::McpToolCall {
-        arguments,
-        app_context,
-        read_only_hint,
-        result,
-        ..
-    } = normal_mcp_item
-    else {
-        unreachable!("matched MCP item");
-    };
-    assert_eq!(arguments, &json!({"secret":"argument"}));
-    assert_eq!(
-        app_context,
-        &Some(McpToolCallAppContext {
-            connector_id: "calendar".to_string(),
-            link_id: Some("link_calendar".to_string()),
-            resource_uri: Some("ui://widget/lookup.html".to_string()),
-            app_name: Some("Calendar".to_string()),
-            action_name: Some("lookup".to_string()),
-        })
-    );
-    assert_eq!(read_only_hint, &Some(false));
-    let result = result.as_ref().expect("normal MCP result");
-    assert_eq!(
-        result.content,
-        vec![json!({
-            "type": "text",
-            "text": "secret result",
-        })]
-    );
-    assert_eq!(
-        result.structured_content,
-        Some(json!({"secret":"structured"}))
-    );
-    assert_eq!(result.meta, Some(json!({"secret":"meta"})));
     assert!(
         normal_turn.items.iter().any(|item| matches!(
             item,
@@ -1650,41 +1567,14 @@ fn append_resume_redaction_history(
 ) -> Result<()> {
     let rollout_file_path = rollout_path(codex_home, filename_ts, conversation_id);
     let persisted_rollout = std::fs::read_to_string(&rollout_file_path)?;
-    let appended_rollout = [
-        EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-            call_id: "mcp-1".to_string(),
-            invocation: McpInvocation {
-                server: "docs".to_string(),
-                tool: "lookup".to_string(),
-                arguments: Some(json!({"secret":"argument"})),
-            },
-            connector_id: Some("calendar".to_string()),
-            mcp_app_resource_uri: Some("ui://widget/lookup.html".to_string()),
-            link_id: Some("link_calendar".to_string()),
-            app_name: Some("Calendar".to_string()),
-            action_name: Some("lookup".to_string()),
-            plugin_id: None,
-            read_only_hint: Some(false),
-            duration: Duration::from_millis(8),
-            result: Ok(CallToolResult {
-                content: vec![json!({
-                    "type": "text",
-                    "text": "secret result",
-                })],
-                structured_content: Some(json!({"secret":"structured"})),
-                is_error: Some(false),
-                meta: Some(json!({"secret":"meta"})),
-            }),
-        }),
-        EventMsg::ImageGenerationEnd(ImageGenerationEndEvent {
-            call_id: "ig-1".to_string(),
-            status: "completed".to_string(),
-            revised_prompt: Some("secret revised prompt".to_string()),
-            result: "base64-image-result".to_string(),
-            transparent_background: None,
-            saved_path: Some(test_absolute_path("/tmp/ig-1.png")),
-        }),
-    ]
+    let appended_rollout = [EventMsg::ImageGenerationEnd(ImageGenerationEndEvent {
+        call_id: "ig-1".to_string(),
+        status: "completed".to_string(),
+        revised_prompt: Some("secret revised prompt".to_string()),
+        result: "base64-image-result".to_string(),
+        transparent_background: None,
+        saved_path: Some(test_absolute_path("/tmp/ig-1.png")),
+    })]
     .into_iter()
     .map(|payload| {
         Ok(json!({
@@ -4262,53 +4152,6 @@ async fn thread_resume_with_overrides_defers_updated_at_until_turn_start() -> Re
 
     Ok(())
 }
-
-#[tokio::test]
-async fn thread_resume_fails_when_required_mcp_server_fails_to_initialize() -> Result<()> {
-    let server = create_mock_responses_server_repeating_assistant("Done").await;
-    let codex_home = TempDir::new()?;
-    let rollout = setup_rollout_fixture(codex_home.path(), &server.uri()).await?;
-    mock_responses_config(&server.uri())
-        .with_extra_config(
-            r#"[mcp_servers.required_broken]
-command = "codex-definitely-not-a-real-binary"
-required = true"#,
-        )
-        .write(codex_home.path())?;
-
-    let mut mcp = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .build_initialized()
-        .await?;
-
-    let resume_id = mcp
-        .send_thread_resume_request(ThreadResumeParams {
-            thread_id: rollout.conversation_id,
-            ..Default::default()
-        })
-        .await?;
-    let err: JSONRPCError = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_error_message(RequestId::Integer(resume_id)),
-    )
-    .await??;
-
-    assert!(
-        err.error
-            .message
-            .contains("required MCP servers failed to initialize"),
-        "unexpected error message: {}",
-        err.error.message
-    );
-    assert!(
-        err.error.message.contains("required_broken"),
-        "unexpected error message: {}",
-        err.error.message
-    );
-
-    Ok(())
-}
-
 #[tokio::test]
 async fn thread_resume_surfaces_cloud_config_bundle_load_errors() -> Result<()> {
     let server = MockServer::start().await;

@@ -5,7 +5,6 @@ mod detect;
 mod hooks_cla;
 mod hooks_common;
 mod hooks_cur;
-mod mcp;
 mod memory;
 mod memory_import;
 mod migration_source;
@@ -45,19 +44,9 @@ use hooks_common::shell_single_quote;
 pub(crate) use hooks_common::write_hook_migration;
 pub use hooks_cur::hook_migration_event_names_cur;
 pub use hooks_cur::import_hooks_cur;
-#[cfg(test)]
-use mcp::EXTERNAL_AGENT_MCP_CONFIG_FILE;
-pub use mcp::build_mcp_config_from_external;
-pub use mcp::build_mcp_config_from_json_file;
-#[cfg(test)]
-use mcp::external_agent_project_config_file;
-#[cfg(test)]
-use mcp::parse_env_placeholder;
 pub use memory::ExternalMemoryFile;
 pub use memory::discover_external_memory_files;
 pub use rewrite::RewriteProfile;
-pub use service::DetectedConnectorCandidate;
-pub use service::DetectedConnectorSource;
 pub use service::ExternalAgentConfigDetectOptions;
 pub use service::ExternalAgentConfigDetection;
 pub use service::ExternalAgentConfigImportItemResult;

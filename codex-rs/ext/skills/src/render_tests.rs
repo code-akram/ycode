@@ -335,7 +335,6 @@ async fn host_alias_roots_follow_core_discovery_order() -> Result<(), Box<dyn st
             include_host_skills: true,
             include_bundled_skills: false,
             include_orchestrator_skills: false,
-            mcp_resources: None,
             executor_capability_discovery: None,
         })
         .await?;

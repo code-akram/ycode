@@ -34,9 +34,9 @@ async fn loads_plugin_namespace_dependencies_and_policy() {
         r#"
 dependencies:
   tools:
-    - type: mcp
-      value: deploy-server
-      description: Deploy MCP
+    - type: cli
+      value: deploy-cli
+      description: Deploy CLI
 policy:
   allow_implicit_invocation: false
   products: [codex]
@@ -57,9 +57,9 @@ policy:
             short_description: None,
             dependencies: Some(SkillDependencies {
                 tools: vec![SkillToolDependency {
-                    r#type: "mcp".to_string(),
-                    value: "deploy-server".to_string(),
-                    description: Some("Deploy MCP".to_string()),
+                    r#type: "cli".to_string(),
+                    value: "deploy-cli".to_string(),
+                    description: Some("Deploy CLI".to_string()),
                     transport: None,
                     command: None,
                     url: None,

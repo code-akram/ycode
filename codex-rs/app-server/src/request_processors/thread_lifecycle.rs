@@ -626,13 +626,6 @@ pub(super) async fn handle_pending_thread_resume_request(
     if pending.initial_turns_page.is_none() {
         initial_turns_page = None;
     }
-    if pending.redact_resume_payloads {
-        redact_thread_resume_payloads(&mut thread.turns);
-        if let Some(initial_turns_page) = initial_turns_page.as_mut() {
-            redact_thread_resume_payloads(&mut initial_turns_page.data);
-        }
-    }
-
     {
         let pending_thread_unloads = pending_thread_unloads.lock().await;
         if pending_thread_unloads.contains(&conversation_id) {

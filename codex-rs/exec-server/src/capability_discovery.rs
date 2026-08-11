@@ -27,7 +27,6 @@ const MAX_BUNDLE_BYTES_PER_ROOT: usize = 16 * 1024 * 1024;
 const MAX_CONCURRENT_ROOTS: usize = 8;
 const SKILL_FILE_NAME: &str = "SKILL.md";
 const SKILL_METADATA_PATH: &str = "agents/openai.yaml";
-const DEFAULT_MCP_CONFIG_PATH: &str = ".mcp.json";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CapabilityDiscoveryError {
@@ -196,26 +195,6 @@ async fn discover_root(
 
     if let Some(manifest) = root_manifest {
         let declarations = plugin_declaration_paths(&path, &manifest, &mut discovery.warnings);
-        let mcp_path = if declarations.mcp_inline {
-            None
-        } else {
-            declarations
-                .mcp_config
-                .or_else(|| path.join(DEFAULT_MCP_CONFIG_PATH).ok())
-        };
-        let mcp_config = match mcp_path {
-            Some(path) => {
-                read_optional_text_file(
-                    file_system,
-                    path,
-                    sandbox,
-                    &mut budget,
-                    &mut discovery.warnings,
-                )
-                .await
-            }
-            None => None,
-        };
         let apps_config = match declarations.apps_config {
             Some(path) => {
                 read_optional_text_file(
@@ -231,7 +210,6 @@ async fn discover_root(
         };
         discovery.plugin = Some(DiscoveredPluginFiles {
             manifest,
-            mcp_config,
             apps_config,
         });
     }
@@ -437,16 +415,12 @@ impl BundleBudget {
 
 #[derive(Default)]
 struct PluginDeclarationPaths {
-    mcp_config: Option<PathUri>,
-    mcp_inline: bool,
     apps_config: Option<PathUri>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawPluginDeclarations {
-    #[serde(default)]
-    mcp_servers: Option<Value>,
     #[serde(default)]
     apps: Option<Value>,
 }
@@ -461,13 +435,6 @@ fn plugin_declaration_paths(
         Err(_) => return PluginDeclarationPaths::default(),
     };
     PluginDeclarationPaths {
-        mcp_config: declarations.mcp_servers.as_ref().and_then(|value| {
-            declared_file_path(root, "mcpServers", value, &manifest.path, warnings)
-        }),
-        mcp_inline: declarations
-            .mcp_servers
-            .as_ref()
-            .is_some_and(Value::is_object),
         apps_config: declarations
             .apps
             .as_ref()

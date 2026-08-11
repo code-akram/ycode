@@ -62,7 +62,7 @@ where
         analytics_events_client,
         thread_manager,
         goal_service,
-        environment_manager,
+        environment_manager: _,
         executor_skill_provider,
         git_attribution_base_url,
         http_client_factory,
@@ -88,17 +88,12 @@ where
     );
     codex_guardian::install(&mut builder, guardian_agent_spawner);
     codex_memories_extension::install(&mut builder, codex_otel::global());
-    codex_mcp_extension::install(&mut builder);
-    codex_mcp_extension::install_executor_plugins(&mut builder, environment_manager);
     codex_web_search_extension::install(&mut builder, auth_manager.clone());
     codex_image_generation_extension::install(&mut builder, auth_manager, |config: &Config| {
         Some(config.codex_home.clone())
     });
     let skill_providers = codex_skills_extension::SkillProviders::new()
         .with_executor_provider(executor_skill_provider)
-        .with_orchestrator_provider(Arc::new(
-            codex_skills_extension::OrchestratorSkillProvider::new(),
-        ))
         .with_host_provider(Arc::new(codex_skills_extension::HostSkillProvider::new()));
     codex_skills_extension::install_with_providers_and_metrics(
         &mut builder,

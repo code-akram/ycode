@@ -270,9 +270,7 @@ pub(crate) fn is_common_env_var(name: &str) -> bool {
 }
 
 fn is_tool_path(path: &str) -> bool {
-    path.starts_with("app://")
-        || path.starts_with("mcp://")
-        || path.starts_with("plugin://")
+    path.starts_with("plugin://")
         || path.starts_with("skill://")
         || path
             .rsplit(['/', '\\'])
@@ -288,18 +286,13 @@ mod tests {
     #[test]
     fn decode_history_mentions_restores_visible_tokens() {
         let decoded = decode_history_mentions_with_at_mentions(
-            "Use [$figma](app://figma-1), [$sample](plugin://sample@test), and [$figma](/tmp/figma/SKILL.md).",
+            "Use [$sample](plugin://sample@test) and [$figma](/tmp/figma/SKILL.md).",
             /*at_mentions_enabled*/ true,
         );
-        assert_eq!(decoded.text, "Use $figma, $sample, and $figma.");
+        assert_eq!(decoded.text, "Use $sample and $figma.");
         assert_eq!(
             decoded.mentions,
             vec![
-                LinkedMention {
-                    sigil: '$',
-                    mention: "figma".to_string(),
-                    path: "app://figma-1".to_string(),
-                },
                 LinkedMention {
                     sigil: '$',
                     mention: "sample".to_string(),
@@ -317,7 +310,7 @@ mod tests {
     #[test]
     fn decode_history_mentions_restores_plugin_links_with_at_sigil() {
         let decoded = decode_history_mentions_with_at_mentions(
-            "Use [@sample](plugin://sample@test) and [$figma](app://figma-1).",
+            "Use [@sample](plugin://sample@test) and [$figma](/tmp/figma/SKILL.md).",
             /*at_mentions_enabled*/ true,
         );
         assert_eq!(decoded.text, "Use @sample and $figma.");
@@ -332,7 +325,7 @@ mod tests {
                 LinkedMention {
                     sigil: '$',
                     mention: "figma".to_string(),
-                    path: "app://figma-1".to_string(),
+                    path: "/tmp/figma/SKILL.md".to_string(),
                 },
             ]
         );
@@ -341,7 +334,7 @@ mod tests {
     #[test]
     fn decode_history_mentions_without_at_mentions_uses_legacy_plugin_fallback() {
         let decoded = decode_history_mentions_with_at_mentions(
-            "Use [@sample](plugin://sample@test) and [$figma](app://figma-1).",
+            "Use [@sample](plugin://sample@test) and [$figma](/tmp/figma/SKILL.md).",
             /*at_mentions_enabled*/ false,
         );
         assert_eq!(decoded.text, "Use $sample and $figma.");
@@ -356,27 +349,27 @@ mod tests {
                 LinkedMention {
                     sigil: '$',
                     mention: "figma".to_string(),
-                    path: "app://figma-1".to_string(),
+                    path: "/tmp/figma/SKILL.md".to_string(),
                 },
             ]
         );
     }
 
     #[test]
-    fn decode_history_mentions_without_at_mentions_ignores_at_non_plugin_paths() {
+    fn decode_history_mentions_without_at_mentions_ignores_at_skill_paths() {
         let decoded = decode_history_mentions_with_at_mentions(
-            "Use [@figma](app://figma-1).",
+            "Use [@figma](/tmp/figma/SKILL.md).",
             /*at_mentions_enabled*/ false,
         );
 
-        assert_eq!(decoded.text, "Use [@figma](app://figma-1).");
+        assert_eq!(decoded.text, "Use [@figma](/tmp/figma/SKILL.md).");
         assert_eq!(decoded.mentions, Vec::<LinkedMention>::new());
     }
 
     #[test]
     fn decode_history_mentions_restores_at_sigil_for_tool_paths() {
         let decoded = decode_history_mentions_with_at_mentions(
-            "Use [@figma](app://figma-1).",
+            "Use [@figma](/tmp/figma/SKILL.md).",
             /*at_mentions_enabled*/ true,
         );
 
@@ -386,7 +379,7 @@ mod tests {
             vec![LinkedMention {
                 sigil: '@',
                 mention: "figma".to_string(),
-                path: "app://figma-1".to_string(),
+                path: "/tmp/figma/SKILL.md".to_string(),
             }]
         );
     }
@@ -400,7 +393,7 @@ mod tests {
                 LinkedMention {
                     sigil: '$',
                     mention: "figma".to_string(),
-                    path: "app://figma-app".to_string(),
+                    path: "plugin://figma@test".to_string(),
                 },
                 LinkedMention {
                     sigil: '$',
@@ -416,7 +409,7 @@ mod tests {
         );
         assert_eq!(
             encoded,
-            "[$figma](app://figma-app) then [$sample](plugin://sample@test) then [$figma](/tmp/figma/SKILL.md) then $other"
+            "[$figma](plugin://figma@test) then [$sample](plugin://sample@test) then [$figma](/tmp/figma/SKILL.md) then $other"
         );
     }
 
@@ -427,10 +420,10 @@ mod tests {
             &[LinkedMention {
                 sigil: '$',
                 mention: "figma".to_string(),
-                path: "app://figma".to_string(),
+                path: "plugin://figma@test".to_string(),
             }],
         );
-        assert_eq!(encoded, "([$figma](app://figma))");
+        assert_eq!(encoded, "([$figma](plugin://figma@test))");
     }
 
     #[test]
@@ -438,20 +431,20 @@ mod tests {
         let mention = LinkedMention {
             sigil: '$',
             mention: "figma".to_string(),
-            path: "app://figma".to_string(),
+            path: "plugin://figma@test".to_string(),
         };
 
         assert_eq!(
             encode_history_mentions("$figma/docs", std::slice::from_ref(&mention)),
-            "[$figma](app://figma)/docs"
+            "[$figma](plugin://figma@test)/docs"
         );
         assert_eq!(
             encode_history_mentions("$figma.suffix", std::slice::from_ref(&mention)),
-            "[$figma](app://figma).suffix"
+            "[$figma](plugin://figma@test).suffix"
         );
         assert_eq!(
             encode_history_mentions("$figma\\docs", &[mention]),
-            "[$figma](app://figma)\\docs"
+            "[$figma](plugin://figma@test)\\docs"
         );
     }
 
@@ -493,13 +486,13 @@ mod tests {
                 LinkedMention {
                     sigil: '$',
                     mention: "figma".to_string(),
-                    path: "app://figma".to_string(),
+                    path: "/tmp/figma/SKILL.md".to_string(),
                 },
             ],
         );
         assert_eq!(
             encoded,
-            "[@figma](plugin://figma@test) then [$figma](app://figma)"
+            "[@figma](plugin://figma@test) then [$figma](/tmp/figma/SKILL.md)"
         );
     }
 
@@ -511,10 +504,10 @@ mod tests {
             &[LinkedMention {
                 sigil: '$',
                 mention: "figma".to_string(),
-                path: "app://figma-app".to_string(),
+                path: "/tmp/figma/SKILL.md".to_string(),
             }],
         );
-        assert_eq!(encoded, "@figma then [$figma](app://figma-app)");
+        assert_eq!(encoded, "@figma then [$figma](/tmp/figma/SKILL.md)");
     }
 
     #[test]

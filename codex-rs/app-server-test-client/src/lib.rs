@@ -1758,8 +1758,6 @@ impl CodexClient {
                             .map(|method| (*method).to_string())
                             .collect(),
                     ),
-                    mcp_server_openai_form_elicitation: false,
-                    extensions: None,
                 }),
             },
         };
@@ -2007,9 +2005,6 @@ impl CodexClient {
                         }
                         break;
                     }
-                }
-                ServerNotification::McpToolCallProgress(payload) => {
-                    println!("< MCP tool progress: {}", payload.message);
                 }
                 _ => {
                     println!("[UNKNOWN SERVER NOTIFICATION] {server_notification:?}");

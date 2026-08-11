@@ -59,24 +59,6 @@ fn extract_log_field(line: &str, key: &str) -> Option<String> {
     None
 }
 
-fn assert_empty_mcp_tool_fields(line: &str) -> Result<(), String> {
-    let mcp_server = extract_log_field(line, "mcp_server")
-        .ok_or_else(|| "missing mcp_server field".to_string())?;
-    if !mcp_server.is_empty() {
-        return Err(format!("expected empty mcp_server, got {mcp_server}"));
-    }
-
-    let mcp_server_origin = extract_log_field(line, "mcp_server_origin")
-        .ok_or_else(|| "missing mcp_server_origin field".to_string())?;
-    if !mcp_server_origin.is_empty() {
-        return Err(format!(
-            "expected empty mcp_server_origin, got {mcp_server_origin}"
-        ));
-    }
-
-    Ok(())
-}
-
 fn shell_command_call(call_id: &str, command: &str) -> serde_json::Value {
     let args = serde_json::json!({ "command": command }).to_string();
     ev_function_call(call_id, "shell_command", &args)
@@ -88,26 +70,6 @@ fn touch_command(path: &str) -> String {
     } else {
         format!("/usr/bin/touch {path}")
     }
-}
-
-#[test]
-fn extract_log_field_handles_empty_bare_values() {
-    let line = "event.name=\"codex.tool_result\" mcp_server= mcp_server_origin=";
-    assert_eq!(extract_log_field(line, "mcp_server"), Some(String::new()));
-    assert_eq!(
-        extract_log_field(line, "mcp_server_origin"),
-        Some(String::new())
-    );
-}
-
-#[test]
-fn extract_log_field_does_not_confuse_similar_keys() {
-    let line = "event.name=\"codex.tool_result\" mcp_server_origin=stdio";
-    assert_eq!(extract_log_field(line, "mcp_server"), None);
-    assert_eq!(
-        extract_log_field(line, "mcp_server_origin"),
-        Some("stdio".to_string())
-    );
 }
 
 #[tokio::test]
@@ -986,8 +948,6 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
         if !line.contains("success=false") {
             return Err("missing success field".to_string());
         }
-        assert_empty_mcp_tool_fields(line)?;
-
         Ok(())
     });
 }
@@ -1062,8 +1022,6 @@ async fn handle_response_item_records_tool_result_for_function_call() {
         if !line.contains("success=false") {
             return Err("missing success field".to_string());
         }
-        assert_empty_mcp_tool_fields(line)?;
-
         Ok(())
     });
 }
@@ -1140,8 +1098,6 @@ async fn handle_response_item_records_tool_result_for_shell_command_call() {
         if !line.contains("success=false") {
             return Err("missing success field".to_string());
         }
-        assert_empty_mcp_tool_fields(line)?;
-
         Ok(())
     });
 }

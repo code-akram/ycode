@@ -63,9 +63,8 @@ impl ToolExecutor<ToolCall> for ReadTool {
     fn handle(&self, call: ToolCall) -> ToolExecutorFuture<'_> {
         Box::pin(async move {
             let args: ReadArgs = parse_args(&call)?;
-            if let SkillToolAuthority::Executor { id } = &args.authority {
-                validate_handle("authority.id", id, MAX_HANDLE_BYTES)?;
-            }
+            let SkillToolAuthority::Executor { id } = &args.authority;
+            validate_handle("authority.id", id, MAX_HANDLE_BYTES)?;
             validate_handle("package", &args.package, MAX_HANDLE_BYTES)?;
             validate_handle("resource", &args.resource, MAX_HANDLE_BYTES)?;
 
@@ -129,7 +128,6 @@ impl ToolExecutor<ToolCall> for ReadTool {
                         resolved_executor_roots,
                         sandbox,
                         host_snapshot: None,
-                        mcp_resources: self.context.mcp_resources.clone(),
                     },
                 )
                 .await
@@ -147,16 +145,6 @@ impl ToolExecutor<ToolCall> for ReadTool {
                 return Err(FunctionCallError::Fatal(
                     "skill provider returned a different resource".to_string(),
                 ));
-            }
-            if output_authority == super::SkillToolAuthoritySelector::Orchestrator
-                && let Some(state) = self
-                    .context
-                    .thread_state
-                    .shadow_selection_turn(&call.turn_id)
-            {
-                self.context
-                    .shadow_selection
-                    .record_invocation(&state, main_prompt.as_str());
             }
 
             let start = parse_pagination_cursor(

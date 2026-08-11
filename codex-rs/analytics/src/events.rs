@@ -73,7 +73,6 @@ pub(crate) enum TrackEventRequest {
     TurnSteer(CodexTurnSteerEventRequest),
     CommandExecution(CodexCommandExecutionEventRequest),
     FileChange(CodexFileChangeEventRequest),
-    McpToolCall(CodexMcpToolCallEventRequest),
     DynamicToolCall(CodexDynamicToolCallEventRequest),
     CollabAgentToolCall(CodexCollabAgentToolCallEventRequest),
     WebSearch(CodexWebSearchEventRequest),
@@ -101,7 +100,6 @@ impl TrackEventRequest {
         match self {
             Self::PluginUsed(event) => event.event_params.plugin.plugin_id.is_some(),
             Self::SkillInvocation(event) => event.event_params.plugin_id.is_some(),
-            Self::McpToolCall(event) => event.event_params.plugin_id.is_some(),
             _ => false,
         }
     }
@@ -260,13 +258,6 @@ pub enum GuardianReviewedAction {
     NetworkAccess {
         protocol: NetworkApprovalProtocol,
         port: u16,
-    },
-    McpToolCall {
-        server: String,
-        tool_name: String,
-        connector_id: Option<String>,
-        connector_name: Option<String>,
-        tool_title: Option<String>,
     },
     RequestPermissions {},
 }
@@ -571,7 +562,6 @@ pub(crate) struct CodexToolItemEventBase {
 pub(crate) enum ReviewSubjectKind {
     CommandExecution,
     FileChange,
-    McpToolCall,
     Permissions,
     NetworkAccess,
 }
@@ -687,23 +677,6 @@ pub(crate) struct CodexFileChangeEventParams {
 pub(crate) struct CodexFileChangeEventRequest {
     pub(crate) event_type: &'static str,
     pub(crate) event_params: CodexFileChangeEventParams,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexMcpToolCallEventParams {
-    #[serde(flatten)]
-    pub(crate) base: CodexToolItemEventBase,
-    pub(crate) mcp_server_name: String,
-    pub(crate) mcp_tool_name: String,
-    pub(crate) mcp_error_present: bool,
-    pub(crate) plugin_id: Option<String>,
-    pub(crate) connector_id: Option<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexMcpToolCallEventRequest {
-    pub(crate) event_type: &'static str,
-    pub(crate) event_params: CodexMcpToolCallEventParams,
 }
 
 #[derive(Serialize)]
@@ -913,7 +886,6 @@ pub(crate) struct CodexTurnEventParams {
     pub(crate) total_tool_call_count: Option<usize>,
     pub(crate) shell_command_count: Option<usize>,
     pub(crate) file_change_count: Option<usize>,
-    pub(crate) mcp_tool_call_count: Option<usize>,
     pub(crate) dynamic_tool_call_count: Option<usize>,
     pub(crate) subagent_tool_call_count: Option<usize>,
     pub(crate) web_search_count: Option<usize>,
@@ -973,8 +945,6 @@ pub(crate) struct CodexPluginMetadata {
     pub(crate) plugin_name: Option<String>,
     pub(crate) marketplace_name: Option<String>,
     pub(crate) has_skills: Option<bool>,
-    pub(crate) mcp_server_count: Option<usize>,
-    pub(crate) connector_ids: Option<Vec<String>>,
     pub(crate) product_client_id: Option<String>,
 }
 
@@ -982,7 +952,6 @@ pub(crate) struct CodexPluginMetadata {
 pub(crate) struct CodexPluginUsedMetadata {
     #[serde(flatten)]
     pub(crate) plugin: CodexPluginMetadata,
-    pub(crate) mcp_server_names: Option<Vec<String>>,
     pub(crate) thread_id: Option<String>,
     pub(crate) turn_id: Option<String>,
     pub(crate) model_slug: Option<String>,
@@ -1124,16 +1093,6 @@ fn codex_plugin_metadata_with_product_client_id(
         has_skills: capability_summary
             .as_ref()
             .map(|summary| summary.has_skills),
-        mcp_server_count: capability_summary
-            .as_ref()
-            .map(|summary| summary.mcp_server_names.len()),
-        connector_ids: capability_summary.map(|summary| {
-            summary
-                .app_connector_ids
-                .into_iter()
-                .map(|connector_id| connector_id.0)
-                .collect()
-        }),
         product_client_id: Some(product_client_id),
     }
 }
@@ -1231,16 +1190,11 @@ pub(crate) fn codex_plugin_used_metadata(
     tracking: &TrackEventsContext,
     plugin: PluginTelemetryMetadata,
 ) -> CodexPluginUsedMetadata {
-    let mcp_server_names = plugin
-        .capability_summary
-        .as_ref()
-        .map(|summary| summary.mcp_server_names.clone());
     CodexPluginUsedMetadata {
         plugin: codex_plugin_metadata_with_product_client_id(
             plugin,
             tracking.product_client_id.clone(),
         ),
-        mcp_server_names,
         thread_id: Some(tracking.thread_id.clone()),
         turn_id: Some(tracking.turn_id.clone()),
         model_slug: Some(tracking.model_slug.clone()),

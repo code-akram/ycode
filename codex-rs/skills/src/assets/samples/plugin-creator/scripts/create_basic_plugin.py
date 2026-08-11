@@ -53,7 +53,7 @@ def display_name_from_plugin_name(plugin_name: str) -> str:
     return " ".join(part.capitalize() for part in re.split(r"[-_]+", plugin_name))
 
 
-def build_plugin_json(plugin_name: str, *, with_mcp: bool, with_apps: bool) -> dict[str, Any]:
+def build_plugin_json(plugin_name: str, *, with_apps: bool) -> dict[str, Any]:
     display_name = display_name_from_plugin_name(plugin_name)
     payload: dict[str, Any] = {
         "name": plugin_name,
@@ -73,8 +73,6 @@ def build_plugin_json(plugin_name: str, *, with_mcp: bool, with_apps: bool) -> d
             "defaultPrompt": f"Help me use {display_name}.",
         },
     }
-    if with_mcp:
-        payload["mcpServers"] = "./.mcp.json"
     if with_apps:
         payload["apps"] = "./.app.json"
     return payload
@@ -207,7 +205,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--with-hooks", action="store_true", help="Create hooks/ directory")
     parser.add_argument("--with-scripts", action="store_true", help="Create scripts/ directory")
     parser.add_argument("--with-assets", action="store_true", help="Create assets/ directory")
-    parser.add_argument("--with-mcp", action="store_true", help="Create .mcp.json placeholder")
     parser.add_argument("--with-apps", action="store_true", help="Create .app.json placeholder")
     parser.add_argument(
         "--with-marketplace",
@@ -272,7 +269,7 @@ def main() -> None:
     plugin_json_path = plugin_root / ".codex-plugin" / "plugin.json"
     write_json(
         plugin_json_path,
-        build_plugin_json(plugin_name, with_mcp=args.with_mcp, with_apps=args.with_apps),
+        build_plugin_json(plugin_name, with_apps=args.with_apps),
         args.force,
     )
 
@@ -285,13 +282,6 @@ def main() -> None:
     for folder, enabled in optional_directories.items():
         if enabled:
             (plugin_root / folder).mkdir(parents=True, exist_ok=True)
-
-    if args.with_mcp:
-        create_stub_file(
-            plugin_root / ".mcp.json",
-            {"mcpServers": {}},
-            args.force,
-        )
 
     if args.with_apps:
         create_stub_file(

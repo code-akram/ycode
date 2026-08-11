@@ -328,7 +328,6 @@ fn terminal_operation_kind(kind: &ToolCallKind) -> Option<TerminalOperationKind>
         ToolCallKind::ExecCommand => Some(TerminalOperationKind::ExecCommand),
         ToolCallKind::WriteStdin => Some(TerminalOperationKind::WriteStdin),
         ToolCallKind::ApplyPatch
-        | ToolCallKind::Mcp { .. }
         | ToolCallKind::Web
         | ToolCallKind::ImageGeneration
         | ToolCallKind::SpawnAgent

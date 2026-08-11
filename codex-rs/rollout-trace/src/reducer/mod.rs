@@ -261,12 +261,6 @@ impl TraceReducer {
                     },
                 )?;
             }
-            RawTraceEventPayload::McpToolCallCorrelationAssigned {
-                tool_call_id,
-                mcp_call_id,
-            } => {
-                self.assign_mcp_tool_call_correlation(tool_call_id, mcp_call_id)?;
-            }
             RawTraceEventPayload::ToolCallRuntimeStarted {
                 tool_call_id,
                 runtime_payload,

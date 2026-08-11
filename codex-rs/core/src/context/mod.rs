@@ -1,7 +1,6 @@
 //! Context fragments injected into model input.
 
 mod approved_command_prefix_saved;
-mod apps_instructions;
 mod available_plugins_instructions;
 mod contextual_user_message;
 mod current_time_reminder;
@@ -38,7 +37,6 @@ pub(crate) mod world_state;
 
 pub(crate) use approved_command_prefix_saved::APPROVED_COMMAND_PREFIX_SAVED_MESSAGE_PREFIX;
 pub(crate) use approved_command_prefix_saved::ApprovedCommandPrefixSaved;
-pub(crate) use apps_instructions::AppsInstructions;
 pub(crate) use available_plugins_instructions::AvailablePluginsInstructions;
 pub(crate) use codex_context_fragments::AdditionalContextDeveloperFragment;
 pub(crate) use codex_context_fragments::AdditionalContextUserFragment;

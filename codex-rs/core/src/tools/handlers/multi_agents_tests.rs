@@ -32,7 +32,6 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
-use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -240,7 +239,7 @@ async fn spawn_agent_rejects_when_message_and_items_are_both_set() {
         "spawn_agent",
         function_payload(json!({
             "message": "hello",
-            "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
+            "items": [{"type": "mention", "name": "sample", "path": "plugin://sample@test"}]
         })),
     );
     let Err(err) = SpawnAgentHandler::default().handle(invocation).await else {
@@ -1776,7 +1775,7 @@ async fn multi_agent_v2_send_message_rejects_legacy_items_field() {
         function_payload(json!({
             "target": agent_id.to_string(),
             "items": [
-                {"type": "mention", "name": "drive", "path": "app://google_drive"},
+                {"type": "mention", "name": "sample", "path": "plugin://sample@test"},
                 {"type": "text", "text": "read the folder"}
             ]
         })),
@@ -2505,7 +2504,7 @@ async fn send_input_rejects_when_message_and_items_are_both_set() {
         function_payload(json!({
             "target": ThreadId::new().to_string(),
             "message": "hello",
-            "items": [{"type": "mention", "name": "drive", "path": "app://drive"}]
+            "items": [{"type": "mention", "name": "sample", "path": "plugin://sample@test"}]
         })),
     );
     let Err(err) = SendInputHandler.handle(invocation).await else {
@@ -2618,7 +2617,7 @@ async fn send_input_accepts_structured_items() {
         function_payload(json!({
             "target": agent_id.to_string(),
             "items": [
-                {"type": "mention", "name": "drive", "path": "app://google_drive"},
+                {"type": "mention", "name": "sample", "path": "plugin://sample@test"},
                 {"type": "text", "text": "read the folder"}
             ]
         })),
@@ -2631,8 +2630,8 @@ async fn send_input_accepts_structured_items() {
     let expected = Op::UserInput {
         items: vec![
             UserInput::Mention {
-                name: "drive".to_string(),
-                path: "app://google_drive".to_string(),
+                name: "sample".to_string(),
+                path: "plugin://sample@test".to_string(),
             },
             UserInput::Text {
                 text: "read the folder".to_string(),
@@ -2755,7 +2754,6 @@ async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
             })]),
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
             /*parent_trace*/ None,
-            ClientMcpExtensions::default(),
         )
         .await
         .expect("start thread");
@@ -4208,7 +4206,6 @@ async fn tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtr
         &config,
         auth_manager.clone(),
         crate::thread_manager::build_models_manager(&config, auth_manager),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),

@@ -25,7 +25,7 @@ impl fmt::Display for ConnectionId {
 pub enum OutgoingMessage {
     Request(ServerRequest),
     /// AppServerNotification is specific to the case where this is run as an
-    /// "app server" as opposed to an MCP server.
+    /// "app server" as opposed to another JSON-RPC transport.
     AppServerNotification(ServerNotificationEnvelope),
     Response(OutgoingResponse),
     Error(OutgoingError),

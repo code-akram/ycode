@@ -54,7 +54,7 @@ async fn exec_server_http_request_buffers_response_body() -> anyhow::Result<()> 
 
     // Phase 2: start a local HTTP peer and ask exec-server to POST to it.
     let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let url = format!("http://{}/mcp?case=buffered", listener.local_addr()?);
+    let url = format!("http://{}/api?case=buffered", listener.local_addr()?);
     let http_request_id = server
         .send_request(
             "http/request",
@@ -84,7 +84,7 @@ async fn exec_server_http_request_buffers_response_body() -> anyhow::Result<()> 
             captured.body.as_slice(),
         ),
         (
-            "POST /mcp?case=buffered HTTP/1.1",
+            "POST /api?case=buffered HTTP/1.1",
             Some("buffered"),
             b"request-body".as_slice(),
         )
@@ -92,7 +92,7 @@ async fn exec_server_http_request_buffers_response_body() -> anyhow::Result<()> 
     respond_with_status_and_headers(
         captured.stream,
         "201 Created",
-        &[("x-mcp-test", "buffered")],
+        &[("x-api-test", "buffered")],
         b"response-body",
     )
     .await?;
@@ -103,7 +103,7 @@ async fn exec_server_http_request_buffers_response_body() -> anyhow::Result<()> 
     assert_eq!(
         (
             response.status,
-            response_header(&response.headers, "x-mcp-test"),
+            response_header(&response.headers, "x-api-test"),
             response.body.into_inner(),
         ),
         (201, Some("buffered".to_string()), b"response-body".to_vec(),)
@@ -122,7 +122,7 @@ async fn exec_server_http_request_omits_url_fragment() -> anyhow::Result<()> {
 
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let url = format!(
-        "http://{}/mcp?case=fragment#client-section",
+        "http://{}/api?case=fragment#client-section",
         listener.local_addr()?
     );
     let http_request_id = server
@@ -142,7 +142,7 @@ async fn exec_server_http_request_omits_url_fragment() -> anyhow::Result<()> {
         .await?;
 
     let captured = accept_http_request(&listener).await?;
-    assert_eq!(captured.request_line, "GET /mcp?case=fragment HTTP/1.1");
+    assert_eq!(captured.request_line, "GET /api?case=fragment HTTP/1.1");
     respond_with_status_and_headers(captured.stream, "200 OK", &[], b"fragment-response").await?;
 
     let response: HttpRequestResponse = wait_for_response(&mut server, http_request_id).await?;
@@ -219,8 +219,8 @@ async fn exec_server_http_request_uses_configured_system_proxy() -> anyhow::Resu
 async fn exec_server_http_request_normalizes_unicode_hostname() -> anyhow::Result<()> {
     let proxy_listener = TcpListener::bind("127.0.0.1:0").await?;
     let proxy_url = format!("http://{}", proxy_listener.local_addr()?);
-    let request_url = "http://münich.invalid/mcp?route=unicode";
-    let normalized_url = "http://xn--mnich-kva.invalid/mcp?route=unicode";
+    let request_url = "http://münich.invalid/api?route=unicode";
+    let normalized_url = "http://xn--mnich-kva.invalid/api?route=unicode";
     let mut server = exec_server_with_env(
         [
             (SYSTEM_PROXY_REQUEST_URL_ENV, normalized_url),
@@ -262,7 +262,7 @@ async fn exec_server_http_request_normalizes_unicode_hostname() -> anyhow::Resul
             captured.headers.get("host").map(String::as_str),
         ),
         (
-            "GET http://xn--mnich-kva.invalid/mcp?route=unicode HTTP/1.1",
+            "GET http://xn--mnich-kva.invalid/api?route=unicode HTTP/1.1",
             Some("xn--mnich-kva.invalid"),
         )
     );
@@ -373,7 +373,7 @@ async fn exec_server_http_request_can_follow_redirects() -> anyhow::Result<()> {
     respond_with_status_and_headers(
         final_request.stream,
         "200 OK",
-        &[("x-mcp-test", "redirected")],
+        &[("x-api-test", "redirected")],
         b"final-response-body",
     )
     .await?;
@@ -382,7 +382,7 @@ async fn exec_server_http_request_can_follow_redirects() -> anyhow::Result<()> {
     assert_eq!(
         (
             response.status,
-            response_header(&response.headers, "x-mcp-test"),
+            response_header(&response.headers, "x-api-test"),
             response.body.into_inner(),
         ),
         (
@@ -407,7 +407,7 @@ async fn exec_server_http_request_streams_response_body_notifications() -> anyho
 
     // Phase 2: start a local HTTP peer and ask exec-server for a streamed GET.
     let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let url = format!("http://{}/mcp?case=streaming", listener.local_addr()?);
+    let url = format!("http://{}/api?case=streaming", listener.local_addr()?);
     let http_request_id = server
         .send_request(
             "http/request",
@@ -437,14 +437,14 @@ async fn exec_server_http_request_streams_response_body_notifications() -> anyho
             captured.body,
         ),
         (
-            "GET /mcp?case=streaming HTTP/1.1",
+            "GET /api?case=streaming HTTP/1.1",
             Some("text/event-stream"),
             Vec::new(),
         )
     );
     respond_with_chunked_body(
         captured.stream,
-        &[("x-mcp-test", "streaming")],
+        &[("x-api-test", "streaming")],
         &[b"hello ".as_slice(), b"world".as_slice()],
     )
     .await?;
@@ -461,7 +461,7 @@ async fn exec_server_http_request_streams_response_body_notifications() -> anyho
     assert_eq!(
         (
             response.status,
-            response_header(&response.headers, "x-mcp-test"),
+            response_header(&response.headers, "x-api-test"),
             response.body.into_inner(),
         ),
         (200, Some("streaming".to_string()), Vec::new())
@@ -495,7 +495,7 @@ async fn exec_server_http_request_rejects_duplicate_stream_request_ids() -> anyh
 
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let url = format!(
-        "http://{}/mcp?case=duplicate-stream-id",
+        "http://{}/api?case=duplicate-stream-id",
         listener.local_addr()?
     );
     let first_request_id = server
@@ -574,7 +574,7 @@ async fn exec_server_http_request_honors_optional_timeout() -> anyhow::Result<()
 
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let delayed_url = format!(
-        "http://{}/mcp?case=optional-timeout",
+        "http://{}/api?case=optional-timeout",
         listener.local_addr()?
     );
     let no_timeout_request_id = server

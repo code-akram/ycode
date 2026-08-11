@@ -24,7 +24,7 @@ pub struct ApprovalPreset {
 
 /// Built-in list of approval presets that pair approval and permissions.
 ///
-/// Keep this UI-agnostic so it can be reused by both TUI and MCP server.
+/// Keep this UI-agnostic so it can be reused by different clients.
 pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
     vec![
         ApprovalPreset {

@@ -131,7 +131,7 @@ fn normalize_model_item(
                     .map(ToString::to_string),
             })
         }
-        "tool_search_output" | "mcp_tool_call_output" => Ok(NormalizedConversationItem {
+        "tool_search_output" => Ok(NormalizedConversationItem {
             role: ConversationRole::Tool,
             channel: Some(ConversationChannel::Commentary),
             kind: ConversationItemKind::FunctionCallOutput,

@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
@@ -24,7 +23,6 @@ use crate::config::resolve_tool_suggest_config_from_layer_stack;
 use crate::context::ContextualUserFragment;
 use crate::context::ModelSwitchInstructions;
 use crate::context::NetworkRuleSaved;
-use crate::context::RecommendedPluginsInstructions;
 use crate::context::world_state::WorldState;
 use crate::current_time::TimeProvider;
 use crate::environment_selection::TurnEnvironmentSnapshot;
@@ -51,7 +49,6 @@ use codex_analytics::ImagePreparationMetadata;
 use codex_analytics::SubAgentThreadStartedInput;
 use codex_analytics::TurnCodexErrorFact;
 use codex_async_utils::OrCancelExt;
-use codex_connectors::connector_runtime_context_key;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
 use codex_execpolicy::prefix_rule_migration;
@@ -68,10 +65,6 @@ use codex_hooks::HooksConfig;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::auth_env_telemetry::collect_auth_env_telemetry;
-use codex_mcp::McpResourceClient;
-use codex_mcp::McpRuntime;
-use codex_mcp::McpRuntimeContext;
-use codex_mcp::McpRuntimeInput;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_network_proxy::NetworkProxy;
@@ -82,8 +75,6 @@ use codex_otel::current_span_w3c_trace_context;
 use codex_otel::set_parent_from_w3c_trace_context;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
-use codex_protocol::approvals::ElicitationRequest;
-use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
@@ -136,7 +127,6 @@ use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_protocol::request_user_input::RequestUserInputResponse;
-use codex_rmcp_client::ElicitationResponse;
 use codex_rollout::state_db;
 use codex_rollout_trace::AgentResultTracePayload;
 use codex_rollout_trace::ThreadStartedTraceMetadata;
@@ -157,7 +147,6 @@ use codex_utils_path_uri::PathUri;
 use futures::future::BoxFuture;
 use futures::future::Shared;
 use futures::prelude::*;
-use rmcp::model::RequestId;
 use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
@@ -190,7 +179,6 @@ use crate::context_manager::ContextManager;
 use crate::thread_rollout_truncation::initial_history_has_prior_user_turns;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigLayerSource;
-use codex_config::types::McpServerConfig;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::error::CodexErr;
@@ -199,6 +187,7 @@ use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
 use codex_protocol::exec_output::StreamOutput;
 
+mod capability_discovery;
 mod code_mode_warning;
 mod config_lock;
 pub(crate) mod context_window;
@@ -206,10 +195,6 @@ mod extension_metrics;
 mod handlers;
 mod inject;
 mod input_queue;
-mod mcp;
-mod mcp_prewarm;
-mod mcp_refresh;
-mod mcp_runtime;
 pub(crate) mod multi_agents;
 mod review;
 mod rollout_budget;
@@ -239,8 +224,6 @@ pub(crate) use self::session::SessionSettingsUpdate;
 #[cfg(test)]
 use self::turn::AssistantMessageStreamParsers;
 use self::turn::agent_message_text;
-#[cfg(test)]
-use self::turn::collect_explicit_app_ids_from_skill_items;
 use self::turn::realtime_text_for_event;
 use self::turn_context::TurnContext;
 #[cfg(test)]
@@ -303,8 +286,6 @@ use crate::HostSkillsService;
 use crate::exec_policy::ExecPolicyUpdateError;
 use crate::guardian::GuardianReviewOptions;
 use crate::guardian::GuardianReviewSessionManager;
-use crate::mcp::McpManager;
-use crate::mcp::McpThreadIdentity;
 use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::rollout::map_session_init_error;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
@@ -330,10 +311,7 @@ use crate::turn_timing::record_turn_ttfm_metric;
 use crate::unified_exec::UnifiedExecProcessManager;
 use codex_core_plugins::PluginCommandAttribution;
 use codex_core_plugins::PluginsManager;
-use codex_core_plugins::RecommendedPluginCandidatesInput;
 use codex_git_utils::get_git_repo_root;
-use codex_mcp::McpConfig;
-use codex_mcp::effective_mcp_servers;
 use codex_otel::SessionTelemetry;
 use codex_otel::THREAD_STARTED_METRIC;
 use codex_otel::TelemetryAuthMode;
@@ -342,7 +320,6 @@ use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::WindowsSandboxLevel;
-use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::models::LocalImagePreparation;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
@@ -426,7 +403,6 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) environment_manager: Arc<EnvironmentManager>,
     pub(crate) skills_service: Arc<HostSkillsService>,
     pub(crate) plugins_manager: Arc<PluginsManager>,
-    pub(crate) mcp_manager: Arc<McpManager>,
     pub(crate) code_mode_session_provider: Arc<dyn codex_code_mode::CodeModeSessionProvider>,
     pub(crate) extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
     pub(crate) conversation_history: InitialHistory,
@@ -451,7 +427,6 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) parent_trace: Option<W3cTraceContext>,
     pub(crate) environment_selections: Vec<TurnEnvironmentSelection>,
     pub(crate) thread_extension_init: ExtensionDataInit,
-    pub(crate) client_mcp_extensions: ClientMcpExtensions,
     pub(crate) analytics_events_client: Option<AnalyticsEventsClient>,
     pub(crate) thread_store: Arc<dyn ThreadStore>,
     pub(crate) attestation_provider: Option<Arc<dyn AttestationProvider>>,
@@ -520,7 +495,6 @@ impl Session {
             environment_manager,
             skills_service,
             plugins_manager,
-            mcp_manager,
             code_mode_session_provider,
             extensions,
             conversation_history,
@@ -541,7 +515,6 @@ impl Session {
             parent_trace: _,
             environment_selections,
             thread_extension_init,
-            client_mcp_extensions,
             analytics_events_client,
             thread_store,
             attestation_provider,
@@ -731,11 +704,9 @@ impl Session {
             session_source_clone,
             skills_service,
             plugins_manager,
-            mcp_manager.clone(),
             code_mode_session_provider,
             extensions,
             thread_extension_init,
-            client_mcp_extensions,
             agent_control,
             environment_manager,
             inherited_environments,
@@ -1258,32 +1229,6 @@ impl Session {
         }
     }
 
-    // Merges connector IDs into the session-level explicit connector selection.
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(connector_count = connector_ids.len())
-    )]
-    pub(crate) async fn merge_connector_selection(
-        &self,
-        connector_ids: HashSet<String>,
-    ) -> HashSet<String> {
-        let mut state = self.state.lock().await;
-        state.merge_connector_selection(connector_ids)
-    }
-
-    // Returns the connector IDs currently selected for this session.
-    pub(crate) async fn get_connector_selection(&self) -> HashSet<String> {
-        let state = self.state.lock().await;
-        state.get_connector_selection()
-    }
-
-    // Clears connector IDs that were accumulated for explicit selection.
-    pub(crate) async fn clear_connector_selection(&self) {
-        let mut state = self.state.lock().await;
-        state.clear_connector_selection();
-    }
-
     async fn record_initial_history(&self, conversation_history: InitialHistory) {
         let (is_subagent, is_paginated_subagent) = {
             let state = self.state.lock().await;
@@ -1510,7 +1455,7 @@ impl Session {
         updates: SessionSettingsUpdate,
     ) -> ConstraintResult<()> {
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
-        let (previous_config, new_config, permission_profile_changed, mcp_inputs_changed) = {
+        let (previous_config, new_config, permission_profile_changed) = {
             let mut state = self.state.lock().await;
             let updated = match state.session_configuration.apply(&updates) {
                 Ok(updated) => updated,
@@ -1528,7 +1473,6 @@ impl Session {
             let updated_permission_profile = updated.permission_profile();
             let permission_profile_changed =
                 previous_permission_profile != updated_permission_profile;
-            let mcp_inputs_changed = state.session_configuration.mcp_inputs_differ(&updated);
             let environment_config = updated.environment_config();
             if updates.environments.is_some() {
                 self.services
@@ -1540,23 +1484,12 @@ impl Session {
                     .update_environment_configs(&environment_config);
             }
             state.session_configuration = updated;
-            if mcp_inputs_changed {
-                self.mark_mcp_runtime_dirty();
-            }
-            (
-                previous_config,
-                new_config,
-                permission_profile_changed,
-                mcp_inputs_changed,
-            )
+            (previous_config, new_config, permission_profile_changed)
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()
                 .await;
-        }
-        if mcp_inputs_changed {
-            self.schedule_mcp_prewarm();
         }
         Ok(())
     }
@@ -1581,7 +1514,6 @@ impl Session {
         &self,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-        mcp_elicitations_auto_deny: bool,
     ) -> ConstraintResult<()> {
         self.update_settings(SessionSettingsUpdate {
             app_server_client_name,
@@ -1589,9 +1521,6 @@ impl Session {
             ..Default::default()
         })
         .await?;
-        self.services
-            .mcp_runtime
-            .set_elicitations_auto_deny(mcp_elicitations_auto_deny);
         Ok(())
     }
 
@@ -1657,23 +1586,13 @@ impl Session {
                 .with_user_layer_from(&next_config.config_layer_stack);
             config.tool_suggest =
                 resolve_tool_suggest_config_from_layer_stack(&config.config_layer_stack);
-            config.mcp_servers = next_config.mcp_servers.clone();
-            config.mcp_oauth_credentials_store_mode = next_config.mcp_oauth_credentials_store_mode;
-            if let Err(err) = config.features.set_enabled(
-                Feature::SecretAuthStorage,
-                next_config.features.enabled(Feature::SecretAuthStorage),
-            ) {
-                warn!("failed to refresh MCP auth storage config: {err}");
-            }
             let config = Arc::new(config);
             state.session_configuration.original_config_do_not_use = Arc::clone(&config);
-            self.mark_mcp_runtime_dirty();
             let new_config = notify_config_contributors
                 .then(|| Self::build_effective_session_config(&state.session_configuration));
             (previous_config, new_config, config)
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
-        self.schedule_mcp_prewarm();
         let environments = self.services.turn_environments.snapshot().await;
         let hooks = build_hooks_for_config(
             config.as_ref(),
@@ -1691,26 +1610,6 @@ impl Session {
         ) {
             self.services.hooks.store(Arc::new(hooks));
         }
-    }
-
-    pub(crate) async fn refresh_mcp_config(&self, next_config: Config) {
-        let mut state = self.state.lock().await;
-        let mut config = (*state.session_configuration.original_config_do_not_use).clone();
-        config.config_layer_stack = next_config
-            .config_layer_stack
-            .with_user_layer_from(&config.config_layer_stack);
-        config.mcp_servers = next_config.mcp_servers;
-        config.mcp_oauth_credentials_store_mode = next_config.mcp_oauth_credentials_store_mode;
-        if let Err(err) = config.features.set_enabled(
-            Feature::SecretAuthStorage,
-            next_config.features.enabled(Feature::SecretAuthStorage),
-        ) {
-            warn!("failed to refresh MCP auth storage config: {err}");
-        }
-        state.session_configuration.original_config_do_not_use = Arc::new(config);
-        self.mark_mcp_runtime_dirty();
-        drop(state);
-        self.schedule_mcp_prewarm();
     }
 
     fn emit_config_changed_contributors(
@@ -3035,20 +2934,6 @@ impl Session {
         turn_context: Arc<TurnContext>,
         cancellation_token: &CancellationToken,
     ) -> CodexResult<Arc<StepContext>> {
-        self.capture_step_context_with_required_mcp_servers(
-            turn_context,
-            cancellation_token,
-            /*required_servers*/ &[],
-        )
-        .await
-    }
-
-    pub(crate) async fn capture_step_context_with_required_mcp_servers(
-        self: &Arc<Self>,
-        turn_context: Arc<TurnContext>,
-        cancellation_token: &CancellationToken,
-        required_servers: &[String],
-    ) -> CodexResult<Arc<StepContext>> {
         // Keep selections fixed for the turn while allowing their startup work to finish.
         let environments = turn_context.environments.refresh_readiness();
         self.services
@@ -3096,25 +2981,11 @@ impl Session {
                 .collect::<HashMap<_, _>>();
             extension_data.insert(sandbox_contexts);
         }
-        let (mcp, prepared_recommendations) = async {
-            tokio::join!(
-                self.mcp_runtime_for_step(
-                    turn_context.as_ref(),
-                    &selected_capability_roots,
-                    required_servers,
-                ),
-                turn::prepare_tool_recommendations(self.as_ref(), turn_context.as_ref()),
-            )
-        }
-        .or_cancel(cancellation_token)
-        .await?;
         let tool_router = turn::built_tools(
             self.as_ref(),
             turn_context.as_ref(),
             &environments,
-            mcp.as_ref(),
             &extension_data,
-            prepared_recommendations,
         )
         .or_cancel(cancellation_token)
         .await??;
@@ -3123,7 +2994,6 @@ impl Session {
             environments,
             selected_capability_roots,
             executor_capability_discovery,
-            mcp,
             tool_router,
             loaded_agents_md,
         }))
@@ -3413,38 +3283,6 @@ impl Session {
         {
             developer_sections.push(developer_instructions.to_string());
         }
-        let loaded_plugins = self
-            .services
-            .plugins_manager
-            .plugins_for_config(&turn_context.config.plugins_config_input())
-            .await;
-        let features = turn_context.config.features.get();
-        let recommended_plugin_candidates = if features.enabled(Feature::Apps)
-            && features.enabled(Feature::Plugins)
-            && (features.enabled(Feature::ToolSuggest)
-                || features.enabled(Feature::RecommendedPlugins))
-        {
-            let auth = self.services.auth_manager.auth().await;
-            let plugins_config = turn_context.config.plugins_config_input();
-            self.services
-                .plugins_manager
-                .recommended_plugin_candidates_for_config(RecommendedPluginCandidatesInput {
-                    plugins_config: &plugins_config,
-                    loaded_plugins: &loaded_plugins,
-                    auth: auth.as_ref(),
-                    disabled_tools: &turn_context.config.tool_suggest.disabled_tools,
-                    app_server_client_name: turn_context.app_server_client_name.as_deref(),
-                })
-                .await
-        } else {
-            None
-        };
-        if let Some(recommended_plugins) = recommended_plugin_candidates
-            .as_deref()
-            .and_then(RecommendedPluginsInstructions::from_plugins)
-        {
-            contextual_user_sections.push(recommended_plugins.render());
-        }
         let context_contributors = self.services.extensions.context_contributors().to_vec();
         for contributor in &context_contributors {
             for fragment in contributor
@@ -3486,31 +3324,6 @@ impl Session {
         if turn_context.config.features.enabled(Feature::TokenBudget)
             && turn_context.model_context_window().is_some()
         {
-            let mcp_result = self
-                .services
-                .mcp_runtime
-                .latest_call_tool(
-                    "notes",
-                    "thread_hint",
-                    /*arguments*/ None,
-                    Some(serde_json::json!({
-                        "threadId": self.thread_id().to_string(),
-                    })),
-                )
-                .await
-                .ok()
-                .and_then(|result| {
-                    let text = result
-                        .content
-                        .iter()
-                        .filter_map(|content| {
-                            content.get("text").and_then(serde_json::Value::as_str)
-                        })
-                        .filter(|text| !text.is_empty())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    (!text.is_empty()).then_some(text)
-                });
             developer_sections.push(
                 crate::context::TokenBudgetContext::new(
                     self.thread_id(),
@@ -3526,7 +3339,6 @@ impl Session {
                     auto_compact_window_ids.first_window_id,
                     auto_compact_window_ids.previous_window_id,
                     auto_compact_window_ids.window_id,
-                    mcp_result,
                 )
                 .render(),
             );
@@ -3860,19 +3672,6 @@ impl Session {
         }
     }
 
-    pub(crate) async fn mcp_dependency_prompted(&self) -> HashSet<String> {
-        let state = self.state.lock().await;
-        state.mcp_dependency_prompted()
-    }
-
-    pub(crate) async fn record_mcp_dependency_prompted<I>(&self, names: I)
-    where
-        I: IntoIterator<Item = String>,
-    {
-        let mut state = self.state.lock().await;
-        state.record_mcp_dependency_prompted(names);
-    }
-
     pub(crate) async fn set_server_reasoning_included(&self, included: bool) {
         let mut state = self.state.lock().await;
         state.set_server_reasoning_included(included);
@@ -4044,11 +3843,7 @@ impl Session {
 
     pub async fn interrupt_task(self: &Arc<Self>) {
         info!("interrupt received: abort current task, if any");
-        let had_active_turn = self.active_turn.lock().await.is_some();
         self.abort_all_tasks(TurnAbortReason::Interrupted).await;
-        if !had_active_turn {
-            self.cancel_mcp_startup();
-        }
     }
 
     pub(crate) fn hooks(&self) -> Arc<Hooks> {

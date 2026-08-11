@@ -144,9 +144,6 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
         ThreadItem::FileChange { changes, .. } => {
             return bounded_summary(&format!("Updated {} file(s)", changes.len()));
         }
-        ThreadItem::McpToolCall { server, tool, .. } => {
-            return bounded_summary(&format!("MCP {server}/{tool}"));
-        }
         ThreadItem::DynamicToolCall {
             namespace, tool, ..
         } => {

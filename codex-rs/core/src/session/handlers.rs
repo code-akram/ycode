@@ -52,10 +52,6 @@ use codex_protocol::request_user_input::RequestUserInputResponse;
 
 use crate::context_manager::is_user_turn_boundary;
 use codex_protocol::dynamic_tools::DynamicToolResponse;
-use codex_protocol::mcp::RequestId as ProtocolRequestId;
-use codex_rmcp_client::ElicitationAction;
-use codex_rmcp_client::ElicitationResponse;
-use serde_json::Value;
 use std::sync::Arc;
 use tracing::debug;
 use tracing::info;
@@ -328,47 +324,6 @@ pub async fn run_user_shell_command(sess: &Arc<Session>, sub_id: String, command
     .await;
 }
 
-pub async fn resolve_elicitation(
-    sess: &Arc<Session>,
-    server_name: String,
-    request_id: ProtocolRequestId,
-    decision: codex_protocol::approvals::ElicitationAction,
-    content: Option<Value>,
-    meta: Option<Value>,
-) {
-    let action = match decision {
-        codex_protocol::approvals::ElicitationAction::Accept => ElicitationAction::Accept,
-        codex_protocol::approvals::ElicitationAction::Decline => ElicitationAction::Decline,
-        codex_protocol::approvals::ElicitationAction::Cancel => ElicitationAction::Cancel,
-    };
-    let content = match action {
-        // Preserve the legacy fallback for clients that only send an action.
-        ElicitationAction::Accept => Some(content.unwrap_or_else(|| serde_json::json!({}))),
-        ElicitationAction::Decline | ElicitationAction::Cancel => None,
-        _ => None,
-    };
-    let response = ElicitationResponse {
-        action,
-        content,
-        meta,
-    };
-    let request_id = match request_id {
-        ProtocolRequestId::String(value) => {
-            rmcp::model::NumberOrString::String(std::sync::Arc::from(value))
-        }
-        ProtocolRequestId::Integer(value) => rmcp::model::NumberOrString::Number(value),
-    };
-    if let Err(err) = sess
-        .resolve_elicitation(server_name, request_id, response)
-        .await
-    {
-        warn!(
-            error = %err,
-            "failed to resolve elicitation request in session"
-        );
-    }
-}
-
 /// Propagate a user's exec approval decision to the session.
 /// Also optionally applies an execpolicy amendment.
 pub async fn exec_approval(
@@ -430,11 +385,6 @@ pub async fn request_permissions_response(
 
 pub async fn dynamic_tool_response(sess: &Arc<Session>, id: String, response: DynamicToolResponse) {
     sess.notify_dynamic_tool_response(&id, response).await;
-}
-
-pub fn refresh_mcp_servers(sess: &Session) {
-    sess.services.mcp_runtime.reconnect_on_next_refresh();
-    sess.request_mcp_runtime_refresh();
 }
 
 pub async fn reload_user_config(sess: &Arc<Session>) {
@@ -596,12 +546,6 @@ async fn shutdown_session_runtime(sess: &Arc<Session>) {
         .await;
     if let Err(err) = sess.services.code_mode_service.shutdown().await {
         warn!("failed to shutdown code mode session: {err}");
-    }
-    sess.stop_mcp_prewarm_worker().await;
-    {
-        let _refresh = sess.mcp_refresh.acquire().await;
-        sess.mcp_refresh.close();
-        sess.services.mcp_runtime.shutdown().await;
     }
     sess.guardian_review_session.shutdown().await;
 
@@ -804,10 +748,6 @@ pub(super) async fn submission_loop(
                     dynamic_tool_response(&sess, id, response).await;
                     false
                 }
-                Op::RefreshMcpServers => {
-                    refresh_mcp_servers(&sess);
-                    false
-                }
                 Op::ReloadUserConfig => {
                     reload_user_config(&sess).await;
                     false
@@ -826,17 +766,6 @@ pub(super) async fn submission_loop(
                 }
                 Op::RunUserShellCommand { command } => {
                     run_user_shell_command(&sess, sub.id.clone(), command).await;
-                    false
-                }
-                Op::ResolveElicitation {
-                    server_name,
-                    request_id,
-                    decision,
-                    content,
-                    meta,
-                } => {
-                    resolve_elicitation(&sess, server_name, request_id, decision, content, meta)
-                        .await;
                     false
                 }
                 Op::Shutdown => shutdown(&sess, sub.id.clone()).await,

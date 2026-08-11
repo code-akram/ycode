@@ -1,9 +1,7 @@
-//! Plugin path resolution, plaintext mention sigils, and MCP connector helpers shared across Codex
-//! crates.
+//! Plugin path resolution and plaintext mention sigils shared across Codex crates.
 
 use codex_utils_absolute_path::AbsolutePathBuf;
 
-pub mod mcp_connector;
 pub mod mention_syntax;
 pub mod plugin_namespace;
 

@@ -156,6 +156,7 @@
       "type": "object"
     },
     "AppToolApproval": {
+      "description": "Approval behavior for app tools retained until the app surface is removed.",
       "enum": [
         "auto",
         "prompt",
@@ -191,7 +192,7 @@
       "type": "object"
     },
     "ApprovalsReviewer": {
-      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
+      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, tool approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
       "enum": [
         "user",
         "auto_review",
@@ -431,31 +432,6 @@
             "apply_patch_streaming_events": {
               "type": "boolean"
             },
-            "apps": {
-              "type": "boolean"
-            },
-            "apps_mcp_path_override": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "path": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
-                }
-              ]
-            },
-            "auth_elicitation": {
-              "type": "boolean"
-            },
             "browser_use": {
               "type": "boolean"
             },
@@ -498,9 +474,6 @@
             "concurrent_reasoning_summaries": {
               "type": "boolean"
             },
-            "connectors": {
-              "type": "boolean"
-            },
             "current_time_reminder": {
               "$ref": "#/definitions/FeatureToml_for_CurrentTimeReminderConfigToml"
             },
@@ -520,9 +493,6 @@
               "type": "boolean"
             },
             "enable_fanout": {
-              "type": "boolean"
-            },
-            "enable_mcp_apps": {
               "type": "boolean"
             },
             "enable_request_compression": {
@@ -594,9 +564,6 @@
             "local_thread_store_compression": {
               "type": "boolean"
             },
-            "mcp_2026_07_28": {
-              "type": "boolean"
-            },
             "memories": {
               "type": "boolean"
             },
@@ -617,9 +584,6 @@
             },
             "network_proxy": {
               "$ref": "#/definitions/FeatureToml_for_NetworkProxyConfigToml"
-            },
-            "non_prefixed_mcp_tool_names": {
-              "$ref": "#/definitions/FeatureToml_for_NonPrefixedMcpToolNamesConfigToml"
             },
             "personality": {
               "type": "boolean"
@@ -699,9 +663,6 @@
             "skill_env_var_dependency_prompt": {
               "type": "boolean"
             },
-            "skill_mcp_dependency_install": {
-              "type": "boolean"
-            },
             "skill_search": {
               "type": "boolean"
             },
@@ -726,16 +687,10 @@
             "token_budget": {
               "$ref": "#/definitions/FeatureToml_for_TokenBudgetConfigToml"
             },
-            "tool_call_mcp_elicitation": {
-              "type": "boolean"
-            },
             "tool_registry": {
               "$ref": "#/definitions/ToolRegistryConfigToml"
             },
             "tool_search": {
-              "type": "boolean"
-            },
-            "tool_search_always_defer_mcp_tools": {
               "type": "boolean"
             },
             "tool_suggest": {
@@ -1054,16 +1009,6 @@
         }
       ]
     },
-    "FeatureToml_for_NonPrefixedMcpToolNamesConfigToml": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "$ref": "#/definitions/NonPrefixedMcpToolNamesConfigToml"
-        }
-      ]
-    },
     "FeatureToml_for_RolloutBudgetConfigToml": {
       "anyOf": [
         {
@@ -1180,10 +1125,6 @@
     },
     "GranularApprovalConfig": {
       "properties": {
-        "mcp_elicitations": {
-          "description": "Whether to allow MCP elicitation prompts.",
-          "type": "boolean"
-        },
         "request_permissions": {
           "default": false,
           "description": "Whether to allow prompts triggered by the `request_permissions` tool.",
@@ -1204,7 +1145,6 @@
         }
       },
       "required": [
-        "mcp_elicitations",
         "rules",
         "sandbox_approval"
       ],
@@ -1438,9 +1378,6 @@
       ],
       "description": "One action binding value in config.\n\nThis accepts either:\n\n1. A single key or chord string (`\"ctrl-a\"` or `\"ctrl-x ctrl-s\"`). 2. A list of alternative bindings (`[\"ctrl-a\", \"ctrl-x ctrl-s\"]`).\n\nAn empty list explicitly unbinds the action in that scope. Because an explicit empty list is still a configured value, runtime resolution must not fall through to global or built-in defaults for that action."
     },
-    "LegacyAppPathString": {
-      "type": "string"
-    },
     "MarketplaceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1503,73 +1440,6 @@
         "matcher": {
           "default": null,
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "McpServerAuth": {
-      "description": "Authentication flow Codex attempts after resolving an HTTP MCP server's configured bearer token and authorization headers, which always take precedence. ChatGPT authentication falls back to stored OAuth credentials when its session provider is unavailable; both modes ultimately fall back to an unauthenticated connection.",
-      "oneOf": [
-        {
-          "description": "Use stored MCP OAuth credentials when available. Starting an OAuth login is a separate operation.",
-          "enum": [
-            "oauth"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Use the current ChatGPT session for servers on the trusted first-party ChatGPT origin. If no ChatGPT session provider is available, startup can still fall back to stored OAuth credentials.",
-          "enum": [
-            "chatgpt"
-          ],
-          "type": "string"
-        }
-      ]
-    },
-    "McpServerEnvVar": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "name": {
-              "type": "string"
-            },
-            "source": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "name"
-          ],
-          "type": "object"
-        }
-      ]
-    },
-    "McpServerOAuthConfig": {
-      "additionalProperties": false,
-      "description": "OAuth client settings used when Codex launches an MCP OAuth flow.",
-      "properties": {
-        "client_id": {
-          "description": "Explicit OAuth client identifier to present during authorization and token exchange.",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "McpServerToolConfig": {
-      "additionalProperties": false,
-      "description": "Per-tool approval settings for a single MCP server tool.",
-      "properties": {
-        "approval_mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AppToolApproval"
-            }
-          ],
-          "description": "Approval mode for this tool."
         }
       },
       "type": "object"
@@ -2146,22 +2016,6 @@
     "NetworkUnixSocketPermissionsToml": {
       "type": "object"
     },
-    "NonPrefixedMcpToolNamesConfigToml": {
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "server_names": {
-          "description": "MCP servers whose tools should omit the legacy `mcp__` namespace prefix.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
     "Notice": {
       "additionalProperties": false,
       "properties": {
@@ -2253,32 +2107,6 @@
         }
       ]
     },
-    "OAuthCredentialsStoreMode": {
-      "description": "Determine where Codex should store and read MCP credentials.",
-      "oneOf": [
-        {
-          "description": "Prefer `Keyring` and use `File` when keyring storage is unavailable. Once an MCP client loads credentials from one store, that client keeps the resolved store for its lifetime so refreshes cannot switch to a possibly stale credential source. Credentials stored in the keyring will only be readable by Codex unless the user explicitly grants access via OS-level keyring access.",
-          "enum": [
-            "auto"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "CODEX_HOME/.credentials.json This file will be readable to Codex and other applications running as the same user.",
-          "enum": [
-            "file"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Keyring when available, otherwise fail.",
-          "enum": [
-            "keyring"
-          ],
-          "type": "string"
-        }
-      ]
-    },
     "OrchestratorFeatureToml": {
       "additionalProperties": false,
       "description": "Settings for a feature owned by the orchestrator.",
@@ -2293,9 +2121,6 @@
       "additionalProperties": false,
       "description": "Orchestrator-owned feature settings.",
       "properties": {
-        "mcp": {
-          "$ref": "#/definitions/OrchestratorFeatureToml"
-        },
         "skills": {
           "$ref": "#/definitions/OrchestratorFeatureToml"
         }
@@ -2517,54 +2342,6 @@
         "enabled": {
           "default": true,
           "type": "boolean"
-        },
-        "mcp_servers": {
-          "additionalProperties": {
-            "$ref": "#/definitions/PluginMcpServerConfig"
-          },
-          "description": "Per-MCP-server policy overlays for MCP servers contributed by this plugin.",
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
-    "PluginMcpServerConfig": {
-      "additionalProperties": false,
-      "description": "Policy settings for a plugin-provided MCP server.\n\nThis intentionally excludes transport settings: plugin manifests own how the MCP server is launched, while user config owns enablement and tool policy.",
-      "properties": {
-        "default_tools_approval_mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AppToolApproval"
-            }
-          ],
-          "description": "Approval mode for tools in this server unless a tool override exists."
-        },
-        "disabled_tools": {
-          "description": "Explicit deny-list of tools. These tools are removed after applying `enabled_tools`.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "enabled": {
-          "default": true,
-          "description": "When `false`, Codex skips initializing this plugin MCP server.",
-          "type": "boolean"
-        },
-        "enabled_tools": {
-          "description": "Explicit allow-list of tools exposed from this server.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "tools": {
-          "additionalProperties": {
-            "$ref": "#/definitions/McpServerToolConfig"
-          },
-          "description": "Per-tool approval settings keyed by tool name.",
-          "type": "object"
         }
       },
       "type": "object"
@@ -2590,164 +2367,6 @@
       "properties": {
         "trust_level": {
           "$ref": "#/definitions/TrustLevel"
-        }
-      },
-      "type": "object"
-    },
-    "RawMcpServerConfig": {
-      "additionalProperties": false,
-      "description": "Raw MCP config shape used for deserialization and supported-field JSON Schema generation.\n\nFields that are accepted only to produce targeted validation errors should be skipped in the generated schema.\n\nKeep `TryFrom<RawMcpServerConfig> for McpServerConfig` exhaustively destructuring this struct so new TOML fields cannot be added here without updating the validation/mapping logic that produces [`McpServerConfig`].",
-      "properties": {
-        "args": {
-          "default": null,
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "auth": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/McpServerAuth"
-            }
-          ],
-          "default": null
-        },
-        "bearer_token_env_var": {
-          "type": "string"
-        },
-        "command": {
-          "type": "string"
-        },
-        "cwd": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/LegacyAppPathString"
-            }
-          ],
-          "default": null
-        },
-        "default_tools_approval_mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AppToolApproval"
-            }
-          ],
-          "default": null
-        },
-        "disabled_tools": {
-          "default": null,
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "enabled": {
-          "default": null,
-          "type": "boolean"
-        },
-        "enabled_tools": {
-          "default": null,
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "env": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": null,
-          "type": "object"
-        },
-        "env_http_headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": null,
-          "type": "object"
-        },
-        "env_vars": {
-          "default": null,
-          "items": {
-            "$ref": "#/definitions/McpServerEnvVar"
-          },
-          "type": "array"
-        },
-        "environment_id": {
-          "default": null,
-          "type": "string"
-        },
-        "http_headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "name": {
-          "default": null,
-          "description": "Legacy display-name field accepted for backward compatibility.",
-          "type": "string"
-        },
-        "oauth": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/McpServerOAuthConfig"
-            }
-          ],
-          "default": null
-        },
-        "oauth_resource": {
-          "default": null,
-          "type": "string"
-        },
-        "omit_tools_from": {
-          "default": null,
-          "items": {
-            "$ref": "#/definitions/ToolExposureSurface"
-          },
-          "type": "array"
-        },
-        "required": {
-          "default": null,
-          "type": "boolean"
-        },
-        "scopes": {
-          "default": null,
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "startup_timeout_ms": {
-          "default": null,
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "startup_timeout_sec": {
-          "default": null,
-          "format": "double",
-          "type": "number"
-        },
-        "supports_parallel_tool_calls": {
-          "default": null,
-          "type": "boolean"
-        },
-        "tool_timeout_sec": {
-          "default": null,
-          "format": "double",
-          "type": "number"
-        },
-        "tools": {
-          "additionalProperties": {
-            "$ref": "#/definitions/McpServerToolConfig"
-          },
-          "default": null,
-          "type": "object"
-        },
-        "url": {
-          "type": "string"
         }
       },
       "type": "object"
@@ -3152,32 +2771,6 @@
         "name"
       ],
       "type": "string"
-    },
-    "ToolExposureSurface": {
-      "description": "A model-facing surface on which a tool can be exposed.",
-      "oneOf": [
-        {
-          "description": "Nested tools available to Code Mode scripts.",
-          "enum": [
-            "code_mode"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Tools discovered later through tool search.",
-          "enum": [
-            "deferred"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Tools present in the model's initial tool list.",
-          "enum": [
-            "direct"
-          ],
-          "type": "string"
-        }
-      ]
     },
     "ToolRegistryConfigToml": {
       "additionalProperties": false,
@@ -4933,10 +4526,6 @@
       "default": null,
       "description": "Settings for app-specific controls."
     },
-    "apps_mcp_product_sku": {
-      "description": "Optional product SKU forwarded on host-owned Codex Apps MCP requests.",
-      "type": "string"
-    },
     "audio": {
       "allOf": [
         {
@@ -5062,31 +4651,6 @@
         "apply_patch_streaming_events": {
           "type": "boolean"
         },
-        "apps": {
-          "type": "boolean"
-        },
-        "apps_mcp_path_override": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                },
-                "path": {
-                  "type": "string"
-                }
-              },
-              "type": "object"
-            }
-          ]
-        },
-        "auth_elicitation": {
-          "type": "boolean"
-        },
         "browser_use": {
           "type": "boolean"
         },
@@ -5129,9 +4693,6 @@
         "concurrent_reasoning_summaries": {
           "type": "boolean"
         },
-        "connectors": {
-          "type": "boolean"
-        },
         "current_time_reminder": {
           "$ref": "#/definitions/FeatureToml_for_CurrentTimeReminderConfigToml"
         },
@@ -5151,9 +4712,6 @@
           "type": "boolean"
         },
         "enable_fanout": {
-          "type": "boolean"
-        },
-        "enable_mcp_apps": {
           "type": "boolean"
         },
         "enable_request_compression": {
@@ -5225,9 +4783,6 @@
         "local_thread_store_compression": {
           "type": "boolean"
         },
-        "mcp_2026_07_28": {
-          "type": "boolean"
-        },
         "memories": {
           "type": "boolean"
         },
@@ -5248,9 +4803,6 @@
         },
         "network_proxy": {
           "$ref": "#/definitions/FeatureToml_for_NetworkProxyConfigToml"
-        },
-        "non_prefixed_mcp_tool_names": {
-          "$ref": "#/definitions/FeatureToml_for_NonPrefixedMcpToolNamesConfigToml"
         },
         "personality": {
           "type": "boolean"
@@ -5330,9 +4882,6 @@
         "skill_env_var_dependency_prompt": {
           "type": "boolean"
         },
-        "skill_mcp_dependency_install": {
-          "type": "boolean"
-        },
         "skill_search": {
           "type": "boolean"
         },
@@ -5357,16 +4906,10 @@
         "token_budget": {
           "$ref": "#/definitions/FeatureToml_for_TokenBudgetConfigToml"
         },
-        "tool_call_mcp_elicitation": {
-          "type": "boolean"
-        },
         "tool_registry": {
           "$ref": "#/definitions/ToolRegistryConfigToml"
         },
         "tool_search": {
-          "type": "boolean"
-        },
-        "tool_search_always_defer_mcp_tools": {
           "type": "boolean"
         },
         "tool_suggest": {
@@ -5519,33 +5062,6 @@
       },
       "default": {},
       "description": "User-level marketplace entries keyed by marketplace name.",
-      "type": "object"
-    },
-    "mcp_oauth_callback_port": {
-      "description": "Optional fixed port for the local HTTP callback server used during MCP OAuth login. When unset, Codex will bind to an ephemeral port chosen by the OS.",
-      "format": "uint16",
-      "minimum": 0.0,
-      "type": "integer"
-    },
-    "mcp_oauth_callback_url": {
-      "description": "Optional redirect URI to use during MCP OAuth login. When set, this URI is used in the OAuth authorization request instead of the local listener address. The local callback listener still binds to 127.0.0.1 (using `mcp_oauth_callback_port` when provided).",
-      "type": "string"
-    },
-    "mcp_oauth_credentials_store": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/OAuthCredentialsStoreMode"
-        }
-      ],
-      "default": null,
-      "description": "Preferred backend for storing MCP OAuth credentials. keyring: Use an OS-specific keyring service. https://github.com/openai/codex/blob/main/codex-rs/rmcp-client/src/oauth.rs#L2 file: Use a file in the Codex home directory. auto (default): Use the OS-specific keyring service if available, otherwise use a file."
-    },
-    "mcp_servers": {
-      "additionalProperties": {
-        "$ref": "#/definitions/RawMcpServerConfig"
-      },
-      "default": {},
-      "description": "Definition for MCP servers that Codex can reach out to for tool calls.",
       "type": "object"
     },
     "memories": {

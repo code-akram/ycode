@@ -13,7 +13,6 @@ use crate::elicitation::ElicitationService;
 use crate::environment_selection::ThreadEnvironments;
 use crate::exec_policy::ExecPolicyManager;
 use crate::guardian::GuardianRejectionCircuitBreaker;
-use crate::mcp::McpManager;
 use crate::tools::ExecutedToolCallRecorder;
 use crate::tools::code_mode::CodeModeService;
 use crate::tools::handlers::ToolSearchHandlerCache;
@@ -25,16 +24,13 @@ use arc_swap::ArcSwapOption;
 use codex_analytics::AnalyticsEventsClient;
 use codex_core_plugins::PluginsManager;
 use codex_extension_api::ExtensionData;
-use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ExtensionRegistry;
 use codex_hooks::Hooks;
 use codex_http_client::RouteAwareClientPool;
 use codex_login::AuthManager;
-use codex_mcp::McpRuntime;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_otel::SessionTelemetry;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
-use codex_protocol::mcp::ClientMcpExtensions;
 use codex_rollout::state_db::StateDbHandle;
 use codex_rollout_trace::ThreadTraceContext;
 use codex_thread_store::LiveThread;
@@ -43,8 +39,6 @@ use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
 pub(crate) struct SessionServices {
-    /// The single owner of live MCP connections for this thread.
-    pub(crate) mcp_runtime: Arc<McpRuntime>,
     pub(crate) unified_exec_manager: UnifiedExecProcessManager,
     pub(crate) elicitations: ElicitationService,
     #[cfg_attr(not(unix), allow(dead_code))]
@@ -68,16 +62,12 @@ pub(crate) struct SessionServices {
     pub(crate) skills_service: Arc<HostSkillsService>,
     pub(crate) agents_md_manager: Arc<AgentsMdManager>,
     pub(crate) plugins_manager: Arc<PluginsManager>,
-    pub(crate) mcp_manager: Arc<McpManager>,
     pub(crate) extensions: Arc<ExtensionRegistry<crate::config::Config>>,
     pub(crate) session_extension_data: ExtensionData,
     pub(crate) thread_extension_data: ExtensionData,
-    /// MCP extensions fixed when this session is created.
-    pub(crate) client_mcp_extensions: ClientMcpExtensions,
     /// Raw capability selections for this thread. Each model step resolves them against its
     /// current executor environments before using them.
     pub(crate) selected_capability_roots: Vec<SelectedCapabilityRoot>,
-    pub(crate) mcp_thread_init: ExtensionDataInit,
     pub(crate) agent_control: AgentControl,
     pub(crate) network_proxy: ArcSwapOption<StartedNetworkProxy>,
     pub(crate) network_proxy_audit_metadata: NetworkProxyAuditMetadata,

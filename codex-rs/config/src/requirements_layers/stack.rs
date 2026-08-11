@@ -229,8 +229,6 @@ fn populate_merged_regular_fields_with_sources(
         windows,
         feature_requirements,
         hooks: _,
-        mcp_servers,
-        plugins,
         marketplaces,
         apps,
         rules: _,
@@ -271,8 +269,6 @@ fn populate_merged_regular_fields_with_sources(
     set_sourced!(browser_use, &["browser_use"]);
     set_sourced!(windows, &["windows"]);
     set_sourced!(feature_requirements, &["features", "feature_requirements"]);
-    set_sourced!(mcp_servers, &["mcp_servers"]);
-    set_sourced!(plugins, &["plugins"]);
     set_sourced!(marketplaces, &["marketplaces"]);
     set_sourced!(apps, &["apps"]);
     set_sourced!(enforce_residency, &["enforce_residency"]);

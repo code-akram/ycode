@@ -543,13 +543,6 @@ fn find_marketplace_plugin_builds_manifest_fallback_from_entry() {
         "./skills/second-review"
       ],
       "commands": ["./commands/review.md"],
-      "mcpServers": {
-        "review": {
-          "type": "stdio",
-          "command": "review-mcp"
-        }
-      },
-      "apps": "./apps/app.json",
       "hooks": ["./hooks/session.json"],
       "agents": [
         "./agents/thermo-nuclear-code-quality-review.md"
@@ -602,24 +595,6 @@ fn find_marketplace_plugin_builds_manifest_fallback_from_entry() {
             AbsolutePathBuf::try_from(plugin_root.join("skills/second-review")).unwrap(),
         ]
     );
-    let Some(crate::manifest::PluginManifestMcpServers::Object(mcp_servers)) =
-        manifest.paths.mcp_servers.as_ref()
-    else {
-        panic!("fallback mcpServers should be inline");
-    };
-    assert_eq!(
-        serde_json::from_str::<JsonValue>(mcp_servers).unwrap(),
-        serde_json::json!({
-            "review": {
-                "type": "stdio",
-                "command": "review-mcp"
-            }
-        })
-    );
-    assert_eq!(
-        manifest.paths.apps.as_ref(),
-        Some(&AbsolutePathBuf::try_from(plugin_root.join("apps/app.json")).unwrap())
-    );
     assert_eq!(
         manifest.paths.hooks.as_ref(),
         Some(&crate::manifest::PluginManifestHooks::Paths(vec![
@@ -666,15 +641,6 @@ fn find_marketplace_plugin_builds_manifest_fallback_from_entry() {
             "./skills/thermo-nuclear-code-quality-review",
             "./skills/second-review"
         ])
-    );
-    assert_eq!(
-        fallback_json["mcpServers"],
-        serde_json::json!({
-            "review": {
-                "type": "stdio",
-                "command": "review-mcp"
-            }
-        })
     );
     assert_eq!(
         fallback_json["displayName"],

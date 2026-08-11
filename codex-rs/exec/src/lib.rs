@@ -22,8 +22,6 @@ use codex_app_server_client::InProcessServerEvent;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigWarningNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::McpServerElicitationAction;
-use codex_app_server_protocol::McpServerElicitationRequestResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ReviewStartParams;
 use codex_app_server_protocol::ReviewStartResponse;
@@ -118,10 +116,6 @@ pub use exec_events::FileUpdateChange;
 pub use exec_events::ItemCompletedEvent;
 pub use exec_events::ItemStartedEvent;
 pub use exec_events::ItemUpdatedEvent;
-pub use exec_events::McpToolCallItem;
-pub use exec_events::McpToolCallItemError;
-pub use exec_events::McpToolCallItemResult;
-pub use exec_events::McpToolCallStatus;
 pub use exec_events::PatchApplyStatus;
 pub use exec_events::PatchChangeKind;
 pub use exec_events::ReasoningItem;
@@ -542,7 +536,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         client_name: "codex_exec".to_string(),
         client_version: env!("CARGO_PKG_VERSION").to_string(),
         experimental_api: true,
-        mcp_server_openai_form_elicitation: false,
         opt_out_notification_methods: Vec::new(),
         channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
     };
@@ -1575,15 +1568,6 @@ fn resume_lookup_model_providers(
     }
 }
 
-fn canceled_mcp_server_elicitation_response() -> Result<Value, String> {
-    serde_json::to_value(McpServerElicitationRequestResponse {
-        action: McpServerElicitationAction::Cancel,
-        content: None,
-        meta: None,
-    })
-    .map_err(|err| format!("failed to encode mcp elicitation response: {err}"))
-}
-
 async fn request_shutdown(
     client: &InProcessAppServerClient,
     request_ids: &mut RequestIdSequencer,
@@ -1650,23 +1634,6 @@ async fn handle_server_request(
 ) {
     let method = server_request_method_name(&request);
     let handle_result = match request {
-        ServerRequest::McpServerElicitationRequest { request_id, .. } => {
-            // Exec auto-cancels elicitation instead of surfacing it
-            // interactively. Preserve that behavior for attached subagent
-            // threads too so we do not turn a cancel into a decline/error.
-            match canceled_mcp_server_elicitation_response() {
-                Ok(value) => {
-                    resolve_server_request(
-                        client,
-                        request_id,
-                        value,
-                        "mcpServer/elicitation/request",
-                    )
-                    .await
-                }
-                Err(err) => Err(err),
-            }
-        }
         ServerRequest::CommandExecutionRequestApproval { request_id, params } => {
             reject_server_request(
                 client,

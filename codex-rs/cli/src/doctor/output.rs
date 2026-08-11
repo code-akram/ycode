@@ -32,7 +32,7 @@ const GROUPS: &[OutputGroup] = &[
     },
     OutputGroup {
         title: "Configuration",
-        keys: &["config", "auth", "mcp", "sandbox"],
+        keys: &["config", "auth", "sandbox"],
     },
     OutputGroup {
         title: "Updates",
@@ -625,7 +625,6 @@ fn display_summary(check: &DoctorCheck, options: HumanOutputOptions) -> String {
         "title" => title_summary(check, options),
         "state" => state_summary(check),
         "config" if check.status == CheckStatus::Ok => "loaded".to_string(),
-        "mcp" => mcp_summary(check),
         "sandbox" => sandbox_summary(check),
         "network" => network_summary(check),
         "websocket" => websocket_summary(check),
@@ -710,31 +709,6 @@ fn state_summary(check: &DoctorCheck) -> String {
         "databases healthy".to_string()
     } else {
         check.summary.clone()
-    }
-}
-
-fn mcp_summary(check: &DoctorCheck) -> String {
-    let Some(count) = detail::detail_value(check, "configured servers") else {
-        return check.summary.clone();
-    };
-    let disabled =
-        detail::detail_value(check, "disabled servers").unwrap_or_else(|| "0".to_string());
-    let transports = check
-        .details
-        .iter()
-        .filter_map(|detail| detail.split_once(" servers: "))
-        .filter(|(transport, _)| *transport != "configured" && *transport != "disabled")
-        .map(|(transport, count)| format!("{count} {transport}"))
-        .collect::<Vec<_>>();
-    if transports.is_empty() {
-        format!("{count} servers · {disabled} disabled")
-    } else {
-        format!(
-            "{} server ({}) · {} disabled",
-            count,
-            transports.join(", "),
-            disabled
-        )
     }
 }
 
@@ -1549,10 +1523,10 @@ Run codex doctor without --summary for detailed diagnostics.
                 .detail("network sandbox: restricted")
                 .detail("approval policy: Never"),
                 DoctorCheck::new(
-                    "mcp.config",
-                    "mcp",
+                    "network.proxy",
+                    "network",
                     CheckStatus::Warning,
-                    "MCP configuration has optional issues",
+                    "network proxy has optional issues",
                 ),
                 DoctorCheck::new(
                     "network.websocket_reachability",
@@ -1585,7 +1559,7 @@ Run codex doctor without --summary for detailed diagnostics.
         assert!(rendered.contains("0.130.0 available (current 0.0.0, dismissed 0.128.0)"));
         assert!(rendered.contains("⚠ rollouts"));
         assert!(rendered.contains("⚠ sandbox"));
-        assert!(rendered.contains("⚠ mcp"));
+        assert!(rendered.contains("⚠ network"));
         assert!(rendered.contains(
             "⚠ auth         mixed auth signals: ChatGPT login plus API key env var; HTTP reachability uses API-key mode"
         ));
@@ -1650,22 +1624,22 @@ Run codex doctor without --summary for detailed diagnostics.
     #[test]
     fn redact_detail_sanitizes_urls() {
         let redacted = redact_detail(
-            "reachability failed: https://user:pass@example.com/mcp?x=abc#frag (connect failed)",
+            "reachability failed: https://user:pass@example.com/api?x=abc#frag (connect failed)",
         );
 
         assert_eq!(
             redacted,
-            "reachability failed: https://example.com/mcp (connect failed)"
+            "reachability failed: https://example.com/api (connect failed)"
         );
     }
 
     #[test]
     fn redact_detail_sanitizes_secret_url_path_segments() {
-        let redacted = redact_detail("reachability failed: https://example.com/mcp/abc123xyz");
+        let redacted = redact_detail("reachability failed: https://example.com/api/abc123xyz");
 
         assert_eq!(
             redacted,
-            "reachability failed: https://example.com/mcp/<redacted>"
+            "reachability failed: https://example.com/api/<redacted>"
         );
     }
 

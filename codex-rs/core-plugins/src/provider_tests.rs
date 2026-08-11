@@ -33,8 +33,6 @@ const MANIFEST_CONTENTS: &str = r#"{
   "version": " 1.2.3 ",
   "description": "Demo plugin",
   "skills": "./skills",
-  "mcpServers": "./.mcp.json",
-  "apps": "./.app.json",
   "interface": {
     "displayName": "Demo Plugin",
     "composerIcon": "./assets/icon.svg"

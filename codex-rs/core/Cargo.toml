@@ -30,7 +30,6 @@ codex-app-server-protocol = { workspace = true }
 codex-apply-patch = { workspace = true }
 codex-async-utils = { workspace = true }
 codex-code-mode = { workspace = true }
-codex-connectors = { workspace = true }
 codex-context-fragments = { workspace = true }
 codex-config = { workspace = true }
 codex-core-plugins = { workspace = true }
@@ -43,7 +42,6 @@ codex-feedback = { workspace = true }
 codex-file-system = { workspace = true }
 codex-login = { workspace = true }
 codex-memories-read = { workspace = true }
-codex-mcp = { workspace = true }
 codex-model-provider-info = { workspace = true }
 codex-models-manager = { workspace = true }
 codex-shell-command = { workspace = true }
@@ -61,7 +59,6 @@ codex-response-debug-context = { workspace = true }
 codex-prompts = { workspace = true }
 codex-rollout = { workspace = true }
 codex-rollout-trace = { workspace = true }
-codex-rmcp-client = { workspace = true }
 codex-sandboxing = { workspace = true }
 codex-skills = { workspace = true }
 codex-skills-extension = { workspace = true }
@@ -93,12 +90,6 @@ libc = { workspace = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
 regex-lite = { workspace = true }
-rmcp = { workspace = true, default-features = false, features = [
-    "base64",
-    "macros",
-    "schemars",
-    "server",
-] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha1 = { workspace = true }

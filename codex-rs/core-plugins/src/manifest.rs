@@ -25,8 +25,6 @@ use agent_plugin_manifest::parse_agent_plugin_manifest_uri;
 pub type PluginManifest = codex_plugin::manifest::PluginManifest<AbsolutePathBuf>;
 pub type PluginManifestHooks = codex_plugin::manifest::PluginManifestHooks<AbsolutePathBuf>;
 pub type PluginManifestInterface = codex_plugin::manifest::PluginManifestInterface<AbsolutePathBuf>;
-pub type PluginManifestMcpServers =
-    codex_plugin::manifest::PluginManifestMcpServers<AbsolutePathBuf>;
 pub type PluginManifestPaths = codex_plugin::manifest::PluginManifestPaths<AbsolutePathBuf>;
 
 pub type UriPluginManifest = codex_plugin::manifest::PluginManifest<PathUri>;
@@ -57,10 +55,6 @@ struct RawPluginManifest {
     // resolving them under the plugin root.
     #[serde(default)]
     skills: Option<RawPluginManifestPaths>,
-    #[serde(default)]
-    mcp_servers: Option<RawPluginManifestMcpServers>,
-    #[serde(default)]
-    apps: Option<String>,
     #[serde(default)]
     hooks: Option<RawPluginManifestHooks>,
     #[serde(default)]
@@ -131,14 +125,6 @@ enum RawPluginManifestDefaultPromptEntry {
 enum RawPluginManifestPaths {
     Path(String),
     Paths(Vec<String>),
-    Invalid(JsonValue),
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawPluginManifestMcpServers {
-    Path(String),
-    Object(std::collections::BTreeMap<String, JsonValue>),
     Invalid(JsonValue),
 }
 
@@ -298,8 +284,6 @@ fn resolve_raw_plugin_manifest(
         description,
         keywords,
         skills,
-        mcp_servers,
-        apps,
         hooks,
         interface,
     } = raw;
@@ -394,8 +378,6 @@ fn resolve_raw_plugin_manifest(
         keywords,
         paths: codex_plugin::manifest::PluginManifestPaths {
             skills: resolve_manifest_paths(plugin_root, "skills", skills.as_ref()),
-            mcp_servers: resolve_manifest_mcp_servers(plugin_root, mcp_servers),
-            apps: resolve_manifest_path(plugin_root, "apps", apps.as_deref()),
             hooks: resolve_manifest_hooks(plugin_root, hooks),
         },
         interface,
@@ -436,34 +418,6 @@ fn resolve_manifest_hooks(
         RawPluginManifestHooks::Invalid(value) => {
             tracing::warn!(
                 "ignoring hooks: expected a string, string array, object, or object array; found {}",
-                json_value_type(&value)
-            );
-            None
-        }
-    }
-}
-
-fn resolve_manifest_mcp_servers(
-    plugin_root: &PathUri,
-    mcp_servers: Option<RawPluginManifestMcpServers>,
-) -> Option<codex_plugin::manifest::PluginManifestMcpServers<PathUri>> {
-    match mcp_servers? {
-        RawPluginManifestMcpServers::Path(path) => {
-            resolve_manifest_path(plugin_root, "mcpServers", Some(&path))
-                .map(codex_plugin::manifest::PluginManifestMcpServers::Path)
-        }
-        RawPluginManifestMcpServers::Object(servers) => match serde_json::to_string(&servers) {
-            Ok(servers) => Some(codex_plugin::manifest::PluginManifestMcpServers::Object(
-                servers,
-            )),
-            Err(err) => {
-                tracing::warn!("ignoring mcpServers: failed to serialize object: {err}");
-                None
-            }
-        },
-        RawPluginManifestMcpServers::Invalid(value) => {
-            tracing::warn!(
-                "ignoring mcpServers: expected a string or object; found {}",
                 json_value_type(&value)
             );
             None
@@ -660,7 +614,6 @@ mod tests {
     use codex_plugin::manifest::PluginManifest as GenericPluginManifest;
     use codex_plugin::manifest::PluginManifestHooks;
     use codex_plugin::manifest::PluginManifestInterface;
-    use codex_plugin::manifest::PluginManifestMcpServers;
     use codex_plugin::manifest::PluginManifestPaths;
     use codex_protocol::capabilities::CapabilityRootLocation;
     use codex_protocol::capabilities::SelectedCapabilityRoot;
@@ -977,8 +930,6 @@ mod tests {
             r#"{
   "name": "demo-plugin",
   "skills": "./skills",
-  "mcpServers": "./.mcp.json",
-  "apps": "./apps",
   "hooks": "./hooks.json",
   "interface": {
     "displayName": "Demo Plugin",
@@ -997,10 +948,6 @@ mod tests {
                 keywords: Vec::new(),
                 paths: PluginManifestPaths {
                     skills: vec![plugin_root.join("skills").expect("skills URI")],
-                    mcp_servers: Some(PluginManifestMcpServers::Path(
-                        plugin_root.join(".mcp.json").expect("MCP URI"),
-                    )),
-                    apps: Some(plugin_root.join("apps").expect("apps URI")),
                     hooks: Some(PluginManifestHooks::Paths(vec![
                         plugin_root.join("hooks.json").expect("hooks URI"),
                     ])),

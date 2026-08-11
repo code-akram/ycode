@@ -42,7 +42,6 @@ pub trait ExplicitSkillLookup {
 pub fn collect_explicit_skill_mentions(
     inputs: &[UserInput],
     loaded_skills: &impl ExplicitSkillLookup,
-    connector_slug_counts: &HashMap<String, usize>,
 ) -> Vec<SkillMetadata> {
     let skill_name_counts =
         build_skill_name_counts(loaded_skills.skills(), loaded_skills.disabled_paths()).0;
@@ -50,7 +49,6 @@ pub fn collect_explicit_skill_mentions(
     let selection_context = SkillSelectionContext {
         loaded_skills,
         skill_name_counts: &skill_name_counts,
-        connector_slug_counts,
     };
     let mut selected: Vec<SkillMetadata> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
@@ -111,7 +109,6 @@ pub fn collect_explicit_skill_mentions(
 struct SkillSelectionContext<'a> {
     loaded_skills: &'a dyn ExplicitSkillLookup,
     skill_name_counts: &'a HashMap<String, usize>,
-    connector_slug_counts: &'a HashMap<String, usize>,
 }
 
 /// Select mentioned skills while preserving the order of `skills`.
@@ -129,12 +126,7 @@ fn select_skills_from_mentions(
 
     let mention_skill_paths: HashSet<String> = mentions
         .paths()
-        .filter(|path| {
-            !matches!(
-                tool_kind_for_path(path),
-                ToolMentionKind::App | ToolMentionKind::Mcp | ToolMentionKind::Plugin
-            )
-        })
+        .filter(|path| tool_kind_for_path(path) != ToolMentionKind::Plugin)
         .map(normalize_host_skill_path)
         .collect();
 
@@ -180,12 +172,7 @@ fn select_skills_from_mentions(
             .get(skill.name.as_str())
             .copied()
             .unwrap_or(0);
-        let connector_count = selection_context
-            .connector_slug_counts
-            .get(&skill.name.to_ascii_lowercase())
-            .copied()
-            .unwrap_or(0);
-        if skill_count != 1 || connector_count != 0 {
+        if skill_count != 1 {
             continue;
         }
 

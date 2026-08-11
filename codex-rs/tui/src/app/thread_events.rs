@@ -57,9 +57,7 @@ impl ThreadEventStore {
             ThreadBufferedEvent::Request(_) | ThreadBufferedEvent::FeedbackSubmission(_) => true,
             ThreadBufferedEvent::Notification(notification) => matches!(
                 notification.as_ref(),
-                ServerNotification::HookStarted(_)
-                    | ServerNotification::HookCompleted(_)
-                    | ServerNotification::McpServerStatusUpdated(_)
+                ServerNotification::HookStarted(_) | ServerNotification::HookCompleted(_)
             ),
             ThreadBufferedEvent::HistoryEntryResponse(_) => false,
         }
@@ -147,7 +145,6 @@ impl ThreadEventStore {
             ServerNotification::RawResponseItemCompleted(_)
                 | ServerNotification::FileChangePatchUpdated(_)
                 | ServerNotification::ServerRequestResolved(_)
-                | ServerNotification::McpToolCallProgress(_)
                 | ServerNotification::ThreadRealtimeItemAdded(_)
                 | ServerNotification::ThreadRealtimeOutputAudioDelta(_)
                 | ServerNotification::ThreadRealtimeSdp(_)
@@ -385,10 +382,8 @@ mod tests {
     use codex_app_server_protocol::HookRunSummary as AppServerHookRunSummary;
     use codex_app_server_protocol::HookScope as AppServerHookScope;
     use codex_app_server_protocol::HookStartedNotification;
-    use codex_app_server_protocol::McpToolCallProgressNotification;
     use codex_app_server_protocol::RequestId as AppServerRequestId;
-    use codex_app_server_protocol::ThreadRealtimeAudioChunk;
-    use codex_app_server_protocol::ThreadRealtimeOutputAudioDeltaNotification;
+
     use codex_app_server_protocol::TurnCompletedNotification;
     use codex_app_server_protocol::TurnStartedNotification;
     use codex_config::types::ApprovalsReviewer;
@@ -596,47 +591,6 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_store_skips_large_replay_irrelevant_notifications() {
-        let thread_id = ThreadId::new();
-        let mut store = ThreadEventStore::new(/*capacity*/ 2);
-        store.push_notification(turn_started_notification(thread_id, "turn-1"));
-        store.push_request(exec_approval_request(
-            thread_id,
-            "turn-1",
-            "command-approval",
-            /*approval_id*/ None,
-        ));
-        let large_payload = "x".repeat(1024 * 1024);
-
-        for _ in 0..32 {
-            store.push_notification_ref(&ServerNotification::McpToolCallProgress(
-                McpToolCallProgressNotification {
-                    thread_id: thread_id.to_string(),
-                    turn_id: "turn-1".to_string(),
-                    item_id: "mcp-1".to_string(),
-                    message: large_payload.clone(),
-                },
-            ));
-            store.push_notification_ref(&ServerNotification::ThreadRealtimeOutputAudioDelta(
-                ThreadRealtimeOutputAudioDeltaNotification {
-                    thread_id: thread_id.to_string(),
-                    audio: ThreadRealtimeAudioChunk {
-                        data: large_payload.clone(),
-                        sample_rate: 24_000,
-                        num_channels: 1,
-                        samples_per_channel: None,
-                        item_id: None,
-                    },
-                },
-            ));
-        }
-
-        assert_eq!(store.buffer.len(), 2);
-        assert!(store.has_pending_thread_approvals());
-        assert_eq!(store.active_turn_id(), Some("turn-1"));
-    }
-
-    #[test]
     fn thread_event_store_rebase_preserves_resolved_request_state() {
         let thread_id = ThreadId::new();
         let mut store = ThreadEventStore::new(/*capacity*/ 8);
@@ -688,34 +642,6 @@ mod tests {
                 serde_json::to_value(hook_completed_notification(thread_id, "turn-hook"))
                     .expect("hook notification should serialize"),
             ]
-        );
-    }
-
-    #[test]
-    fn thread_event_store_rebase_preserves_mcp_startup_notifications() {
-        let thread_id = ThreadId::new();
-        let notification = ServerNotification::McpServerStatusUpdated(
-            codex_app_server_protocol::McpServerStatusUpdatedNotification {
-                thread_id: Some(thread_id.to_string()),
-                name: "sentry".to_string(),
-                status: codex_app_server_protocol::McpServerStartupState::Failed,
-                error: Some("sentry is not logged in".to_string()),
-                failure_reason: None,
-            },
-        );
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_notification_ref(&notification);
-
-        store.rebase_buffer_after_session_refresh();
-
-        let snapshot = store.snapshot();
-        let actual = match snapshot.events.as_slice() {
-            [ThreadBufferedEvent::Notification(actual)] => actual,
-            other => panic!("expected one buffered MCP notification, saw: {other:?}"),
-        };
-        assert_eq!(
-            serde_json::to_value(actual).expect("MCP notification should serialize"),
-            serde_json::to_value(notification).expect("MCP notification should serialize"),
         );
     }
 }

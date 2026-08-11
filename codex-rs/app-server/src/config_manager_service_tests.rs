@@ -15,10 +15,10 @@ use tempfile::tempdir;
 #[test]
 fn toml_value_to_item_handles_nested_config_tables() {
     let config = r#"
-[mcp_servers.docs]
-command = "docs-server"
+[services.docs]
+command = "docs-service"
 
-[mcp_servers.docs.http_headers]
+[services.docs.http_headers]
 X-Doc = "42"
 "#;
 
@@ -28,16 +28,13 @@ X-Doc = "42"
     let root = item.as_table().expect("root table");
     assert!(!root.is_implicit(), "root table should be explicit");
 
-    let mcp_servers = root
-        .get("mcp_servers")
+    let services = root
+        .get("services")
         .and_then(TomlItem::as_table)
-        .expect("mcp_servers table");
-    assert!(
-        !mcp_servers.is_implicit(),
-        "mcp_servers table should be explicit"
-    );
+        .expect("services table");
+    assert!(!services.is_implicit(), "services table should be explicit");
 
-    let docs = mcp_servers
+    let docs = services
         .get("docs")
         .and_then(TomlItem::as_table)
         .expect("docs table");
@@ -45,7 +42,7 @@ X-Doc = "42"
         docs.get("command")
             .and_then(TomlItem::as_value)
             .and_then(toml_edit::Value::as_str),
-        Some("docs-server")
+        Some("docs-service")
     );
 
     let http_headers = docs
@@ -362,49 +359,6 @@ async fn write_value_supports_nested_app_paths() -> Result<()> {
                 },
             )]),
         })
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn write_value_supports_custom_mcp_server_default_tool_approval_mode() -> Result<()> {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(
-        tmp.path().join(CONFIG_TOML_FILE),
-        "[mcp_servers.docs]\ncommand = \"docs-server\"\n",
-    )?;
-
-    let service = ConfigManager::without_managed_config_for_tests(tmp.path().to_path_buf());
-    service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "mcp_servers.docs.default_tools_approval_mode".to_string(),
-            value: serde_json::json!("approve"),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect("write mcp server default_tools_approval_mode succeeds");
-
-    let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE))?;
-    assert!(contents.contains("default_tools_approval_mode = \"approve\""));
-
-    let read = service
-        .read(ConfigReadParams {
-            include_layers: false,
-            cwd: None,
-        })
-        .await
-        .expect("config read succeeds");
-
-    assert_eq!(
-        read.config
-            .additional
-            .get("mcp_servers")
-            .and_then(|servers| servers.get("docs"))
-            .and_then(|docs| docs.get("default_tools_approval_mode")),
-        Some(&serde_json::json!("approve"))
     );
 
     Ok(())
@@ -1193,15 +1147,15 @@ async fn multi_agent_v2_boolean_layer_owns_enabled_origin_and_overrides() {
 async fn upsert_merges_tables_replace_overwrites() -> Result<()> {
     let tmp = tempdir().expect("tempdir");
     let path = tmp.path().join(CONFIG_TOML_FILE);
-    let base = r#"[mcp_servers.linear]
+    let base = r#"[services.linear]
 bearer_token_env_var = "TOKEN"
 name = "linear"
 url = "https://linear.example"
 
-[mcp_servers.linear.env_http_headers]
+[services.linear.env_http_headers]
 existing = "keep"
 
-[mcp_servers.linear.http_headers]
+[services.linear.http_headers]
 alpha = "a"
 "#;
 
@@ -1221,7 +1175,7 @@ alpha = "a"
     service
         .write_value(ConfigValueWriteParams {
             file_path: Some(path.display().to_string()),
-            key_path: "mcp_servers.linear".to_string(),
+            key_path: "services.linear".to_string(),
             value: overlay.clone(),
             merge_strategy: MergeStrategy::Upsert,
             expected_version: None,
@@ -1231,15 +1185,15 @@ alpha = "a"
 
     let upserted: TomlValue = toml::from_str(&std::fs::read_to_string(&path)?)?;
     let expected_upsert: TomlValue = toml::from_str(
-        r#"[mcp_servers.linear]
+        r#"[services.linear]
 bearer_token_env_var = "NEW_TOKEN"
 name = "linear"
 url = "https://linear.example"
 
-[mcp_servers.linear.env_http_headers]
+[services.linear.env_http_headers]
 existing = "keep"
 
-[mcp_servers.linear.http_headers]
+[services.linear.http_headers]
 alpha = "updated"
 beta = "b"
 "#,
@@ -1251,7 +1205,7 @@ beta = "b"
     service
         .write_value(ConfigValueWriteParams {
             file_path: Some(path.display().to_string()),
-            key_path: "mcp_servers.linear".to_string(),
+            key_path: "services.linear".to_string(),
             value: overlay,
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
@@ -1261,12 +1215,12 @@ beta = "b"
 
     let replaced: TomlValue = toml::from_str(&std::fs::read_to_string(&path)?)?;
     let expected_replace: TomlValue = toml::from_str(
-        r#"[mcp_servers.linear]
+        r#"[services.linear]
 bearer_token_env_var = "NEW_TOKEN"
 name = "linear"
 url = "https://linear.example"
 
-[mcp_servers.linear.http_headers]
+[services.linear.http_headers]
 alpha = "updated"
 beta = "b"
 "#,
@@ -1371,16 +1325,6 @@ exclude = []
             serde_json::json!({"EXAMPLE.COM": "allow"}),
             r#"[permissions.dev.network.domains]
 "example.com" = "allow"
-"#,
-        ),
-        (
-            r#"[memories]
-no_memories_if_mcp_or_web_search = false
-"#,
-            "memories",
-            serde_json::json!({"disable_on_external_context": true}),
-            r#"[memories]
-disable_on_external_context = true
 "#,
         ),
         (

@@ -8,17 +8,12 @@ use codex_app_server_protocol::ExternalAgentConfigImportItemTypeSuccess as Proto
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult as ProtocolImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
-use codex_app_server_protocol::ExternalAgentDetectedConnectorCandidate;
-use codex_app_server_protocol::ExternalAgentDetectedConnectorSource;
 use codex_app_server_protocol::HookMigration;
 use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::McpServerMigration;
 use codex_app_server_protocol::MigrationDetails;
 use codex_app_server_protocol::PluginsMigration;
 use codex_app_server_protocol::SkillMigration;
 use codex_app_server_protocol::SubagentMigration;
-use codex_external_agent_migration::DetectedConnectorCandidate as CoreDetectedConnectorCandidate;
-use codex_external_agent_migration::DetectedConnectorSource as CoreDetectedConnectorSource;
 use codex_external_agent_migration::ExternalAgentConfigImportItemResult as CoreImportItemResult;
 use codex_external_agent_migration::ExternalAgentConfigImportRawError as CoreImportRawError;
 use codex_external_agent_migration::ExternalAgentConfigImportSuccess;
@@ -31,27 +26,9 @@ use codex_external_agent_migration::sessions::ExternalAgentSessionMigration;
 use codex_state::ExternalAgentConfigImportFailureRecord;
 use codex_state::ExternalAgentConfigImportSuccessRecord;
 
-pub(super) fn detect_response(
-    items: Vec<CoreMigrationItem>,
-    connectors: Vec<CoreDetectedConnectorCandidate>,
-) -> ExternalAgentConfigDetectResponse {
+pub(super) fn detect_response(items: Vec<CoreMigrationItem>) -> ExternalAgentConfigDetectResponse {
     ExternalAgentConfigDetectResponse {
         items: items.into_iter().map(protocol_migration_item).collect(),
-        connectors: connectors
-            .into_iter()
-            .map(|candidate| ExternalAgentDetectedConnectorCandidate {
-                name: candidate.name,
-                session_count: candidate.session_count,
-                source: match candidate.source {
-                    CoreDetectedConnectorSource::RemoteMcpServersConfig => {
-                        ExternalAgentDetectedConnectorSource::RemoteMcpServersConfig
-                    }
-                    CoreDetectedConnectorSource::SessionToolUse => {
-                        ExternalAgentDetectedConnectorSource::SessionToolUse
-                    }
-                },
-            })
-            .collect(),
     }
 }
 
@@ -87,11 +64,6 @@ fn protocol_migration_details(details: CoreMigrationDetails) -> MigrationDetails
                 cwd: session.cwd,
                 title: session.title,
             })
-            .collect(),
-        mcp_servers: details
-            .mcp_servers
-            .into_iter()
-            .map(|server| McpServerMigration { name: server.name })
             .collect(),
         hooks: details
             .hooks
@@ -152,11 +124,6 @@ fn core_migration_details(details: MigrationDetails) -> CoreMigrationDetails {
                 title: session.title,
             })
             .collect(),
-        mcp_servers: details
-            .mcp_servers
-            .into_iter()
-            .map(|server| NamedMigration { name: server.name })
-            .collect(),
         hooks: details
             .hooks
             .into_iter()
@@ -186,9 +153,6 @@ pub(super) fn protocol_migration_item_type(
         CoreMigrationItemType::Skills => ExternalAgentConfigMigrationItemType::Skills,
         CoreMigrationItemType::AgentsMd => ExternalAgentConfigMigrationItemType::AgentsMd,
         CoreMigrationItemType::Plugins => ExternalAgentConfigMigrationItemType::Plugins,
-        CoreMigrationItemType::McpServerConfig => {
-            ExternalAgentConfigMigrationItemType::McpServerConfig
-        }
         CoreMigrationItemType::Subagents => ExternalAgentConfigMigrationItemType::Subagents,
         CoreMigrationItemType::Hooks => ExternalAgentConfigMigrationItemType::Hooks,
         CoreMigrationItemType::Commands => ExternalAgentConfigMigrationItemType::Commands,
@@ -205,9 +169,6 @@ fn core_migration_item_type(
         ExternalAgentConfigMigrationItemType::Skills => CoreMigrationItemType::Skills,
         ExternalAgentConfigMigrationItemType::AgentsMd => CoreMigrationItemType::AgentsMd,
         ExternalAgentConfigMigrationItemType::Plugins => CoreMigrationItemType::Plugins,
-        ExternalAgentConfigMigrationItemType::McpServerConfig => {
-            CoreMigrationItemType::McpServerConfig
-        }
         ExternalAgentConfigMigrationItemType::Subagents => CoreMigrationItemType::Subagents,
         ExternalAgentConfigMigrationItemType::Hooks => CoreMigrationItemType::Hooks,
         ExternalAgentConfigMigrationItemType::Commands => CoreMigrationItemType::Commands,
@@ -311,12 +272,11 @@ pub(super) fn completed_notification(
         ExternalAgentConfigMigrationItemType::Skills => 1,
         ExternalAgentConfigMigrationItemType::AgentsMd => 2,
         ExternalAgentConfigMigrationItemType::Plugins => 3,
-        ExternalAgentConfigMigrationItemType::McpServerConfig => 4,
-        ExternalAgentConfigMigrationItemType::Subagents => 5,
-        ExternalAgentConfigMigrationItemType::Hooks => 6,
-        ExternalAgentConfigMigrationItemType::Commands => 7,
-        ExternalAgentConfigMigrationItemType::Sessions => 8,
-        ExternalAgentConfigMigrationItemType::Memory => 9,
+        ExternalAgentConfigMigrationItemType::Subagents => 4,
+        ExternalAgentConfigMigrationItemType::Hooks => 5,
+        ExternalAgentConfigMigrationItemType::Commands => 6,
+        ExternalAgentConfigMigrationItemType::Sessions => 7,
+        ExternalAgentConfigMigrationItemType::Memory => 8,
     });
 
     ExternalAgentConfigImportCompletedNotification {

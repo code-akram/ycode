@@ -11,7 +11,7 @@ const DEFERRED_NESTED_TOOLS_GUIDANCE: &str = r#"Some deferred nested tools may b
 To find one, filter `ALL_TOOLS` by `name` and `description`."#;
 const EXEC_DESCRIPTION_TEMPLATE: &str = r#"Run JavaScript code to orchestrate/compose tool calls
 - Evaluates the provided JavaScript code in a fresh V8 isolate as an async module.
-- All nested tools are available on the global `tools` object, for example `await tools.exec_command(...)`. Tool names are exposed as normalized JavaScript identifiers, for example `await tools.mcp__ologs__get_profile(...)`.
+- All nested tools are available on the global `tools` object, for example `await tools.exec_command(...)`. Tool names are exposed as normalized JavaScript identifiers.
 - Nested tool methods take either a string or an object as their input argument.
 - Nested tools return either an object or a string, based on the description.
 - Runs raw JavaScript -- no Node, no file system, no network access, no console.
@@ -24,8 +24,8 @@ const EXEC_DESCRIPTION_TEMPLATE: &str = r#"Run JavaScript code to orchestrate/co
 - Global helpers:
 - `exit()`: Immediately ends the current script successfully (like an early return from the top level).
 - `text(value: string | number | boolean | undefined | null)`: Appends a text item. Non-string values are stringified with `JSON.stringify(...)` when possible.
-- `image(imageUrlOrItem: string | { image_url: string; detail?: "auto" | "low" | "high" | "original" | null } | ImageContent, detail?: "auto" | "low" | "high" | "original" | null)`: Appends an image item. `image_url` should be a base64-encoded `data:` URL. To forward an MCP tool image, pass an individual `ImageContent` block from `result.content`, for example `image(result.content[0])`. MCP image blocks may request detail with `_meta: { "codex/imageDetail": "original" }`. When provided, the second `detail` argument overrides any detail embedded in the first argument.
-- `audio(audioUrlOrItem: string | { audio_url: string } | AudioContent)`: Appends an audio item. `audio_url` should be a base64-encoded `data:` URL. To forward an MCP tool audio block, pass an individual `AudioContent` block from `result.content`, for example `audio(result.content[0])`.
+- `image(imageUrlOrItem: string | { image_url: string; detail?: "auto" | "low" | "high" | "original" | null }, detail?: "auto" | "low" | "high" | "original" | null)`: Appends an image item. `image_url` should be a base64-encoded `data:` URL. When provided, the second `detail` argument overrides the object detail.
+- `audio(audioUrlOrItem: string | { audio_url: string })`: Appends an audio item. `audio_url` should be a base64-encoded `data:` URL.
 - `generatedImage(result: { image_url: string; output_hint?: string })`: Appends an image-generation result and its optional output hint. HTTP(S) URLs are not supported.
 - `store(key: string, value: any)`: stores a serializable value under a string key for later `exec` calls in the same session.
 - `load(key: string)`: returns the stored value for a string key, or `undefined` if it is missing.
@@ -42,84 +42,6 @@ const WAIT_DESCRIPTION_TEMPLATE: &str = r#"- Use `wait` only after `exec` return
 - `wait` returns only the new output since the last yield, or the final completion or termination result for that cell.
 - If the cell is still running, `wait` may yield again with the same `cell_id`.
 - If the cell has already finished, `wait` returns the completed result and closes the cell."#;
-// Based off of https://modelcontextprotocol.io/specification/draft/schema#calltoolresult
-const MCP_TYPESCRIPT_PREAMBLE: &str = r#"type Role = "user" | "assistant";
-type MetaObject = Record<string, unknown>;
-type Annotations = {
-  audience?: Role[];
-  priority?: number;
-  lastModified?: string;
-};
-type Icon = {
-  src: string;
-  mimeType?: string;
-  sizes?: string[];
-  theme?: "light" | "dark";
-};
-type TextResourceContents = {
-  uri: string;
-  mimeType?: string;
-  _meta?: MetaObject;
-  text: string;
-};
-type BlobResourceContents = {
-  uri: string;
-  mimeType?: string;
-  _meta?: MetaObject;
-  blob: string;
-};
-type TextContent = {
-  type: "text";
-  text: string;
-  annotations?: Annotations;
-  _meta?: MetaObject;
-};
-type ImageContent = {
-  type: "image";
-  data: string;
-  mimeType: string;
-  annotations?: Annotations;
-  _meta?: MetaObject;
-};
-type AudioContent = {
-  type: "audio";
-  data: string;
-  mimeType: string;
-  annotations?: Annotations;
-  _meta?: MetaObject;
-};
-type ResourceLink = {
-  icons?: Icon[];
-  name: string;
-  title?: string;
-  uri: string;
-  description?: string;
-  mimeType?: string;
-  annotations?: Annotations;
-  size?: number;
-  _meta?: MetaObject;
-  type: "resource_link";
-};
-type EmbeddedResource = {
-  type: "resource";
-  resource: TextResourceContents | BlobResourceContents;
-  annotations?: Annotations;
-  _meta?: MetaObject;
-};
-type ContentBlock =
-  | TextContent
-  | ImageContent
-  | AudioContent
-  | ResourceLink
-  | EmbeddedResource;
-type CallToolResult<TStructured = { [key: string]: unknown }> = {
-  _meta?: MetaObject;
-  content: ContentBlock[];
-  isError?: boolean;
-  structuredContent?: TStructured;
-  [key: string]: unknown;
-};"#;
-
 pub const CODE_MODE_PRAGMA_PREFIX: &str = "// @exec:";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -268,16 +190,6 @@ pub fn build_exec_tool_description(
         return sections.join("\n\n");
     }
 
-    let has_mcp_tools = enabled_tools
-        .iter()
-        .chain(deferred_tools)
-        .any(|tool| mcp_structured_content_schema(tool.output_schema.as_ref()).is_some());
-    if has_mcp_tools {
-        sections.push(format!(
-            "Shared MCP Types:\n```ts\n{MCP_TYPESCRIPT_PREAMBLE}\n```"
-        ));
-    }
-
     if !enabled_tools.is_empty() {
         let mut current_namespace: Option<&str> = None;
         let mut nested_tool_sections = Vec::with_capacity(enabled_tools.len());
@@ -403,22 +315,11 @@ fn render_code_mode_sample_for_definition(definition: &ToolDefinition) -> String
             .unwrap_or_else(|| "unknown".to_string()),
         CodeModeToolKind::Freeform => "string".to_string(),
     };
-    let output_type = if let Some(structured_content_schema) =
-        mcp_structured_content_schema(definition.output_schema.as_ref())
-    {
-        let structured_content_type = render_json_schema_to_typescript(structured_content_schema);
-        if structured_content_type == "unknown" {
-            "CallToolResult".to_string()
-        } else {
-            format!("CallToolResult<{structured_content_type}>")
-        }
-    } else {
-        definition
-            .output_schema
-            .as_ref()
-            .map(render_json_schema_to_typescript)
-            .unwrap_or_else(|| "unknown".to_string())
-    };
+    let output_type = definition
+        .output_schema
+        .as_ref()
+        .map(render_json_schema_to_typescript)
+        .unwrap_or_else(|| "unknown".to_string());
     render_code_mode_sample(
         &definition.description,
         &definition.name,
@@ -448,47 +349,6 @@ fn render_tool_heading(global_name: &str, raw_name: &str) -> String {
 
 pub fn render_json_schema_to_typescript(schema: &JsonValue) -> String {
     render_json_schema_to_typescript_inner(schema)
-}
-
-fn mcp_structured_content_schema(output_schema: Option<&JsonValue>) -> Option<&JsonValue> {
-    let output_schema = output_schema?;
-    let properties = output_schema
-        .get("properties")
-        .and_then(JsonValue::as_object)?;
-    let content_schema = properties.get("content").and_then(JsonValue::as_object)?;
-    if content_schema.get("type").and_then(JsonValue::as_str) != Some("array") {
-        return None;
-    }
-
-    if content_schema
-        .get("items")
-        .and_then(JsonValue::as_object)
-        .is_none_or(|items| items.get("type").and_then(JsonValue::as_str) != Some("object"))
-    {
-        return None;
-    }
-
-    if properties
-        .get("isError")
-        .and_then(JsonValue::as_object)
-        .is_none_or(|schema| schema.get("type").and_then(JsonValue::as_str) != Some("boolean"))
-    {
-        return None;
-    }
-
-    if properties
-        .get("_meta")
-        .and_then(JsonValue::as_object)
-        .is_none_or(|schema| schema.get("type").and_then(JsonValue::as_str) != Some("object"))
-    {
-        return None;
-    }
-
-    Some(
-        properties
-            .get("structuredContent")
-            .unwrap_or(&JsonValue::Bool(true)),
-    )
 }
 
 fn render_json_schema_to_typescript_inner(schema: &JsonValue) -> String {
@@ -727,23 +587,8 @@ mod tests {
     use serde_json::json;
     use std::collections::BTreeMap;
 
-    fn mcp_call_tool_result_schema(structured_content_schema: JsonValue) -> JsonValue {
-        json!({
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "array",
-                    "items": {
-                        "type": "object"
-                    }
-                },
-                "structuredContent": structured_content_schema,
-                "isError": { "type": "boolean" },
-                "_meta": { "type": "object" }
-            },
-            "required": ["content"],
-            "additionalProperties": false
-        })
+    fn structured_output_schema(structured_content_schema: JsonValue) -> JsonValue {
+        structured_content_schema
     }
 
     #[test]
@@ -773,8 +618,8 @@ mod tests {
     #[test]
     fn normalize_identifier_rewrites_invalid_characters() {
         assert_eq!(
-            "mcp__ologs__get_profile",
-            normalize_code_mode_identifier("mcp__ologs__get_profile")
+            "calendar_get_events",
+            normalize_code_mode_identifier("calendar_get_events")
         );
         assert_eq!(
             "hidden_dynamic_tool",
@@ -899,17 +744,17 @@ bar"
     #[test]
     fn code_mode_only_description_groups_namespace_instructions_once() {
         let namespace_descriptions = BTreeMap::from([(
-            "mcp__sample__".to_string(),
+            "calendar_".to_string(),
             ToolNamespaceDescription {
-                name: "mcp__sample".to_string(),
+                name: "calendar".to_string(),
                 description: "Shared namespace guidance.".to_string(),
             },
         )]);
         let description = build_exec_tool_description(
             &[
                 ToolDefinition {
-                    name: "mcp__sample__alpha".to_string(),
-                    tool_name: ToolName::namespaced("mcp__sample__", "alpha"),
+                    name: "calendar_alpha".to_string(),
+                    tool_name: ToolName::namespaced("calendar_", "alpha"),
                     description: "First tool".to_string(),
                     kind: CodeModeToolKind::Function,
                     input_schema: Some(json!({
@@ -917,15 +762,15 @@ bar"
                         "properties": {},
                         "additionalProperties": false
                     })),
-                    output_schema: Some(mcp_call_tool_result_schema(json!({
+                    output_schema: Some(structured_output_schema(json!({
                         "type": "object",
                         "properties": {},
                         "additionalProperties": false
                     }))),
                 },
                 ToolDefinition {
-                    name: "mcp__sample__beta".to_string(),
-                    tool_name: ToolName::namespaced("mcp__sample__", "beta"),
+                    name: "calendar_beta".to_string(),
+                    tool_name: ToolName::namespaced("calendar_", "beta"),
                     description: "Second tool".to_string(),
                     kind: CodeModeToolKind::Function,
                     input_schema: Some(json!({
@@ -933,7 +778,7 @@ bar"
                         "properties": {},
                         "additionalProperties": false
                     })),
-                    output_schema: Some(mcp_call_tool_result_schema(json!({
+                    output_schema: Some(structured_output_schema(json!({
                         "type": "object",
                         "properties": {},
                         "additionalProperties": false
@@ -945,29 +790,30 @@ bar"
             crate::DEFAULT_EXEC_YIELD_TIME_MS,
             /*code_mode_only*/ true,
         );
-        assert_eq!(description.matches("## mcp__sample").count(), 1);
-        assert!(description.contains("## mcp__sample\nShared namespace guidance."));
-        assert!(description.contains(
-            "declare const tools: { mcp__sample__alpha(args: {}): Promise<CallToolResult<{}>>; };"
-        ));
-        assert!(description.contains(
-            "declare const tools: { mcp__sample__beta(args: {}): Promise<CallToolResult<{}>>; };"
-        ));
+        assert_eq!(description.matches("## calendar").count(), 1);
+        assert!(description.contains("## calendar\nShared namespace guidance."));
+        assert!(
+            description
+                .contains("declare const tools: { calendar_alpha(args: {}): Promise<{}>; };")
+        );
+        assert!(
+            description.contains("declare const tools: { calendar_beta(args: {}): Promise<{}>; };")
+        );
     }
 
     #[test]
     fn code_mode_only_description_omits_empty_namespace_sections() {
         let namespace_descriptions = BTreeMap::from([(
-            "mcp__sample__".to_string(),
+            "calendar_".to_string(),
             ToolNamespaceDescription {
-                name: "mcp__sample".to_string(),
+                name: "calendar".to_string(),
                 description: String::new(),
             },
         )]);
         let description = build_exec_tool_description(
             &[ToolDefinition {
-                name: "mcp__sample__alpha".to_string(),
-                tool_name: ToolName::namespaced("mcp__sample__", "alpha"),
+                name: "calendar_alpha".to_string(),
+                tool_name: ToolName::namespaced("calendar_", "alpha"),
                 description: "First tool".to_string(),
                 kind: CodeModeToolKind::Function,
                 input_schema: Some(json!({
@@ -975,7 +821,7 @@ bar"
                     "properties": {},
                     "additionalProperties": false
                 })),
-                output_schema: Some(mcp_call_tool_result_schema(json!({
+                output_schema: Some(structured_output_schema(json!({
                     "type": "object",
                     "properties": {},
                     "additionalProperties": false
@@ -987,145 +833,8 @@ bar"
             /*code_mode_only*/ true,
         );
 
-        assert!(!description.contains("## mcp__sample"));
-        assert!(description.contains("### `mcp__sample__alpha`"));
-    }
-
-    #[test]
-    fn code_mode_only_description_renders_shared_mcp_types_once() {
-        let first_tool = augment_tool_definition(ToolDefinition {
-            name: "mcp__sample__alpha".to_string(),
-            tool_name: ToolName::namespaced("mcp__sample__", "alpha"),
-            description: "First tool".to_string(),
-            kind: CodeModeToolKind::Function,
-            input_schema: Some(json!({
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            })),
-            output_schema: Some(json!({
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "array",
-                        "items": {
-                            "type": "object"
-                        }
-                    },
-                    "structuredContent": {
-                        "type": "object",
-                        "properties": {
-                            "echo": { "type": "string" }
-                        },
-                        "required": ["echo"],
-                        "additionalProperties": false
-                    },
-                    "isError": { "type": "boolean" },
-                    "_meta": { "type": "object" }
-                },
-                "required": ["content"],
-                "additionalProperties": false
-            })),
-        });
-        let second_tool = augment_tool_definition(ToolDefinition {
-            name: "mcp__sample__beta".to_string(),
-            tool_name: ToolName::namespaced("mcp__sample__", "beta"),
-            description: "Second tool".to_string(),
-            kind: CodeModeToolKind::Function,
-            input_schema: Some(json!({
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            })),
-            output_schema: Some(json!({
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "array",
-                        "items": {
-                            "type": "object"
-                        }
-                    },
-                    "structuredContent": {
-                        "type": "object",
-                        "properties": {
-                            "count": { "type": "integer" }
-                        },
-                        "required": ["count"],
-                        "additionalProperties": false
-                    },
-                    "isError": { "type": "boolean" },
-                    "_meta": { "type": "object" }
-                },
-                "required": ["content"],
-                "additionalProperties": false
-            })),
-        });
-
-        let description = build_exec_tool_description(
-            &[
-                ToolDefinition {
-                    name: first_tool.name,
-                    tool_name: first_tool.tool_name,
-                    description: "First tool".to_string(),
-                    kind: first_tool.kind,
-                    input_schema: first_tool.input_schema,
-                    output_schema: first_tool.output_schema,
-                },
-                ToolDefinition {
-                    name: second_tool.name,
-                    tool_name: second_tool.tool_name,
-                    description: "Second tool".to_string(),
-                    kind: second_tool.kind,
-                    input_schema: second_tool.input_schema,
-                    output_schema: second_tool.output_schema,
-                },
-            ],
-            &[],
-            &BTreeMap::new(),
-            crate::DEFAULT_EXEC_YIELD_TIME_MS,
-            /*code_mode_only*/ true,
-        );
-
-        assert_eq!(
-            description
-                .matches("type CallToolResult<TStructured = { [key: string]: unknown }>")
-                .count(),
-            1
-        );
-        assert_eq!(description.matches("Shared MCP Types:").count(), 1);
-    }
-
-    #[test]
-    fn code_mode_only_description_renders_shared_mcp_types_for_deferred_tools() {
-        let deferred_tool = ToolDefinition {
-            name: "mcp__sample__alpha".to_string(),
-            tool_name: ToolName::namespaced("mcp__sample__", "alpha"),
-            description: "Deferred tool".to_string(),
-            kind: CodeModeToolKind::Function,
-            input_schema: Some(json!({
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            })),
-            output_schema: Some(mcp_call_tool_result_schema(json!({
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            }))),
-        };
-
-        let description = build_exec_tool_description(
-            &[],
-            &[deferred_tool],
-            &BTreeMap::new(),
-            crate::DEFAULT_EXEC_YIELD_TIME_MS,
-            /*code_mode_only*/ true,
-        );
-
-        assert!(description.contains("Some deferred nested tools may be omitted"));
-        assert!(description.contains("Shared MCP Types:"));
-        assert!(!description.contains("### `mcp__sample__alpha`"));
+        assert!(!description.contains("## calendar"));
+        assert!(description.contains("### `calendar_alpha`"));
     }
 
     #[test]

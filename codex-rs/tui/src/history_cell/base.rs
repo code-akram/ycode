@@ -34,10 +34,6 @@ impl WebHyperlinkHistoryCell {
             lines: crate::terminal_hyperlinks::annotate_web_urls(lines),
         }
     }
-
-    pub(crate) fn new_hyperlink_lines(lines: Vec<HyperlinkLine>) -> Self {
-        Self { lines }
-    }
 }
 
 impl HistoryCell for WebHyperlinkHistoryCell {

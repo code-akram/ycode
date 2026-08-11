@@ -271,9 +271,7 @@ impl AccountRequestProcessor {
         tokio::spawn(async move {
             thread_manager.plugins_manager().clear_cache();
             thread_manager.skills_service().clear_cache();
-            crate::mcp_refresh::reload_mcp_config_best_effort(&thread_manager, &config_manager)
-                .await;
-            thread_manager.invalidate_mcp_runtimes().await;
+            let _ = config_manager;
         });
     }
 

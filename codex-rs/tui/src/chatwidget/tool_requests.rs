@@ -1,6 +1,6 @@
 //! Interactive tool request surfaces for `ChatWidget`.
 //!
-//! This module owns approval, permission, elicitation, and user-input prompts
+//! This module owns approval, permission, and user-input prompts
 //! that block on user decisions.
 
 use super::*;
@@ -62,15 +62,6 @@ impl ChatWidget {
             GuardianAssessmentAction::NetworkAccess { target, .. } => {
                 Some(format!("network access to {target}"))
             }
-            GuardianAssessmentAction::McpToolCall {
-                server,
-                tool_name,
-                connector_name,
-                ..
-            } => {
-                let label = connector_name.as_deref().unwrap_or(server.as_str());
-                Some(format!("MCP {tool_name} on {label}"))
-            }
             GuardianAssessmentAction::RequestPermissions { reason, .. } => {
                 Some(permission_request_summary("permission request", reason))
             }
@@ -87,7 +78,6 @@ impl ChatWidget {
             .filter(|command| !command.is_empty()),
             GuardianAssessmentAction::ApplyPatch { .. }
             | GuardianAssessmentAction::NetworkAccess { .. }
-            | GuardianAssessmentAction::McpToolCall { .. }
             | GuardianAssessmentAction::RequestPermissions { .. } => None,
         };
 
@@ -182,11 +172,6 @@ impl ChatWidget {
                             .collect::<Vec<_>>();
                         history_cell::new_guardian_timed_out_patch_request(files)
                     }
-                    GuardianAssessmentAction::McpToolCall {
-                        server, tool_name, ..
-                    } => history_cell::new_guardian_timed_out_action_request(format!(
-                        "codex could call MCP tool {server}.{tool_name}"
-                    )),
                     GuardianAssessmentAction::NetworkAccess { target, .. } => {
                         history_cell::new_guardian_timed_out_action_request(format!(
                             "codex could access {target}"
@@ -226,11 +211,6 @@ impl ChatWidget {
                         .collect::<Vec<_>>();
                     history_cell::new_guardian_denied_patch_request(files)
                 }
-                GuardianAssessmentAction::McpToolCall {
-                    server, tool_name, ..
-                } => history_cell::new_guardian_denied_action_request(format!(
-                    "codex to call MCP tool {server}.{tool_name}"
-                )),
                 GuardianAssessmentAction::NetworkAccess { target, .. } => {
                     history_cell::new_guardian_denied_action_request(format!(
                         "codex to access {target}"
@@ -249,18 +229,6 @@ impl ChatWidget {
 
         self.add_boxed_history(cell);
         self.request_redraw();
-    }
-
-    pub(super) fn on_elicitation_request(
-        &mut self,
-        request_id: AppServerRequestId,
-        params: McpServerElicitationRequestParams,
-    ) {
-        self.defer_or_handle(
-            (request_id, params),
-            |q, (request_id, params)| q.push_elicitation(request_id, params),
-            |s, (request_id, params)| s.handle_elicitation_request_now(request_id, params),
-        );
     }
 
     pub(super) fn on_request_user_input(&mut self, ev: ToolRequestUserInputParams) {
@@ -331,82 +299,9 @@ impl ChatWidget {
         });
     }
 
-    pub(crate) fn handle_elicitation_request_now(
-        &mut self,
-        request_id: AppServerRequestId,
-        params: McpServerElicitationRequestParams,
-    ) {
-        self.flush_answer_stream_with_separator();
-
-        self.notify(Notification::ElicitationRequested {
-            server_name: params.server_name.clone(),
-        });
-
-        let thread_id = ThreadId::from_string(&params.thread_id)
-            .unwrap_or_else(|_| self.thread_id.unwrap_or_default());
-        if let Some(params) = crate::bottom_pane::AppLinkViewParams::from_url_app_server_request(
-            thread_id,
-            &params.server_name,
-            request_id.clone(),
-            &params.request,
-        ) {
-            self.open_app_link_view(params);
-        } else if let Some(request) = McpServerElicitationFormRequest::from_app_server_request(
-            thread_id,
-            request_id.clone(),
-            &params,
-        ) {
-            self.bottom_pane
-                .push_mcp_server_elicitation_request(request);
-        } else {
-            match params.request {
-                McpServerElicitationRequest::Form { message, .. } => {
-                    let request = ApprovalRequest::McpElicitation(McpElicitationApprovalRequest {
-                        thread_id,
-                        thread_label: None,
-                        server_name: params.server_name,
-                        request_id,
-                        message,
-                    });
-                    self.bottom_pane
-                        .push_approval_request(request, &self.config.features);
-                }
-                McpServerElicitationRequest::OpenAiForm { .. }
-                | McpServerElicitationRequest::Url { .. } => {
-                    self.app_event_tx.resolve_elicitation(
-                        thread_id,
-                        params.server_name,
-                        request_id,
-                        codex_app_server_protocol::McpServerElicitationAction::Decline,
-                        /*content*/ None,
-                        /*meta*/ None,
-                    );
-                }
-            }
-        }
-        self.set_ambient_pet_notification(
-            crate::pets::PetNotificationKind::Waiting,
-            /*body*/ None,
-        );
-        self.request_redraw();
-    }
-
     pub(crate) fn push_approval_request(&mut self, request: ApprovalRequest) {
         self.bottom_pane
             .push_approval_request(request, &self.config.features);
-        self.set_ambient_pet_notification(
-            crate::pets::PetNotificationKind::Waiting,
-            /*body*/ None,
-        );
-        self.request_redraw();
-    }
-
-    pub(crate) fn push_mcp_server_elicitation_request(
-        &mut self,
-        request: McpServerElicitationFormRequest,
-    ) {
-        self.bottom_pane
-            .push_mcp_server_elicitation_request(request);
         self.set_ambient_pet_notification(
             crate::pets::PetNotificationKind::Waiting,
             /*body*/ None,

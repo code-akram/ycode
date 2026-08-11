@@ -8,7 +8,6 @@ mod auth_env;
 mod completion_backfill;
 mod ephemeral;
 mod hooks;
-mod mcp_required_exit;
 mod originator;
 mod output_schema;
 mod prompt_stdin;

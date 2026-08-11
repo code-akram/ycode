@@ -11,10 +11,6 @@ use crate::protocol::v2::CollabAgentToolCallStatus;
 use crate::protocol::v2::CommandExecutionStatus;
 use crate::protocol::v2::DynamicToolCallOutputContentItem;
 use crate::protocol::v2::DynamicToolCallStatus;
-use crate::protocol::v2::McpToolCallAppContext;
-use crate::protocol::v2::McpToolCallError;
-use crate::protocol::v2::McpToolCallResult;
-use crate::protocol::v2::McpToolCallStatus;
 use crate::protocol::v2::ThreadItem;
 use crate::protocol::v2::Turn;
 use crate::protocol::v2::TurnError as V2TurnError;
@@ -46,8 +42,6 @@ use codex_protocol::protocol::ImageGenerationBeginEvent;
 use codex_protocol::protocol::ImageGenerationEndEvent;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
-use codex_protocol::protocol::McpToolCallBeginEvent;
-use codex_protocol::protocol::McpToolCallEndEvent;
 use codex_protocol::protocol::PatchApplyBeginEvent;
 use codex_protocol::protocol::PatchApplyEndEvent;
 use codex_protocol::protocol::RolloutItem;
@@ -356,8 +350,6 @@ impl ThreadHistoryBuilder {
             EventMsg::DynamicToolCallResponse(payload) => {
                 self.handle_dynamic_tool_call_response(payload)
             }
-            EventMsg::McpToolCallBegin(payload) => self.handle_mcp_tool_call_begin(payload),
-            EventMsg::McpToolCallEnd(payload) => self.handle_mcp_tool_call_end(payload),
             EventMsg::ViewImageToolCall(payload) => self.handle_view_image_tool_call(payload),
             EventMsg::ImageGenerationBegin(payload) => self.handle_image_generation_begin(payload),
             EventMsg::ImageGenerationEnd(payload) => self.handle_image_generation_end(payload),
@@ -624,7 +616,6 @@ impl ThreadHistoryBuilder {
             | codex_protocol::items::TurnItem::ImageView(_)
             | codex_protocol::items::TurnItem::ImageGeneration(_)
             | codex_protocol::items::TurnItem::FileChange(_)
-            | codex_protocol::items::TurnItem::McpToolCall(_)
             | codex_protocol::items::TurnItem::ContextCompaction(_) => false,
         };
 
@@ -762,90 +753,6 @@ impl ThreadHistoryBuilder {
         } else {
             self.upsert_item_in_turn_id(&payload.turn_id, item);
         }
-    }
-
-    fn handle_mcp_tool_call_begin(&mut self, payload: &McpToolCallBeginEvent) {
-        let item = ThreadItem::McpToolCall {
-            id: payload.call_id.clone(),
-            server: payload.invocation.server.clone(),
-            tool: payload.invocation.tool.clone(),
-            status: McpToolCallStatus::InProgress,
-            arguments: payload
-                .invocation
-                .arguments
-                .clone()
-                .unwrap_or(serde_json::Value::Null),
-            app_context: payload
-                .connector_id
-                .clone()
-                .map(|connector_id| McpToolCallAppContext {
-                    connector_id,
-                    link_id: payload.link_id.clone(),
-                    resource_uri: payload.mcp_app_resource_uri.clone(),
-                    app_name: payload.app_name.clone(),
-                    action_name: payload.action_name.clone(),
-                }),
-            mcp_app_resource_uri: payload.mcp_app_resource_uri.clone(),
-            plugin_id: payload.plugin_id.clone(),
-            read_only_hint: payload.read_only_hint,
-            result: None,
-            error: None,
-            duration_ms: None,
-        };
-        self.upsert_item_in_current_turn(item);
-    }
-
-    fn handle_mcp_tool_call_end(&mut self, payload: &McpToolCallEndEvent) {
-        let status = if payload.is_success() {
-            McpToolCallStatus::Completed
-        } else {
-            McpToolCallStatus::Failed
-        };
-        let duration_ms = i64::try_from(payload.duration.as_millis()).ok();
-        let (result, error) = match &payload.result {
-            Ok(value) => (
-                Some(Box::new(McpToolCallResult {
-                    content: value.content.clone(),
-                    structured_content: value.structured_content.clone(),
-                    meta: value.meta.clone(),
-                })),
-                None,
-            ),
-            Err(message) => (
-                None,
-                Some(McpToolCallError {
-                    message: message.clone(),
-                }),
-            ),
-        };
-        let item = ThreadItem::McpToolCall {
-            id: payload.call_id.clone(),
-            server: payload.invocation.server.clone(),
-            tool: payload.invocation.tool.clone(),
-            status,
-            arguments: payload
-                .invocation
-                .arguments
-                .clone()
-                .unwrap_or(serde_json::Value::Null),
-            app_context: payload
-                .connector_id
-                .clone()
-                .map(|connector_id| McpToolCallAppContext {
-                    connector_id,
-                    link_id: payload.link_id.clone(),
-                    resource_uri: payload.mcp_app_resource_uri.clone(),
-                    app_name: payload.app_name.clone(),
-                    action_name: payload.action_name.clone(),
-                }),
-            mcp_app_resource_uri: payload.mcp_app_resource_uri.clone(),
-            plugin_id: payload.plugin_id.clone(),
-            read_only_hint: payload.read_only_hint,
-            result,
-            error,
-            duration_ms,
-        };
-        self.upsert_item_in_current_turn(item);
     }
 
     fn handle_view_image_tool_call(&mut self, payload: &ViewImageToolCallEvent) {
@@ -1638,7 +1545,6 @@ mod tests {
     use codex_protocol::items::TurnItem as CoreTurnItem;
     use codex_protocol::items::UserMessageItem as CoreUserMessageItem;
     use codex_protocol::items::build_hook_prompt_message;
-    use codex_protocol::mcp::CallToolResult;
     use codex_protocol::models::ImageDetail;
     use codex_protocol::models::MessagePhase as CoreMessagePhase;
     use codex_protocol::models::WebSearchAction as CoreWebSearchAction;
@@ -1656,8 +1562,6 @@ mod tests {
     use codex_protocol::protocol::ExecCommandSource;
     use codex_protocol::protocol::ExitedReviewModeEvent;
     use codex_protocol::protocol::ItemStartedEvent;
-    use codex_protocol::protocol::McpInvocation;
-    use codex_protocol::protocol::McpToolCallEndEvent;
     use codex_protocol::protocol::PatchApplyBeginEvent;
     use codex_protocol::protocol::ReviewTarget;
     use codex_protocol::protocol::ThreadRolledBackEvent;
@@ -2824,23 +2728,6 @@ mod tests {
                 formatted_output: String::new(),
                 status: CoreExecCommandStatus::Completed,
             }),
-            EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-                call_id: "mcp-1".into(),
-                invocation: McpInvocation {
-                    server: "docs".into(),
-                    tool: "lookup".into(),
-                    arguments: Some(serde_json::json!({"id":"123"})),
-                },
-                connector_id: None,
-                mcp_app_resource_uri: None,
-                link_id: None,
-                app_name: None,
-                action_name: None,
-                plugin_id: None,
-                read_only_hint: None,
-                duration: Duration::from_millis(8),
-                result: Err("boom".into()),
-            }),
         ];
 
         let items = events
@@ -2849,7 +2736,7 @@ mod tests {
             .collect::<Vec<_>>();
         let turns = build_turns_from_rollout_items(&items);
         assert_eq!(turns.len(), 1);
-        assert_eq!(turns[0].items.len(), 4);
+        assert_eq!(turns[0].items.len(), 3);
         assert_eq!(
             turns[0].items[1],
             ThreadItem::WebSearch(WebSearchItem {
@@ -2883,104 +2770,6 @@ mod tests {
                 aggregated_output: Some("hello world\n".into()),
                 exit_code: Some(0),
                 duration_ms: Some(12),
-            }
-        );
-        assert_eq!(
-            turns[0].items[3],
-            ThreadItem::McpToolCall {
-                id: "mcp-1".into(),
-                server: "docs".into(),
-                tool: "lookup".into(),
-                status: McpToolCallStatus::Failed,
-                arguments: serde_json::json!({"id":"123"}),
-                app_context: None,
-                mcp_app_resource_uri: None,
-                plugin_id: None,
-                read_only_hint: None,
-                result: None,
-                error: Some(McpToolCallError {
-                    message: "boom".into(),
-                }),
-                duration_ms: Some(8),
-            }
-        );
-    }
-
-    #[test]
-    fn reconstructs_mcp_tool_result_meta_from_persisted_completion_events() {
-        let events = vec![
-            EventMsg::TurnStarted(TurnStartedEvent {
-                turn_id: "turn-1".into(),
-                trace_id: None,
-                started_at: None,
-                model_context_window: None,
-                collaboration_mode_kind: Default::default(),
-            }),
-            EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-                call_id: "mcp-1".into(),
-                invocation: McpInvocation {
-                    server: "docs".into(),
-                    tool: "lookup".into(),
-                    arguments: Some(serde_json::json!({"id":"123"})),
-                },
-                connector_id: Some("calendar".into()),
-                mcp_app_resource_uri: Some("ui://widget/lookup.html".into()),
-                link_id: Some("link_calendar".into()),
-                app_name: Some("Calendar".into()),
-                action_name: Some("lookup".into()),
-                plugin_id: Some("sample@test".into()),
-                read_only_hint: Some(false),
-                duration: Duration::from_millis(8),
-                result: Ok(CallToolResult {
-                    content: vec![serde_json::json!({
-                        "type": "text",
-                        "text": "result"
-                    })],
-                    structured_content: Some(serde_json::json!({"id":"123"})),
-                    is_error: Some(false),
-                    meta: Some(serde_json::json!({
-                        "ui/resourceUri": "ui://widget/lookup.html"
-                    })),
-                }),
-            }),
-        ];
-
-        let items = events
-            .into_iter()
-            .map(RolloutItem::EventMsg)
-            .collect::<Vec<_>>();
-        let turns = build_turns_from_rollout_items(&items);
-        assert_eq!(turns.len(), 1);
-        assert_eq!(
-            turns[0].items[0],
-            ThreadItem::McpToolCall {
-                id: "mcp-1".into(),
-                server: "docs".into(),
-                tool: "lookup".into(),
-                status: McpToolCallStatus::Completed,
-                arguments: serde_json::json!({"id":"123"}),
-                app_context: Some(McpToolCallAppContext {
-                    connector_id: "calendar".into(),
-                    link_id: Some("link_calendar".into()),
-                    resource_uri: Some("ui://widget/lookup.html".into()),
-                    app_name: Some("Calendar".into()),
-                    action_name: Some("lookup".into()),
-                }),
-                mcp_app_resource_uri: Some("ui://widget/lookup.html".into()),
-                plugin_id: Some("sample@test".into()),
-                read_only_hint: Some(false),
-                result: Some(Box::new(McpToolCallResult {
-                    content: vec![serde_json::json!({
-                        "type": "text",
-                        "text": "result"
-                    })],
-                    structured_content: Some(serde_json::json!({"id":"123"})),
-                    meta: Some(serde_json::json!({
-                        "ui/resourceUri": "ui://widget/lookup.html"
-                    })),
-                })),
-                error: None,
-                duration_ms: Some(8),
             }
         );
     }

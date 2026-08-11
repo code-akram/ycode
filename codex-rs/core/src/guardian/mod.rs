@@ -26,7 +26,6 @@ use serde::Serialize;
 use crate::tools::sandboxing::ApprovalRequestReasons;
 
 pub(crate) use approval_request::GuardianApprovalRequest;
-pub(crate) use approval_request::GuardianMcpAnnotations;
 pub(crate) use approval_request::GuardianNetworkAccessTrigger;
 #[cfg(test)]
 pub(crate) use approval_request::guardian_approval_request_to_json;
@@ -38,7 +37,6 @@ pub(crate) use review::new_guardian_review_id;
 pub(crate) use review::record_guardian_denial_for_test;
 pub(crate) use review::review_approval_request;
 pub(crate) use review::review_approval_request_with_cancel;
-pub(crate) use review::routes_approval_policy_to_guardian;
 pub(crate) use review::routes_approval_to_guardian;
 pub(crate) use review::routes_approval_to_guardian_with_reviewer;
 pub(crate) use review::spawn_approval_request_review;

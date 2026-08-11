@@ -14,10 +14,8 @@ use crate::types::AuthCredentialsStoreMode;
 use crate::types::FeedbackConfigToml;
 use crate::types::History;
 use crate::types::MarketplaceConfig;
-use crate::types::McpServerConfig;
 use crate::types::MemoriesToml;
 use crate::types::Notice;
-use crate::types::OAuthCredentialsStoreMode;
 use crate::types::OtelConfigToml;
 use crate::types::PluginConfig;
 use crate::types::SandboxWorkspaceWrite;
@@ -134,7 +132,6 @@ of strings; comma-separated strings are not supported. Use \
 #[schemars(deny_unknown_fields)]
 pub struct OrchestratorToml {
     pub skills: Option<OrchestratorFeatureToml>,
-    pub mcp: Option<OrchestratorFeatureToml>,
 }
 
 /// Settings for a feature owned by the orchestrator.
@@ -253,30 +250,6 @@ pub struct ConfigToml {
     #[serde(default)]
     pub cli_auth_credentials_store: Option<AuthCredentialsStoreMode>,
 
-    /// Definition for MCP servers that Codex can reach out to for tool calls.
-    #[serde(default)]
-    // Uses the raw MCP input shape (custom deserialization) rather than `McpServerConfig`.
-    #[schemars(schema_with = "crate::schema::mcp_servers_schema")]
-    pub mcp_servers: HashMap<String, McpServerConfig>,
-
-    /// Preferred backend for storing MCP OAuth credentials.
-    /// keyring: Use an OS-specific keyring service.
-    ///          https://github.com/openai/codex/blob/main/codex-rs/rmcp-client/src/oauth.rs#L2
-    /// file: Use a file in the Codex home directory.
-    /// auto (default): Use the OS-specific keyring service if available, otherwise use a file.
-    #[serde(default)]
-    pub mcp_oauth_credentials_store: Option<OAuthCredentialsStoreMode>,
-
-    /// Optional fixed port for the local HTTP callback server used during MCP OAuth login.
-    /// When unset, Codex will bind to an ephemeral port chosen by the OS.
-    pub mcp_oauth_callback_port: Option<u16>,
-
-    /// Optional redirect URI to use during MCP OAuth login.
-    /// When set, this URI is used in the OAuth authorization request instead
-    /// of the local listener address. The local callback listener still binds
-    /// to 127.0.0.1 (using `mcp_oauth_callback_port` when provided).
-    pub mcp_oauth_callback_url: Option<String>,
-
     /// User-defined provider entries that extend the built-in list. Built-in
     /// IDs cannot be overridden.
     #[serde(default, deserialize_with = "deserialize_model_providers")]
@@ -363,9 +336,6 @@ pub struct ConfigToml {
 
     /// Base URL for requests to ChatGPT (as opposed to the OpenAI API).
     pub chatgpt_base_url: Option<String>,
-
-    /// Optional product SKU forwarded on host-owned Codex Apps MCP requests.
-    pub apps_mcp_product_sku: Option<String>,
 
     /// Orchestrator-owned feature settings.
     pub orchestrator: Option<OrchestratorToml>,

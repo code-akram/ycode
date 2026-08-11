@@ -26,8 +26,6 @@ pub use feature_configs::NetworkProxyConfigToml;
 pub use feature_configs::NetworkProxyDomainPermissionToml;
 pub use feature_configs::NetworkProxyModeToml;
 pub use feature_configs::NetworkProxyUnixSocketPermissionToml;
-pub use feature_configs::NonPrefixedMcpToolNamesConfigToml;
-use feature_configs::RemovedAppsMcpPathOverrideConfigToml;
 pub use feature_configs::RolloutBudgetConfigToml;
 pub use feature_configs::TokenBudgetConfigToml;
 pub use feature_configs::TokenBudgetMode;
@@ -164,22 +162,10 @@ pub enum Feature {
     MultiAgentMode,
     /// Removed compatibility flag for the deleted agent-job tools.
     SpawnCsv,
-    /// Enable apps.
-    Apps,
-    /// Enable MCP apps.
-    EnableMcpApps,
-    /// Enable MCP protocol version 2026-07-28 support.
-    Mcp20260728,
-    /// Removed compatibility flag for the legacy Apps MCP path override.
-    AppsMcpPathOverride,
     /// Removed compatibility flag retained as a no-op now that tool_search is always enabled.
     ToolSearch,
-    /// Removed compatibility flag. MCP tools are always deferred when tool_search is available.
-    ToolSearchAlwaysDeferMcpTools,
     /// Describe deferred tool namespaces in the model-visible world state.
     DeferredToolWorldState,
-    /// Expose MCP model-visible namespaces without the legacy `mcp__` prefix.
-    NonPrefixedMcpToolNames,
     /// Enable discoverable tool suggestions for apps.
     ToolSuggest,
     /// Include recommended plugins in model-visible context.
@@ -230,8 +216,6 @@ pub enum Feature {
     ItemIds,
     /// Request sequential cutoff reasoning summary delivery.
     ConcurrentReasoningSummaries,
-    /// Allow prompting and installing missing MCP dependencies.
-    SkillMcpDependencyInstall,
     /// Run cheap skill-search methods in shadow mode and emit experiment metrics.
     SkillSearch,
     /// Removed compatibility flag for deleted skill env var dependency prompting.
@@ -252,10 +236,6 @@ pub enum Feature {
     RolloutBudget,
     /// Add current-time reminders to model-visible context.
     CurrentTimeReminder,
-    /// Route MCP tool approval prompts through the MCP elicitation request path.
-    ToolCallMcpElicitation,
-    /// Prompt Codex Apps connector auth failures through MCP URL elicitations.
-    AuthElicitation,
     /// Enable personality selection in the TUI.
     Personality,
     /// Enable native artifact tools.
@@ -403,10 +383,6 @@ impl Features {
         self.enabled.contains(&f)
     }
 
-    pub fn apps_enabled_for_auth(&self, has_chatgpt_auth: bool) -> bool {
-        self.enabled(Feature::Apps) && has_chatgpt_auth
-    }
-
     pub fn use_legacy_landlock(&self) -> bool {
         self.enabled(Feature::UseLegacyLandlock)
     }
@@ -502,7 +478,7 @@ impl Features {
                 "apply_patch_freeform" => {
                     continue;
                 }
-                "tool_search" | "tool_search_always_defer_mcp_tools" | "apps_mcp_path_override" => {
+                "tool_search" => {
                     continue;
                 }
                 "image_detail_original" | "resize_all_images" | "item_ids" => {
@@ -671,8 +647,6 @@ pub struct FeaturesToml {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code_mode_host: Option<FeatureToml<CodeModeHostConfigToml>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub non_prefixed_mcp_tool_names: Option<FeatureToml<NonPrefixedMcpToolNamesConfigToml>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_agent_v2: Option<FeatureToml<MultiAgentV2ConfigToml>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token_budget: Option<FeatureToml<TokenBudgetConfigToml>>,
@@ -680,9 +654,6 @@ pub struct FeaturesToml {
     pub rollout_budget: Option<FeatureToml<RolloutBudgetConfigToml>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_time_reminder: Option<FeatureToml<CurrentTimeReminderConfigToml>>,
-    #[serde(default, rename = "apps_mcp_path_override", skip_serializing)]
-    #[schemars(skip)]
-    removed_apps_mcp_path_override: Option<FeatureToml<RemovedAppsMcpPathOverrideConfigToml>>,
     pub network_proxy: Option<FeatureToml<NetworkProxyConfigToml>>,
     /// Boolean feature toggles keyed by canonical or legacy feature name.
     #[serde(flatten)]
@@ -699,10 +670,7 @@ impl Features {
 impl FeaturesToml {
     /// Removes compatibility-only inputs that no longer affect runtime
     /// behavior or belong in newly materialized config.
-    pub fn clear_removed_compatibility_entries(&mut self) {
-        self.removed_apps_mcp_path_override = None;
-        self.entries.remove("apps_mcp_path_override");
-    }
+    pub fn clear_removed_compatibility_entries(&mut self) {}
 
     pub fn entries(&self) -> BTreeMap<String, bool> {
         let mut entries = self.entries.clone();
@@ -711,13 +679,6 @@ impl FeaturesToml {
         }
         if let Some(enabled) = self.code_mode_host.as_ref().and_then(FeatureToml::enabled) {
             entries.insert(Feature::CodeModeHost.key().to_string(), enabled);
-        }
-        if let Some(enabled) = self
-            .non_prefixed_mcp_tool_names
-            .as_ref()
-            .and_then(FeatureToml::enabled)
-        {
-            entries.insert(Feature::NonPrefixedMcpToolNames.key().to_string(), enabled);
         }
         if let Some(enabled) = self.multi_agent_v2.as_ref().and_then(FeatureToml::enabled) {
             entries.insert(Feature::MultiAgentV2.key().to_string(), enabled);
@@ -747,12 +708,10 @@ impl FeaturesToml {
             tool_registry: _,
             code_mode,
             code_mode_host,
-            non_prefixed_mcp_tool_names,
             multi_agent_v2,
             token_budget,
             rollout_budget,
             current_time_reminder,
-            removed_apps_mcp_path_override: _,
             network_proxy,
             entries,
         } = self;
@@ -765,8 +724,6 @@ impl FeaturesToml {
                 materialize_resolved_feature_enabled(code_mode, enabled);
             } else if spec.id == Feature::CodeModeHost {
                 materialize_resolved_feature_enabled(code_mode_host, enabled);
-            } else if spec.id == Feature::NonPrefixedMcpToolNames {
-                materialize_resolved_feature_enabled(non_prefixed_mcp_tool_names, enabled);
             } else if spec.id == Feature::MultiAgentV2 {
                 materialize_resolved_feature_enabled(multi_agent_v2, enabled);
             } else if spec.id == Feature::TokenBudget {
@@ -1127,50 +1084,14 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::Apps,
-        key: "apps",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::EnableMcpApps,
-        key: "enable_mcp_apps",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::Mcp20260728,
-        key: "mcp_2026_07_28",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::AppsMcpPathOverride,
-        key: "apps_mcp_path_override",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::ToolSearch,
         key: "tool_search",
         stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::ToolSearchAlwaysDeferMcpTools,
-        key: "tool_search_always_defer_mcp_tools",
-        stage: Stage::Removed,
-        default_enabled: true,
-    },
-    FeatureSpec {
         id: Feature::DeferredToolWorldState,
         key: "deferred_tool_world_state",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::NonPrefixedMcpToolNames,
-        key: "non_prefixed_mcp_tool_names",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
@@ -1295,12 +1216,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::SkillMcpDependencyInstall,
-        key: "skill_mcp_dependency_install",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
         id: Feature::SkillSearch,
         key: "skill_search",
         stage: Stage::Stable,
@@ -1376,18 +1291,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::CollaborationModes,
         key: "collaboration_modes",
         stage: Stage::Removed,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::ToolCallMcpElicitation,
-        key: "tool_call_mcp_elicitation",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::AuthElicitation,
-        key: "auth_elicitation",
-        stage: Stage::Stable,
         default_enabled: true,
     },
     FeatureSpec {

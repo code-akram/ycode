@@ -124,7 +124,7 @@ allow = [
     # Used by: transitive only
     "ISC",
     # MIT - https://opensource.org/license/mit
-    # Used by: allocative, ansi-to-tui, anyhow, arboard, assert_cmd, assert_matches, async-channel, async-stream, async-trait, axum, base64, bytes, chardetng, chrono, clap, clap_complete, color-eyre, crossterm, ctor, derive_more, diffy, dirs, dotenvy, encoding_rs, env_logger, escargot, eventsource-stream, futures, http, ignore, image, indexmap, itertools, keyring, landlock, lazy_static, libc, log, lru, maplit, mime_guess, multimap, once_cell, openssl-sys, os_info, owo-colors, path-absolutize, pathdiff, portable-pty, predicates, pretty_assertions, pulldown-cmark, rand, ratatui, ratatui-macros, regex-lite, reqwest, rmcp, schemars, serde, serde_json, serde_with, serial_test, sha1, sha2, shlex, socket2, strum, strum_macros, sys-locale, tempfile, test-log, textwrap, thiserror, time, tiny_http, tokio, tokio-stream, tokio-test, tokio-util, toml, toml_edit, tonic, tracing, tracing-appender, tracing-subscriber, tracing-test, tree-sitter, tree-sitter-bash, tree-sitter-highlight, ts-rs, uds_windows, unicode-segmentation, unicode-width, url, urlencoding, uuid, vt100, walkdir, webbrowser, which, wildmatch, wiremock, zeroize
+    # Used by: allocative, ansi-to-tui, anyhow, arboard, assert_cmd, assert_matches, async-channel, async-stream, async-trait, axum, base64, bytes, chardetng, chrono, clap, clap_complete, color-eyre, crossterm, ctor, derive_more, diffy, dirs, dotenvy, encoding_rs, env_logger, escargot, eventsource-stream, futures, http, ignore, image, indexmap, itertools, keyring, landlock, lazy_static, libc, log, lru, maplit, mime_guess, multimap, once_cell, openssl-sys, os_info, owo-colors, path-absolutize, pathdiff, portable-pty, predicates, pretty_assertions, pulldown-cmark, rand, ratatui, ratatui-macros, regex-lite, reqwest, schemars, serde, serde_json, serde_with, serial_test, sha1, sha2, shlex, socket2, strum, strum_macros, sys-locale, tempfile, test-log, textwrap, thiserror, time, tiny_http, tokio, tokio-stream, tokio-test, tokio-util, toml, toml_edit, tonic, tracing, tracing-appender, tracing-subscriber, tracing-test, tree-sitter, tree-sitter-bash, tree-sitter-highlight, ts-rs, uds_windows, unicode-segmentation, unicode-width, url, urlencoding, uuid, vt100, walkdir, webbrowser, which, wildmatch, wiremock, zeroize
     "MIT",
     # MIT-0 - https://opensource.org/license/mit-0
     # Used by: dunce
@@ -229,7 +229,6 @@ deny = [
         "hickory-proto",
         "opentelemetry-http",
         "pagable",
-        "rmcp",
         "tonic",
         "zbus",
     ], reason = "first-party traits must use native async trait methods with explicit Send bounds" },
@@ -249,7 +248,6 @@ deny = [
         "oauth2",
         "opentelemetry-http",
         "opentelemetry-otlp",
-        "rmcp",
         "sentry",
         "webrtc-sys-build",
     ], reason = "new direct reqwest dependencies must use codex-http-client; temporary wrappers track migration debt" },

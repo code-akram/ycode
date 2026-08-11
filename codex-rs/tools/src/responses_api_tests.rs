@@ -3,13 +3,10 @@ use super::LoadableToolSpec;
 use super::ResponsesApiNamespace;
 use super::ResponsesApiNamespaceTool;
 use super::ResponsesApiTool;
-use super::agent_plugin_mcp_tool_to_responses_api_tool;
 use super::dynamic_tool_to_responses_api_tool;
-use super::mcp_tool_to_deferred_responses_api_tool;
 use super::tool_definition_to_responses_api_tool;
 use crate::JsonSchema;
 use crate::ToolDefinition;
-use crate::ToolName;
 use codex_protocol::dynamic_tools::DynamicToolFunctionSpec;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -116,88 +113,9 @@ fn dynamic_tool_to_responses_api_tool_preserves_defer_loading() {
 }
 
 #[test]
-fn mcp_tool_to_deferred_responses_api_tool_sets_defer_loading() {
-    let tool = rmcp::model::Tool::new(
-        "lookup_order",
-        "Look up an order",
-        std::sync::Arc::new(rmcp::model::object(json!({
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "string"}
-            },
-            "required": ["order_id"],
-            "additionalProperties": false,
-        }))),
-    );
-
-    assert_eq!(
-        mcp_tool_to_deferred_responses_api_tool(
-            &ToolName::namespaced("mcp__codex_apps__", "lookup_order"),
-            &tool,
-        )
-        .expect("convert deferred tool"),
-        ResponsesApiTool {
-            name: "lookup_order".to_string(),
-            description: "Look up an order".to_string(),
-            strict: false,
-            defer_loading: Some(true),
-            parameters: JsonSchema::object(
-                BTreeMap::from([(
-                    "order_id".to_string(),
-                    JsonSchema::string(/*description*/ None),
-                )]),
-                Some(vec!["order_id".to_string()]),
-                Some(false.into())
-            ),
-            output_schema: None,
-        }
-    );
-}
-
-#[test]
-fn agent_plugin_mcp_tool_uses_fallback_for_oversized_schema() {
-    let properties: serde_json::Map<String, serde_json::Value> = (0..1_024)
-        .map(|index| (format!("property_{index}"), json!({"type": "string"})))
-        .collect();
-    let tool = rmcp::model::Tool::new(
-        "oversized",
-        "Large schema",
-        std::sync::Arc::new(rmcp::model::object(json!({
-            "type": "object",
-            "properties": properties,
-        }))),
-    );
-
-    assert_eq!(
-        agent_plugin_mcp_tool_to_responses_api_tool(&ToolName::from("oversized"), &tool)
-            .expect("Agent Plugin MCP tool should use a fallback schema")
-            .parameters,
-        JsonSchema::object(BTreeMap::new(), /*required*/ None, Some(true.into()))
-    );
-}
-
-#[test]
-fn legacy_mcp_tool_accepts_oversized_schema() {
-    let properties: serde_json::Map<String, serde_json::Value> = (0..1_024)
-        .map(|index| (format!("property_{index}"), json!({"type": "string"})))
-        .collect();
-    let tool = rmcp::model::Tool::new(
-        "oversized",
-        "Large legacy schema",
-        std::sync::Arc::new(rmcp::model::object(json!({
-            "type": "object",
-            "properties": properties,
-        }))),
-    );
-
-    super::mcp_tool_to_responses_api_tool(&ToolName::from("oversized"), &tool)
-        .expect("legacy MCP conversion must preserve existing acceptance");
-}
-
-#[test]
 fn loadable_tool_spec_namespace_serializes_with_deferred_child_tools() {
     let namespace = LoadableToolSpec::Namespace(ResponsesApiNamespace {
-        name: "mcp__codex_apps__calendar".to_string(),
+        name: "calendar".to_string(),
         description: "Plan events".to_string(),
         tools: vec![ResponsesApiNamespaceTool::Function(ResponsesApiTool {
             name: "create_event".to_string(),
@@ -219,7 +137,7 @@ fn loadable_tool_spec_namespace_serializes_with_deferred_child_tools() {
         value,
         json!({
             "type": "namespace",
-            "name": "mcp__codex_apps__calendar",
+            "name": "calendar",
             "description": "Plan events",
             "tools": [
                 {

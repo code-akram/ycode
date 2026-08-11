@@ -130,7 +130,7 @@ struct ThreadCoordination {
     writer: Arc<Mutex<()>>,
     // Forks hold a shared lease until their child reference is durable; deletion, archive, and
     // unarchive require exclusive access. Keeping this separate from `writer` lets the source
-    // accept writes during child initialization, including MCP startup that can take 30 seconds.
+    // accept writes during child initialization, which can take tens of seconds.
     // Operations that need both locks must acquire `lifecycle` before `writer`.
     lifecycle: Arc<RwLock<()>>,
 }

@@ -336,18 +336,6 @@ fn render_debug_config_lines(
         ));
     }
 
-    if let Some(servers) = requirements_toml.mcp_servers.as_ref() {
-        let value = join_or_empty(servers.keys().cloned().collect::<Vec<_>>());
-        requirement_lines.push(requirement_line(
-            "mcp_servers",
-            value,
-            requirements
-                .mcp_servers
-                .as_ref()
-                .map(|sourced| &sourced.source),
-        ));
-    }
-
     // TODO(gt): Expand this debug output with detailed skills and rules display.
     if requirements_toml.rules.is_some() {
         requirement_lines.push(requirement_line(
@@ -661,30 +649,26 @@ mod tests {
     use codex_config::Constrained;
     use codex_config::ConstrainedWithSource;
     use codex_config::ConstraintError;
-    use codex_config::FeatureRequirementsToml;
+
     use codex_config::FilesystemConstraints;
     use codex_config::HookEventsToml;
     use codex_config::HookHandlerConfig;
     use codex_config::LoaderOverrides;
     use codex_config::ManagedHooksRequirementsToml;
     use codex_config::MatcherGroup;
-    use codex_config::McpServerIdentity;
-    use codex_config::McpServerRequirement;
     use codex_config::NetworkConstraints;
-    use codex_config::NetworkDomainPermissionToml;
-    use codex_config::NetworkDomainPermissionsToml;
+
     use codex_config::NetworkUnixSocketPermissionToml;
     use codex_config::NetworkUnixSocketPermissionsToml;
     use codex_config::RequirementSource;
-    use codex_config::ResidencyRequirement;
+
     use codex_config::SandboxModeRequirement;
     use codex_config::Sourced;
-    use codex_config::WebSearchModeRequirement;
-    use codex_config::WindowsRequirementsToml;
+
     use codex_config::sandbox_mode_requirement_for_permission_profile;
-    use codex_config::types::FeedbackConfigToml;
+
     use codex_protocol::config_types::ApprovalsReviewer;
-    use codex_protocol::config_types::WebSearchMode;
+
     use codex_protocol::models::PermissionProfile;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use ratatui::text::Line;
@@ -791,266 +775,6 @@ interrupt_message = false
         assert!(rendered.contains("reason: project is untrusted"));
         assert!(rendered.contains("Requirements:"));
         assert!(rendered.contains("  <none>"));
-    }
-
-    #[test]
-    fn debug_config_output_lists_requirement_sources() {
-        let requirements_file = if cfg!(windows) {
-            absolute_path("C:\\ProgramData\\OpenAI\\Codex\\requirements.toml")
-        } else {
-            absolute_path("/etc/codex/requirements.toml")
-        };
-        let denied_path = if cfg!(windows) {
-            absolute_path("C:\\Users\\alice\\.gitconfig")
-        } else {
-            absolute_path("/home/alice/.gitconfig")
-        };
-        let sqlite_home = if cfg!(windows) {
-            absolute_path("C:\\Users\\alice\\.codex\\state")
-        } else {
-            absolute_path("/home/alice/.codex/state")
-        };
-        let log_dir = if cfg!(windows) {
-            absolute_path("C:\\Users\\alice\\.codex\\logs")
-        } else {
-            absolute_path("/home/alice/.codex/logs")
-        };
-        let model_catalog_json = if cfg!(windows) {
-            absolute_path("C:\\Users\\alice\\.codex\\models.json")
-        } else {
-            absolute_path("/home/alice/.codex/models.json")
-        };
-
-        let requirements = ConfigRequirements {
-            sqlite_home: Some(Sourced::new(
-                sqlite_home.clone(),
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            log_dir: Some(Sourced::new(
-                log_dir.clone(),
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            model_catalog_json: Some(Sourced::new(
-                model_catalog_json.clone(),
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            check_for_update_on_startup: Some(Sourced::new(
-                /*value*/ false,
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            allow_login_shell: Some(Sourced::new(
-                /*value*/ false,
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            feedback: Some(Sourced::new(
-                FeedbackConfigToml {
-                    enabled: Some(false),
-                },
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            windows_sandbox_private_desktop: Some(Sourced::new(
-                /*value*/ false,
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            approval_policy: ConstrainedWithSource::new(
-                Constrained::allow_any(AskForApproval::OnRequest.to_core()),
-                Some(RequirementSource::LegacyManagedConfigTomlFromMdm),
-            ),
-            approvals_reviewer: ConstrainedWithSource::new(
-                Constrained::allow_any(ApprovalsReviewer::AutoReview),
-                Some(RequirementSource::LegacyManagedConfigTomlFromMdm),
-            ),
-            permission_profile: ConstrainedWithSource::new(
-                Constrained::allow_any(PermissionProfile::read_only()),
-                Some(RequirementSource::SystemRequirementsToml {
-                    file: requirements_file.clone(),
-                }),
-            ),
-            mcp_servers: Some(Sourced::new(
-                BTreeMap::from([(
-                    "docs".to_string(),
-                    McpServerRequirement::Identity {
-                        identity: McpServerIdentity::Command {
-                            command: "codex-mcp".to_string(),
-                        },
-                    },
-                )]),
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            enforce_residency: ConstrainedWithSource::new(
-                Constrained::allow_any(Some(ResidencyRequirement::Us)),
-                Some(RequirementSource::LegacyManagedConfigTomlFromMdm),
-            ),
-            web_search_mode: ConstrainedWithSource::new(
-                Constrained::allow_any(WebSearchMode::Cached),
-                Some(RequirementSource::LegacyManagedConfigTomlFromMdm),
-            ),
-            allow_managed_hooks_only: Some(Sourced::new(
-                /*value*/ true,
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            allow_appshots: Some(Sourced::new(
-                /*value*/ false,
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            allow_remote_control: Some(Sourced::new(
-                /*value*/ false,
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            feature_requirements: Some(Sourced::new(
-                FeatureRequirementsToml {
-                    entries: BTreeMap::from([("guardian_approval".to_string(), true)]),
-                },
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            network: Some(Sourced::new(
-                NetworkConstraints {
-                    enabled: Some(true),
-                    domains: Some(NetworkDomainPermissionsToml {
-                        entries: BTreeMap::from([(
-                            "example.com".to_string(),
-                            NetworkDomainPermissionToml::Allow,
-                        )]),
-                    }),
-                    ..Default::default()
-                },
-                RequirementSource::LegacyManagedConfigTomlFromMdm,
-            )),
-            filesystem: Some(Sourced::new(
-                FilesystemConstraints {
-                    deny_read: vec![denied_path.clone().into()],
-                },
-                RequirementSource::SystemRequirementsToml {
-                    file: requirements_file.clone(),
-                },
-            )),
-            guardian_policy_config_source: Some(RequirementSource::LegacyManagedConfigTomlFromMdm),
-            ..ConfigRequirements::default()
-        };
-
-        let requirements_toml = ConfigRequirementsToml {
-            allowed_login_methods: None,
-            allowed_chatgpt_workspaces: None,
-            sqlite_home: Some(sqlite_home),
-            log_dir: Some(log_dir),
-            model_catalog_json: Some(model_catalog_json),
-            check_for_update_on_startup: Some(false),
-            allow_login_shell: Some(false),
-            feedback: Some(FeedbackConfigToml {
-                enabled: Some(false),
-            }),
-            allowed_approval_policies: Some(vec![AskForApproval::OnRequest.to_core()]),
-            allowed_approvals_reviewers: Some(vec![ApprovalsReviewer::AutoReview]),
-            allowed_sandbox_modes: Some(vec![SandboxModeRequirement::ReadOnly]),
-            allowed_permission_profiles: None,
-            default_permissions: None,
-            remote_sandbox_config: None,
-            allowed_web_search_modes: Some(vec![WebSearchModeRequirement::Cached]),
-            allow_managed_hooks_only: Some(true),
-            allow_appshots: Some(false),
-            allow_remote_control: Some(false),
-            computer_use: None,
-            browser_use: None,
-            windows: Some(WindowsRequirementsToml {
-                allowed_sandbox_implementations: None,
-                sandbox_private_desktop: Some(false),
-            }),
-            guardian_policy_config: Some("Use the managed guardian policy.".to_string()),
-            feature_requirements: Some(FeatureRequirementsToml {
-                entries: BTreeMap::from([("guardian_approval".to_string(), true)]),
-            }),
-            hooks: None,
-            mcp_servers: Some(BTreeMap::from([(
-                "docs".to_string(),
-                McpServerRequirement::Identity {
-                    identity: McpServerIdentity::Command {
-                        command: "codex-mcp".to_string(),
-                    },
-                },
-            )])),
-            plugins: None,
-            marketplaces: None,
-            apps: None,
-            rules: None,
-            enforce_residency: Some(ResidencyRequirement::Us),
-            network: None,
-            permissions: None,
-            models: None,
-        };
-
-        let user_file = if cfg!(windows) {
-            absolute_path("C:\\users\\alice\\.codex\\config.toml")
-        } else {
-            absolute_path("/home/alice/.codex/config.toml")
-        };
-        let stack = ConfigLayerStack::new(
-            vec![ConfigLayerEntry::new(
-                ConfigLayerSource::User {
-                    file: user_file,
-                    profile: None,
-                },
-                empty_toml_table(),
-            )],
-            requirements,
-            requirements_toml,
-        )
-        .expect("config layer stack");
-
-        let rendered = render_stack_to_text(&stack);
-        #[cfg(not(windows))]
-        insta::assert_snapshot!("debug_config_requirement_sources", rendered.as_str());
-
-        let requirements_source = (RequirementSource::LegacyManagedConfigTomlFromMdm).to_string();
-        assert!(rendered.contains(&format!(
-            "allowed_approval_policies: on-request (source: {requirements_source})"
-        )));
-        assert!(rendered.contains(
-            "allowed_approvals_reviewers: auto_review (source: MDM managed_config.toml (legacy))"
-        ));
-        assert!(
-            rendered.contains(
-                format!(
-                    "allowed_sandbox_modes: read-only (source: {})",
-                    requirements_file.as_path().display()
-                )
-                .as_str(),
-            )
-        );
-        assert!(rendered.contains(&format!(
-            "allowed_web_search_modes: cached, disabled (source: {requirements_source})"
-        )));
-        assert!(rendered.contains(&format!(
-            "allow_managed_hooks_only: true (source: {requirements_source})"
-        )));
-        assert!(rendered.contains(&format!(
-            "allow_appshots: false (source: {requirements_source})"
-        )));
-        assert!(rendered.contains(&format!(
-            "allow_remote_control: false (source: {requirements_source})"
-        )));
-        assert!(rendered.contains(&format!(
-            "guardian_policy_config: configured (source: {requirements_source})"
-        )));
-        assert!(rendered.contains(&format!(
-            "features: guardian_approval=true (source: {requirements_source})"
-        )));
-        assert!(rendered.contains("mcp_servers: docs (source: MDM managed_config.toml (legacy))"));
-        assert!(rendered.contains(&format!(
-            "enforce_residency: us (source: {requirements_source})"
-        )));
-        assert!(rendered.contains(&format!(
-            "experimental_network: enabled=true, domains={{example.com=allow}} (source: {requirements_source})"
-        )));
-        assert!(
-            rendered.contains(
-                format!(
-                    "permissions.filesystem.deny_read: {}",
-                    denied_path.as_path().display()
-                )
-                .as_str()
-            )
-        );
-        assert!(!rendered.contains("  - rules:"));
     }
 
     #[test]
@@ -1298,54 +1022,6 @@ approval_policy = "never"
         assert!(rendered.contains("# managed by cloud"));
         assert!(rendered.contains("model = \"enterprise_model\""));
         assert!(rendered.contains("approval_policy = \"never\""));
-    }
-
-    #[test]
-    fn debug_config_output_normalizes_empty_web_search_mode_list() {
-        let requirements = ConfigRequirements {
-            web_search_mode: ConstrainedWithSource::new(
-                Constrained::allow_any(WebSearchMode::Disabled),
-                Some(RequirementSource::LegacyManagedConfigTomlFromMdm),
-            ),
-            ..ConfigRequirements::default()
-        };
-
-        let requirements_toml = ConfigRequirementsToml {
-            allowed_approval_policies: None,
-            allowed_approvals_reviewers: None,
-            allowed_sandbox_modes: None,
-            allowed_permission_profiles: None,
-            default_permissions: None,
-            remote_sandbox_config: None,
-            allowed_web_search_modes: Some(Vec::new()),
-            allow_managed_hooks_only: None,
-            allow_appshots: None,
-            allow_remote_control: None,
-            computer_use: None,
-            windows: None,
-            guardian_policy_config: None,
-            feature_requirements: None,
-            hooks: None,
-            mcp_servers: None,
-            plugins: None,
-            marketplaces: None,
-            apps: None,
-            rules: None,
-            enforce_residency: None,
-            network: None,
-            permissions: None,
-            models: None,
-            ..ConfigRequirementsToml::default()
-        };
-
-        let stack = ConfigLayerStack::new(Vec::new(), requirements, requirements_toml)
-            .expect("config layer stack");
-
-        let rendered = render_stack_to_text(&stack);
-        let requirements_source = (RequirementSource::LegacyManagedConfigTomlFromMdm).to_string();
-        assert!(rendered.contains(&format!(
-            "allowed_web_search_modes: disabled (source: {requirements_source})"
-        )));
     }
 
     #[test]

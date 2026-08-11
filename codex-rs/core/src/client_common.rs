@@ -19,8 +19,7 @@ pub struct Prompt {
     /// Conversation context input items.
     pub input: Vec<ResponseItem>,
 
-    /// Tools available to the model, including additional tools sourced from
-    /// external MCP servers.
+    /// Tools available to the model.
     pub(crate) tools: Vec<ToolSpec>,
 
     /// Whether parallel tool calls are permitted for this prompt.

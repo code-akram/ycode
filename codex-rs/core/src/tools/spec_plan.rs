@@ -1,7 +1,6 @@
 use crate::agent::exceeds_thread_spawn_depth_limit;
 use crate::agent::next_thread_spawn_depth;
 use crate::environment_selection::TurnEnvironmentSnapshot;
-use crate::mcp_tool_exposure::append_mcp_tools;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::code_mode::default_exec_yield_time_override_ms;
@@ -16,14 +15,9 @@ use crate::tools::handlers::DynamicToolHandler;
 use crate::tools::handlers::ExecCommandHandler;
 use crate::tools::handlers::ExecCommandHandlerOptions;
 use crate::tools::handlers::GetContextRemainingHandler;
-use crate::tools::handlers::ListAvailablePluginsToInstallHandler;
-use crate::tools::handlers::ListMcpResourceTemplatesHandler;
-use crate::tools::handlers::ListMcpResourcesHandler;
 use crate::tools::handlers::NewContextWindowHandler;
 use crate::tools::handlers::PlanHandler;
-use crate::tools::handlers::ReadMcpResourceHandler;
 use crate::tools::handlers::RequestPermissionsHandler;
-use crate::tools::handlers::RequestPluginInstallHandler;
 use crate::tools::handlers::RequestUserInputHandler;
 use crate::tools::handlers::ShellCommandHandler;
 use crate::tools::handlers::ShellCommandHandlerOptions;
@@ -55,8 +49,6 @@ use crate::tools::handlers::view_image_spec::ViewImageToolOptions;
 use crate::tools::hosted_spec::WebSearchToolOptions;
 use crate::tools::hosted_spec::create_web_search_tool;
 use crate::tools::registry::CoreToolRuntime;
-#[cfg(test)]
-use crate::tools::registry::RegisteredTool;
 use crate::tools::registry::ToolExposure;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::router::ToolRouter;
@@ -79,22 +71,18 @@ use codex_tools::TOOL_SEARCH_TOOL_NAME;
 use codex_tools::ToolCall as ExtensionToolCall;
 use codex_tools::ToolEnvironmentMode;
 use codex_tools::ToolExecutor;
-use codex_tools::ToolExposures;
 use codex_tools::ToolName;
 use codex_tools::ToolSearchInfo;
 use codex_tools::ToolSpec;
 use codex_tools::UnifiedExecShellMode;
 use codex_tools::can_request_original_image_detail;
 use codex_tools::collect_code_mode_exec_prompt_tool_definitions;
-use codex_tools::collect_request_plugin_install_entries;
 use codex_tools::default_namespace_description;
 use codex_tools::request_user_input_available_modes;
 use codex_tools::shell_command_backend_for_features;
 use codex_tools::shell_type_for_model_and_features;
 use futures::future::BoxFuture;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::collections::btree_map::Entry;
 use std::sync::Arc;
 use tracing::instrument;
@@ -107,8 +95,6 @@ const IMAGEGEN_TOOL_NAME: &str = "imagegen";
 struct CoreToolPlanContext<'a> {
     turn_context: &'a TurnContext,
     environments: &'a TurnEnvironmentSnapshot,
-    mcp: &'a codex_mcp::McpBinding,
-    tool_suggest_candidates: Option<&'a crate::tools::router::ToolSuggestCandidates>,
     wait_for_environment_tool_config: Option<&'a Arc<crate::WaitForEnvironmentToolConfig>>,
     default_agent_type_description: &'a str,
     wait_agent_timeouts: WaitAgentTimeoutOptions,
@@ -119,10 +105,7 @@ pub(crate) fn build_tool_router(
     session: &Session,
     turn_context: &TurnContext,
     environments: &TurnEnvironmentSnapshot,
-    mcp: &codex_mcp::McpBinding,
-    apps_enabled: bool,
     step_store: &ExtensionData,
-    tool_suggest_candidates: Option<&crate::tools::router::ToolSuggestCandidates>,
 ) -> CodexResult<ToolRouter> {
     let default_agent_type_description =
         crate::agent::role::spawn_tool_spec::build(&std::collections::BTreeMap::new());
@@ -133,8 +116,6 @@ pub(crate) fn build_tool_router(
     let context = CoreToolPlanContext {
         turn_context,
         environments,
-        mcp,
-        tool_suggest_candidates,
         wait_for_environment_tool_config: wait_for_environment_tool_config.as_ref(),
         default_agent_type_description: &default_agent_type_description,
         wait_agent_timeouts: wait_agent_timeout_options(turn_context),
@@ -146,15 +127,6 @@ pub(crate) fn build_tool_router(
     {
         Vec::new()
     } else {
-        let registered_mcp_tools = append_mcp_tools(
-            mcp.tools(),
-            &turn_context.config,
-            apps_enabled,
-            &mcp.config().mcp_server_catalog,
-            search_tool_enabled(turn_context),
-            &mut registry,
-        );
-        apply_mcp_tool_exposure_policy(turn_context, mcp, &registered_mcp_tools, &mut registry);
         let standalone_web_search_tool = append_extension_tool_executors(
             turn_context,
             extension_tool_executors(session, step_store),
@@ -172,86 +144,11 @@ pub(crate) fn build_tool_router(
     )
 }
 
-fn apply_mcp_tool_exposure_policy(
-    turn_context: &TurnContext,
-    mcp: &codex_mcp::McpBinding,
-    registered_mcp_tools: &HashSet<ToolName>,
-    registry: &mut ToolRegistry,
-) {
-    let mut omitted_exposures_by_tool = HashMap::new();
-    for tool in mcp.tools() {
-        let tool_name = tool.canonical_tool_name();
-        if !registered_mcp_tools.contains(&tool_name) {
-            continue;
-        }
-        let Some(server) = mcp.config().mcp_server_catalog.server(&tool.server_name) else {
-            continue;
-        };
-        omitted_exposures_by_tool
-            .entry(tool_name)
-            .or_insert_with(|| {
-                server
-                    .config()
-                    .omit_tools_from
-                    .as_deref()
-                    .unwrap_or_default()
-                    .iter()
-                    .copied()
-                    .collect::<ToolExposures>()
-            });
-    }
-
-    for tool in registry.entries_mut() {
-        let tool_name = tool.runtime.tool_name();
-        let Some(omitted_exposures) = omitted_exposures_by_tool.get(&tool_name) else {
-            continue;
-        };
-        let tool_name = tool_name.with_default_namespace();
-
-        let mut exposures = ToolExposures::ALL.difference(*omitted_exposures);
-        if tool_name.namespace.as_ref().is_some_and(|namespace| {
-            turn_context
-                .config
-                .code_mode
-                .direct_only_tool_namespaces
-                .contains(namespace)
-        }) {
-            exposures = exposures.difference(ToolExposures::DEFERRED | ToolExposures::CODE_MODE);
-        }
-
-        exposures = if search_tool_enabled(turn_context)
-            && exposures.contains(ToolExposures::DEFERRED)
-            && (effective_tool_mode(turn_context) != ToolMode::CodeModeOnly
-                || exposures.contains(ToolExposures::CODE_MODE))
-        {
-            exposures.difference(ToolExposures::DIRECT)
-        } else {
-            exposures.difference(ToolExposures::DEFERRED)
-        };
-
-        tool.exposure = match (
-            exposures.contains(ToolExposures::DIRECT),
-            exposures.contains(ToolExposures::DEFERRED),
-            exposures.contains(ToolExposures::CODE_MODE),
-        ) {
-            (false, false, false) => ToolExposure::Hidden,
-            (false, false, true) => ToolExposure::CodeModeOnly,
-            (true, false, false) => ToolExposure::DirectModelOnly,
-            (true, false, true) => ToolExposure::Direct,
-            (false, true, false) => ToolExposure::DeferredModelOnly,
-            (false, true, true) => ToolExposure::Deferred,
-            (true, true, _) => unreachable!("direct and deferred exposure are mutually exclusive"),
-        };
-    }
-}
-
 #[cfg(test)]
 #[instrument(level = "trace", skip_all)]
 pub(crate) fn build_core_tool_registry(
     turn_context: &TurnContext,
     environments: &TurnEnvironmentSnapshot,
-    mcp: &codex_mcp::McpBinding,
-    tool_suggest_candidates: Option<&crate::tools::router::ToolSuggestCandidates>,
     wait_for_environment_tool_config: Option<&Arc<crate::WaitForEnvironmentToolConfig>>,
 ) -> ToolRegistry {
     let default_agent_type_description =
@@ -259,8 +156,6 @@ pub(crate) fn build_core_tool_registry(
     let context = CoreToolPlanContext {
         turn_context,
         environments,
-        mcp,
-        tool_suggest_candidates,
         wait_for_environment_tool_config,
         default_agent_type_description: &default_agent_type_description,
         wait_agent_timeouts: wait_agent_timeout_options(turn_context),
@@ -275,7 +170,6 @@ pub(crate) fn build_core_tool_registry(
 pub(crate) fn append_source_tools(
     turn_context: &TurnContext,
     registry: &mut ToolRegistry,
-    mcp_tools: Vec<RegisteredTool>,
     extension_tool_executors: impl IntoIterator<Item = Arc<dyn ToolExecutor<ExtensionToolCall>>>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> Vec<ToolSpec> {
@@ -283,9 +177,6 @@ pub(crate) fn append_source_tools(
         return Vec::new();
     }
 
-    for tool in mcp_tools {
-        registry.register_external_with_exposure(tool.runtime, tool.exposure);
-    }
     let standalone_web_search_tool =
         append_extension_tool_executors(turn_context, extension_tool_executors, registry);
     append_dynamic_tool_runtimes(dynamic_tools, registry);
@@ -513,13 +404,6 @@ fn hosted_model_tool_specs(
 
 pub(crate) fn search_tool_enabled(turn_context: &TurnContext) -> bool {
     turn_context.model_info.supports_search_tool && namespace_tools_enabled(turn_context)
-}
-
-pub(crate) fn tool_suggest_enabled(turn_context: &TurnContext) -> bool {
-    let features = turn_context.config.features.get();
-    features.enabled(Feature::ToolSuggest)
-        && features.enabled(Feature::Apps)
-        && features.enabled(Feature::Plugins)
 }
 
 fn namespace_tools_enabled(turn_context: &TurnContext) -> bool {
@@ -846,7 +730,6 @@ fn add_core_tool_sources(context: &CoreToolPlanContext<'_>, registry: &mut ToolR
     }
 
     add_shell_tools(context, registry);
-    add_mcp_resource_tools(context, registry);
     add_core_utility_tools(context, registry);
     add_collaboration_tools(context, registry);
 }
@@ -937,15 +820,6 @@ fn unified_exec_should_include_shell_parameter(
 }
 
 #[instrument(level = "trace", skip_all)]
-fn add_mcp_resource_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistry) {
-    if context.mcp.has_servers() {
-        registry.add(ListMcpResourcesHandler);
-        registry.add(ListMcpResourceTemplatesHandler);
-        registry.add(ReadMcpResourceHandler);
-    }
-}
-
-#[instrument(level = "trace", skip_all)]
 fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistry) {
     let turn_context = context.turn_context;
     let features = turn_context.config.features.get();
@@ -995,22 +869,6 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
         {
             registry.add(SleepHandler);
         }
-    }
-
-    if tool_suggest_enabled(turn_context)
-        && let Some(candidates) = context
-            .tool_suggest_candidates
-            .filter(|candidates| !candidates.tools.is_empty())
-    {
-        if candidates.presentation == crate::tools::router::ToolSuggestPresentation::ListTool {
-            registry.add(ListAvailablePluginsToInstallHandler::new(
-                collect_request_plugin_install_entries(&candidates.tools),
-            ));
-        }
-        registry.add(RequestPluginInstallHandler::new(
-            candidates.tools.clone(),
-            candidates.presentation,
-        ));
     }
 
     if environment_mode.has_environment() && turn_context.model_info.apply_patch_tool_type.is_some()

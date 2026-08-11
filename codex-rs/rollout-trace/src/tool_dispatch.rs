@@ -415,7 +415,7 @@ mod tests {
         )));
         assert!(!suppresses_tool_dispatch_trace(&invocation(
             codex_code_mode::PUBLIC_TOOL_NAME,
-            Some("mcp__server".to_string()),
+            Some("extension__server".to_string()),
             ToolDispatchRequester::Model {
                 model_visible_call_id: "call-namespaced".to_string(),
             },

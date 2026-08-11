@@ -1,16 +1,12 @@
 //! Background app-server requests launched by the TUI app.
 //!
-//! This module owns fire-and-forget fetch/write helpers for MCP inventory, skills, plugins, rate
+//! This module owns fire-and-forget fetch/write helpers for skills, plugins, rate
 //! limits, add-credit nudges, and feedback uploads. Results are routed back through `AppEvent` so
 //! the main event loop remains single-threaded.
 
 use super::plugin_mentions::fetch_plugin_mentions;
 use super::*;
-use crate::app_event::ConnectorsSnapshot;
-use crate::app_info::app_info_from_api;
 use crate::config_update::format_config_error;
-use codex_app_server_protocol::AppsListParams;
-use codex_app_server_protocol::AppsListResponse;
 use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditParams;
 use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditResponse;
 use codex_app_server_protocol::MarketplaceAddParams;
@@ -35,37 +31,6 @@ const WORKSPACE_HEADLINE_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_millis(/*millis*/ 2000);
 
 impl App {
-    pub(super) fn fetch_mcp_inventory(
-        &mut self,
-        app_server: &AppServerSession,
-        detail: McpServerStatusDetail,
-        thread_id: Option<ThreadId>,
-    ) {
-        let request_handle = app_server.request_handle();
-        let app_event_tx = self.app_event_tx.clone();
-        let request_thread_id = self.mcp_inventory_request_thread_id(thread_id);
-        tokio::spawn(async move {
-            let result = fetch_all_mcp_server_statuses(request_handle, detail, request_thread_id)
-                .await
-                .map_err(|err| err.to_string());
-            app_event_tx.send(AppEvent::McpInventoryLoaded {
-                result,
-                detail,
-                thread_id,
-            });
-        });
-    }
-
-    fn mcp_inventory_request_thread_id(&self, thread_id: Option<ThreadId>) -> Option<ThreadId> {
-        thread_id.filter(|thread_id| {
-            self.active_thread_id == Some(*thread_id)
-                && self
-                    .agent_navigation
-                    .get(thread_id)
-                    .is_none_or(|entry| !entry.is_closed)
-        })
-    }
-
     /// Spawns a background task to fetch account rate limits and deliver the
     /// result as a `RateLimitsLoaded` event.
     ///
@@ -208,27 +173,6 @@ impl App {
                 .await
                 .map_err(|err| format!("{err:#}"));
             app_event_tx.send(AppEvent::SkillsListLoaded { result });
-        });
-    }
-
-    pub(super) fn fetch_connectors_list(
-        &mut self,
-        app_server: &AppServerSession,
-        force_refetch: bool,
-    ) {
-        let request_handle = app_server.request_handle();
-        let app_event_tx = self.app_event_tx.clone();
-        let thread_id = self
-            .current_displayed_thread_id()
-            .map(|thread_id| thread_id.to_string());
-        tokio::spawn(async move {
-            let result = fetch_connectors_list(request_handle, force_refetch, thread_id)
-                .await
-                .map_err(|err| err.to_string());
-            app_event_tx.send(AppEvent::ConnectorsLoaded {
-                result,
-                is_final: true,
-            });
         });
     }
 
@@ -667,94 +611,6 @@ impl App {
             self.handle_feedback_thread_event(event);
         }
     }
-
-    /// Process the completed MCP inventory fetch: clear the loading spinner, then
-    /// render either the full tool/resource listing or an error into chat history.
-    ///
-    /// When the app-server reports zero servers, a special "empty" cell is shown
-    /// instead of the full table.
-    pub(super) fn handle_mcp_inventory_result(
-        &mut self,
-        result: Result<Vec<McpServerStatus>, String>,
-        detail: McpServerStatusDetail,
-        thread_id: Option<ThreadId>,
-    ) {
-        if thread_id.is_some() && thread_id != self.current_displayed_thread_id() {
-            return;
-        }
-
-        self.chat_widget.clear_mcp_inventory_loading();
-        self.clear_committed_mcp_inventory_loading();
-
-        let statuses = match result {
-            Ok(statuses) => statuses,
-            Err(err) => {
-                self.chat_widget
-                    .add_error_message(format!("Failed to load MCP inventory: {err}"));
-                return;
-            }
-        };
-
-        if statuses.is_empty() {
-            self.chat_widget
-                .add_to_history(history_cell::empty_mcp_output());
-            return;
-        }
-
-        self.chat_widget
-            .add_to_history(history_cell::new_mcp_tools_output_from_statuses(
-                &statuses, detail,
-            ));
-    }
-
-    pub(super) fn clear_committed_mcp_inventory_loading(&mut self) {
-        let Some(index) = self
-            .transcript_cells
-            .iter()
-            .rposition(|cell| cell.as_any().is::<history_cell::McpInventoryLoadingCell>())
-        else {
-            return;
-        };
-
-        self.transcript_cells.remove(index);
-        if let Some(Overlay::Transcript(overlay)) = &mut self.overlay {
-            overlay.replace_cells(self.transcript_cells.clone());
-        }
-    }
-}
-
-pub(super) async fn fetch_all_mcp_server_statuses(
-    request_handle: AppServerRequestHandle,
-    detail: McpServerStatusDetail,
-    thread_id: Option<ThreadId>,
-) -> Result<Vec<McpServerStatus>> {
-    let mut cursor = None;
-    let mut statuses = Vec::new();
-    let thread_id = thread_id.map(|id| id.to_string());
-
-    loop {
-        let request_id = RequestId::String(format!("mcp-inventory-{}", Uuid::new_v4()));
-        let response: ListMcpServerStatusResponse = request_handle
-            .request_typed(ClientRequest::McpServerStatusList {
-                request_id,
-                params: ListMcpServerStatusParams {
-                    cursor: cursor.clone(),
-                    limit: Some(100),
-                    detail: Some(detail),
-                    thread_id: thread_id.clone(),
-                },
-            })
-            .await
-            .wrap_err("mcpServerStatus/list failed in TUI")?;
-        statuses.extend(response.data);
-        if let Some(next_cursor) = response.next_cursor {
-            cursor = Some(next_cursor);
-        } else {
-            break;
-        }
-    }
-
-    Ok(statuses)
 }
 
 pub(super) async fn fetch_account_rate_limits(
@@ -847,29 +703,6 @@ pub(super) async fn fetch_skills_list(
         })
         .await
         .wrap_err("skills/list failed in TUI")
-}
-
-pub(super) async fn fetch_connectors_list(
-    request_handle: AppServerRequestHandle,
-    force_refetch: bool,
-    thread_id: Option<String>,
-) -> Result<ConnectorsSnapshot> {
-    let request_id = RequestId::String(format!("apps-list-{}", Uuid::new_v4()));
-    let response: AppsListResponse = request_handle
-        .request_typed(ClientRequest::AppsList {
-            request_id,
-            params: AppsListParams {
-                cursor: None,
-                limit: None,
-                thread_id,
-                force_refetch,
-            },
-        })
-        .await
-        .wrap_err("app/list failed in TUI")?;
-    Ok(ConnectorsSnapshot {
-        connectors: response.data.into_iter().map(app_info_from_api).collect(),
-    })
 }
 
 pub(super) async fn fetch_plugins_list(
@@ -1239,53 +1072,11 @@ pub(super) async fn fetch_feedback_upload(
         .wrap_err("feedback/upload failed in TUI")
 }
 
-/// Convert flat `McpServerStatus` responses into the per-server maps used by the
-/// in-process MCP subsystem (tools keyed as `mcp__{server}__{tool}`, plus
-/// per-server resource/template/auth maps). Test-only because the TUI
-/// renders directly from `McpServerStatus` rather than these maps.
-#[cfg(test)]
-pub(super) type McpInventoryMaps = (
-    HashMap<String, codex_protocol::mcp::Tool>,
-    HashMap<String, Vec<codex_protocol::mcp::Resource>>,
-    HashMap<String, Vec<codex_protocol::mcp::ResourceTemplate>>,
-    HashMap<String, McpAuthStatus>,
-);
-
-#[cfg(test)]
-pub(super) fn mcp_inventory_maps_from_statuses(statuses: Vec<McpServerStatus>) -> McpInventoryMaps {
-    let mut tools = HashMap::new();
-    let mut resources = HashMap::new();
-    let mut resource_templates = HashMap::new();
-    let mut auth_statuses = HashMap::new();
-
-    for status in statuses {
-        let server_name = status.name;
-        auth_statuses.insert(
-            server_name.clone(),
-            match status.auth_status {
-                codex_app_server_protocol::McpAuthStatus::Unknown => McpAuthStatus::Unknown,
-                codex_app_server_protocol::McpAuthStatus::Unsupported => McpAuthStatus::Unsupported,
-                codex_app_server_protocol::McpAuthStatus::NotLoggedIn => McpAuthStatus::NotLoggedIn,
-                codex_app_server_protocol::McpAuthStatus::BearerToken => McpAuthStatus::BearerToken,
-                codex_app_server_protocol::McpAuthStatus::OAuth => McpAuthStatus::OAuth,
-            },
-        );
-        resources.insert(server_name.clone(), status.resources);
-        resource_templates.insert(server_name.clone(), status.resource_templates);
-        for (tool_name, tool) in status.tools {
-            tools.insert(format!("mcp__{server_name}__{tool_name}"), tool);
-        }
-    }
-
-    (tools, resources, resource_templates, auth_statuses)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::test_support::make_test_app;
+
     use codex_app_server_protocol::PluginMarketplaceEntry;
-    use codex_protocol::mcp::Tool;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
 
@@ -1435,78 +1226,6 @@ mod tests {
                 message: "Plugin sharing is disabled for this Codex session. Enable plugin sharing to load shared plugins.".to_string(),
             }
         );
-    }
-
-    #[test]
-    fn mcp_inventory_maps_prefix_tool_names_by_server() {
-        let statuses = vec![
-            McpServerStatus {
-                name: "docs".to_string(),
-                server_info: None,
-                tools: HashMap::from([(
-                    "list".to_string(),
-                    Tool {
-                        description: None,
-                        name: "list".to_string(),
-                        title: None,
-                        input_schema: serde_json::json!({"type": "object"}),
-                        output_schema: None,
-                        annotations: None,
-                        icons: None,
-                        meta: None,
-                    },
-                )]),
-                resources: Vec::new(),
-                resource_templates: Vec::new(),
-                auth_status: codex_app_server_protocol::McpAuthStatus::Unsupported,
-            },
-            McpServerStatus {
-                name: "disabled".to_string(),
-                server_info: None,
-                tools: HashMap::new(),
-                resources: Vec::new(),
-                resource_templates: Vec::new(),
-                auth_status: codex_app_server_protocol::McpAuthStatus::Unsupported,
-            },
-        ];
-
-        let (tools, resources, resource_templates, auth_statuses) =
-            mcp_inventory_maps_from_statuses(statuses);
-        let mut resource_names = resources.keys().cloned().collect::<Vec<_>>();
-        resource_names.sort();
-        let mut template_names = resource_templates.keys().cloned().collect::<Vec<_>>();
-        template_names.sort();
-
-        assert_eq!(
-            tools.keys().cloned().collect::<Vec<_>>(),
-            vec!["mcp__docs__list".to_string()]
-        );
-        assert_eq!(resource_names, vec!["disabled", "docs"]);
-        assert_eq!(template_names, vec!["disabled", "docs"]);
-        assert_eq!(
-            auth_statuses.get("disabled"),
-            Some(&McpAuthStatus::Unsupported)
-        );
-    }
-
-    #[tokio::test]
-    async fn mcp_inventory_omits_thread_id_for_closed_agent_thread() {
-        let mut app = make_test_app().await;
-        let thread_id = ThreadId::new();
-        app.active_thread_id = Some(thread_id);
-        app.agent_navigation.upsert(
-            thread_id, /*agent_nickname*/ None, /*agent_role*/ None,
-            /*is_closed*/ false,
-        );
-
-        assert_eq!(
-            app.mcp_inventory_request_thread_id(Some(thread_id)),
-            Some(thread_id)
-        );
-
-        app.agent_navigation.mark_closed(thread_id);
-
-        assert_eq!(app.mcp_inventory_request_thread_id(Some(thread_id)), None);
     }
 
     #[test]

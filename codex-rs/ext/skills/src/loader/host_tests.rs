@@ -103,7 +103,7 @@ async fn loads_host_frontmatter_dependencies_and_policy() {
         "demo",
         r##"dependencies:
   tools:
-    - type: mcp
+    - type: cli
       value: demo-tool
       description: Demo tool
 policy:
@@ -124,7 +124,7 @@ policy:
             interface: None,
             dependencies: Some(SkillDependencies {
                 tools: vec![SkillToolDependency {
-                    r#type: "mcp".to_string(),
+                    r#type: "cli".to_string(),
                     value: "demo-tool".to_string(),
                     description: Some("Demo tool".to_string()),
                     transport: None,

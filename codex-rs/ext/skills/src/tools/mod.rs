@@ -14,8 +14,6 @@ use codex_extension_api::ToolName;
 use codex_extension_api::ToolOutput;
 use codex_extension_api::ToolSpec;
 use codex_extension_api::parse_tool_input_schema;
-use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
-use codex_mcp::McpResourceClient;
 use codex_tools::ResponsesApiNamespace;
 use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::default_namespace_description;
@@ -29,7 +27,6 @@ use crate::catalog::SkillAuthority;
 use crate::catalog::SkillCatalog;
 use crate::catalog::SkillSourceKind;
 use crate::provider::SkillListQuery;
-use crate::shadow_selection_experiment::ShadowSelectionExperiment;
 use crate::sources::SkillProviders;
 use crate::state::SkillsThreadState;
 
@@ -42,22 +39,16 @@ const MAX_HANDLE_BYTES: usize = 2_048;
 
 pub(crate) fn skill_tools(
     providers: SkillProviders,
-    mcp_resources: Option<Arc<McpResourceClient>>,
     thread_state: Arc<SkillsThreadState>,
-    orchestrator_available: bool,
     executor_query: Option<SkillListQuery>,
     sandbox_contexts: Option<Arc<HashMap<String, FileSystemSandboxContext>>>,
-    shadow_selection: Arc<ShadowSelectionExperiment>,
 ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>> {
     let context = SkillToolContext {
         providers,
-        mcp_resources,
         thread_state,
-        orchestrator_available,
         executor_query,
         sandbox_contexts,
         executor_catalog: Arc::new(OnceCell::new()),
-        shadow_selection,
     };
     vec![
         Arc::new(list::ListTool {
@@ -70,89 +61,50 @@ pub(crate) fn skill_tools(
 #[derive(Clone)]
 struct SkillToolContext {
     providers: SkillProviders,
-    mcp_resources: Option<Arc<McpResourceClient>>,
     thread_state: Arc<SkillsThreadState>,
-    orchestrator_available: bool,
     executor_query: Option<SkillListQuery>,
     sandbox_contexts: Option<Arc<HashMap<String, FileSystemSandboxContext>>>,
     executor_catalog: Arc<OnceCell<SkillCatalog>>,
-    shadow_selection: Arc<ShadowSelectionExperiment>,
 }
 
 impl SkillToolContext {
-    async fn catalog(&self, turn_id: &str, authority: SkillToolAuthoritySelector) -> SkillCatalog {
-        match authority {
-            SkillToolAuthoritySelector::Orchestrator => {
-                if !self.orchestrator_available {
-                    return SkillCatalog::default();
-                }
-                self.thread_state
-                    .orchestrator_catalog_snapshot(
-                        &self.providers,
-                        SkillListQuery {
-                            turn_id: turn_id.to_string(),
-                            executor_roots: Vec::new(),
-                            resolved_executor_roots: Vec::new(),
-                            host_snapshot: None,
-                            include_host_skills: false,
-                            include_bundled_skills: false,
-                            include_orchestrator_skills: true,
-                            mcp_resources: self.mcp_resources.clone(),
-                            executor_capability_discovery: None,
-                        },
-                    )
-                    .await
-            }
-            SkillToolAuthoritySelector::Executor => {
-                let Some(mut query) = self.executor_query.clone() else {
-                    return SkillCatalog::default();
-                };
-                query.turn_id = turn_id.to_string();
-                self.executor_catalog
-                    .get_or_init(|| self.providers.list_executor_for_turn(query))
-                    .await
-                    .clone()
-            }
-        }
+    async fn catalog(&self, turn_id: &str, _authority: SkillToolAuthoritySelector) -> SkillCatalog {
+        let Some(mut query) = self.executor_query.clone() else {
+            return SkillCatalog::default();
+        };
+        query.turn_id = turn_id.to_string();
+        self.executor_catalog
+            .get_or_init(|| self.providers.list_executor_for_turn(query))
+            .await
+            .clone()
     }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum SkillToolAuthoritySelector {
-    Orchestrator,
     Executor,
 }
 
 impl SkillToolAuthoritySelector {
     fn matches(self, authority: &SkillAuthority) -> bool {
-        match self {
-            Self::Orchestrator => authority.kind == SkillSourceKind::Orchestrator,
-            Self::Executor => authority.kind == SkillSourceKind::Executor,
-        }
+        authority.kind == SkillSourceKind::Executor
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum SkillToolAuthority {
-    Orchestrator,
     Executor { id: String },
 }
 
 impl SkillToolAuthority {
     fn selector(&self) -> SkillToolAuthoritySelector {
-        match self {
-            Self::Orchestrator => SkillToolAuthoritySelector::Orchestrator,
-            Self::Executor { .. } => SkillToolAuthoritySelector::Executor,
-        }
+        SkillToolAuthoritySelector::Executor
     }
 
     pub(crate) fn from_authority(authority: &SkillAuthority) -> Option<Self> {
         match &authority.kind {
-            SkillSourceKind::Orchestrator if authority.id == CODEX_APPS_MCP_SERVER_NAME => {
-                Some(Self::Orchestrator)
-            }
             SkillSourceKind::Executor => Some(Self::Executor {
                 id: authority.id.clone(),
             }),
@@ -163,15 +115,8 @@ impl SkillToolAuthority {
     }
 
     fn matches(&self, authority: &SkillAuthority) -> bool {
-        match self {
-            Self::Orchestrator => {
-                authority.kind == SkillSourceKind::Orchestrator
-                    && authority.id == CODEX_APPS_MCP_SERVER_NAME
-            }
-            Self::Executor { id } => {
-                authority.kind == SkillSourceKind::Executor && authority.id == *id
-            }
-        }
+        let Self::Executor { id } = self;
+        authority.kind == SkillSourceKind::Executor && authority.id == *id
     }
 }
 
@@ -264,8 +209,6 @@ fn skill_json_output<T: Serialize>(
         FunctionCallError::Fatal(format!("failed to serialize tool output: {err}"))
     })?;
     let output = JsonToolOutput::new(value);
-    Ok(match authority {
-        SkillToolAuthoritySelector::Orchestrator => Box::new(output.with_external_context()),
-        SkillToolAuthoritySelector::Executor => Box::new(output),
-    })
+    let _ = authority;
+    Ok(Box::new(output))
 }

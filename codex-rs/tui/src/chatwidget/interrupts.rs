@@ -5,8 +5,6 @@ use std::collections::VecDeque;
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::approval_events::ApplyPatchApprovalRequestEvent;
 use crate::approval_events::ExecApprovalRequestEvent;
-use codex_app_server_protocol::McpServerElicitationRequestParams;
-use codex_app_server_protocol::RequestId as AppServerRequestId;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_protocol::request_permissions::RequestPermissionsEvent;
@@ -17,10 +15,6 @@ use super::ChatWidget;
 pub(crate) enum QueuedInterrupt {
     ExecApproval(ExecApprovalRequestEvent),
     ApplyPatchApproval(ApplyPatchApprovalRequestEvent),
-    Elicitation {
-        request_id: AppServerRequestId,
-        params: McpServerElicitationRequestParams,
-    },
     RequestPermissions(RequestPermissionsEvent),
     RequestUserInput(ToolRequestUserInputParams),
     ItemStarted(ThreadItem),
@@ -53,15 +47,6 @@ impl InterruptManager {
             .push_back(QueuedInterrupt::ApplyPatchApproval(ev));
     }
 
-    pub(crate) fn push_elicitation(
-        &mut self,
-        request_id: AppServerRequestId,
-        params: McpServerElicitationRequestParams,
-    ) {
-        self.queue
-            .push_back(QueuedInterrupt::Elicitation { request_id, params });
-    }
-
     pub(crate) fn push_request_permissions(&mut self, ev: RequestPermissionsEvent) {
         self.queue
             .push_back(QueuedInterrupt::RequestPermissions(ev));
@@ -91,9 +76,6 @@ impl InterruptManager {
             match q {
                 QueuedInterrupt::ExecApproval(ev) => chat.handle_exec_approval_now(ev),
                 QueuedInterrupt::ApplyPatchApproval(ev) => chat.handle_apply_patch_approval_now(ev),
-                QueuedInterrupt::Elicitation { request_id, params } => {
-                    chat.handle_elicitation_request_now(request_id, params);
-                }
                 QueuedInterrupt::RequestPermissions(ev) => chat.handle_request_permissions_now(ev),
                 QueuedInterrupt::RequestUserInput(ev) => chat.handle_request_user_input_now(ev),
                 QueuedInterrupt::ItemStarted(item) => chat.handle_queued_item_started_now(item),
@@ -115,12 +97,6 @@ impl QueuedInterrupt {
             QueuedInterrupt::ApplyPatchApproval(ev) => {
                 matches!(request, ResolvedAppServerRequest::FileChangeApproval { id }
                     if ev.call_id == id.as_str())
-            }
-            QueuedInterrupt::Elicitation { request_id, params } => {
-                matches!(request, ResolvedAppServerRequest::McpElicitation {
-                    server_name,
-                    request_id: resolved_request_id,
-                } if params.server_name == server_name.as_str() && request_id == resolved_request_id)
             }
             QueuedInterrupt::RequestPermissions(ev) => {
                 matches!(request, ResolvedAppServerRequest::PermissionsApproval { id }

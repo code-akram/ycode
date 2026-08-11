@@ -23,7 +23,6 @@ use crate::sources::SkillProviders;
 use crate::state::EmittedCatalogBudgetWarnings;
 use crate::state::ExecutorSkillsStepState;
 use crate::state::HostSkillsStepState;
-use crate::state::SkillsSessionState;
 use crate::state::SkillsThreadState;
 use crate::world_state::CatalogRenderCallback;
 use crate::world_state::executor_skills_world_state_section;
@@ -144,11 +143,6 @@ impl<'a> CatalogContext<'a> {
             include_host_skills: false,
             include_bundled_skills: self.config.bundled_skills_enabled,
             include_orchestrator_skills: orchestrator_enabled,
-            mcp_resources: self
-                .input
-                .session_store
-                .get::<SkillsSessionState>()
-                .and_then(|state| state.mcp_resources.clone()),
             executor_capability_discovery: self.input.executor_capability_discovery.cloned(),
         };
 
@@ -224,7 +218,6 @@ impl<'a> CatalogContext<'a> {
                     include_host_skills: true,
                     include_bundled_skills: false,
                     include_orchestrator_skills: false,
-                    mcp_resources: None,
                     executor_capability_discovery: None,
                 })
                 .await;

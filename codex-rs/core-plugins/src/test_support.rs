@@ -96,34 +96,13 @@ pub(crate) fn write_curated_plugin(root: &Path, plugin_name: &str) {
         &format!(
             r#"{{
   "name": "{plugin_name}",
-  "description": "Plugin that includes skills, MCP servers, and app connectors"
+  "description": "Plugin that includes skills"
 }}"#
         ),
     );
     write_file(
         &plugin_root.join("skills/SKILL.md"),
         "---\nname: sample\ndescription: sample\n---\n",
-    );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "sample-docs": {
-      "type": "http",
-      "url": "https://sample.example/mcp"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &plugin_root.join(".app.json"),
-        r#"{
-  "apps": {
-    "calendar": {
-      "id": "connector_calendar"
-    }
-  }
-}"#,
     );
 }
 

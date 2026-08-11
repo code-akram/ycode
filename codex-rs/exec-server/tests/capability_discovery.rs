@@ -36,7 +36,6 @@ async fn discovers_a_complete_capability_bundle_in_one_request() -> anyhow::Resu
         r#"{
   "name": "demo",
   "interface": {"displayName": "Demo Plugin"},
-  "mcpServers": "./config/mcp.json",
   "apps": "./config/apps.json"
 }"#,
     )?;
@@ -47,10 +46,6 @@ async fn discovers_a_complete_capability_bundle_in_one_request() -> anyhow::Resu
     write_file(
         &root.path().join(".cursor-plugin/plugin.json"),
         r#"{"name":"lower-priority-cursor"}"#,
-    )?;
-    write_file(
-        &root.path().join("config/mcp.json"),
-        r#"{"mcpServers":{"demo":{"command":"demo-server"}}}"#,
     )?;
     write_file(
         &root.path().join("config/apps.json"),
@@ -97,10 +92,6 @@ async fn discovers_a_complete_capability_bundle_in_one_request() -> anyhow::Resu
     );
     assert!(plugin.manifest.contents.contains("Demo Plugin"));
     assert_eq!(
-        plugin.mcp_config.as_ref().map(|file| &file.path),
-        Some(&root_uri.join("config/mcp.json")?)
-    );
-    assert_eq!(
         plugin.apps_config.as_ref().map(|file| &file.path),
         Some(&root_uri.join("config/apps.json")?)
     );
@@ -142,45 +133,6 @@ async fn discovers_a_complete_capability_bundle_in_one_request() -> anyhow::Resu
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn discovers_cursor_plugin_without_reading_default_mcp_for_inline_servers()
--> anyhow::Result<()> {
-    let root = tempfile::tempdir()?;
-    write_file(
-        &root.path().join(".cursor-plugin/plugin.json"),
-        r#"{"name":"cursor-demo","mcpServers":{"inline":{"command":"inline"}}}"#,
-    )?;
-    write_file(
-        &root.path().join(".mcp.json"),
-        r#"{"mcpServers":{"should-not-load":{"command":"wrong"}}}"#,
-    )?;
-
-    let mut server = exec_server().await?;
-    initialize(&mut server).await?;
-    let root_uri = PathUri::from_host_native_path(root.path())?;
-    let discovery = discover_root(&mut server, "cursor@1", root_uri.clone()).await?;
-
-    assert_eq!(discovery.error, None);
-    assert_eq!(discovery.warnings, Vec::<String>::new());
-    let plugin = discovery.plugin.expect("cursor plugin");
-    assert_eq!(
-        plugin.manifest.path,
-        root_uri.join(".cursor-plugin/plugin.json")?
-    );
-    assert_eq!(plugin.mcp_config, None);
-    assert_eq!(
-        discovery
-            .namespace_manifests
-            .iter()
-            .map(|manifest| manifest.path.clone())
-            .collect::<Vec<_>>(),
-        vec![root_uri.join(".cursor-plugin/plugin.json")?]
-    );
-
-    server.shutdown().await?;
-    Ok(())
-}
-
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sandboxed_discovery_follows_only_permitted_external_symlinks() -> anyhow::Result<()> {
@@ -188,11 +140,7 @@ async fn sandboxed_discovery_follows_only_permitted_external_symlinks() -> anyho
     let external = tempfile::tempdir()?;
     write_file(
         &root.path().join(".codex-plugin/plugin.json"),
-        r#"{"name":"linked-plugin","mcpServers":"./external-mcp.json"}"#,
-    )?;
-    write_file(
-        &external.path().join("mcp.json"),
-        r#"{"mcpServers":{"linked":{"command":"linked-server"}}}"#,
+        r#"{"name":"linked-plugin"}"#,
     )?;
     write_file(
         &external.path().join("skill/SKILL.md"),
@@ -202,10 +150,6 @@ async fn sandboxed_discovery_follows_only_permitted_external_symlinks() -> anyho
     std::os::unix::fs::symlink(
         external.path().join("skill"),
         root.path().join("skills/linked"),
-    )?;
-    std::os::unix::fs::symlink(
-        external.path().join("mcp.json"),
-        root.path().join("external-mcp.json"),
     )?;
 
     let mut server = exec_server().await?;
@@ -220,26 +164,19 @@ async fn sandboxed_discovery_follows_only_permitted_external_symlinks() -> anyho
     let deny_external_skill = path_entry(external_root.join("skill"), FileSystemAccessMode::Deny);
     let cases = [
         (
-            "permitted symlinks",
+            "permitted symlink",
             vec![read_root.clone(), read_external.clone()],
             true,
-            true,
         ),
-        (
-            "denied external root",
-            vec![read_root.clone()],
-            false,
-            false,
-        ),
+        ("denied external root", vec![read_root.clone()], false),
         (
             "denied external skill",
             vec![read_root, read_external, deny_external_skill],
             false,
-            true,
         ),
     ];
 
-    for (scenario, entries, has_skill, has_mcp) in cases {
+    for (scenario, entries, has_skill) in cases {
         let policy = FileSystemSandboxPolicy::restricted(entries);
         let sandbox = FileSystemSandboxContext::from_permission_profile_with_cwd(
             PermissionProfile::from_runtime_permissions(&policy, NetworkSandboxPolicy::Restricted),
@@ -251,14 +188,6 @@ async fn sandboxed_discovery_follows_only_permitted_external_symlinks() -> anyho
 
         assert_eq!(discovery.error, None, "{scenario}");
         assert_eq!(discovery.skills.len(), usize::from(has_skill), "{scenario}");
-        assert_eq!(
-            discovery
-                .plugin
-                .and_then(|plugin| plugin.mcp_config)
-                .is_some_and(|config| config.contents.contains("linked-server")),
-            has_mcp,
-            "{scenario}"
-        );
     }
 
     server.shutdown().await?;

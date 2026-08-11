@@ -1482,8 +1482,6 @@ pub(super) fn plugins_test_detail(
     description: Option<&str>,
     skills: &[&str],
     hooks: &[(codex_app_server_protocol::HookEventName, usize)],
-    apps: &[&str],
-    mcp_servers: &[&str],
 ) -> PluginDetail {
     PluginDetail {
         marketplace_name: "ChatGPT Marketplace".to_string(),
@@ -1516,18 +1514,6 @@ pub(super) fn plugins_test_detail(
                 })
             })
             .collect(),
-        apps: apps
-            .iter()
-            .map(|name| AppSummary {
-                id: format!("{name}-id"),
-                name: (*name).to_string(),
-                description: Some(format!("{name} app")),
-                install_url: Some(format!("https://example.test/{name}")),
-                category: None,
-            })
-            .collect(),
-        app_templates: Vec::new(),
-        mcp_servers: mcp_servers.iter().map(|name| (*name).to_string()).collect(),
         scheduled_tasks: None,
     }
 }
@@ -1545,9 +1531,6 @@ pub(super) fn plugins_test_remote_detail(
         description: description.map(str::to_string),
         skills: Vec::new(),
         hooks: Vec::new(),
-        apps: Vec::new(),
-        app_templates: Vec::new(),
-        mcp_servers: Vec::new(),
         scheduled_tasks: None,
     }
 }

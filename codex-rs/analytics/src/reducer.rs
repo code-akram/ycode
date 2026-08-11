@@ -19,8 +19,6 @@ use crate::events::CodexGoalEventRequest;
 use crate::events::CodexHookRunEventRequest;
 use crate::events::CodexImageGenerationEventParams;
 use crate::events::CodexImageGenerationEventRequest;
-use crate::events::CodexMcpToolCallEventParams;
-use crate::events::CodexMcpToolCallEventRequest;
 use crate::events::CodexOnboardingExternalAgentImportCompleteEventRequest;
 use crate::events::CodexOnboardingExternalAgentImportCompleteMetadata;
 use crate::events::CodexOnboardingExternalAgentImportFailureEventRequest;
@@ -118,7 +116,6 @@ use codex_app_server_protocol::FileChangeApprovalDecision;
 use codex_app_server_protocol::GuardianApprovalReviewAction;
 use codex_app_server_protocol::GuardianApprovalReviewStatus;
 use codex_app_server_protocol::InitializeParams;
-use codex_app_server_protocol::McpToolCallStatus;
 use codex_app_server_protocol::NetworkPolicyRuleAction;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind;
@@ -420,7 +417,6 @@ struct TurnToolCounts {
     total: usize,
     shell_command: usize,
     file_change: usize,
-    mcp_tool_call: usize,
     dynamic_tool_call: usize,
     subagent_tool_call: usize,
     web_search: usize,
@@ -432,7 +428,6 @@ impl TurnToolCounts {
         match item {
             ThreadItem::CommandExecution { .. } => self.shell_command += 1,
             ThreadItem::FileChange { .. } => self.file_change += 1,
-            ThreadItem::McpToolCall { .. } => self.mcp_tool_call += 1,
             ThreadItem::DynamicToolCall { .. } => self.dynamic_tool_call += 1,
             ThreadItem::CollabAgentToolCall { .. } | ThreadItem::SubAgentActivity { .. } => {
                 self.subagent_tool_call += 1;
@@ -2110,7 +2105,6 @@ fn tracked_tool_item_id(item: &ThreadItem) -> Option<&str> {
     match item {
         ThreadItem::CommandExecution { id, .. }
         | ThreadItem::FileChange { id, .. }
-        | ThreadItem::McpToolCall { id, .. }
         | ThreadItem::DynamicToolCall { id, .. }
         | ThreadItem::CollabAgentToolCall { id, .. } => Some(id),
         ThreadItem::WebSearch(item) => Some(&item.id),
@@ -2133,7 +2127,6 @@ fn tool_event_base_mut(event: &mut TrackEventRequest) -> Option<&mut CodexToolIt
     match event {
         TrackEventRequest::CommandExecution(event) => Some(&mut event.event_params.base),
         TrackEventRequest::FileChange(event) => Some(&mut event.event_params.base),
-        TrackEventRequest::McpToolCall(event) => Some(&mut event.event_params.base),
         TrackEventRequest::DynamicToolCall(event) => Some(&mut event.event_params.base),
         TrackEventRequest::CollabAgentToolCall(event) => Some(&mut event.event_params.base),
         TrackEventRequest::WebSearch(event) => Some(&mut event.event_params.base),
@@ -2174,9 +2167,7 @@ fn enrich_tool_response_event(
 
 fn item_review_summary_key(pending_review: &PendingReviewState) -> Option<ToolItemKey> {
     match pending_review.subject_kind {
-        ReviewSubjectKind::CommandExecution
-        | ReviewSubjectKind::FileChange
-        | ReviewSubjectKind::McpToolCall => Some(ToolItemKey {
+        ReviewSubjectKind::CommandExecution | ReviewSubjectKind::FileChange => Some(ToolItemKey {
             thread_id: pending_review.thread_id.clone(),
             turn_id: pending_review.turn_id.clone(),
             item_id: pending_review.item_id.clone()?,
@@ -2300,53 +2291,6 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     file_move_count: counts.move_,
                 },
             }))
-        }
-        ThreadItem::McpToolCall {
-            id,
-            server,
-            tool,
-            status,
-            error,
-            duration_ms,
-            plugin_id,
-            app_context,
-            ..
-        } => {
-            let (terminal_status, failure_kind) = mcp_tool_call_outcome(status)?;
-            let base = tool_item_base(
-                thread_id,
-                turn_id,
-                id.clone(),
-                tool.clone(),
-                ToolItemOutcome {
-                    terminal_status,
-                    failure_kind,
-                    execution_duration_ms: option_i64_to_u64(*duration_ms),
-                },
-                ToolItemContext {
-                    started_at_ms,
-                    completed_at_ms,
-                    connection_state,
-                    thread_state,
-                    thread_metadata,
-                    review_summary,
-                },
-            );
-            Some(TrackEventRequest::McpToolCall(
-                CodexMcpToolCallEventRequest {
-                    event_type: "codex_mcp_tool_call_event",
-                    event_params: CodexMcpToolCallEventParams {
-                        base,
-                        mcp_server_name: server.clone(),
-                        mcp_tool_name: tool.clone(),
-                        mcp_error_present: error.is_some(),
-                        plugin_id: plugin_id.clone(),
-                        connector_id: app_context
-                            .as_ref()
-                            .map(|app_context| app_context.connector_id.clone()),
-                    },
-                },
-            ))
         }
         ThreadItem::DynamicToolCall {
             id,
@@ -2754,11 +2698,6 @@ fn guardian_review_subject_metadata(
                 trigger,
             )
         }
-        GuardianApprovalReviewAction::McpToolCall { tool_name, .. } => (
-            ReviewSubjectKind::McpToolCall,
-            tool_name.clone(),
-            ReviewTrigger::Initial,
-        ),
     }
 }
 
@@ -2771,8 +2710,7 @@ fn guardian_review_requested_additional_permissions(action: &GuardianApprovalRev
                 || permissions.file_system.is_some()
         }
         GuardianApprovalReviewAction::Command { .. }
-        | GuardianApprovalReviewAction::Execve { .. }
-        | GuardianApprovalReviewAction::McpToolCall { .. } => false,
+        | GuardianApprovalReviewAction::Execve { .. } => false,
     }
 }
 
@@ -2784,8 +2722,7 @@ fn guardian_review_requested_network_access(action: &GuardianApprovalReviewActio
         }
         GuardianApprovalReviewAction::ApplyPatch { .. }
         | GuardianApprovalReviewAction::Command { .. }
-        | GuardianApprovalReviewAction::Execve { .. }
-        | GuardianApprovalReviewAction::McpToolCall { .. } => false,
+        | GuardianApprovalReviewAction::Execve { .. } => false,
     }
 }
 
@@ -2856,19 +2793,6 @@ fn patch_apply_outcome(
         PatchApplyStatus::Declined => Some((
             ToolItemTerminalStatus::Rejected,
             Some(ToolItemFailureKind::ApprovalDenied),
-        )),
-    }
-}
-
-fn mcp_tool_call_outcome(
-    status: &McpToolCallStatus,
-) -> Option<(ToolItemTerminalStatus, Option<ToolItemFailureKind>)> {
-    match status {
-        McpToolCallStatus::InProgress => None,
-        McpToolCallStatus::Completed => Some((ToolItemTerminalStatus::Completed, None)),
-        McpToolCallStatus::Failed => Some((
-            ToolItemTerminalStatus::Failed,
-            Some(ToolItemFailureKind::ToolError),
         )),
     }
 }
@@ -3119,7 +3043,6 @@ fn codex_turn_event_params(
         total_tool_call_count: Some(turn_state.tool_counts.total),
         shell_command_count: Some(turn_state.tool_counts.shell_command),
         file_change_count: Some(turn_state.tool_counts.file_change),
-        mcp_tool_call_count: Some(turn_state.tool_counts.mcp_tool_call),
         dynamic_tool_call_count: Some(turn_state.tool_counts.dynamic_tool_call),
         subagent_tool_call_count: Some(turn_state.tool_counts.subagent_tool_call),
         web_search_count: Some(turn_state.tool_counts.web_search),

@@ -16,7 +16,6 @@ use crate::tools::registry::ToolRegistry;
 use crate::tools::spec_plan::finalize_tool_router;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::SearchToolCallParams;
-use codex_tools::DiscoverableTool;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use std::borrow::Cow;
@@ -68,18 +67,6 @@ pub(crate) fn tool_log_payload<'a>(
 pub struct ToolRouter {
     registry: ToolRegistry,
     model_visible_specs: Vec<ToolSpec>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ToolSuggestPresentation {
-    ListTool,
-    RecommendationContext,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ToolSuggestCandidates {
-    pub(crate) tools: Vec<DiscoverableTool>,
-    pub(crate) presentation: ToolSuggestPresentation,
 }
 
 impl ToolRouter {

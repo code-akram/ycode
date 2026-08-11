@@ -2,7 +2,6 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use codex_app_server_protocol::CommandExecutionStatus;
-use codex_app_server_protocol::McpToolCallStatus;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadItem;
@@ -71,14 +70,6 @@ impl EventProcessorWithHumanOutput {
                     "{}\n{} in {cwd}",
                     "exec".style(self.italic).style(self.magenta),
                     command.style(self.bold),
-                );
-            }
-            ThreadItem::McpToolCall { server, tool, .. } => {
-                eprintln!(
-                    "{} {} {}",
-                    "mcp:".style(self.bold),
-                    format!("{server}/{tool}").style(self.cyan),
-                    "started".style(self.dimmed)
                 );
             }
             ThreadItem::WebSearch(item) => {
@@ -172,28 +163,6 @@ impl EventProcessorWithHumanOutput {
                 eprintln!("{} {}", "patch:".style(self.bold), status_text);
                 for change in changes {
                     eprintln!("{}", change.path.style(self.dimmed));
-                }
-            }
-            ThreadItem::McpToolCall {
-                server,
-                tool,
-                status,
-                error,
-                ..
-            } => {
-                let status_text = match status {
-                    McpToolCallStatus::Completed => "completed".style(self.green),
-                    McpToolCallStatus::Failed => "failed".style(self.red),
-                    McpToolCallStatus::InProgress => "in_progress".style(self.dimmed),
-                };
-                eprintln!(
-                    "{} {} {}",
-                    "mcp:".style(self.bold),
-                    format!("{server}/{tool}").style(self.cyan),
-                    format!("({status_text})").style(self.dimmed)
-                );
-                if let Some(error) = error {
-                    eprintln!("{}", error.message.style(self.red));
                 }
             }
             ThreadItem::WebSearch(item) => {

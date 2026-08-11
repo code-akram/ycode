@@ -1,4 +1,3 @@
-use crate::mcp::RequestId;
 use crate::models::AdditionalPermissionProfile;
 use crate::models::PermissionProfile;
 use crate::parse_command::ParsedCommand;
@@ -9,7 +8,6 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use ts_rs::TS;
@@ -155,13 +153,6 @@ pub enum GuardianAssessmentAction {
         host: String,
         protocol: NetworkApprovalProtocol,
         port: u16,
-    },
-    McpToolCall {
-        server: String,
-        tool_name: String,
-        connector_id: Option<String>,
-        connector_name: Option<String>,
-        tool_title: Option<String>,
     },
     RequestPermissions {
         reason: Option<String>,
@@ -345,56 +336,6 @@ impl ExecApprovalRequestEvent {
         decisions.push(ReviewDecision::Abort);
         decisions
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-#[ts(tag = "mode")]
-pub enum ElicitationRequest {
-    Form {
-        #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional, rename = "_meta")]
-        meta: Option<JsonValue>,
-        message: String,
-        requested_schema: JsonValue,
-    },
-    #[serde(rename = "openai/form")]
-    #[ts(rename = "openai/form")]
-    OpenAiForm {
-        #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional, rename = "_meta")]
-        meta: Option<JsonValue>,
-        message: String,
-        requested_schema: JsonValue,
-    },
-    Url {
-        #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional, rename = "_meta")]
-        meta: Option<JsonValue>,
-        message: String,
-        url: String,
-        elicitation_id: String,
-    },
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-pub struct ElicitationRequestEvent {
-    /// Turn ID that this elicitation belongs to, when known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub turn_id: Option<String>,
-    pub server_name: String,
-    #[ts(type = "string | number")]
-    pub id: RequestId,
-    pub request: ElicitationRequest,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "lowercase")]
-pub enum ElicitationAction {
-    Accept,
-    Decline,
-    Cancel,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]

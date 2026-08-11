@@ -1,6 +1,5 @@
 use super::RawPluginManifest;
 use super::RawPluginManifestInterface;
-use super::RawPluginManifestMcpServers;
 use super::RawPluginManifestPaths;
 use super::UriPluginManifest;
 use super::compatibility_json_error;
@@ -164,7 +163,6 @@ pub(super) fn parse_agent_plugin_manifest_uri(
             description: description.clone(),
             keywords: raw.keywords,
             skills: Some(RawPluginManifestPaths::Path("./skills".to_string())),
-            mcp_servers: Some(RawPluginManifestMcpServers::Path("./mcp.json".to_string())),
             interface: Some(RawPluginManifestInterface {
                 display_name: Some(name),
                 short_description: description.clone(),
@@ -208,7 +206,6 @@ fn apply_codex_agent_plugin_extension(
     contents: &str,
 ) -> Result<(), serde_json::Error> {
     let extension = parse_legacy_plugin_manifest_uri(plugin_root, source_path, contents)?;
-    resolved.paths.apps = extension.paths.apps;
     resolved.paths.hooks = extension.paths.hooks;
     if extension.interface.is_some() {
         resolved.interface = extension.interface;

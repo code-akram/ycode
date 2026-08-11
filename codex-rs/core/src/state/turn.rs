@@ -12,18 +12,14 @@ use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputResponse;
-use codex_rmcp_client::ElicitationResponse;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
-use rmcp::model::RequestId;
 use tokio::sync::oneshot;
 
 use crate::agent::control::AgentExecutionGuard;
-use crate::mcp_tool_call::McpToolApprovalMetadata;
 use crate::session::TurnInputQueue;
 use crate::session::turn_context::TurnContext;
 use crate::tasks::AnySessionTask;
 use codex_protocol::models::AdditionalPermissionProfile;
-use codex_protocol::protocol::McpInvocation;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsage;
 
@@ -88,8 +84,6 @@ pub(crate) struct TurnState {
     pending_approvals: HashMap<String, oneshot::Sender<ReviewDecision>>,
     pending_request_permissions: HashMap<String, PendingRequestPermissions>,
     pending_user_input: HashMap<String, oneshot::Sender<RequestUserInputResponse>>,
-    pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
-    mcp_tool_approval_metadata: HashMap<String, (Option<McpInvocation>, McpToolApprovalMetadata)>,
     pending_dynamic_tools: HashMap<String, oneshot::Sender<DynamicToolResponse>>,
     pub(crate) pending_input: TurnInputQueue,
     mailbox_delivery_phase: MailboxDeliveryPhase,
@@ -126,8 +120,6 @@ impl TurnState {
         self.pending_approvals.clear();
         self.pending_request_permissions.clear();
         self.pending_user_input.clear();
-        self.pending_elicitations.clear();
-        self.mcp_tool_approval_metadata.clear();
         self.pending_dynamic_tools.clear();
     }
 
@@ -160,42 +152,6 @@ impl TurnState {
         key: &str,
     ) -> Option<oneshot::Sender<RequestUserInputResponse>> {
         self.pending_user_input.remove(key)
-    }
-
-    pub(crate) fn insert_pending_elicitation(
-        &mut self,
-        server_name: String,
-        request_id: RequestId,
-        tx: oneshot::Sender<ElicitationResponse>,
-    ) -> Option<oneshot::Sender<ElicitationResponse>> {
-        self.pending_elicitations
-            .insert((server_name, request_id), tx)
-    }
-
-    pub(crate) fn remove_pending_elicitation(
-        &mut self,
-        server_name: &str,
-        request_id: &RequestId,
-    ) -> Option<oneshot::Sender<ElicitationResponse>> {
-        self.pending_elicitations
-            .remove(&(server_name.to_string(), request_id.clone()))
-    }
-
-    pub(crate) fn insert_mcp_tool_approval_metadata(
-        &mut self,
-        call_id: String,
-        invocation: Option<McpInvocation>,
-        metadata: McpToolApprovalMetadata,
-    ) {
-        self.mcp_tool_approval_metadata
-            .insert(call_id, (invocation, metadata));
-    }
-
-    pub(crate) fn mcp_tool_approval_metadata(
-        &self,
-        call_id: &str,
-    ) -> Option<(Option<McpInvocation>, McpToolApprovalMetadata)> {
-        self.mcp_tool_approval_metadata.get(call_id).cloned()
     }
 
     pub(crate) fn insert_pending_dynamic_tool(

@@ -27,11 +27,6 @@ serde_json = { workspace = true }
 serde_with = { workspace = true }
 strum_macros = { workspace = true }
 thiserror = { workspace = true }
-rmcp = { workspace = true, default-features = false, features = [
-    "base64",
-    "macros",
-    "server",
-] }
 inventory = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7"] }
@@ -41,12 +36,6 @@ zstd = { workspace = true }
 anyhow = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 pretty_assertions = { workspace = true }
-rmcp = { workspace = true, default-features = false, features = [
-    "base64",
-    "macros",
-    "schemars",
-    "server",
-] }
 schemars = { workspace = true }
 similar = { workspace = true }
 tempfile = { workspace = true }

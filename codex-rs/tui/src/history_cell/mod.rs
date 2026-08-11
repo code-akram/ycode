@@ -25,7 +25,6 @@ use crate::markdown::append_markdown;
 use crate::motion::MotionMode;
 use crate::motion::ReducedMotionIndicator;
 use crate::motion::activity_indicator;
-use crate::render::line_utils::line_to_static;
 use crate::render::line_utils::prefix_lines;
 use crate::render::line_utils::push_owned_lines;
 use crate::render::renderable::Renderable;
@@ -42,7 +41,6 @@ use crate::terminal_hyperlinks::visible_lines_ref;
 use crate::test_support::PathBufExt;
 #[cfg(test)]
 use crate::test_support::test_path_buf;
-use crate::text_formatting::format_and_truncate_tool_result;
 use crate::text_formatting::truncate_text;
 use crate::tooltips;
 use crate::ui_consts::LIVE_PREFIX_COLS;
@@ -51,26 +49,14 @@ use crate::version::CODEX_CLI_VERSION;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::adaptive_wrap_lines;
-use base64::Engine;
 use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::McpAuthStatus;
-use codex_app_server_protocol::McpServerStatus;
-use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::ToolRequestUserInputAnswer;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
 use codex_app_server_protocol::WebSearchAction;
-#[cfg(test)]
-use codex_config::types::McpServerTransportConfig;
-#[cfg(test)]
-use codex_mcp::qualified_mcp_tool_name_prefix;
 use codex_otel::RuntimeMetricsSummary;
 use codex_protocol::account::PlanType;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyAmendment;
-#[cfg(test)]
-use codex_protocol::mcp::Resource;
-#[cfg(test)]
-use codex_protocol::mcp::ResourceTemplate;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::local_image_label_text;
@@ -81,10 +67,6 @@ use codex_protocol::plan_tool::StepStatus;
 use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::user_input::TextElement;
 use codex_utils_absolute_path::AbsolutePathBuf;
-#[cfg(test)]
-use codex_utils_cli::format_env_display;
-use image::DynamicImage;
-use image::ImageReader;
 use ratatui::prelude::*;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
@@ -96,24 +78,19 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 use std::any::Any;
 use std::collections::HashMap;
-use std::io::Cursor;
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::Duration;
 use std::time::Instant;
-use tracing::error;
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 
 const RAW_DIFF_SUMMARY_WIDTH: usize = 10_000;
-const RAW_TOOL_OUTPUT_WIDTH: usize = 10_000;
 
 mod approvals;
 mod base;
 mod exec;
 mod hook_cell;
 mod markdown_render_cache;
-mod mcp;
 mod messages;
 mod notices;
 mod patches;
@@ -129,7 +106,6 @@ pub(crate) use exec::*;
 pub(crate) use hook_cell::HookCell;
 pub(crate) use hook_cell::new_active_hook_cell;
 pub(crate) use hook_cell::new_completed_hook_cell;
-pub(crate) use mcp::*;
 pub(crate) use messages::*;
 pub(crate) use notices::*;
 pub(crate) use patches::*;

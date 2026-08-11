@@ -13,8 +13,6 @@ use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_features::Feature;
-use codex_shell_command::shell_detect::ShellType;
-use codex_shell_command::shell_detect::detect_shell_type;
 use core_test_support::responses;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -244,7 +242,7 @@ async fn command_execution_notifications_preserve_selected_environment_paths() -
         .build_initialized()
         .await?;
 
-    let (expected_path, shell) = {
+    let expected_path = {
         let environment = app_server.auto_env()?;
         let path = environment.selection().cwd.join("main.rs")?;
         environment
@@ -252,10 +250,7 @@ async fn command_execution_notifications_preserve_selected_environment_paths() -
             .get_filesystem()
             .write_file(&path, b"fn main() {}\n".to_vec(), /*sandbox*/ None)
             .await?;
-        (
-            path.inferred_native_path_string(),
-            environment.environment().info().await?.shell,
-        )
+        path.inferred_native_path_string()
     };
     let thread = app_server
         .start_thread(ThreadStartParams::default())
@@ -267,33 +262,12 @@ async fn command_execution_notifications_preserve_selected_environment_paths() -
     )
     .await??;
 
-    let expected_actions = match shell.name.as_str() {
-        // Windows shell scripts are not yet parsed into file-read command actions.
-        "powershell" => {
-            let command = if detect_shell_type(&shell.path) == Some(ShellType::PowerShell) {
-                "cat main.rs".to_string()
-            } else {
-                shlex::try_join([shell.path.as_str(), "-Command", "cat main.rs"])?
-            };
-            json!([{
-                "type": "unknown",
-                "command": command,
-            }])
-        }
-        "cmd" => {
-            let command = shlex::try_join([shell.path.as_str(), "/c", "cat main.rs"])?;
-            json!([{
-                "type": "unknown",
-                "command": command,
-            }])
-        }
-        _ => json!([{
-            "type": "read",
-            "command": "cat main.rs",
-            "name": "main.rs",
-            "path": expected_path,
-        }]),
-    };
+    let expected_actions = json!([{
+        "type": "read",
+        "command": "cat main.rs",
+        "name": "main.rs",
+        "path": expected_path,
+    }]);
 
     for method in ["item/started", "item/completed"] {
         let notification = timeout(

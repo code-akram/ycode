@@ -935,7 +935,7 @@ mod tests {
             client_id: None,
             content: vec![
                 UserInput::Text {
-                    text: "use $skill @sample $google-calendar".to_string(),
+                    text: "use $skill @sample".to_string(),
                     text_elements: Vec::new(),
                 },
                 UserInput::Skill {
@@ -946,17 +946,13 @@ mod tests {
                     name: "Sample Plugin".to_string(),
                     path: "plugin://sample@test".to_string(),
                 },
-                UserInput::Mention {
-                    name: "Google Calendar".to_string(),
-                    path: "app://google_calendar".to_string(),
-                },
             ],
         }];
         let turns = vec![
             turn("turn-1", TurnStatus::Completed, /*user_messages*/ 1),
             selected_turn,
         ];
-        let mut selected_prompt = prompt("use $skill @sample $google-calendar");
+        let mut selected_prompt = prompt("use $skill @sample");
 
         assert_eq!(
             backtrack_fork_before_turn_id(
@@ -979,11 +975,6 @@ mod tests {
                     sigil: '@',
                     mention: "sample".to_string(),
                     path: "plugin://sample@test".to_string(),
-                },
-                MentionBinding {
-                    sigil: '$',
-                    mention: "google-calendar".to_string(),
-                    path: "app://google_calendar".to_string(),
                 },
             ]
         );

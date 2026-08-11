@@ -1,9 +1,6 @@
 use super::*;
 use crate::environment_selection::TurnEnvironmentState;
-use crate::mcp_tool_call::MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC;
-use crate::mcp_tool_call::MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX;
 use async_channel::bounded;
-use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::NetworkPermissions;
@@ -15,10 +12,6 @@ use codex_protocol::protocol::ExecApprovalRequestEvent;
 use codex_protocol::protocol::GuardianAssessmentAction;
 use codex_protocol::protocol::GuardianAssessmentStatus;
 use codex_protocol::protocol::GuardianCommandSource;
-use codex_protocol::protocol::McpInvocation;
-use codex_protocol::protocol::McpStartupCompleteEvent;
-use codex_protocol::protocol::McpStartupStatus;
-use codex_protocol::protocol::McpStartupUpdateEvent;
 use codex_protocol::protocol::RawResponseItemEvent;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TurnAbortReason;
@@ -34,7 +27,6 @@ use core_test_support::test_path_buf;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio::time::timeout;
@@ -81,29 +73,12 @@ async fn forward_events_filters_private_events_before_blocked_send_is_cancelled(
     let cancel = CancellationToken::new();
     let forward = tokio::spawn(forward_events(
         Arc::clone(&io),
-        Arc::clone(&session),
         tx_out.clone(),
         session,
         ctx,
-        Arc::new(Mutex::new(HashMap::new())),
         cancel.clone(),
     ));
 
-    for msg in [
-        EventMsg::McpStartupUpdate(McpStartupUpdateEvent {
-            server: "pending".to_string(),
-            status: McpStartupStatus::Starting,
-        }),
-        EventMsg::McpStartupComplete(McpStartupCompleteEvent::default()),
-    ] {
-        tx_events
-            .send(Event {
-                id: "delegate-startup".to_string(),
-                msg,
-            })
-            .await
-            .unwrap();
-    }
     let visible_msg = EventMsg::RawResponseItem(RawResponseItemEvent {
         item: ResponseItem::CustomToolCall {
             id: None,
@@ -342,7 +317,6 @@ async fn handle_request_user_input_preserves_non_blocking_flag_for_round_trip() 
         agent_status,
         session_loop_termination: completed_session_loop_termination(),
     });
-    let pending_mcp_invocations = Arc::new(Mutex::new(HashMap::new()));
     let cancel_token = CancellationToken::new();
     let child_event_id = "child-request-1".to_string();
     let parent_user_input_id = parent_ctx.sub_id.clone();
@@ -359,7 +333,6 @@ async fn handle_request_user_input_preserves_non_blocking_flag_for_round_trip() 
         let io = Arc::clone(&io);
         let parent_session = Arc::clone(&parent_session);
         let parent_ctx = Arc::clone(&parent_ctx);
-        let pending_mcp_invocations = Arc::clone(&pending_mcp_invocations);
         let cancel_token = cancel_token.clone();
         let child_event_id = child_event_id.clone();
         async move {
@@ -368,7 +341,6 @@ async fn handle_request_user_input_preserves_non_blocking_flag_for_round_trip() 
                 child_event_id,
                 &parent_session,
                 &parent_ctx,
-                &pending_mcp_invocations,
                 RequestUserInputEvent {
                     call_id: "child-call-1".to_string(),
                     turn_id: "child-turn-1".to_string(),
@@ -543,110 +515,4 @@ async fn handle_exec_approval_uses_call_id_for_guardian_review_and_approval_id_f
             decision: ReviewDecision::Abort,
         }
     );
-}
-
-#[tokio::test]
-async fn delegated_mcp_guardian_abort_returns_synthetic_decline_answer() {
-    let (parent_session, parent_ctx, _rx_events) =
-        crate::session::tests::make_session_and_context_with_rx().await;
-    let mut parent_ctx = Arc::try_unwrap(parent_ctx).expect("single turn context ref");
-    let mut config = (*parent_ctx.config).clone();
-    config.approvals_reviewer = ApprovalsReviewer::AutoReview;
-    parent_ctx.config = Arc::new(config);
-    Arc::make_mut(&mut parent_ctx.config)
-        .permissions
-        .approval_policy
-        .set(AskForApproval::OnRequest)
-        .expect("set on-request policy");
-    let parent_ctx = Arc::new(parent_ctx);
-
-    let pending_mcp_invocations = Arc::new(Mutex::new(HashMap::from([(
-        "call-1".to_string(),
-        PendingMcpInvocation {
-            invocation: McpInvocation {
-                server: "custom_server".to_string(),
-                tool: "dangerous_tool".to_string(),
-                arguments: None,
-            },
-            metadata: None,
-        },
-    )])));
-    let cancel_token = CancellationToken::new();
-    cancel_token.cancel();
-
-    let response = maybe_auto_review_mcp_request_user_input(
-        &parent_session,
-        &parent_ctx,
-        &pending_mcp_invocations,
-        &RequestUserInputEvent {
-            call_id: "call-1".to_string(),
-            turn_id: "child-turn-1".to_string(),
-            questions: vec![RequestUserInputQuestion {
-                id: format!("{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_call-1"),
-                header: "Approve app tool call?".to_string(),
-                question: "Allow this app tool?".to_string(),
-                is_other: false,
-                is_secret: false,
-                options: None,
-            }],
-            is_blocking: true,
-            auto_resolution_ms: None,
-        },
-        &cancel_token,
-    )
-    .await;
-
-    assert_eq!(
-        response,
-        Some(RequestUserInputResponse {
-            answers: HashMap::from([(
-                format!("{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_call-1"),
-                RequestUserInputAnswer {
-                    answers: vec![MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC.to_string()],
-                },
-            )]),
-        })
-    );
-}
-
-#[tokio::test]
-async fn delegated_mcp_user_reviewer_returns_none_without_metadata() {
-    let (parent_session, parent_ctx, _rx_events) =
-        crate::session::tests::make_session_and_context_with_rx().await;
-    let pending_mcp_invocations = Arc::new(Mutex::new(HashMap::from([(
-        "call-1".to_string(),
-        PendingMcpInvocation {
-            invocation: McpInvocation {
-                server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
-                tool: "dangerous_tool".to_string(),
-                arguments: None,
-            },
-            metadata: None,
-        },
-    )])));
-    let cancel_token = CancellationToken::new();
-
-    let event = RequestUserInputEvent {
-        call_id: "call-1".to_string(),
-        turn_id: "child-turn-1".to_string(),
-        questions: vec![RequestUserInputQuestion {
-            id: format!("{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_call-1"),
-            header: "Approve app tool call?".to_string(),
-            question: "Allow this app tool?".to_string(),
-            is_other: false,
-            is_secret: false,
-            options: None,
-        }],
-        is_blocking: true,
-        auto_resolution_ms: None,
-    };
-    let response = maybe_auto_review_mcp_request_user_input(
-        &parent_session,
-        &parent_ctx,
-        &pending_mcp_invocations,
-        &event,
-        &cancel_token,
-    )
-    .await;
-    assert_eq!(response, None);
 }

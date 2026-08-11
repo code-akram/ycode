@@ -56,19 +56,6 @@ pub(crate) enum GuardianApprovalRequest {
         port: u16,
         trigger: Option<GuardianNetworkAccessTrigger>,
     },
-    McpToolCall {
-        id: String,
-        server: String,
-        tool_name: String,
-        arguments: Option<Value>,
-        connector_id: Option<String>,
-        connector_name: Option<String>,
-        connector_description: Option<String>,
-        connected_account_email: Option<String>,
-        tool_title: Option<String>,
-        tool_description: Option<String>,
-        annotations: Option<GuardianMcpAnnotations>,
-    },
     RequestPermissions {
         id: String,
         turn_id: String,
@@ -91,16 +78,6 @@ pub(crate) struct GuardianNetworkAccessTrigger {
     pub(crate) justification: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) tty: Option<bool>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct GuardianMcpAnnotations {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) destructive_hint: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) open_world_hint: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) read_only_hint: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -126,29 +103,6 @@ struct ExecveApprovalAction<'a> {
     cwd: &'a Path,
     #[serde(skip_serializing_if = "Option::is_none")]
     additional_permissions: Option<&'a AdditionalPermissionProfile>,
-}
-
-#[derive(Serialize)]
-struct McpToolCallApprovalAction<'a> {
-    tool: &'static str,
-    server: &'a str,
-    tool_name: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    arguments: Option<&'a Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    connector_id: Option<&'a String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    connector_name: Option<&'a String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    connector_description: Option<&'a String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    connected_account_email: Option<&'a String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_title: Option<&'a String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_description: Option<&'a String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    annotations: Option<&'a GuardianMcpAnnotations>,
 }
 
 #[derive(Serialize)]
@@ -338,31 +292,6 @@ pub(crate) fn guardian_approval_request_to_json(
             port: *port,
             trigger: trigger.as_ref(),
         }),
-        GuardianApprovalRequest::McpToolCall {
-            id: _,
-            server,
-            tool_name,
-            arguments,
-            connector_id,
-            connector_name,
-            connector_description,
-            connected_account_email,
-            tool_title,
-            tool_description,
-            annotations,
-        } => serialize_guardian_action(McpToolCallApprovalAction {
-            tool: "mcp_tool_call",
-            server,
-            tool_name,
-            arguments: arguments.as_ref(),
-            connector_id: connector_id.as_ref(),
-            connector_name: connector_name.as_ref(),
-            connector_description: connector_description.as_ref(),
-            connected_account_email: connected_account_email.as_ref(),
-            tool_title: tool_title.as_ref(),
-            tool_description: tool_description.as_ref(),
-            annotations: annotations.as_ref(),
-        }),
         GuardianApprovalRequest::RequestPermissions {
             id: _,
             turn_id,
@@ -420,20 +349,6 @@ pub(crate) fn guardian_assessment_action(
             protocol: *protocol,
             port: *port,
         },
-        GuardianApprovalRequest::McpToolCall {
-            server,
-            tool_name,
-            connector_id,
-            connector_name,
-            tool_title,
-            ..
-        } => GuardianAssessmentAction::McpToolCall {
-            server: server.clone(),
-            tool_name: tool_name.clone(),
-            connector_id: connector_id.clone(),
-            connector_name: connector_name.clone(),
-            tool_title: tool_title.clone(),
-        },
         GuardianApprovalRequest::RequestPermissions {
             reason,
             permissions,
@@ -485,20 +400,6 @@ pub(crate) fn guardian_reviewed_action(
                 port: *port,
             }
         }
-        GuardianApprovalRequest::McpToolCall {
-            server,
-            tool_name,
-            connector_id,
-            connector_name,
-            tool_title,
-            ..
-        } => GuardianReviewedAction::McpToolCall {
-            server: server.clone(),
-            tool_name: tool_name.clone(),
-            connector_id: connector_id.clone(),
-            connector_name: connector_name.clone(),
-            tool_title: tool_title.clone(),
-        },
         GuardianApprovalRequest::RequestPermissions { .. } => {
             GuardianReviewedAction::RequestPermissions {}
         }
@@ -510,7 +411,6 @@ pub(crate) fn guardian_request_target_item_id(request: &GuardianApprovalRequest)
         GuardianApprovalRequest::Shell { id, .. }
         | GuardianApprovalRequest::ExecCommand { id, .. }
         | GuardianApprovalRequest::ApplyPatch { id, .. }
-        | GuardianApprovalRequest::McpToolCall { id, .. }
         | GuardianApprovalRequest::RequestPermissions { id, .. } => Some(id),
         GuardianApprovalRequest::NetworkAccess { .. } => None,
         #[cfg(unix)]
@@ -527,8 +427,7 @@ pub(crate) fn guardian_request_turn_id<'a>(
         | GuardianApprovalRequest::RequestPermissions { turn_id, .. } => turn_id,
         GuardianApprovalRequest::Shell { .. }
         | GuardianApprovalRequest::ExecCommand { .. }
-        | GuardianApprovalRequest::ApplyPatch { .. }
-        | GuardianApprovalRequest::McpToolCall { .. } => default_turn_id,
+        | GuardianApprovalRequest::ApplyPatch { .. } => default_turn_id,
         #[cfg(unix)]
         GuardianApprovalRequest::Execve { .. } => default_turn_id,
     }

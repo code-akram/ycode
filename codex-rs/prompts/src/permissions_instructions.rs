@@ -395,10 +395,6 @@ fn granular_instructions(
             granular_config.allows_request_permissions(),
             "`request_permissions`",
         )),
-        Some((
-            granular_config.allows_mcp_elicitations(),
-            "`mcp_elicitations`",
-        )),
     ];
     let prompted_categories = categories
         .iter()

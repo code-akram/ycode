@@ -16,7 +16,7 @@ pub(super) struct TranscriptState {
     pub(super) saw_copy_source_this_turn: bool,
     /// Whether the next streamed assistant content should be preceded by a final message separator.
     pub(super) needs_final_message_separator: bool,
-    /// Whether the current turn performed "work" (exec commands, MCP tool calls, patch applications).
+    /// Whether the current turn performed "work" (exec commands, tool calls, patch applications).
     pub(super) had_work_activity: bool,
     /// Whether the current turn emitted a plan update.
     pub(super) saw_plan_update_this_turn: bool,

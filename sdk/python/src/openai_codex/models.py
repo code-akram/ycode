@@ -10,7 +10,6 @@ from .generated.v2_all import (
     AccountRateLimitsUpdatedNotification,
     AccountUpdatedNotification,
     AgentMessageDeltaNotification,
-    AppListUpdatedNotification,
     CommandExecutionOutputDeltaNotification,
     ConfigWarningNotification,
     ContextCompactedNotification,
@@ -19,8 +18,6 @@ from .generated.v2_all import (
     FileChangeOutputDeltaNotification,
     ItemCompletedNotification,
     ItemStartedNotification,
-    McpServerOauthLoginCompletedNotification,
-    McpToolCallProgressNotification,
     PlanDeltaNotification,
     RawResponseItemCompletedNotification,
     ReasoningSummaryPartAddedNotification,
@@ -54,7 +51,6 @@ NotificationPayload: TypeAlias = (
     | AccountRateLimitsUpdatedNotification
     | AccountUpdatedNotification
     | AgentMessageDeltaNotification
-    | AppListUpdatedNotification
     | CommandExecutionOutputDeltaNotification
     | ConfigWarningNotification
     | ContextCompactedNotification
@@ -63,8 +59,6 @@ NotificationPayload: TypeAlias = (
     | FileChangeOutputDeltaNotification
     | ItemCompletedNotification
     | ItemStartedNotification
-    | McpServerOauthLoginCompletedNotification
-    | McpToolCallProgressNotification
     | PlanDeltaNotification
     | RawResponseItemCompletedNotification
     | ReasoningSummaryPartAddedNotification

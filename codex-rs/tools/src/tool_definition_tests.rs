@@ -22,9 +22,9 @@ fn tool_definition() -> ToolDefinition {
 #[test]
 fn renamed_overrides_name_only() {
     assert_eq!(
-        tool_definition().renamed("mcp__orders__lookup_order".to_string()),
+        tool_definition().renamed("extension__orders__lookup_order".to_string()),
         ToolDefinition {
-            name: "mcp__orders__lookup_order".to_string(),
+            name: "extension__orders__lookup_order".to_string(),
             ..tool_definition()
         }
     );

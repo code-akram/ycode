@@ -105,10 +105,6 @@ bench *args:
 bench-smoke:
     just bench -- --test
 
-# Run the MCP server
-mcp-server-run *args:
-    cargo run -p codex-mcp-server -- {args}
-
 # Regenerate the json schema for config.toml from the current config types.
 write-config-schema:
     cargo run -p codex-core --bin codex-write-config-schema

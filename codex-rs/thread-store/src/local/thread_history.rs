@@ -475,7 +475,6 @@ WHERE thread_id = ?
             | ThreadItem::Reasoning { .. }
             | ThreadItem::CommandExecution { .. }
             | ThreadItem::FileChange { .. }
-            | ThreadItem::McpToolCall { .. }
             | ThreadItem::DynamicToolCall { .. }
             | ThreadItem::CollabAgentToolCall { .. }
             | ThreadItem::SubAgentActivity { .. }

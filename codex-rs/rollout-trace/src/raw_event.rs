@@ -8,7 +8,6 @@ use crate::model::CompactionRequestId;
 use crate::model::EdgeId;
 use crate::model::ExecutionStatus;
 use crate::model::InferenceCallId;
-use crate::model::McpCallId;
 use crate::model::ModelVisibleCallId;
 use crate::model::RolloutStatus;
 use crate::model::ToolCallId;
@@ -139,11 +138,6 @@ pub enum RawTraceEventPayload {
         summary: ToolCallSummary,
         invocation_payload: Option<RawPayloadRef>,
     },
-    /// Bridge correlation UUID assigned only when a tool reaches an MCP backend.
-    McpToolCallCorrelationAssigned {
-        tool_call_id: ToolCallId,
-        mcp_call_id: McpCallId,
-    },
     ToolCallRuntimeStarted {
         tool_call_id: ToolCallId,
         /// Runtime/protocol observation for how Codex began executing the tool.
@@ -242,7 +236,6 @@ impl RawTraceEventPayload {
             | RawTraceEventPayload::CodexTurnEnded { .. }
             | RawTraceEventPayload::CompactionRequestFailed { .. }
             | RawTraceEventPayload::CodeCellStarted { .. }
-            | RawTraceEventPayload::McpToolCallCorrelationAssigned { .. }
             | RawTraceEventPayload::AgentResultObserved {
                 carried_payload: None,
                 ..

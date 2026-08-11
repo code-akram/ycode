@@ -382,7 +382,6 @@ fn config_details(parsed: &[ParsedDetail], options: HumanOutputOptions) -> Vec<H
     push_row_if_present(&mut out, parsed, "config.toml", "config.toml");
     push_row_if_present(&mut out, parsed, "config.toml parse", "config.toml parse");
     push_row_if_present(&mut out, parsed, "config.toml read", "config.toml read");
-    push_row_if_present(&mut out, parsed, "mcp servers", "MCP servers");
     push_feature_flags(&mut out, parsed, options);
 
     for detail in parsed
@@ -406,7 +405,6 @@ fn config_details(parsed: &[ParsedDetail], options: HumanOutputOptions) -> Vec<H
             "model provider",
             "log dir",
             "sqlite home",
-            "mcp servers",
             "feature flags enabled",
             "enabled feature flags",
             "feature flag overrides",

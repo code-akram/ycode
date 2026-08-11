@@ -178,7 +178,7 @@ impl codex_extension_api::ToolLifecycleContributor for ToolLifecycleRecorder {
 
 #[test]
 fn handler_normalizes_only_the_default_namespace() {
-    let namespace = "mcp__codex_apps__gmail";
+    let namespace = "extension__mail";
     let tool_name = "gmail_get_recent_emails";
     let plain_name = codex_tools::ToolName::plain(tool_name);
     let namespaced_name = codex_tools::ToolName::namespaced(namespace, tool_name);
@@ -199,7 +199,7 @@ fn handler_normalizes_only_the_default_namespace() {
     let empty_namespaced = registry.tool(&codex_tools::ToolName::namespaced("", tool_name));
     let namespaced = registry.tool(&namespaced_name);
     let missing_namespaced = registry.tool(&codex_tools::ToolName::namespaced(
-        "mcp__codex_apps__calendar",
+        "extension__calendar",
         tool_name,
     ));
 
@@ -362,7 +362,7 @@ async fn readiness_selects_exact_tool_with_registry_owned_exposure() {
     let (session, _turn) = crate::session::tests::make_session_and_context().await;
     let session = Arc::new(session);
     let plain_name = codex_tools::ToolName::plain("echo");
-    let namespaced_name = codex_tools::ToolName::namespaced("mcp__server__", "echo");
+    let namespaced_name = codex_tools::ToolName::namespaced("extension__server", "echo");
     assert!(
         TestHandler {
             tool_name: plain_name.clone(),
@@ -417,7 +417,10 @@ async fn readiness_selects_exact_tool_with_registry_owned_exposure() {
 
     assert!(
         registry
-            .tool(&codex_tools::ToolName::namespaced("mcp__missing__", "echo"))
+            .tool(&codex_tools::ToolName::namespaced(
+                "extension__missing",
+                "echo"
+            ))
             .is_none()
     );
     assert_eq!(

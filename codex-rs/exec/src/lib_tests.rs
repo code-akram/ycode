@@ -424,23 +424,6 @@ fn should_backfill_turn_completed_items_backfills_persisted_summaries_only() {
     ));
 }
 
-#[test]
-fn canceled_mcp_server_elicitation_response_uses_cancel_action() {
-    let value = canceled_mcp_server_elicitation_response()
-        .expect("mcp elicitation cancel response should serialize");
-    let response: McpServerElicitationRequestResponse =
-        serde_json::from_value(value).expect("cancel response should deserialize");
-
-    assert_eq!(
-        response,
-        McpServerElicitationRequestResponse {
-            action: McpServerElicitationAction::Cancel,
-            content: None,
-            meta: None,
-        }
-    );
-}
-
 #[tokio::test]
 async fn thread_start_params_include_review_policy_when_review_policy_is_manual_only() {
     let codex_home = tempdir().expect("create temp codex home");

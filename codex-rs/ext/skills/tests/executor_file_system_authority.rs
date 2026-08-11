@@ -269,7 +269,6 @@ async fn windows_executor_skill_read_rejects_disabled_sandbox_on_any_orchestrato
             resolved_executor_roots: Vec::new(),
             sandbox: Some(sandbox),
             host_snapshot: None,
-            mcp_resources: None,
         })
         .await
         .expect_err("disabled Windows sandbox must fail closed");
@@ -316,7 +315,6 @@ async fn selected_root_id_distinguishes_identical_executor_paths() {
             include_host_skills: false,
             include_bundled_skills: true,
             include_orchestrator_skills: false,
-            mcp_resources: None,
             executor_capability_discovery: None,
         })
         .await
@@ -390,7 +388,7 @@ async fn executor_discovery_routes_produce_equivalent_catalog_metadata() {
     .expect("write deploy skill");
     std::fs::write(
         &deploy_metadata,
-        "dependencies:\n  tools:\n    - type: mcp\n      value: deployer\n      description: Deployment server.\npolicy:\n  allow_implicit_invocation: false\n  products:\n    - codex\n",
+        "dependencies:\n  tools:\n    - type: cli\n      value: deployer\n      description: Deployment server.\npolicy:\n  allow_implicit_invocation: false\n  products:\n    - codex\n",
     )
     .expect("write deploy metadata");
     std::fs::write(
@@ -413,7 +411,7 @@ async fn executor_discovery_routes_produce_equivalent_catalog_metadata() {
     .expect("write invalid metadata skill");
     std::fs::write(
         &invalid_metadata,
-        "interface: []\ndependencies:\n  tools:\n    - type: mcp\n      value: must-be-ignored\n",
+        "interface: []\ndependencies:\n  tools:\n    - type: cli\n      value: must-be-ignored\n",
     )
     .expect("write invalid metadata");
 
@@ -437,7 +435,6 @@ async fn executor_discovery_routes_produce_equivalent_catalog_metadata() {
         include_host_skills: false,
         include_bundled_skills: true,
         include_orchestrator_skills: false,
-        mcp_resources: None,
         executor_capability_discovery,
     };
 
@@ -559,7 +556,7 @@ async fn pre_discovered_executor_catalog_snapshot() {
     .expect("write plugin manifest");
     std::fs::write(
         metadata_dir.join("openai.yaml"),
-        "dependencies:\n  tools:\n    - type: mcp\n      value: deployer\n      description: Deployment server.\npolicy:\n  allow_implicit_invocation: false\n",
+        "dependencies:\n  tools:\n    - type: cli\n      value: deployer\n      description: Deployment server.\npolicy:\n  allow_implicit_invocation: false\n",
     )
     .expect("write skill metadata");
 
@@ -587,7 +584,6 @@ async fn pre_discovered_executor_catalog_snapshot() {
             include_host_skills: false,
             include_bundled_skills: true,
             include_orchestrator_skills: false,
-            mcp_resources: None,
             executor_capability_discovery: Some(executor_capability_discovery),
         })
         .await
@@ -714,7 +710,6 @@ async fn direct_executor_discovery_preserves_hidden_nested_and_probed_metadata()
             include_host_skills: false,
             include_bundled_skills: true,
             include_orchestrator_skills: false,
-            mcp_resources: None,
             executor_capability_discovery: None,
         })
         .await
@@ -786,7 +781,6 @@ async fn high_level_discovery_reuses_materialized_skill_contents_for_reads() {
             include_host_skills: false,
             include_bundled_skills: true,
             include_orchestrator_skills: false,
-            mcp_resources: None,
             executor_capability_discovery: Some(executor_capability_discovery),
         })
         .await
@@ -801,7 +795,6 @@ async fn high_level_discovery_reuses_materialized_skill_contents_for_reads() {
         resolved_executor_roots: Vec::new(),
         sandbox: None,
         host_snapshot: None,
-        mcp_resources: None,
     };
 
     std::fs::remove_dir_all(&test_root).expect("remove skill directory after discovery");

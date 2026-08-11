@@ -229,9 +229,6 @@ pub(crate) struct PostToolUseHookSpecificOutputWire {
     pub hook_event_name: HookEventNameWire,
     #[serde(default)]
     pub additional_context: Option<String>,
-    #[serde(default)]
-    #[serde(rename = "updatedMCPToolOutput")]
-    pub updated_mcp_tool_output: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

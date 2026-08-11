@@ -26,9 +26,6 @@ impl ChatWidget {
                     patch_approval_request_from_params(params),
                 );
             }
-            ServerRequest::McpServerElicitationRequest { request_id, params } => {
-                self.on_elicitation_request(request_id, params);
-            }
             ServerRequest::PermissionsRequestApproval { params, .. } => {
                 // TODO(anp): Remove this native-path localization error path once core permission
                 // paths remain PathUri after crossing the app-server boundary.

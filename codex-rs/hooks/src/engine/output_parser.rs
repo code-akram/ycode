@@ -207,11 +207,7 @@ pub(crate) fn parse_permission_request(stdout: &str) -> Option<PermissionRequest
 pub(crate) fn parse_post_tool_use(stdout: &str) -> Option<PostToolUseOutput> {
     let wire: PostToolUseCommandOutputWire = parse_json(stdout)?;
     let universal = UniversalOutput::from(wire.universal);
-    let invalid_reason = unsupported_post_tool_use_universal(&universal).or_else(|| {
-        wire.hook_specific_output
-            .as_ref()
-            .and_then(unsupported_post_tool_use_hook_specific_output)
-    });
+    let invalid_reason = unsupported_post_tool_use_universal(&universal);
     let should_block = matches!(wire.decision, Some(BlockDecisionWire::Block));
     let invalid_block_reason = if should_block
         && match wire.reason.as_deref() {
@@ -418,16 +414,6 @@ fn permission_request_decision(
                 .and_then(trimmed_reason)
                 .unwrap_or_else(|| "PermissionRequest hook denied approval".to_string()),
         },
-    }
-}
-
-fn unsupported_post_tool_use_hook_specific_output(
-    output: &crate::schema::PostToolUseHookSpecificOutputWire,
-) -> Option<String> {
-    if output.updated_mcp_tool_output.is_some() {
-        Some("PostToolUse hook returned unsupported updatedMCPToolOutput".to_string())
-    } else {
-        None
     }
 }
 

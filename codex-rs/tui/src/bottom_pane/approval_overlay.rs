@@ -1,12 +1,12 @@
 //! Approval modal rendering and decision routing for high-risk operations.
 //!
-//! This module converts agent approval requests (exec/apply-patch/MCP
-//! elicitation) into a list-selection view with action-specific options and
+//! This module converts agent approval requests (exec/apply-patch) into a
+//! list-selection view with action-specific options and
 //! shortcuts. It owns two important contracts:
 //!
 //! 1. Selection always emits an explicit decision event back to the app.
-//! 2. MCP elicitation keeps `Esc` mapped to `Cancel`, even with custom
-//!    keybindings, so dismissal never silently becomes "continue without info".
+//! 2. Request cancellation behavior remains explicit where the protocol
+//!    requires it.
 //!
 //! This module does not evaluate whether an action is safe to run; it only
 //! presents choices and routes user decisions.
@@ -45,11 +45,9 @@ use codex_app_server_protocol::FileSystemAccessMode;
 use codex_app_server_protocol::FileSystemPath;
 use codex_app_server_protocol::FileSystemSandboxEntry;
 use codex_app_server_protocol::FileSystemSpecialPath;
-use codex_app_server_protocol::McpServerElicitationAction;
 use codex_app_server_protocol::NetworkApprovalContext;
 use codex_app_server_protocol::NetworkApprovalProtocol;
 use codex_app_server_protocol::NetworkPolicyRuleAction;
-use codex_app_server_protocol::RequestId;
 use codex_features::Features;
 use codex_protocol::ThreadId;
 use codex_protocol::request_permissions::PermissionGrantScope;
@@ -74,7 +72,6 @@ pub(crate) enum ApprovalRequest {
     Exec(ExecApprovalRequest),
     Permissions(PermissionsApprovalRequest),
     ApplyPatch(ApplyPatchApprovalRequest),
-    McpElicitation(McpElicitationApprovalRequest),
 }
 
 #[derive(Clone, Debug)]
@@ -110,22 +107,12 @@ pub(crate) struct ApplyPatchApprovalRequest {
     pub changes: HashMap<PathBuf, FileChange>,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct McpElicitationApprovalRequest {
-    pub thread_id: ThreadId,
-    pub thread_label: Option<String>,
-    pub server_name: String,
-    pub request_id: RequestId,
-    pub message: String,
-}
-
 impl ApprovalRequest {
     fn thread_id(&self) -> ThreadId {
         match self {
             ApprovalRequest::Exec(request) => request.thread_id,
             ApprovalRequest::Permissions(request) => request.thread_id,
             ApprovalRequest::ApplyPatch(request) => request.thread_id,
-            ApprovalRequest::McpElicitation(request) => request.thread_id,
         }
     }
 
@@ -134,7 +121,6 @@ impl ApprovalRequest {
             ApprovalRequest::Exec(request) => request.thread_label.as_deref(),
             ApprovalRequest::Permissions(request) => request.thread_label.as_deref(),
             ApprovalRequest::ApplyPatch(request) => request.thread_label.as_deref(),
-            ApprovalRequest::McpElicitation(request) => request.thread_label.as_deref(),
         }
     }
 
@@ -152,16 +138,6 @@ impl ApprovalRequest {
                 ApprovalRequest::ApplyPatch(request),
                 ResolvedAppServerRequest::FileChangeApproval { id: resolved_id },
             ) => request.id == *resolved_id,
-            (
-                ApprovalRequest::McpElicitation(request),
-                ResolvedAppServerRequest::McpElicitation {
-                    server_name: resolved_server_name,
-                    request_id: resolved_request_id,
-                },
-            ) => {
-                request.server_name == *resolved_server_name
-                    && request.request_id == *resolved_request_id
-            }
             _ => false,
         }
     }
@@ -275,10 +251,6 @@ impl ApprovalOverlay {
                 patch_options(approval_keymap),
                 "Would you like to make the following edits?".to_string(),
             ),
-            ApprovalRequest::McpElicitation(request) => (
-                elicitation_options(approval_keymap),
-                format!("{} needs your approval.", request.server_name),
-            ),
         };
 
         let header = Box::new(ColumnRenderable::with([
@@ -332,16 +304,6 @@ impl ApprovalOverlay {
                 (ApprovalRequest::ApplyPatch(request), ApprovalDecision::FileChange(decision)) => {
                     self.handle_patch_decision(&request.id, decision.clone());
                 }
-                (
-                    ApprovalRequest::McpElicitation(request),
-                    ApprovalDecision::McpElicitation(decision),
-                ) => {
-                    self.handle_elicitation_decision(
-                        &request.server_name,
-                        &request.request_id,
-                        *decision,
-                    );
-                }
                 _ => {}
             }
         }
@@ -362,9 +324,7 @@ impl ApprovalOverlay {
         if request.thread_label().is_none() {
             let network_approval_context = match request {
                 ApprovalRequest::Exec(request) => request.network_approval_context.as_ref(),
-                ApprovalRequest::Permissions(_)
-                | ApprovalRequest::ApplyPatch(_)
-                | ApprovalRequest::McpElicitation(_) => None,
+                ApprovalRequest::Permissions(_) | ApprovalRequest::ApplyPatch(_) => None,
             };
             let subject = if let Some(network_approval_context) = network_approval_context {
                 history_cell::ApprovalDecisionSubject::NetworkAccess {
@@ -451,29 +411,6 @@ impl ApprovalOverlay {
             .patch_approval(thread_id, id.to_string(), decision);
     }
 
-    fn handle_elicitation_decision(
-        &self,
-        server_name: &str,
-        request_id: &RequestId,
-        decision: McpServerElicitationAction,
-    ) {
-        let Some(thread_id) = self
-            .current_request
-            .as_ref()
-            .map(ApprovalRequest::thread_id)
-        else {
-            return;
-        };
-        self.app_event_tx.resolve_elicitation(
-            thread_id,
-            server_name.to_string(),
-            request_id.clone(),
-            decision,
-            /*content*/ None,
-            /*meta*/ None,
-        );
-    }
-
     fn advance_queue(&mut self) {
         if let Some(next) = self.queue.pop() {
             self.set_current(next);
@@ -506,13 +443,6 @@ impl ApprovalOverlay {
                 }
                 ApprovalRequest::ApplyPatch(request) => {
                     self.handle_patch_decision(&request.id, FileChangeApprovalDecision::Cancel);
-                }
-                ApprovalRequest::McpElicitation(request) => {
-                    self.handle_elicitation_decision(
-                        &request.server_name,
-                        &request.request_id,
-                        McpServerElicitationAction::Cancel,
-                    );
                 }
             }
         }
@@ -766,23 +696,6 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             }
             Box::new(ColumnRenderable::with(header))
         }
-        ApprovalRequest::McpElicitation(request) => {
-            let mut lines = Vec::new();
-            if let Some(thread_label) = &request.thread_label {
-                lines.push(Line::from(vec![
-                    "Thread: ".into(),
-                    thread_label.clone().bold(),
-                ]));
-                lines.push(Line::from(""));
-            }
-            lines.extend([
-                Line::from(vec!["Server: ".into(), request.server_name.clone().bold()]),
-                Line::from(""),
-                Line::from(request.message.clone()),
-            ]);
-            let header = Paragraph::new(lines).wrap(Wrap { trim: false });
-            Box::new(header)
-        }
     }
 }
 
@@ -791,7 +704,6 @@ enum ApprovalDecision {
     Command(CommandExecutionApprovalDecision),
     FileChange(FileChangeApprovalDecision),
     Permissions(PermissionsDecision),
-    McpElicitation(McpServerElicitationAction),
 }
 
 #[derive(Clone, Copy)]
@@ -1067,47 +979,6 @@ fn permissions_options(keymap: &ApprovalKeymap) -> Vec<ApprovalOption> {
     ]
 }
 
-/// Build MCP elicitation options with stable cancellation semantics.
-///
-/// `Esc` is always treated as cancel for elicitation prompts, even if users
-/// customize `decline`/`cancel` bindings. We keep this as a hard contract so
-/// dismissal remains a safe abort path and never silently maps to "continue
-/// without requested info." Any decline/cancel overlap is removed from the
-/// decline option in elicitation mode to preserve this invariant.
-fn elicitation_options(keymap: &ApprovalKeymap) -> Vec<ApprovalOption> {
-    let mut cancel_shortcuts = vec![key_hint::plain(KeyCode::Esc)];
-    for shortcut in &keymap.cancel {
-        if !cancel_shortcuts.contains(shortcut) {
-            cancel_shortcuts.push(*shortcut);
-        }
-    }
-
-    let decline_shortcuts: Vec<KeyBinding> = keymap
-        .decline
-        .iter()
-        .copied()
-        .filter(|shortcut| !cancel_shortcuts.contains(shortcut))
-        .collect();
-
-    vec![
-        ApprovalOption {
-            label: "Yes, provide the requested info".to_string(),
-            decision: ApprovalDecision::McpElicitation(McpServerElicitationAction::Accept),
-            shortcuts: keymap.approve.clone(),
-        },
-        ApprovalOption {
-            label: "No, but continue without it".to_string(),
-            decision: ApprovalDecision::McpElicitation(McpServerElicitationAction::Decline),
-            shortcuts: decline_shortcuts,
-        },
-        ApprovalOption {
-            label: "Cancel this request".to_string(),
-            decision: ApprovalDecision::McpElicitation(McpServerElicitationAction::Cancel),
-            shortcuts: cancel_shortcuts,
-        },
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1242,16 +1113,6 @@ mod tests {
         })
     }
 
-    fn make_elicitation_request() -> ApprovalRequest {
-        ApprovalRequest::McpElicitation(McpElicitationApprovalRequest {
-            thread_id: ThreadId::new(),
-            thread_label: None,
-            server_name: "test-server".to_string(),
-            request_id: RequestId::String("request-1".to_string()),
-            message: "Need more information".to_string(),
-        })
-    }
-
     #[test]
     fn approval_shortcuts_display_chords_in_configured_order() {
         let chord = crate::key_hint::ShortcutHint::Chord {
@@ -1344,37 +1205,6 @@ mod tests {
             }
         }
         assert_eq!(decision, Some(CommandExecutionApprovalDecision::Cancel));
-    }
-
-    #[test]
-    fn configured_list_cancel_cancels_mcp_elicitation() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let mut keymap = crate::keymap::RuntimeKeymap::defaults();
-        keymap.list.cancel = vec![key_hint::plain(KeyCode::Char('q'))];
-        let mut view = make_overlay_with_keymap(
-            make_elicitation_request(),
-            tx,
-            Features::with_defaults(),
-            keymap.approval,
-            keymap.list,
-        );
-
-        view.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
-
-        assert!(view.is_complete());
-        let mut decision = None;
-        while let Ok(ev) = rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
-                op: Op::ResolveElicitation { decision: d, .. },
-                ..
-            } = ev
-            {
-                decision = Some(d);
-                break;
-            }
-        }
-        assert_eq!(decision, Some(McpServerElicitationAction::Cancel));
     }
 
     #[test]
@@ -2329,92 +2159,6 @@ mod tests {
                     .to_string(),
             ]
         );
-    }
-
-    #[test]
-    fn esc_cancels_mcp_elicitation() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let mut view = make_overlay(make_elicitation_request(), tx, Features::with_defaults());
-
-        view.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-
-        let mut decision = None;
-        while let Ok(ev) = rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
-                op: Op::ResolveElicitation { decision: d, .. },
-                ..
-            } = ev
-            {
-                decision = Some(d);
-                break;
-            }
-        }
-        assert_eq!(decision, Some(McpServerElicitationAction::Cancel));
-    }
-
-    #[test]
-    fn esc_still_cancels_elicitation_with_custom_overlap() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let mut keymap = crate::keymap::RuntimeKeymap::defaults();
-        keymap.approval.decline = vec![
-            key_hint::plain(KeyCode::Esc),
-            key_hint::plain(KeyCode::Char('n')),
-        ];
-        keymap.approval.cancel = vec![key_hint::plain(KeyCode::Char('x'))];
-
-        let mut view = make_overlay_with_keymap(
-            make_elicitation_request(),
-            tx,
-            Features::with_defaults(),
-            keymap.approval,
-            keymap.list,
-        );
-
-        view.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        let mut esc_decision = None;
-        while let Ok(ev) = rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
-                op: Op::ResolveElicitation { decision, .. },
-                ..
-            } = ev
-            {
-                esc_decision = Some(decision);
-                break;
-            }
-        }
-        assert_eq!(esc_decision, Some(McpServerElicitationAction::Cancel));
-
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let mut keymap = crate::keymap::RuntimeKeymap::defaults();
-        keymap.approval.decline = vec![
-            key_hint::plain(KeyCode::Esc),
-            key_hint::plain(KeyCode::Char('n')),
-        ];
-        keymap.approval.cancel = vec![key_hint::plain(KeyCode::Char('x'))];
-
-        let mut view = make_overlay_with_keymap(
-            make_elicitation_request(),
-            tx,
-            Features::with_defaults(),
-            keymap.approval,
-            keymap.list,
-        );
-        view.handle_key_event(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
-        let mut n_decision = None;
-        while let Ok(ev) = rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
-                op: Op::ResolveElicitation { decision, .. },
-                ..
-            } = ev
-            {
-                n_decision = Some(decision);
-                break;
-            }
-        }
-        assert_eq!(n_decision, Some(McpServerElicitationAction::Decline));
     }
 
     #[test]

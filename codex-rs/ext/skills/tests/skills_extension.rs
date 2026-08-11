@@ -10,18 +10,14 @@ use codex_core_skills::loader::MAX_CONCURRENT_ROOT_SCANS;
 use codex_core_skills::loader::SkillRoot;
 use codex_core_skills::loader::load_skills_from_roots;
 use codex_exec_server::LOCAL_FS;
-use codex_extension_api::ConversationHistory;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionEventSink;
 use codex_extension_api::ExtensionMetrics;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::ExtensionWarning;
-use codex_extension_api::NoopTurnItemEmitter;
 use codex_extension_api::PreviousWorldStateSection;
 use codex_extension_api::RenderedWorldStateFragment;
 use codex_extension_api::ThreadStartInput;
-use codex_extension_api::ToolCall;
-use codex_extension_api::ToolPayload;
 use codex_extension_api::TurnInputContext;
 use codex_extension_api::WorldStateContributionInput;
 use codex_extension_api::WorldStateSectionContribution;
@@ -39,7 +35,6 @@ use codex_protocol::protocol::SKILLS_INSTRUCTIONS_CLOSE_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SkillScope;
-use codex_protocol::protocol::TruncationPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
 use codex_skills::SkillMetadata;
@@ -151,7 +146,6 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
             session_source: &session_source,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -233,7 +227,6 @@ async fn host_world_state_records_catalog_metrics_on_publish_and_change() -> Tes
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: Some(startup_metrics.clone()),
             session_store: &session_store,
             thread_store: &thread_store,
@@ -379,7 +372,6 @@ async fn persisted_host_snapshot_deduplicates_warning_after_reinitialization() -
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -420,7 +412,6 @@ async fn persisted_host_snapshot_deduplicates_warning_after_reinitialization() -
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &resumed_thread_store,
@@ -500,7 +491,6 @@ async fn executor_orchestrator_and_host_share_catalog_world_state_flow() -> Test
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -607,7 +597,6 @@ async fn nonempty_executor_empty_host_records_catalog_metrics() -> TestResult {
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -692,7 +681,6 @@ async fn host_world_state_uses_provider_catalog_with_core_compatible_rendering()
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -771,7 +759,6 @@ async fn shadow_selection_uses_host_catalog_when_instructions_are_disabled() -> 
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -880,7 +867,6 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             session_source: &session_source,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1091,7 +1077,6 @@ async fn default_context_truncates_catalog_descriptions() -> TestResult {
             session_source: &session_source,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1176,7 +1161,6 @@ async fn moderate_budget_pressure_keeps_every_catalog_entry() -> TestResult {
             session_source: &session_source,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1290,7 +1274,6 @@ async fn extreme_budget_pressure_removes_descriptions_before_omitting_entries() 
             session_source: &session_source,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1347,94 +1330,6 @@ async fn extreme_budget_pressure_removes_descriptions_before_omitting_entries() 
 }
 
 #[tokio::test]
-async fn skills_list_only_returns_model_visible_bounded_metadata() -> TestResult {
-    let description = "x".repeat(1_025);
-    let opaque_suffix = "\\".repeat(1_500);
-    let mut entry = test_entry(
-        SkillSourceKind::Orchestrator,
-        "codex_apps",
-        &format!("orchestrator/{opaque_suffix}"),
-        &format!("skill://orchestrator/{opaque_suffix}/SKILL.md"),
-    );
-    entry.description = description.clone();
-    let providers =
-        SkillProviders::new().with_orchestrator_provider(Arc::new(StaticSkillProvider {
-            catalog: SkillCatalog {
-                entries: vec![
-                    entry,
-                    test_entry(
-                        SkillSourceKind::Orchestrator,
-                        "codex_apps",
-                        "orchestrator/hidden",
-                        "skill://orchestrator/hidden/SKILL.md",
-                    )
-                    .hidden_from_prompt(),
-                ],
-                warnings: vec!["w".repeat(256); 4],
-            },
-            read_requests: Arc::new(Mutex::new(Vec::new())),
-            list_calls: None,
-            fail_first_list: false,
-        }));
-    let mut builder = ExtensionRegistryBuilder::new();
-    install_with_providers(&mut builder, providers, skills_extension_config);
-    let registry = builder.build();
-    let session_store = ExtensionData::new("session");
-    let thread_store = ExtensionData::new("thread");
-    let session_source = SessionSource::Cli;
-    let config = default_config();
-    registry.thread_lifecycle_contributors()[0]
-        .on_thread_start(ThreadStartInput {
-            config: &config,
-            session_source: &session_source,
-            persistent_thread_state_available: true,
-            environments: &[],
-            mcp_resource_client: None,
-            extension_metrics: None,
-            session_store: &session_store,
-            thread_store: &thread_store,
-        })
-        .await;
-
-    let tools = registry.tool_contributors()[0].tools(&session_store, &thread_store);
-    let list_tool = tools
-        .iter()
-        .find(|tool| tool.tool_name().name == "list")
-        .ok_or("skills.list tool should be registered")?;
-    let payload = ToolPayload::Function {
-        arguments: serde_json::json!({"authority": {"kind": "orchestrator"}}).to_string(),
-    };
-    let output = list_tool
-        .handle(ToolCall {
-            turn_id: "turn-1".to_string(),
-            call_id: "call-1".to_string(),
-            tool_name: list_tool.tool_name(),
-            model: "gpt-test".to_string(),
-            codex_turn_metadata: None,
-            truncation_policy: TruncationPolicy::Bytes(1_024),
-            conversation_history: ConversationHistory::default(),
-            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
-            environments: Vec::new(),
-            payload: payload.clone(),
-        })
-        .await?;
-    let response = output
-        .post_tool_use_response("call-1", &payload)
-        .ok_or("skills.list should expose structured output")?;
-    let rendered_description = response["skills"][0]["description"]
-        .as_str()
-        .ok_or("skills.list response should include a description")?;
-
-    assert_eq!(response["skills"].as_array().map(Vec::len), Some(1));
-    assert_eq!(response["warnings"].as_array().map(Vec::len), Some(4));
-    assert_eq!(response["next_cursor"], serde_json::Value::Null);
-    assert_eq!(rendered_description, "x".repeat(1_021) + "...");
-    assert_ne!(rendered_description, description);
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn orchestrator_catalog_snapshot_caches_failure() -> TestResult {
     let list_calls = Arc::new(AtomicUsize::new(0));
     let providers =
@@ -1467,7 +1362,6 @@ async fn orchestrator_catalog_snapshot_caches_failure() -> TestResult {
             session_source: &session_source,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1561,7 +1455,6 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
             session_source: &session_source,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1673,7 +1566,6 @@ async fn model_context_window_scales_executor_and_orchestrator_catalogs() -> Tes
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1794,7 +1686,6 @@ async fn executor_catalog_emits_at_most_four_warnings() -> TestResult {
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1906,7 +1797,6 @@ async fn host_catalog_compacts_shared_paths_under_budget_pressure() -> TestResul
             session_source: &SessionSource::Cli,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
@@ -1994,7 +1884,6 @@ async fn prompt_hidden_skill_can_still_be_invoked() -> TestResult {
             session_source: &session_source,
             persistent_thread_state_available: true,
             environments: &[],
-            mcp_resource_client: None,
             extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,

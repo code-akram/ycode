@@ -135,9 +135,7 @@ impl ChatWidget {
         (!cmd.available_during_task()
             && (self.turn_lifecycle.agent_turn_running
                 || self.review.is_review_mode
-                || (self.bottom_pane.is_task_running()
-                    && (self.mcp_startup_status.is_none()
-                        || self.input_queue.user_turn_pending_start))))
+                || self.bottom_pane.is_task_running()))
             || (cmd == SlashCommand::Resume
                 && (self.input_queue.user_turn_pending_start
                     || self.turn_lifecycle.agent_turn_running))
@@ -273,9 +271,6 @@ impl ChatWidget {
             }
             SlashCommand::Review => {
                 self.open_review_popup();
-                if self.mcp_startup_status.is_some() {
-                    self.defer_input_until_settings_applied();
-                }
             }
             SlashCommand::Rename => {
                 self.session_telemetry
@@ -434,12 +429,6 @@ impl ChatWidget {
             }
             SlashCommand::MemoryUpdate => {
                 self.add_app_server_stub_message("Memory maintenance");
-            }
-            SlashCommand::Mcp => {
-                self.add_mcp_output(McpServerStatusDetail::ToolsAndAuthOnly);
-            }
-            SlashCommand::Apps => {
-                self.add_connectors_output();
             }
             SlashCommand::Plugins => {
                 self.add_plugins_output();
@@ -637,10 +626,6 @@ impl ChatWidget {
             SlashCommand::Ide => {
                 self.handle_ide_command_args(trimmed);
             }
-            SlashCommand::Mcp => match trimmed.to_ascii_lowercase().as_str() {
-                "verbose" => self.add_mcp_output(McpServerStatusDetail::Full),
-                _ => self.add_error_message("Usage: /mcp [verbose]".to_string()),
-            },
             SlashCommand::Keymap => match trimmed.to_ascii_lowercase().as_str() {
                 "" => self.open_keymap_picker(),
                 "debug" => {
@@ -977,7 +962,6 @@ impl ChatWidget {
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: self.collaboration_modes_enabled(),
-            connectors_enabled: self.connectors_enabled(),
             plugins_command_enabled: self.config.features.enabled(Feature::Plugins),
             token_activity_command_enabled: self.has_codex_backend_auth,
             goal_command_enabled: self.config.features.enabled(Feature::Goals),
@@ -1008,8 +992,6 @@ impl ChatWidget {
             | SlashCommand::Stop
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate
-            | SlashCommand::Mcp
-            | SlashCommand::Apps
             | SlashCommand::Plugins
             | SlashCommand::Rollout
             | SlashCommand::Copy

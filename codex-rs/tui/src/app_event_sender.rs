@@ -8,8 +8,6 @@ use std::path::PathBuf;
 use crate::app_command::AppCommand;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::FileChangeApprovalDecision;
-use codex_app_server_protocol::McpServerElicitationAction;
-use codex_app_server_protocol::RequestId as AppServerRequestId;
 use codex_app_server_protocol::ReviewTarget;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
 use codex_protocol::ThreadId;
@@ -104,21 +102,6 @@ impl AppEventSender {
         self.send(AppEvent::SubmitThreadOp {
             thread_id,
             op: AppCommand::patch_approval(id, decision),
-        });
-    }
-
-    pub(crate) fn resolve_elicitation(
-        &self,
-        thread_id: ThreadId,
-        server_name: String,
-        request_id: AppServerRequestId,
-        decision: McpServerElicitationAction,
-        content: Option<serde_json::Value>,
-        meta: Option<serde_json::Value>,
-    ) {
-        self.send(AppEvent::SubmitThreadOp {
-            thread_id,
-            op: AppCommand::resolve_elicitation(server_name, request_id, decision, content, meta),
         });
     }
 }

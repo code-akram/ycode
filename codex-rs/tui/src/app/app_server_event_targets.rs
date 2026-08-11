@@ -15,9 +15,6 @@ pub(super) fn server_request_thread_id(request: &ServerRequest) -> Option<Thread
         ServerRequest::ToolRequestUserInput { params, .. } => {
             ThreadId::from_string(&params.thread_id).ok()
         }
-        ServerRequest::McpServerElicitationRequest { params, .. } => {
-            ThreadId::from_string(&params.thread_id).ok()
-        }
         ServerRequest::PermissionsRequestApproval { params, .. } => {
             ThreadId::from_string(&params.thread_id).ok()
         }
@@ -38,7 +35,6 @@ pub(super) fn server_request_thread_id(request: &ServerRequest) -> Option<Thread
 pub(super) enum ServerNotificationThreadTarget {
     Thread(ThreadId),
     InvalidThreadId(String),
-    AppScoped,
     Global,
 }
 
@@ -109,9 +105,6 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::ServerRequestResolved(notification) => {
             Some(notification.thread_id.as_str())
         }
-        ServerNotification::McpToolCallProgress(notification) => {
-            Some(notification.thread_id.as_str())
-        }
         ServerNotification::ReasoningSummaryTextDelta(notification) => {
             Some(notification.thread_id.as_str())
         }
@@ -158,17 +151,9 @@ pub(super) fn server_notification_thread_target(
         }
         ServerNotification::Warning(notification) => notification.thread_id.as_deref(),
         ServerNotification::GuardianWarning(notification) => Some(notification.thread_id.as_str()),
-        ServerNotification::McpServerStatusUpdated(notification) => {
-            match notification.thread_id.as_deref() {
-                Some(thread_id) => Some(thread_id),
-                None => return ServerNotificationThreadTarget::AppScoped,
-            }
-        }
         ServerNotification::SkillsChanged(_)
-        | ServerNotification::McpServerOauthLoginCompleted(_)
         | ServerNotification::AccountUpdated(_)
         | ServerNotification::AccountRateLimitsUpdated(_)
-        | ServerNotification::AppListUpdated(_)
         | ServerNotification::EnvironmentConnected(_)
         | ServerNotification::EnvironmentDisconnected(_)
         | ServerNotification::RemoteControlStatusChanged(_)
@@ -201,8 +186,6 @@ mod tests {
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
     use codex_app_server_protocol::GuardianWarningNotification;
-    use codex_app_server_protocol::McpServerStartupState;
-    use codex_app_server_protocol::McpServerStatusUpdatedNotification;
     use codex_app_server_protocol::ServerNotification;
     use codex_app_server_protocol::ThreadSettings;
     use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
@@ -277,39 +260,6 @@ mod tests {
         let target = server_notification_thread_target(&notification);
 
         assert_eq!(target, ServerNotificationThreadTarget::Thread(thread_id));
-    }
-
-    #[test]
-    fn mcp_startup_notifications_route_to_threads() {
-        let thread_id = ThreadId::new();
-        let notification =
-            ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
-                thread_id: Some(thread_id.to_string()),
-                name: "sentry".to_string(),
-                status: McpServerStartupState::Failed,
-                error: Some("sentry is not logged in".to_string()),
-                failure_reason: None,
-            });
-
-        let target = server_notification_thread_target(&notification);
-
-        assert_eq!(target, ServerNotificationThreadTarget::Thread(thread_id));
-    }
-
-    #[test]
-    fn mcp_startup_notifications_without_threads_are_app_scoped() {
-        let notification =
-            ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
-                thread_id: None,
-                name: "sentry".to_string(),
-                status: McpServerStartupState::Failed,
-                error: Some("sentry is not logged in".to_string()),
-                failure_reason: None,
-            });
-
-        let target = server_notification_thread_target(&notification);
-
-        assert_eq!(target, ServerNotificationThreadTarget::AppScoped);
     }
 
     #[test]

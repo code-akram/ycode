@@ -28,8 +28,8 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::process::Command;
 
-fn test_mcp_turn_metadata_context() -> McpTurnMetadataContext<'static> {
-    McpTurnMetadataContext {
+fn test_extension_tool_metadata_context() -> ExtensionToolMetadataContext<'static> {
+    ExtensionToolMetadataContext {
         model: "gpt-5.4",
         reasoning_effort: Some(ReasoningEffortConfig::High),
     }
@@ -449,14 +449,14 @@ fn turn_metadata_state_includes_model_and_reasoning_effort_only_in_request_meta(
     assert!(header_json.get("reasoning_effort").is_none());
 
     let meta = state
-        .current_meta_value_for_mcp_request(test_mcp_turn_metadata_context())
+        .current_meta_value_for_extension_tool(test_extension_tool_metadata_context())
         .expect("turn metadata should be present");
     assert!(meta.get("request_kind").is_none());
     assert_eq!(meta["model"].as_str(), Some("gpt-5.4"));
     assert_eq!(meta["reasoning_effort"].as_str(), Some("high"));
 
     let meta_without_reasoning_effort = state
-        .current_meta_value_for_mcp_request(McpTurnMetadataContext {
+        .current_meta_value_for_extension_tool(ExtensionToolMetadataContext {
             model: "gpt-5.4",
             reasoning_effort: None,
         })
@@ -473,7 +473,7 @@ fn turn_metadata_state_includes_model_and_reasoning_effort_only_in_request_meta(
 }
 
 #[test]
-fn turn_metadata_state_marks_user_input_requested_during_turn_only_for_mcp_request_meta() {
+fn turn_metadata_state_marks_user_input_requested_during_turn_only_for_extension_tool_meta() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
     let permission_profile = PermissionProfile::read_only();
@@ -501,7 +501,7 @@ fn turn_metadata_state_marks_user_input_requested_during_turn_only_for_mcp_reque
     );
 
     let meta = state
-        .current_meta_value_for_mcp_request(test_mcp_turn_metadata_context())
+        .current_meta_value_for_extension_tool(test_extension_tool_metadata_context())
         .expect("turn metadata should be present");
     assert!(meta.get(USER_INPUT_REQUESTED_DURING_TURN_KEY).is_none());
 
@@ -516,7 +516,7 @@ fn turn_metadata_state_marks_user_input_requested_during_turn_only_for_mcp_reque
     );
 
     let meta = state
-        .current_meta_value_for_mcp_request(test_mcp_turn_metadata_context())
+        .current_meta_value_for_extension_tool(test_extension_tool_metadata_context())
         .expect("turn metadata should be present");
     assert_eq!(
         meta.get(USER_INPUT_REQUESTED_DURING_TURN_KEY)
@@ -657,8 +657,8 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
     state.set_code_mode_tool_names(BTreeMap::from([
         ("exec_command".to_string(), ToolName::plain("exec_command")),
         (
-            "mcp__calendar__lookup".to_string(),
-            ToolName::namespaced("mcp__calendar", "lookup"),
+            "extension__calendar__lookup".to_string(),
+            ToolName::namespaced("extension__calendar", "lookup"),
         ),
     ]));
 
@@ -681,9 +681,9 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
                 "name": "exec_command",
                 "namespace": null,
             },
-            "mcp__calendar__lookup": {
+            "extension__calendar__lookup": {
                 "name": "lookup",
-                "namespace": "mcp__calendar",
+                "namespace": "extension__calendar",
             },
         })
     );
@@ -728,7 +728,7 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
     );
 
     let meta = state
-        .current_meta_value_for_mcp_request(test_mcp_turn_metadata_context())
+        .current_meta_value_for_extension_tool(test_extension_tool_metadata_context())
         .expect("turn metadata should be present");
     assert_eq!(meta["model"].as_str(), Some("gpt-5.4"));
     assert_eq!(meta["reasoning_effort"].as_str(), Some("high"));

@@ -2933,7 +2933,6 @@ permissionProfile?: string | null};
         let missing_client_request_methods: Vec<String> = [
             "account/logout",
             "account/rateLimits/read",
-            "config/mcpServer/reload",
             "configRequirements/read",
             "fuzzyFileSearch",
             "initialize",

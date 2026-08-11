@@ -597,9 +597,6 @@ pub enum ExternalAgentConfigMigrationItemType {
     #[serde(rename = "PLUGINS")]
     #[ts(rename = "PLUGINS")]
     Plugins,
-    #[serde(rename = "MCP_SERVER_CONFIG")]
-    #[ts(rename = "MCP_SERVER_CONFIG")]
-    McpServerConfig,
     #[serde(rename = "SUBAGENTS")]
     #[ts(rename = "SUBAGENTS")]
     Subagents,
@@ -648,13 +645,6 @@ pub struct SessionMigration {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct McpServerMigration {
-    pub name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct HookMigration {
     pub name: String,
 }
@@ -684,8 +674,6 @@ pub struct MigrationDetails {
     #[serde(default)]
     pub sessions: Vec<SessionMigration>,
     #[serde(default)]
-    pub mcp_servers: Vec<McpServerMigration>,
-    #[serde(default)]
     pub hooks: Vec<HookMigration>,
     #[serde(default)]
     pub subagents: Vec<SubagentMigration>,
@@ -711,8 +699,6 @@ pub struct ExternalAgentConfigMigrationItem {
 #[ts(export_to = "v2/")]
 pub struct ExternalAgentConfigDetectResponse {
     pub items: Vec<ExternalAgentConfigMigrationItem>,
-    #[serde(default)]
-    pub connectors: Vec<ExternalAgentDetectedConnectorCandidate>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
@@ -856,40 +842,6 @@ pub struct ExternalAgentConfigImportHistory {
 #[ts(export_to = "v2/")]
 pub struct ExternalAgentConfigImportHistoriesReadResponse {
     pub data: Vec<ExternalAgentConfigImportHistory>,
-    pub connectors: Vec<ExternalAgentImportedConnectorCandidate>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub enum ExternalAgentImportedConnectorSource {
-    RemoteMcpServersConfig,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExternalAgentImportedConnectorCandidate {
-    pub name: String,
-    pub session_count: u32,
-    pub source: ExternalAgentImportedConnectorSource,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub enum ExternalAgentDetectedConnectorSource {
-    RemoteMcpServersConfig,
-    SessionToolUse,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExternalAgentDetectedConnectorCandidate {
-    pub name: String,
-    pub session_count: u32,
-    pub source: ExternalAgentDetectedConnectorSource,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]

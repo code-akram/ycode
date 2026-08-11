@@ -2,7 +2,6 @@ use crate::path_utils::resolve_symlink_write_paths;
 use crate::path_utils::write_atomically;
 use anyhow::Context;
 use codex_config::CONFIG_TOML_FILE;
-use codex_config::types::McpServerConfig;
 use codex_config::types::ResumeCwdMode;
 use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestDisabledTool;
@@ -11,7 +10,6 @@ use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::openai_models::ReasoningEffort;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
@@ -57,8 +55,6 @@ pub enum ConfigEdit {
     SetNoticeExternalConfigMigrationPromptProjectLastPromptedAt(String, i64),
     /// Record that a migration prompt was shown for an old->new model mapping.
     RecordModelMigrationSeen { from: String, to: String },
-    /// Replace the entire `[mcp_servers]` table.
-    ReplaceMcpServers(BTreeMap<String, McpServerConfig>),
     /// Add a disabled tool suggestion under `[tool_suggest].disabled_tools`.
     AddToolSuggestDisabledTool(ToolSuggestDisabledTool),
     /// Set or clear a skill config entry under `[[skills.config]]` by path.
@@ -312,7 +308,6 @@ impl ConfigDocument {
                 &[NOTICE_TABLE_KEY, "model_migrations", from.as_str()],
                 value(to.clone()),
             )),
-            ConfigEdit::ReplaceMcpServers(servers) => Ok(self.replace_mcp_servers(servers)),
             ConfigEdit::AddToolSuggestDisabledTool(disabled_tool) => {
                 Ok(self.add_tool_suggest_disabled_tool(disabled_tool))
             }
@@ -409,59 +404,6 @@ impl ConfigDocument {
 
     fn clear_owned(&mut self, segments: &[String]) -> bool {
         self.remove(segments)
-    }
-
-    fn replace_mcp_servers(&mut self, servers: &BTreeMap<String, McpServerConfig>) -> bool {
-        if servers.is_empty() {
-            return self.clear(&["mcp_servers"]);
-        }
-
-        let root = self.doc.as_table_mut();
-        if !root.contains_key("mcp_servers") {
-            root.insert(
-                "mcp_servers",
-                TomlItem::Table(document_helpers::new_implicit_table()),
-            );
-        }
-
-        let Some(item) = root.get_mut("mcp_servers") else {
-            return false;
-        };
-
-        if document_helpers::ensure_table_for_write(item).is_none() {
-            *item = TomlItem::Table(document_helpers::new_implicit_table());
-        }
-
-        let Some(table) = item.as_table_mut() else {
-            return false;
-        };
-
-        let keys_to_remove: Vec<String> = table
-            .iter()
-            .map(|(key, _)| key.to_string())
-            .filter(|key| !servers.contains_key(key.as_str()))
-            .collect();
-
-        for key in keys_to_remove {
-            table.remove(&key);
-        }
-
-        for (name, config) in servers {
-            if let Some(existing) = table.get_mut(name.as_str()) {
-                if let TomlItem::Value(value) = existing
-                    && let Some(inline) = value.as_inline_table_mut()
-                {
-                    let replacement = document_helpers::serialize_mcp_server_inline(config);
-                    document_helpers::merge_inline_table(inline, replacement);
-                } else {
-                    *existing = document_helpers::serialize_mcp_server(config);
-                }
-            } else {
-                table.insert(name, document_helpers::serialize_mcp_server(config));
-            }
-        }
-
-        true
     }
 
     fn set_skill_config(&mut self, selector: SkillConfigSelector, enabled: bool) -> bool {
@@ -839,12 +781,6 @@ impl ConfigEditsBuilder {
     pub fn set_model_availability_nux_count(mut self, shown_count: &HashMap<String, u32>) -> Self {
         self.edits
             .extend(model_availability_nux_count_edits(shown_count));
-        self
-    }
-
-    pub fn replace_mcp_servers(mut self, servers: &BTreeMap<String, McpServerConfig>) -> Self {
-        self.edits
-            .push(ConfigEdit::ReplaceMcpServers(servers.clone()));
         self
     }
 

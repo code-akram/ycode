@@ -1,4 +1,3 @@
-use super::AppSummary;
 use super::HookEventName;
 use super::HookHandlerType;
 use super::HookSource;
@@ -700,9 +699,6 @@ pub struct PluginDetail {
     pub description: Option<String>,
     pub skills: Vec<SkillSummary>,
     pub hooks: Vec<PluginHookSummary>,
-    pub apps: Vec<AppSummary>,
-    pub app_templates: Vec<AppTemplateSummary>,
-    pub mcp_servers: Vec<String>,
     pub scheduled_tasks: Option<Vec<ScheduledTaskSummary>>,
 }
 
@@ -752,29 +748,6 @@ pub enum ScheduledTaskWeekday {
     Fr,
     Sa,
     Su,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[ts(export_to = "v2/")]
-pub enum AppTemplateUnavailableReason {
-    NotConfiguredForWorkspace,
-    NoActiveWorkspace,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct AppTemplateSummary {
-    pub template_id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub category: Option<String>,
-    pub canonical_connector_id: Option<String>,
-    pub logo_url: Option<String>,
-    pub logo_url_dark: Option<String>,
-    pub materialized_app_ids: Vec<String>,
-    pub reason: Option<AppTemplateUnavailableReason>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -898,7 +871,6 @@ pub struct PluginInstallParams {
 #[ts(export_to = "v2/")]
 pub struct PluginInstallResponse {
     pub auth_policy: PluginAuthPolicy,
-    pub apps_needing_auth: Vec<AppSummary>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

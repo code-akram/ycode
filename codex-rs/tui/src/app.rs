@@ -20,13 +20,10 @@ use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_server_session::app_server_rate_limit_snapshots;
-use crate::bottom_pane::AppLinkViewParams;
 use crate::bottom_pane::ApplyPatchApprovalRequest;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::ExecApprovalRequest;
 use crate::bottom_pane::FeedbackAudience;
-use crate::bottom_pane::McpElicitationApprovalRequest;
-use crate::bottom_pane::McpServerElicitationFormRequest;
 use crate::bottom_pane::PermissionsApprovalRequest;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
@@ -99,12 +96,6 @@ use codex_app_server_protocol::FeedbackUploadParams;
 use codex_app_server_protocol::FeedbackUploadResponse;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::HooksListEntry;
-use codex_app_server_protocol::ListMcpServerStatusParams;
-use codex_app_server_protocol::ListMcpServerStatusResponse;
-#[cfg(test)]
-use codex_app_server_protocol::McpAuthStatus;
-use codex_app_server_protocol::McpServerStatus;
-use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::PluginInstallParams;
 use codex_app_server_protocol::PluginInstallResponse;
@@ -239,9 +230,7 @@ const EXTERNAL_EDITOR_HINT: &str = "Save and close external editor to continue."
 const THREAD_EVENT_CHANNEL_CAPACITY: usize = 32768;
 
 enum ThreadInteractiveRequest {
-    AppLink(AppLinkViewParams),
     Approval(ApprovalRequest),
-    McpServerElicitation(McpServerElicitationFormRequest),
 }
 
 /// Extracts `receiver_thread_ids` from collab agent tool-call notifications.

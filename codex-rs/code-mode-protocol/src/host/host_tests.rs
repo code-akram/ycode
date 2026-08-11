@@ -218,7 +218,7 @@ fn execute_request() -> WireExecuteRequest {
                 name: "freeform_tool".to_string(),
                 tool_name: WireToolName {
                     name: "freeform_tool".to_string(),
-                    namespace: Some("mcp__sample__".to_string()),
+                    namespace: Some("extension__sample__".to_string()),
                 },
                 description: "freeform tool".to_string(),
                 kind: WireToolKind::Freeform,
@@ -456,7 +456,7 @@ fn client_to_host_v1_variants_are_pinned() {
                             "name": "freeform_tool",
                             "tool_name": {
                                 "name": "freeform_tool",
-                                "namespace": "mcp__sample__",
+                                "namespace": "extension__sample__",
                             },
                             "description": "freeform tool",
                             "kind": "freeform",
@@ -705,7 +705,7 @@ fn host_to_client_v1_variants_are_pinned() {
                     runtime_tool_call_id: "runtime-call-1".to_string(),
                     tool_name: WireToolName {
                         name: "freeform_tool".to_string(),
-                        namespace: Some("mcp__sample__".to_string()),
+                        namespace: Some("extension__sample__".to_string()),
                     },
                     tool_kind: WireToolKind::Freeform,
                     input: Some(json!({ "value": 1 })),
@@ -723,7 +723,7 @@ fn host_to_client_v1_variants_are_pinned() {
                     "runtime_tool_call_id": "runtime-call-1",
                     "tool_name": {
                         "name": "freeform_tool",
-                        "namespace": "mcp__sample__",
+                        "namespace": "extension__sample__",
                     },
                     "tool_kind": "freeform",
                     "input": { "value": 1 },

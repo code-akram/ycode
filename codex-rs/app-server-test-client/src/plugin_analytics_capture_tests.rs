@@ -69,8 +69,6 @@ fn mutation_event(event_type: &str) -> Value {
             "plugin_name": "sample",
             "marketplace_name": "openai-curated-remote",
             "has_skills": true,
-            "mcp_server_count": 0,
-            "connector_ids": [],
             "product_client_id": "test-client"
         }
     })

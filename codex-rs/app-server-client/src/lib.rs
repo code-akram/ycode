@@ -328,8 +328,6 @@ pub struct InProcessClientStartArgs {
     pub client_version: String,
     /// Whether experimental APIs are requested at initialize time.
     pub experimental_api: bool,
-    /// Whether MCP servers may send `openai/form` elicitation requests.
-    pub mcp_server_openai_form_elicitation: bool,
     /// Notification methods this client opts out of receiving.
     pub opt_out_notification_methods: Vec<String>,
     /// Queue capacity for command/event channels (clamped to at least 1).
@@ -349,13 +347,11 @@ impl InProcessClientStartArgs {
         let capabilities = InitializeCapabilities {
             experimental_api: self.experimental_api,
             request_attestation: false,
-            extensions: None,
             opt_out_notification_methods: if self.opt_out_notification_methods.is_empty() {
                 None
             } else {
                 Some(self.opt_out_notification_methods.clone())
             },
-            mcp_server_openai_form_elicitation: self.mcp_server_openai_form_elicitation,
         };
 
         InitializeParams {
@@ -1016,7 +1012,6 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
-            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity,
         })
@@ -1210,7 +1205,6 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
-            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         }
@@ -1219,13 +1213,11 @@ mod tests {
     #[test]
     fn remote_initialize_params_forward_openai_form_capability() {
         let mut args = test_remote_connect_args("ws://localhost/rpc".to_string());
-        args.mcp_server_openai_form_elicitation = true;
 
         assert!(
             args.initialize_params()
                 .capabilities
                 .expect("initialize capabilities")
-                .mcp_server_openai_form_elicitation
         );
     }
 
@@ -1513,7 +1505,6 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
-            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         })
@@ -1602,7 +1593,6 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
-            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         })
@@ -1622,7 +1612,6 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
-            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,
         })
@@ -2233,7 +2222,6 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
-            mcp_server_openai_form_elicitation: true,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
         }
@@ -2245,7 +2233,6 @@ mod tests {
                 .initialize
                 .capabilities
                 .expect("initialize capabilities")
-                .mcp_server_openai_form_elicitation
         );
         assert!(Arc::ptr_eq(
             &runtime_args.environment_manager,
@@ -2282,7 +2269,6 @@ mod tests {
             client_name: "codex-app-server-client-test".to_string(),
             client_version: "0.0.0-test".to_string(),
             experimental_api: true,
-            mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
         }

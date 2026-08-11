@@ -117,8 +117,6 @@ use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemGuardianApprovalReviewCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::McpToolCallAppContext;
-use codex_app_server_protocol::McpToolCallStatus;
 use codex_app_server_protocol::NonSteerableTurnKind;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
@@ -152,7 +150,6 @@ use codex_app_server_protocol::UserInput;
 use codex_app_server_protocol::WebSearchItem;
 use codex_login::default_client::DEFAULT_ORIGINATOR;
 use codex_login::default_client::originator;
-use codex_plugin::AppConnectorId;
 use codex_plugin::PluginCapabilitySummary;
 use codex_plugin::PluginId;
 use codex_plugin::PluginTelemetryMetadata;
@@ -821,8 +818,6 @@ fn sample_initialize_fact(connection_id: u64) -> AnalyticsFact {
                 experimental_api: false,
                 request_attestation: false,
                 opt_out_notification_methods: None,
-                mcp_server_openai_form_elicitation: false,
-                extensions: None,
             }),
         },
         product_client_id: DEFAULT_ORIGINATOR.to_string(),
@@ -1883,8 +1878,6 @@ async fn initialize_caches_client_and_thread_lifecycle_publishes_once_initialize
                         experimental_api: false,
                         request_attestation: false,
                         opt_out_notification_methods: None,
-                        mcp_server_openai_form_elicitation: false,
-                        extensions: None,
                     }),
                 },
                 product_client_id: DEFAULT_ORIGINATOR.to_string(),
@@ -2189,8 +2182,6 @@ async fn compaction_event_ingests_custom_fact() {
                         experimental_api: false,
                         request_attestation: false,
                         opt_out_notification_methods: None,
-                        mcp_server_openai_form_elicitation: false,
-                        extensions: None,
                     }),
                 },
                 product_client_id: DEFAULT_ORIGINATOR.to_string(),
@@ -2321,8 +2312,6 @@ async fn guardian_review_event_ingests_custom_fact_with_optional_target_item() {
                         experimental_api: false,
                         request_attestation: false,
                         opt_out_notification_methods: None,
-                        mcp_server_openai_form_elicitation: false,
-                        extensions: None,
                     }),
                 },
                 product_client_id: DEFAULT_ORIGINATOR.to_string(),
@@ -3521,10 +3510,7 @@ fn plugin_used_event_serializes_expected_shape() {
                 "plugin_name": "sample",
                 "marketplace_name": "test",
                 "has_skills": true,
-                "mcp_server_count": 2,
-                "connector_ids": ["calendar", "drive"],
                 "product_client_id": TEST_PRODUCT_CLIENT_ID,
-                "mcp_server_names": ["mcp-1", "mcp-2"],
                 "thread_id": "thread-3",
                 "turn_id": "turn-3",
                 "model_slug": "gpt-5"
@@ -3552,8 +3538,6 @@ fn plugin_management_event_serializes_expected_shape() {
                 "plugin_name": "sample",
                 "marketplace_name": "test",
                 "has_skills": true,
-                "mcp_server_count": 2,
-                "connector_ids": ["calendar", "drive"],
                 "product_client_id": originator().value
             }
         })
@@ -3584,8 +3568,6 @@ fn plugin_install_failed_event_serializes_expected_shape() {
                 "plugin_name": "sample",
                 "marketplace_name": "test",
                 "has_skills": true,
-                "mcp_server_count": 2,
-                "connector_ids": ["calendar", "drive"],
                 "product_client_id": originator().value,
                 "source": "manual",
                 "error_type": "store_io",
@@ -3616,8 +3598,6 @@ fn plugin_management_event_keeps_plugin_id_local_when_remote_id_exists() {
                 "plugin_name": "sample",
                 "marketplace_name": "test",
                 "has_skills": true,
-                "mcp_server_count": 2,
-                "connector_ids": ["calendar", "drive"],
                 "product_client_id": originator().value
             }
         })
@@ -3948,8 +3928,6 @@ async fn reducer_ingests_plugin_state_changed_fact() {
                 "plugin_name": "sample",
                 "marketplace_name": "test",
                 "has_skills": true,
-                "mcp_server_count": 2,
-                "connector_ids": ["calendar", "drive"],
                 "product_client_id": originator().value
             }
         }])
@@ -4046,8 +4024,6 @@ async fn reducer_ingests_plugin_install_failed_fact() {
                 "plugin_name": "sample",
                 "marketplace_name": "test",
                 "has_skills": true,
-                "mcp_server_count": 2,
-                "connector_ids": ["calendar", "drive"],
                 "product_client_id": originator().value,
                 "source": "external_agent_migration",
                 "error_type": "invalid_plugin",
@@ -4092,8 +4068,6 @@ async fn reducer_ingests_plugin_install_failed_fact_without_detail() {
                 "plugin_name": null,
                 "marketplace_name": null,
                 "has_skills": null,
-                "mcp_server_count": null,
-                "connector_ids": null,
                 "product_client_id": originator().value,
                 "source": "manual",
                 "error_type": "remote_catalog_unexpected_status",
@@ -4269,7 +4243,6 @@ fn turn_event_serializes_expected_shape() {
             total_tool_call_count: None,
             shell_command_count: None,
             file_change_count: None,
-            mcp_tool_call_count: None,
             dynamic_tool_call_count: None,
             subagent_tool_call_count: None,
             web_search_count: None,
@@ -4353,7 +4326,6 @@ fn turn_event_serializes_expected_shape() {
                 "total_tool_call_count": null,
                 "shell_command_count": null,
                 "file_change_count": null,
-                "mcp_tool_call_count": null,
                 "dynamic_tool_call_count": null,
                 "subagent_tool_call_count": null,
                 "web_search_count": null,
@@ -4680,7 +4652,6 @@ async fn turn_lifecycle_emits_turn_event() {
     assert_eq!(payload["event_params"]["total_tool_call_count"], json!(0));
     assert_eq!(payload["event_params"]["shell_command_count"], json!(0));
     assert_eq!(payload["event_params"]["file_change_count"], json!(0));
-    assert_eq!(payload["event_params"]["mcp_tool_call_count"], json!(0));
     assert_eq!(payload["event_params"]["dynamic_tool_call_count"], json!(0));
     assert_eq!(
         payload["event_params"]["subagent_tool_call_count"],
@@ -4720,26 +4691,6 @@ async fn turn_event_counts_completed_tool_items() {
     )
     .await;
 
-    let mcp_tool_call_item = |status, duration_ms| ThreadItem::McpToolCall {
-        id: "mcp-1".to_string(),
-        server: "server".to_string(),
-        tool: "search".to_string(),
-        status,
-        arguments: json!({}),
-        app_context: Some(McpToolCallAppContext {
-            connector_id: "connector-test".to_string(),
-            link_id: None,
-            resource_uri: None,
-            app_name: None,
-            action_name: None,
-        }),
-        mcp_app_resource_uri: None,
-        plugin_id: Some("sample@test".to_string()),
-        read_only_hint: None,
-        result: None,
-        error: None,
-        duration_ms,
-    };
     let completed_tool_items = vec![
         sample_command_execution_item(CommandExecutionStatus::Completed, Some(0), Some(1)),
         ThreadItem::FileChange {
@@ -4747,7 +4698,6 @@ async fn turn_event_counts_completed_tool_items() {
             changes: Vec::new(),
             status: PatchApplyStatus::Completed,
         },
-        mcp_tool_call_item(McpToolCallStatus::Completed, Some(2)),
         ThreadItem::DynamicToolCall {
             id: "dynamic-1".to_string(),
             namespace: None,
@@ -4842,23 +4792,11 @@ async fn turn_event_counts_completed_tool_items() {
         vec![
             ("codex_command_execution_event", "session-thread-2"),
             ("codex_file_change_event", "session-thread-2"),
-            ("codex_mcp_tool_call_event", "session-thread-2"),
             ("codex_dynamic_tool_call_event", "session-thread-2"),
             ("codex_collab_agent_tool_call_event", "session-thread-2"),
             ("codex_web_search_event", "session-thread-2"),
             ("codex_image_generation_event", "session-thread-2"),
         ]
-    );
-
-    let mcp_tool_call_event = out
-        .iter()
-        .find(|event| matches!(event, TrackEventRequest::McpToolCall(_)))
-        .expect("MCP tool call event should be emitted");
-    let payload = serde_json::to_value(mcp_tool_call_event).expect("serialize MCP tool call event");
-    assert_eq!(payload["event_params"]["plugin_id"], json!("sample@test"));
-    assert_eq!(
-        payload["event_params"]["connector_id"],
-        json!("connector-test")
     );
 
     reducer
@@ -4878,10 +4816,9 @@ async fn turn_event_counts_completed_tool_items() {
         .find(|event| matches!(event, TrackEventRequest::TurnEvent(_)))
         .expect("turn event should be emitted");
     let payload = serde_json::to_value(turn_event).expect("serialize turn event");
-    assert_eq!(payload["event_params"]["total_tool_call_count"], json!(8));
+    assert_eq!(payload["event_params"]["total_tool_call_count"], json!(7));
     assert_eq!(payload["event_params"]["shell_command_count"], json!(1));
     assert_eq!(payload["event_params"]["file_change_count"], json!(1));
-    assert_eq!(payload["event_params"]["mcp_tool_call_count"], json!(1));
     assert_eq!(payload["event_params"]["dynamic_tool_call_count"], json!(1));
     assert_eq!(
         payload["event_params"]["subagent_tool_call_count"],
@@ -5383,11 +5320,6 @@ fn sample_plugin_metadata() -> PluginTelemetryMetadata {
             plugin_namespace: None,
             description: None,
             has_skills: true,
-            mcp_server_names: vec!["mcp-1".to_string(), "mcp-2".to_string()],
-            app_connector_ids: vec![
-                AppConnectorId("calendar".to_string()),
-                AppConnectorId("drive".to_string()),
-            ],
         }),
     }
 }

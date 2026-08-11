@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -47,7 +46,6 @@ use crate::session::GitEnrichmentPolicy;
 use crate::session::SessionIo;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use codex_config::types::McpServerConfig;
 use codex_features::Feature;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_utils_path_uri::PathUri;
@@ -171,7 +169,6 @@ struct GuardianReviewSessionReuseKey {
     user_instructions: Option<UserInstructions>,
     compact_prompt: Option<String>,
     cwd: PathUri,
-    mcp_servers: Constrained<HashMap<String, McpServerConfig>>,
     codex_linux_sandbox_exe: Option<PathBuf>,
     main_execve_wrapper_exe: Option<PathBuf>,
     zsh_path: Option<PathBuf>,
@@ -199,7 +196,6 @@ impl GuardianReviewSessionReuseKey {
             user_instructions,
             compact_prompt: spawn_config.compact_prompt.clone(),
             cwd: PathUri::from_abs_path(&spawn_config.cwd),
-            mcp_servers: spawn_config.mcp_servers.clone(),
             codex_linux_sandbox_exe: spawn_config.codex_linux_sandbox_exe.clone(),
             main_execve_wrapper_exe: spawn_config.main_execve_wrapper_exe.clone(),
             zsh_path: spawn_config.zsh_path.clone(),
@@ -1036,13 +1032,6 @@ pub(crate) fn build_guardian_review_session_config(
         .map_err(|err| {
             anyhow::anyhow!("guardian review session could not set permission profile: {err}")
         })?;
-    guardian_config.include_apps_instructions = false;
-    guardian_config
-        .mcp_servers
-        .set(HashMap::new())
-        .map_err(|err| {
-            anyhow::anyhow!("guardian review session could not clear MCP servers: {err}")
-        })?;
     if let Some(live_network_config) = live_network_config
         && guardian_config.permissions.network.is_some()
     {
@@ -1062,7 +1051,6 @@ pub(crate) fn build_guardian_review_session_config(
         Feature::Collab,
         Feature::MultiAgentV2,
         Feature::CodexHooks,
-        Feature::Apps,
         Feature::Plugins,
         Feature::WebSearchRequest,
         Feature::WebSearchCached,

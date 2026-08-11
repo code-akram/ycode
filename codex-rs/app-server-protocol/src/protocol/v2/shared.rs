@@ -180,7 +180,6 @@ pub enum AskForApproval {
         skill_approval: bool,
         #[serde(default)]
         request_permissions: bool,
-        mcp_elicitations: bool,
     },
     Never,
 }
@@ -195,13 +194,11 @@ impl AskForApproval {
                 rules,
                 skill_approval,
                 request_permissions,
-                mcp_elicitations,
             } => CoreAskForApproval::Granular(CoreGranularApprovalConfig {
                 sandbox_approval,
                 rules,
                 skill_approval,
                 request_permissions,
-                mcp_elicitations,
             }),
             AskForApproval::Never => CoreAskForApproval::Never,
         }
@@ -218,7 +215,6 @@ impl From<CoreAskForApproval> for AskForApproval {
                 rules: granular_config.rules,
                 skill_approval: granular_config.skill_approval,
                 request_permissions: granular_config.request_permissions,
-                mcp_elicitations: granular_config.mcp_elicitations,
             },
             CoreAskForApproval::Never => AskForApproval::Never,
         }
@@ -231,7 +227,7 @@ impl From<CoreAskForApproval> for AskForApproval {
     export_to = "v2/"
 )]
 /// Configures who approval requests are routed to for review. Examples
-/// include sandbox escapes, blocked network access, MCP approval prompts, and
+/// include sandbox escapes, blocked network access, and
 /// ARC escalations. Defaults to `user`. `auto_review` uses a carefully
 /// prompted subagent to gather relevant context and apply a risk-based
 /// decision framework before approving or denying the request.
@@ -251,7 +247,7 @@ impl JsonSchema for ApprovalsReviewer {
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
         string_enum_schema_with_description(
             &["user", "auto_review", "guardian_subagent"],
-            "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
+            "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
         )
     }
 }

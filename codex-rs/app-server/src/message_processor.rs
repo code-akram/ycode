@@ -21,7 +21,6 @@ use crate::outgoing_message::ConnectionRequestId;
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::RequestContext;
 use crate::request_processors::AccountRequestProcessor;
-use crate::request_processors::AppsRequestProcessor;
 use crate::request_processors::CatalogRequestProcessor;
 use crate::request_processors::CommandExecRequestProcessor;
 use crate::request_processors::ConfigRequestProcessor;
@@ -31,7 +30,6 @@ use crate::request_processors::FsRequestProcessor;
 use crate::request_processors::GitRequestProcessor;
 use crate::request_processors::InitializeRequestProcessor;
 use crate::request_processors::MarketplaceRequestProcessor;
-use crate::request_processors::McpRequestProcessor;
 use crate::request_processors::PluginRequestProcessor;
 use crate::request_processors::ProcessExecRequestProcessor;
 use crate::request_processors::RemoteControlRequestProcessor;
@@ -71,7 +69,6 @@ use codex_goal_extension::GoalService;
 use codex_home::CodexHomeUserInstructionsProvider;
 use codex_login::AuthManager;
 use codex_protocol::ThreadId;
-use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_rollout::StateDbHandle;
@@ -82,7 +79,6 @@ use tokio::sync::broadcast;
 use tokio::sync::watch;
 use tokio::time::Duration;
 use tokio::time::timeout;
-use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::models_refresh_worker::ModelsRefreshWorker;
@@ -99,7 +95,6 @@ pub(crate) struct MessageProcessor {
     models_refresh_worker: ModelsRefreshWorker,
     skills_watcher: Arc<SkillsWatcher>,
     account_processor: AccountRequestProcessor,
-    apps_processor: AppsRequestProcessor,
     catalog_processor: CatalogRequestProcessor,
     command_exec_processor: CommandExecRequestProcessor,
     process_exec_processor: ProcessExecRequestProcessor,
@@ -111,7 +106,6 @@ pub(crate) struct MessageProcessor {
     git_processor: GitRequestProcessor,
     initialize_processor: InitializeRequestProcessor,
     marketplace_processor: MarketplaceRequestProcessor,
-    mcp_processor: McpRequestProcessor,
     plugin_processor: PluginRequestProcessor,
     remote_control_processor: RemoteControlRequestProcessor,
     search_processor: SearchRequestProcessor,
@@ -134,7 +128,6 @@ pub(crate) struct InitializedConnectionSessionState {
     pub(crate) app_server_client_name: String,
     pub(crate) client_version: String,
     pub(crate) request_attestation: bool,
-    pub(crate) client_mcp_extensions: ClientMcpExtensions,
 }
 
 impl Default for ConnectionSessionState {
@@ -184,13 +177,6 @@ impl ConnectionSessionState {
         self.initialized
             .get()
             .is_some_and(|session| session.request_attestation)
-    }
-
-    pub(crate) fn client_mcp_extensions(&self) -> ClientMcpExtensions {
-        self.initialized
-            .get()
-            .map(|session| session.client_mcp_extensions.clone())
-            .unwrap_or_default()
     }
     pub(crate) fn initialize(&self, session: InitializedConnectionSessionState) -> Result<(), ()> {
         self.initialized.set(session).map_err(|_| ())
@@ -260,7 +246,6 @@ impl MessageProcessor {
                 config.as_ref(),
                 auth_manager.clone(),
                 codex_core::build_models_manager(config.as_ref(), auth_manager.clone()),
-                codex_core::CodexAppsToolsCache::default(),
                 session_source,
                 environment_manager,
                 thread_extensions(
@@ -321,7 +306,6 @@ impl MessageProcessor {
         let thread_list_state_permit = Arc::new(Semaphore::new(/*permits*/ 1));
         let workspace_settings_cache =
             Arc::new(workspace_settings::WorkspaceSettingsCache::default());
-        let app_list_shutdown_token = CancellationToken::new();
         let request_serialization_queues = RequestSerializationQueues::default();
         let config_processor = ConfigRequestProcessor::new(
             outgoing.clone(),
@@ -343,14 +327,6 @@ impl MessageProcessor {
             outgoing.clone(),
             Arc::clone(&config),
             config_manager.clone(),
-        );
-        let apps_processor = AppsRequestProcessor::new(
-            auth_manager.clone(),
-            Arc::clone(&thread_manager),
-            outgoing.clone(),
-            config_manager.clone(),
-            Arc::clone(&workspace_settings_cache),
-            app_list_shutdown_token,
         );
         let catalog_processor = CatalogRequestProcessor::new(
             outgoing.clone(),
@@ -392,12 +368,6 @@ impl MessageProcessor {
             Arc::clone(&config),
             config_manager.clone(),
             Arc::clone(&thread_manager),
-        );
-        let mcp_processor = McpRequestProcessor::new(
-            auth_manager.clone(),
-            Arc::clone(&thread_manager),
-            outgoing.clone(),
-            config_manager.clone(),
         );
         let plugin_processor = PluginRequestProcessor::new(
             auth_manager.clone(),
@@ -467,7 +437,7 @@ impl MessageProcessor {
                 outgoing: outgoing.clone(),
                 thread_manager: Arc::clone(&thread_manager),
                 thread_store: Arc::clone(&thread_store),
-                config_manager: config_manager.clone(),
+                config_manager,
                 config_processor: config_processor.clone(),
                 state_db,
                 analytics_events_client,
@@ -485,7 +455,6 @@ impl MessageProcessor {
             models_refresh_worker,
             skills_watcher,
             account_processor,
-            apps_processor,
             catalog_processor,
             command_exec_processor,
             process_exec_processor,
@@ -497,7 +466,6 @@ impl MessageProcessor {
             git_processor,
             initialize_processor,
             marketplace_processor,
-            mcp_processor,
             plugin_processor,
             remote_control_processor,
             search_processor,
@@ -510,7 +478,6 @@ impl MessageProcessor {
 
     pub(crate) fn clear_runtime_references(&self) {
         self.account_processor.clear_external_auth();
-        self.apps_processor.shutdown();
         self.models_refresh_worker.shutdown();
         self.skills_watcher.shutdown();
     }
@@ -822,7 +789,6 @@ impl MessageProcessor {
         let serialization_scope = codex_request.serialization_scope();
         let app_server_client_name = session.app_server_client_name().map(str::to_string);
         let client_version = session.client_version().map(str::to_string);
-        let client_mcp_extensions = session.client_mcp_extensions();
         let error_request_id = connection_request_id.clone();
         let rpc_gate = Arc::clone(&session.rpc_gate);
         let processor = Arc::clone(self);
@@ -838,7 +804,6 @@ impl MessageProcessor {
                         request_context,
                         app_server_client_name,
                         client_version,
-                        client_mcp_extensions,
                     )
                     .await;
                 if let Err(error) = result {
@@ -868,7 +833,6 @@ impl MessageProcessor {
         request_context: RequestContext,
         app_server_client_name: Option<String>,
         client_version: Option<String>,
-        client_mcp_extensions: ClientMcpExtensions,
     ) -> Result<(), JSONRPCErrorError> {
         let connection_id = connection_request_id.connection_id;
         let request_id = ConnectionRequestId {
@@ -1027,7 +991,6 @@ impl MessageProcessor {
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
-                        client_mcp_extensions.clone(),
                         request_context,
                     )
                     .await
@@ -1044,7 +1007,6 @@ impl MessageProcessor {
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
-                        client_mcp_extensions.clone(),
                     )
                     .await
             }
@@ -1055,7 +1017,6 @@ impl MessageProcessor {
                         params,
                         app_server_client_name.clone(),
                         client_version.clone(),
-                        client_mcp_extensions.clone(),
                     )
                     .await
             }
@@ -1240,15 +1201,6 @@ impl MessageProcessor {
             ClientRequest::PluginShareDelete { params, .. } => {
                 self.plugin_processor.plugin_share_delete(params).await
             }
-            ClientRequest::AppsRead { params, .. } => self.apps_processor.apps_read(params).await,
-            ClientRequest::AppsList { params, .. } => {
-                self.apps_processor.apps_list(&request_id, params).await
-            }
-            ClientRequest::AppsInstalled { params, .. } => self
-                .apps_processor
-                .apps_installed(params)
-                .await
-                .map(|response| Some(response.into())),
             ClientRequest::SkillsConfigWrite { params, .. } => {
                 self.catalog_processor.skills_config_write(params).await
             }
@@ -1328,27 +1280,6 @@ impl MessageProcessor {
             }
             ClientRequest::ReviewStart { params, .. } => {
                 self.turn_processor.review_start(&request_id, params).await
-            }
-            ClientRequest::McpServerOauthLogin { params, .. } => {
-                self.mcp_processor.mcp_server_oauth_login(params).await
-            }
-            ClientRequest::McpServerRefresh { params, .. } => {
-                self.mcp_processor.mcp_server_refresh(params).await
-            }
-            ClientRequest::McpServerStatusList { params, .. } => {
-                self.mcp_processor
-                    .mcp_server_status_list(&request_id, params)
-                    .await
-            }
-            ClientRequest::McpResourceRead { params, .. } => {
-                self.mcp_processor
-                    .mcp_resource_read(&request_id, params)
-                    .await
-            }
-            ClientRequest::McpServerToolCall { params, .. } => {
-                self.mcp_processor
-                    .mcp_server_tool_call(&request_id, params)
-                    .await
             }
             ClientRequest::LoginAccount { params, .. } => {
                 self.account_processor

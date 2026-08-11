@@ -571,8 +571,6 @@ pub(crate) fn mention_bindings_from_user_inputs(
                         .map(|(plugin_name, _)| plugin_name)
                         .unwrap_or(plugin_id)
                         .to_string()
-                } else if path.starts_with("app://") {
-                    codex_connectors::metadata::connector_mention_slug_from_name(name)
                 } else {
                     name.clone()
                 };

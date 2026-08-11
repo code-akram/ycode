@@ -14,6 +14,7 @@ use codex_login::auth::BedrockApiKeyAuth;
 use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_5_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_models_manager::bundled_models_response;
 use codex_protocol::AgentPath;
 use codex_protocol::account::PlanType as AccountPlanType;
 use codex_protocol::config_types::ServiceTier;
@@ -44,7 +45,6 @@ use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::user_input::UserInput;
 use core_test_support::PathBufExt;
-use core_test_support::apps_test_server::configure_search_capable_model;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
 use core_test_support::context_snapshot::ContextSnapshotRenderMode;
@@ -211,6 +211,18 @@ fn test_codex() -> TestCodexBuilder {
     base_test_codex().with_config(|config| {
         let _ = config.features.disable(Feature::RemoteCompactionV2);
     })
+}
+
+fn configure_search_capable_model(config: &mut codex_core::config::Config) {
+    let mut model_catalog = bundled_models_response().expect("bundled models.json should parse");
+    let model = model_catalog
+        .models
+        .iter_mut()
+        .find(|model| model.slug == "gpt-5.4")
+        .expect("gpt-5.4 exists in bundled models.json");
+    config.model = Some("gpt-5.4".to_string());
+    model.supports_search_tool = true;
+    config.model_catalog = Some(model_catalog);
 }
 
 fn remote_realtime_test_codex_builder(

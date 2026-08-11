@@ -33,7 +33,6 @@ codex-arg0 = { workspace = true }
 codex-install-context = { workspace = true }
 codex-cloud-config = { workspace = true }
 codex-config = { workspace = true }
-codex-connectors = { workspace = true }
 codex-core-plugins = { workspace = true }
 codex-exec-server = { workspace = true }
 codex-features = { workspace = true }
@@ -87,7 +86,6 @@ ratatui = { workspace = true, features = [
 ] }
 ratatui-macros = { workspace = true }
 regex-lite = { workspace = true }
-rmcp = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 sha2 = { workspace = true }
@@ -135,7 +133,6 @@ arboard = { workspace = true }
 [dev-dependencies]
 app_test_support = { workspace = true }
 codex-cli = { workspace = true }
-codex-mcp = { workspace = true }
 core_test_support = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 assert_matches = { workspace = true }

@@ -41,8 +41,8 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tempfile::TempDir;
 
-const CHATGPT_MCP_URL: &str = "https://chatgpt.com/backend-api/ps/mcp";
-const NON_CHATGPT_MCP_URL: &str = "https://api.openai.com/backend-api/ps/mcp";
+const CHATGPT_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+const NON_CHATGPT_RESPONSES_URL: &str = "https://api.openai.com/backend-api/codex/responses";
 
 #[derive(Debug)]
 struct CapturedRequest {
@@ -64,7 +64,7 @@ struct TlsInterceptingProxy {
     url: String,
 }
 
-/// Exercises the same `http/request` route used by remotely executed Streamable HTTP MCP calls.
+/// Exercises the same `http/request` route used by remotely executed official Responses API calls.
 /// Each RPC uses the shared route-aware client. The first response sets `__cflb`, and the second response
 /// replaces it, proving cross-client persistence through the shared cookie store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -90,7 +90,7 @@ async fn exec_server_replays_only_chatgpt_cloudflare_cookies() -> anyhow::Result
     let mut server = exec_server_with_env(env, &[]).await?;
     initialize_exec_server(&mut server).await?;
 
-    let first_response = execute_http_request(&mut server, CHATGPT_MCP_URL, "first").await?;
+    let first_response = execute_http_request(&mut server, CHATGPT_RESPONSES_URL, "first").await?;
     assert_eq!(
         (first_response.status, first_response.body.into_inner()),
         (200, b"ok".to_vec())
@@ -102,10 +102,14 @@ async fn exec_server_replays_only_chatgpt_cloudflare_cookies() -> anyhow::Result
             first.request_line.as_str(),
             first.headers.get("cookie"),
         ),
-        ("chatgpt.com:443", "POST /backend-api/ps/mcp HTTP/1.1", None,)
+        (
+            "chatgpt.com:443",
+            "POST /backend-api/codex/responses HTTP/1.1",
+            None,
+        )
     );
 
-    let west_response = execute_http_request(&mut server, CHATGPT_MCP_URL, "west").await?;
+    let west_response = execute_http_request(&mut server, CHATGPT_RESPONSES_URL, "west").await?;
     assert_eq!(west_response.status, 200);
     let request_with_west_affinity = proxy.next_request()?;
     assert_eq!(
@@ -117,7 +121,8 @@ async fn exec_server_replays_only_chatgpt_cloudflare_cookies() -> anyhow::Result
         vec!["__cflb=west".to_string()]
     );
 
-    let central_response = execute_http_request(&mut server, CHATGPT_MCP_URL, "central").await?;
+    let central_response =
+        execute_http_request(&mut server, CHATGPT_RESPONSES_URL, "central").await?;
     assert_eq!(central_response.status, 200);
     let request_with_central_affinity = proxy.next_request()?;
     assert_eq!(
@@ -130,12 +135,12 @@ async fn exec_server_replays_only_chatgpt_cloudflare_cookies() -> anyhow::Result
                 .unwrap_or_default(),
         ),
         (
-            "POST /backend-api/ps/mcp HTTP/1.1",
+            "POST /backend-api/codex/responses HTTP/1.1",
             vec!["__cflb=central".to_string()],
         )
     );
     let other_host_response =
-        execute_http_request(&mut server, NON_CHATGPT_MCP_URL, "other-host").await?;
+        execute_http_request(&mut server, NON_CHATGPT_RESPONSES_URL, "other-host").await?;
     assert_eq!(other_host_response.status, 200);
     let other_host = proxy.next_request()?;
     assert_eq!(
@@ -146,7 +151,7 @@ async fn exec_server_replays_only_chatgpt_cloudflare_cookies() -> anyhow::Result
         ),
         (
             "api.openai.com:443",
-            "POST /backend-api/ps/mcp HTTP/1.1",
+            "POST /backend-api/codex/responses HTTP/1.1",
             None,
         )
     );

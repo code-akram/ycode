@@ -1013,7 +1013,7 @@ mod tests {
         let disabled = history.on_entry_response(
             /*log_id*/ 42,
             /*offset*/ 0,
-            Some("[@sample](plugin://sample@test) and [$figma](app://figma)".to_string()),
+            Some("[@sample](plugin://sample@test) and [$figma](/tmp/figma/SKILL.md)".to_string()),
             &tx,
         );
         assert_eq!(
@@ -1032,7 +1032,7 @@ mod tests {
                     MentionBinding {
                         sigil: '$',
                         mention: "figma".to_string(),
-                        path: "app://figma".to_string(),
+                        path: "/tmp/figma/SKILL.md".to_string(),
                     },
                 ],
                 pending_pastes: Vec::new(),
@@ -1044,7 +1044,7 @@ mod tests {
         let enabled = history.on_entry_response(
             /*log_id*/ 42,
             /*offset*/ 0,
-            Some("[@sample](plugin://sample@test) and [$figma](app://figma)".to_string()),
+            Some("[@sample](plugin://sample@test) and [$figma](/tmp/figma/SKILL.md)".to_string()),
             &tx,
         );
         assert_eq!(
@@ -1063,7 +1063,7 @@ mod tests {
                     MentionBinding {
                         sigil: '$',
                         mention: "figma".to_string(),
-                        path: "app://figma".to_string(),
+                        path: "/tmp/figma/SKILL.md".to_string(),
                     },
                 ],
                 pending_pastes: Vec::new(),

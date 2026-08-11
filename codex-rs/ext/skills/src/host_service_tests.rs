@@ -217,6 +217,7 @@ async fn snapshot_for_config_merges_extension_host_and_legacy_plugin_roots() {
         .outcome()
         .skills
         .iter()
+        .filter(|skill| matches!(skill.name.as_str(), "sample:search" | "user-skill"))
         .map(|skill| (skill.name.as_str(), skill.plugin_id.as_deref()))
         .collect::<Vec<_>>();
 
@@ -262,9 +263,13 @@ async fn snapshot_for_config_preserves_host_precedence_for_symlinked_plugin_root
     )
     .await;
 
+    let sample_skill = outcome
+        .skills
+        .iter()
+        .find(|skill| skill.name == "sample:search");
     assert_eq!(
-        outcome.skills,
-        vec![codex_skills::SkillMetadata {
+        sample_skill,
+        Some(&codex_skills::SkillMetadata {
             name: "sample:search".to_string(),
             description: "shared skill".to_string(),
             short_description: None,
@@ -277,7 +282,7 @@ async fn snapshot_for_config_preserves_host_precedence_for_symlinked_plugin_root
             scope: SkillScope::User,
             plugin_id: None,
             remote_plugin_id: None,
-        }]
+        })
     );
 }
 

@@ -26,23 +26,17 @@ use crate::test_support::write_curated_plugin_sha_with as write_curated_plugin_s
 use crate::test_support::write_file;
 use crate::test_support::write_openai_api_curated_marketplace;
 use crate::test_support::write_openai_curated_marketplace;
-use codex_config::AppToolApproval;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigLayerStack;
 use codex_config::ConfigRequirements;
 use codex_config::ConfigRequirementsToml;
-use codex_config::McpServerConfig;
-use codex_config::McpServerOAuthConfig;
-use codex_config::McpServerToolConfig;
 use codex_config::RequirementSource;
 use codex_config::RequirementsLayerEntry;
 use codex_config::compose_requirements;
-use codex_config::types::McpServerTransportConfig;
 use codex_core_skills::PluginSkillSnapshots;
 use codex_login::CodexAuth;
-use codex_plugin::AppDeclaration;
 use codex_plugin::PluginId;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::HookEventName;
@@ -363,368 +357,6 @@ path = {:?}
     assert_eq!(blocked_outcome.marketplaces, Vec::new());
 }
 
-fn write_auth_projection_plugin(codex_home: &Path, name: &str, include_app: bool) {
-    let plugin_root = codex_home
-        .join("plugins/cache")
-        .join("test")
-        .join(name)
-        .join("local");
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        &format!(r#"{{"name":"{name}"}}"#),
-    );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        &format!(
-            r#"{{
-  "mcpServers": {{
-    "{name}": {{
-      "type": "stdio",
-      "command": "{name}-mcp"
-    }}
-  }}
-}}"#
-        ),
-    );
-    if include_app {
-        write_auth_projection_app(codex_home, name, name);
-    }
-}
-
-fn write_auth_projection_app(codex_home: &Path, plugin_name: &str, app_name: &str) {
-    let plugin_root = codex_home
-        .join("plugins/cache")
-        .join("test")
-        .join(plugin_name)
-        .join("local");
-    write_file(
-        &plugin_root.join(".app.json"),
-        &format!(r#"{{"apps":{{"{app_name}":{{"id":"connector_{plugin_name}"}}}}}}"#),
-    );
-}
-
-fn app_declaration(name: &str, connector_id: &str) -> AppDeclaration {
-    AppDeclaration {
-        name: name.to_string(),
-        connector_id: AppConnectorId(connector_id.to_string()),
-        category: None,
-    }
-}
-
-async fn auth_projection_config(codex_home: &Path) -> PluginsConfigInput {
-    let config_toml = r#"[features]
-plugins = true
-
-[plugins."sample@test"]
-enabled = true
-
-[plugins."docs@test"]
-enabled = true
-"#
-    .to_string();
-    write_file(&codex_home.join(CONFIG_TOML_FILE), &config_toml);
-    load_config(codex_home, codex_home).await
-}
-
-fn sorted_effective_mcp_server_names(outcome: &PluginLoadOutcome) -> Vec<String> {
-    let mut names = outcome
-        .effective_mcp_servers()
-        .keys()
-        .cloned()
-        .collect::<Vec<_>>();
-    names.sort();
-    names
-}
-
-#[tokio::test]
-async fn plugin_auth_projection_hides_apps_without_chatgpt_auth() {
-    let codex_home = TempDir::new().unwrap();
-    write_auth_projection_plugin(codex_home.path(), "sample", /*include_app*/ true);
-    write_auth_projection_plugin(codex_home.path(), "docs", /*include_app*/ false);
-    let config = auth_projection_config(codex_home.path()).await;
-    let manager = PluginsManager::new_with_options(
-        codex_home.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::ApiKey),
-    );
-
-    let outcome = manager.plugins_for_config(&config).await;
-
-    assert!(outcome.effective_apps().is_empty());
-    assert_eq!(
-        sorted_effective_mcp_server_names(&outcome),
-        vec!["docs".to_string(), "sample".to_string()]
-    );
-    let sample = outcome
-        .capability_summaries()
-        .iter()
-        .find(|plugin| plugin.config_name == "sample@test")
-        .expect("sample plugin summary should exist");
-    assert_eq!(sample.mcp_server_names, vec!["sample".to_string()]);
-    assert!(sample.app_connector_ids.is_empty());
-}
-
-#[tokio::test]
-async fn plugin_auth_projection_hides_matching_mcp_with_chatgpt_apps_route() {
-    let codex_home = TempDir::new().unwrap();
-    write_auth_projection_plugin(codex_home.path(), "sample", /*include_app*/ true);
-    write_auth_projection_plugin(codex_home.path(), "docs", /*include_app*/ false);
-    let config = auth_projection_config(codex_home.path()).await;
-    let manager = PluginsManager::new_with_options(
-        codex_home.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::Chatgpt),
-    );
-
-    let outcome = manager.plugins_for_config(&config).await;
-
-    assert_eq!(
-        outcome.effective_apps(),
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-    assert_eq!(
-        sorted_effective_mcp_server_names(&outcome),
-        vec!["docs".to_string()]
-    );
-    let sample = outcome
-        .capability_summaries()
-        .iter()
-        .find(|plugin| plugin.config_name == "sample@test")
-        .expect("sample plugin summary should exist");
-    assert!(sample.mcp_server_names.is_empty());
-    assert_eq!(
-        sample.app_connector_ids,
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-    let docs = outcome
-        .capability_summaries()
-        .iter()
-        .find(|plugin| plugin.config_name == "docs@test")
-        .expect("docs plugin summary should exist");
-    assert_eq!(docs.mcp_server_names, vec!["docs".to_string()]);
-    assert!(docs.app_connector_ids.is_empty());
-}
-
-#[tokio::test]
-async fn plugin_auth_projection_hides_dual_surface_mcp_with_agent_identity_apps_route() {
-    let codex_home = TempDir::new().unwrap();
-    write_auth_projection_plugin(codex_home.path(), "sample", /*include_app*/ true);
-    write_auth_projection_plugin(codex_home.path(), "docs", /*include_app*/ false);
-    let config = auth_projection_config(codex_home.path()).await;
-    let manager = PluginsManager::new_with_options(
-        codex_home.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::AgentIdentity),
-    );
-
-    let outcome = manager.plugins_for_config(&config).await;
-
-    assert_eq!(
-        outcome.effective_apps(),
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-    assert_eq!(
-        sorted_effective_mcp_server_names(&outcome),
-        vec!["docs".to_string()]
-    );
-}
-
-#[tokio::test]
-async fn plugin_auth_projection_keeps_non_conflicting_mcp_with_chatgpt_apps_route() {
-    let codex_home = TempDir::new().unwrap();
-    write_auth_projection_plugin(codex_home.path(), "sample", /*include_app*/ false);
-    write_auth_projection_app(codex_home.path(), "sample", "sample_app");
-    write_auth_projection_plugin(codex_home.path(), "docs", /*include_app*/ false);
-    let config = auth_projection_config(codex_home.path()).await;
-    let manager = PluginsManager::new_with_options(
-        codex_home.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::Chatgpt),
-    );
-
-    let outcome = manager.plugins_for_config(&config).await;
-
-    assert_eq!(
-        outcome.effective_apps(),
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-    assert_eq!(
-        sorted_effective_mcp_server_names(&outcome),
-        vec!["docs".to_string(), "sample".to_string()]
-    );
-    let sample = outcome
-        .capability_summaries()
-        .iter()
-        .find(|plugin| plugin.config_name == "sample@test")
-        .expect("sample plugin summary should exist");
-    assert_eq!(sample.mcp_server_names, vec!["sample".to_string()]);
-    assert_eq!(
-        sample.app_connector_ids,
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-}
-
-#[tokio::test]
-async fn plugin_auth_projection_preserves_duplicate_connector_declaration_names() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test")
-        .join("sample")
-        .join("local");
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{"name":"sample"}"#,
-    );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "foo": {
-      "type": "stdio",
-      "command": "foo-mcp"
-    },
-    "foo2": {
-      "type": "stdio",
-      "command": "foo2-mcp"
-    },
-    "other": {
-      "type": "stdio",
-      "command": "other-mcp"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &plugin_root.join(".app.json"),
-        r#"{
-  "apps": {
-    "foo": {
-      "id": "connector_shared"
-    },
-    "foo2": {
-      "id": "connector_shared"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &codex_home.path().join(CONFIG_TOML_FILE),
-        r#"[features]
-plugins = true
-
-[plugins."sample@test"]
-enabled = true
-"#,
-    );
-    let config = load_config(codex_home.path(), codex_home.path()).await;
-    let manager = PluginsManager::new_with_options(
-        codex_home.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::Chatgpt),
-    );
-
-    let outcome = manager.plugins_for_config(&config).await;
-
-    assert_eq!(
-        outcome.effective_apps(),
-        vec![AppConnectorId("connector_shared".to_string())]
-    );
-    assert_eq!(
-        sorted_effective_mcp_server_names(&outcome),
-        vec!["other".to_string()]
-    );
-    let sample = outcome
-        .capability_summaries()
-        .iter()
-        .find(|plugin| plugin.config_name == "sample@test")
-        .expect("sample plugin summary should exist");
-    assert_eq!(sample.mcp_server_names, vec!["other".to_string()]);
-    assert_eq!(
-        sample.app_connector_ids,
-        vec![AppConnectorId("connector_shared".to_string())]
-    );
-}
-
-#[tokio::test]
-async fn plugin_auth_projection_reprojects_cached_plugins_when_auth_changes() {
-    let codex_home = TempDir::new().unwrap();
-    write_auth_projection_plugin(codex_home.path(), "sample", /*include_app*/ true);
-    write_auth_projection_plugin(codex_home.path(), "docs", /*include_app*/ false);
-    let config = auth_projection_config(codex_home.path()).await;
-    let manager = PluginsManager::new_with_options(
-        codex_home.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::Chatgpt),
-    );
-
-    let chatgpt_outcome = manager.plugins_for_config(&config).await;
-    assert_eq!(
-        sorted_effective_mcp_server_names(&chatgpt_outcome),
-        vec!["docs".to_string()]
-    );
-    assert_eq!(
-        chatgpt_outcome.effective_apps(),
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-    assert_eq!(
-        chatgpt_outcome.capability_summaries(),
-        &[
-            PluginCapabilitySummary {
-                config_name: "docs@test".to_string(),
-                display_name: "docs".to_string(),
-                plugin_namespace: Some("docs".to_string()),
-                description: None,
-                has_skills: false,
-                mcp_server_names: vec!["docs".to_string()],
-                app_connector_ids: Vec::new(),
-            },
-            PluginCapabilitySummary {
-                config_name: "sample@test".to_string(),
-                display_name: "sample".to_string(),
-                plugin_namespace: Some("sample".to_string()),
-                description: None,
-                has_skills: false,
-                mcp_server_names: Vec::new(),
-                app_connector_ids: vec![AppConnectorId("connector_sample".to_string())],
-            },
-        ]
-    );
-
-    assert!(manager.set_auth_mode(Some(AuthMode::ApiKey)));
-    let api_key_outcome = manager.plugins_for_config(&config).await;
-
-    assert_eq!(
-        sorted_effective_mcp_server_names(&api_key_outcome),
-        vec!["docs".to_string(), "sample".to_string()]
-    );
-    assert!(api_key_outcome.effective_apps().is_empty());
-    assert_eq!(
-        api_key_outcome.capability_summaries(),
-        &[
-            PluginCapabilitySummary {
-                config_name: "docs@test".to_string(),
-                display_name: "docs".to_string(),
-                plugin_namespace: Some("docs".to_string()),
-                description: None,
-                has_skills: false,
-                mcp_server_names: vec!["docs".to_string()],
-                app_connector_ids: Vec::new(),
-            },
-            PluginCapabilitySummary {
-                config_name: "sample@test".to_string(),
-                display_name: "sample".to_string(),
-                plugin_namespace: Some("sample".to_string()),
-                description: None,
-                has_skills: false,
-                mcp_server_names: vec!["sample".to_string()],
-                app_connector_ids: Vec::new(),
-            },
-        ]
-    );
-}
-
 fn write_plugin_with_version(
     root: &Path,
     dir_name: &str,
@@ -747,7 +379,6 @@ fn write_plugin_with_version(
         format!("---\nname: {manifest_name}-skill\ndescription: test skill\n---\n\n# Test skill\n"),
     )
     .unwrap();
-    fs::write(plugin_root.join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
 }
 
 fn write_plugin(root: &Path, dir_name: &str, manifest_name: &str) {
@@ -874,337 +505,6 @@ async fn loaded_plugin_names(manager: &PluginsManager, config: &PluginsConfigInp
 }
 
 #[tokio::test]
-async fn load_plugins_loads_default_skills_and_mcp_servers() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/sample/local");
-
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{
-  "name": "sample",
-  "description": "Plugin that includes the sample MCP server and Skills"
-}"#,
-    );
-    write_file(
-        &plugin_root.join("skills/sample-search/SKILL.md"),
-        "---\nname: sample-search\ndescription: search sample data\n---\n",
-    );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "sample": {
-      "type": "http",
-      "url": "https://sample.example/mcp",
-      "oauth": {
-        "clientId": "client-id",
-        "callbackPort": 3118
-      }
-    }
-  }
-}"#,
-    );
-    write_file(
-        &plugin_root.join(".app.json"),
-        r#"{
-  "apps": {
-    "example": {
-      "id": "connector_example"
-    }
-  }
-}"#,
-    );
-
-    let outcome = load_plugins_from_config(
-        &plugin_config_toml(/*enabled*/ true, /*plugins_feature_enabled*/ true),
-        codex_home.path(),
-        Some(AuthMode::Chatgpt),
-    )
-    .await;
-
-    assert_eq!(
-        outcome.plugins(),
-        vec![LoadedPlugin {
-            config_name: "sample@test".to_string(),
-            remote_plugin_id: None,
-            manifest_name: Some("sample".to_string()),
-            plugin_namespace: Some("sample".to_string()),
-            manifest_description: Some(
-                "Plugin that includes the sample MCP server and Skills".to_string(),
-            ),
-            root: AbsolutePathBuf::try_from(plugin_root.clone()).unwrap(),
-            enabled: true,
-            skill_roots: vec![plugin_root.join("skills").abs()],
-            skill_discovery_mode: SkillDiscoveryMode::Recursive,
-            disabled_skill_paths: HashSet::new(),
-            has_enabled_skills: true,
-            mcp_servers: HashMap::from([(
-                "sample".to_string(),
-                McpServerConfig {
-                    auth: Default::default(),
-                    transport: McpServerTransportConfig::StreamableHttp {
-                        url: "https://sample.example/mcp".to_string(),
-                        bearer_token_env_var: None,
-                        http_headers: None,
-                        env_http_headers: None,
-                    },
-                    environment_id: "local".to_string(),
-                    enabled: true,
-                    required: false,
-                    supports_parallel_tool_calls: false,
-                    omit_tools_from: None,
-                    disabled_reason: None,
-                    startup_timeout_sec: None,
-                    tool_timeout_sec: None,
-                    default_tools_approval_mode: None,
-                    enabled_tools: None,
-                    disabled_tools: None,
-                    scopes: None,
-                    oauth: Some(McpServerOAuthConfig {
-                        client_id: Some("client-id".to_string()),
-                    }),
-                    oauth_resource: None,
-                    tools: HashMap::new(),
-                },
-            )]),
-            apps: vec![app_declaration("example", "connector_example")],
-            hook_sources: Vec::new(),
-            hook_load_warnings: Vec::new(),
-            error: None,
-        }]
-    );
-    assert_eq!(
-        outcome.capability_summaries(),
-        &[PluginCapabilitySummary {
-            config_name: "sample@test".to_string(),
-            display_name: "sample".to_string(),
-            plugin_namespace: Some("sample".to_string()),
-            description: Some("Plugin that includes the sample MCP server and Skills".to_string(),),
-            has_skills: true,
-            mcp_server_names: vec!["sample".to_string()],
-            app_connector_ids: vec![AppConnectorId("connector_example".to_string())],
-        }]
-    );
-    assert_eq!(
-        outcome.effective_skill_roots(),
-        vec![plugin_root.join("skills").abs()]
-    );
-    assert_eq!(outcome.effective_mcp_servers().len(), 1);
-    assert_eq!(
-        outcome.effective_apps(),
-        vec![AppConnectorId("connector_example".to_string())]
-    );
-}
-
-#[tokio::test]
-async fn load_plugins_loads_manifest_mcp_server_objects() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/counter-sample/local");
-
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{
-  "name": "counter-sample",
-  "version": "1.1.1",
-  "description": "Plugin that declares MCP servers in the manifest",
-  "mcpServers": {
-    "counter": {
-      "type": "http",
-      "url": "https://sample.example/counter/mcp"
-    }
-  }
-}"#,
-    );
-
-    let config_toml = r#"
-[features]
-plugins = true
-
-[plugins."counter-sample@test"]
-enabled = true
-"#;
-    let outcome =
-        load_plugins_from_config(config_toml, codex_home.path(), /*auth_mode*/ None).await;
-
-    assert_eq!(outcome.plugins()[0].error, None);
-    assert_eq!(
-        outcome.plugins()[0].mcp_servers,
-        HashMap::from([(
-            "counter".to_string(),
-            McpServerConfig {
-                auth: Default::default(),
-                transport: McpServerTransportConfig::StreamableHttp {
-                    url: "https://sample.example/counter/mcp".to_string(),
-                    bearer_token_env_var: None,
-                    http_headers: None,
-                    env_http_headers: None,
-                },
-                environment_id: "local".to_string(),
-                enabled: true,
-                required: false,
-                supports_parallel_tool_calls: false,
-                omit_tools_from: None,
-                disabled_reason: None,
-                startup_timeout_sec: None,
-                tool_timeout_sec: None,
-                default_tools_approval_mode: None,
-                enabled_tools: None,
-                disabled_tools: None,
-                scopes: None,
-                oauth: None,
-                oauth_resource: None,
-                tools: HashMap::new(),
-            },
-        )])
-    );
-}
-
-#[tokio::test]
-async fn load_plugins_applies_plugin_mcp_server_policy() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/sample/local");
-
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{
-  "name": "sample"
-}"#,
-    );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "sample": {
-      "type": "http",
-      "url": "https://sample.example/mcp",
-      "default_tools_approval_mode": "prompt",
-      "enabled_tools": ["read", "search"],
-      "tools": {
-        "search": { "approval_mode": "prompt" }
-      }
-    }
-  }
-}"#,
-    );
-    let config_toml = r#"
-[features]
-plugins = true
-
-[plugins."sample@test"]
-enabled = true
-
-[plugins."sample@test".mcp_servers.sample]
-enabled = false
-default_tools_approval_mode = "approve"
-enabled_tools = ["search"]
-disabled_tools = ["delete"]
-
-[plugins."sample@test".mcp_servers.sample.tools.search]
-approval_mode = "approve"
-"#;
-
-    let outcome =
-        load_plugins_from_config(config_toml, codex_home.path(), /*auth_mode*/ None).await;
-    let server = outcome.plugins()[0]
-        .mcp_servers
-        .get("sample")
-        .expect("sample server");
-
-    assert!(!server.enabled);
-    assert_eq!(
-        server.default_tools_approval_mode,
-        Some(AppToolApproval::Approve)
-    );
-    assert_eq!(server.enabled_tools, Some(vec!["search".to_string()]));
-    assert_eq!(server.disabled_tools, Some(vec!["delete".to_string()]));
-    assert_eq!(
-        server.tools.get("search"),
-        Some(&McpServerToolConfig {
-            approval_mode: Some(AppToolApproval::Approve),
-        })
-    );
-}
-
-#[tokio::test]
-async fn remote_installed_plugin_preserves_configured_mcp_server_policy() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache/openai-curated-remote/linear/local");
-    write_cached_plugin(codex_home.path(), "openai-curated-remote", "linear");
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "linear": {
-      "type": "http",
-      "url": "https://linear.example/mcp"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &codex_home.path().join(CONFIG_TOML_FILE),
-        r#"[features]
-plugins = true
-
-[plugins."linear@openai-curated-remote"]
-enabled = false
-
-[plugins."linear@openai-curated-remote".mcp_servers.linear]
-enabled = false
-default_tools_approval_mode = "approve"
-enabled_tools = ["search"]
-disabled_tools = ["delete"]
-
-[plugins."linear@openai-curated-remote".mcp_servers.linear.tools.search]
-approval_mode = "approve"
-"#,
-    );
-
-    let config = load_config(codex_home.path(), codex_home.path()).await;
-    let manager = PluginsManager::new_with_options(
-        codex_home.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::Chatgpt),
-    );
-    manager.write_remote_installed_plugins_cache(vec![remote_installed_linear_plugin()]);
-
-    let outcome = manager.plugins_for_config(&config).await;
-    let plugin = outcome
-        .plugins()
-        .iter()
-        .find(|plugin| plugin.config_name == "linear@openai-curated-remote")
-        .expect("remote plugin should be loaded");
-    let expected_server = serde_json::from_value::<McpServerConfig>(serde_json::json!({
-        "url": "https://linear.example/mcp",
-        "enabled": false,
-        "default_tools_approval_mode": "approve",
-        "enabled_tools": ["search"],
-        "disabled_tools": ["delete"],
-        "tools": {
-            "search": { "approval_mode": "approve" }
-        }
-    }))
-    .expect("valid expected MCP server");
-
-    assert!(plugin.enabled);
-    assert_eq!(
-        plugin.mcp_servers,
-        HashMap::from([("linear".to_string(), expected_server)])
-    );
-}
-
-#[tokio::test]
 async fn remote_installed_cache_ignores_plugins_missing_local_cache() {
     let codex_home = TempDir::new().unwrap();
     write_file(
@@ -1244,8 +544,6 @@ async fn installed_plugin_telemetry_metadata_collects_capabilities() {
                 plugin_namespace: Some("sample".to_string()),
                 description: None,
                 has_skills: true,
-                mcp_server_names: Vec::new(),
-                app_connector_ids: Vec::new(),
             }),
         }
     );
@@ -1277,8 +575,6 @@ async fn installed_plugin_telemetry_metadata_resolves_persisted_remote_identity(
                 plugin_namespace: Some("linear".to_string()),
                 description: None,
                 has_skills: true,
-                mcp_server_names: Vec::new(),
-                app_connector_ids: Vec::new(),
             }),
         }
     );
@@ -1331,8 +627,6 @@ async fn installed_plugin_telemetry_metadata_prefers_remote_snapshot_identity() 
                 plugin_namespace: Some("linear".to_string()),
                 description: None,
                 has_skills: true,
-                mcp_server_names: Vec::new(),
-                app_connector_ids: Vec::new(),
             }),
         }
     );
@@ -1369,8 +663,6 @@ fn capability_summary_telemetry_metadata_uses_local_identity() {
         plugin_namespace: Some("linear".to_string()),
         description: Some("Track work".to_string()),
         has_skills: true,
-        mcp_server_names: vec!["linear".to_string()],
-        app_connector_ids: vec![AppConnectorId("linear-app".to_string())],
     };
 
     let metadata = manager.telemetry_metadata_for_capability_summary(&summary);
@@ -1403,8 +695,6 @@ fn capability_summary_telemetry_metadata_resolves_persisted_remote_identity() {
         plugin_namespace: Some("linear".to_string()),
         description: Some("Track work".to_string()),
         has_skills: true,
-        mcp_server_names: vec!["linear".to_string()],
-        app_connector_ids: vec![AppConnectorId("linear-app".to_string())],
     };
 
     let metadata = manager.telemetry_metadata_for_capability_summary(&summary);
@@ -1789,97 +1079,7 @@ enabled = true
             plugin_namespace: Some("sample".to_string()),
             description: None,
             has_skills: true,
-            mcp_server_names: Vec::new(),
-            app_connector_ids: Vec::new(),
         }]
-    );
-}
-
-#[tokio::test]
-async fn plugin_telemetry_metadata_uses_default_mcp_config_path() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/sample/local");
-
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{
-  "name": "sample"
-}"#,
-    );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "sample": {
-      "type": "http",
-      "url": "https://sample.example/mcp"
-    }
-  }
-}"#,
-    );
-
-    let summary = plugin_capability_summary_from_root(
-        &PluginId::parse("sample@test").expect("plugin id should parse"),
-        &plugin_root.abs(),
-    )
-    .await;
-
-    assert_eq!(
-        summary,
-        Some(PluginCapabilitySummary {
-            config_name: "sample@test".to_string(),
-            display_name: "sample".to_string(),
-            plugin_namespace: Some("sample".to_string()),
-            description: None,
-            has_skills: false,
-            mcp_server_names: vec!["sample".to_string()],
-            app_connector_ids: Vec::new(),
-        })
-    );
-}
-
-#[tokio::test]
-async fn plugin_capability_summary_uses_manifest_mcp_server_objects() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/counter-sample/local");
-
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{
-  "name": "counter-sample",
-  "version": "1.1.1",
-  "mcpServers": {
-    "counter": {
-      "type": "http",
-      "url": "https://sample.example/counter/mcp"
-    }
-  }
-}"#,
-    );
-
-    let summary = plugin_capability_summary_from_root(
-        &PluginId::parse("counter-sample@test").expect("plugin id should parse"),
-        &plugin_root.abs(),
-    )
-    .await;
-
-    assert_eq!(
-        summary,
-        Some(PluginCapabilitySummary {
-            config_name: "counter-sample@test".to_string(),
-            display_name: "counter-sample".to_string(),
-            plugin_namespace: Some("counter-sample".to_string()),
-            description: None,
-            has_skills: false,
-            mcp_server_names: vec!["counter".to_string()],
-            app_connector_ids: Vec::new(),
-        })
     );
 }
 
@@ -1989,9 +1189,7 @@ async fn load_plugins_uses_manifest_configured_component_paths() {
             &format!(
                 r#"{{
   "name": "sample",
-  "skills": {skills_json},
-  "mcpServers": "./config/custom.mcp.json",
-  "apps": "./config/custom.app.json"
+  "skills": {skills_json}
 }}"#
             ),
         );
@@ -2015,48 +1213,6 @@ async fn load_plugins_uses_manifest_configured_component_paths() {
             &plugin_root.join("extra-skills/extra-skill/SKILL.md"),
             "---\nname: extra-skill\ndescription: extra skill\n---\n",
         );
-        write_file(
-            &plugin_root.join(".mcp.json"),
-            r#"{
-  "mcpServers": {
-    "default": {
-      "type": "http",
-      "url": "https://default.example/mcp"
-    }
-  }
-}"#,
-        );
-        write_file(
-            &plugin_root.join("config/custom.mcp.json"),
-            r#"{
-  "mcpServers": {
-    "custom": {
-      "type": "http",
-      "url": "https://custom.example/mcp"
-    }
-  }
-}"#,
-        );
-        write_file(
-            &plugin_root.join(".app.json"),
-            r#"{
-  "apps": {
-    "default-app": {
-      "id": "connector_default"
-    }
-  }
-}"#,
-        );
-        write_file(
-            &plugin_root.join("config/custom.app.json"),
-            r#"{
-  "apps": {
-    "custom-app": {
-      "id": "connector_custom"
-    }
-  }
-}"#,
-        );
         let outcome = load_plugins_from_config(
             &plugin_config_toml(/*enabled*/ true, /*plugins_feature_enabled*/ true),
             codex_home.path(),
@@ -2071,40 +1227,6 @@ async fn load_plugins_uses_manifest_configured_component_paths() {
         expected_skill_roots.dedup();
 
         assert_eq!(outcome.plugins()[0].skill_roots, expected_skill_roots);
-        assert_eq!(
-            outcome.plugins()[0].mcp_servers,
-            HashMap::from([(
-                "custom".to_string(),
-                McpServerConfig {
-                    auth: Default::default(),
-                    transport: McpServerTransportConfig::StreamableHttp {
-                        url: "https://custom.example/mcp".to_string(),
-                        bearer_token_env_var: None,
-                        http_headers: None,
-                        env_http_headers: None,
-                    },
-                    environment_id: "local".to_string(),
-                    enabled: true,
-                    required: false,
-                    supports_parallel_tool_calls: false,
-                    omit_tools_from: None,
-                    disabled_reason: None,
-                    startup_timeout_sec: None,
-                    tool_timeout_sec: None,
-                    default_tools_approval_mode: None,
-                    enabled_tools: None,
-                    disabled_tools: None,
-                    scopes: None,
-                    oauth: None,
-                    oauth_resource: None,
-                    tools: HashMap::new(),
-                },
-            )])
-        );
-        assert_eq!(
-            outcome.plugins()[0].apps,
-            vec![app_declaration("custom-app", "connector_custom")]
-        );
     }
 }
 
@@ -2283,8 +1405,6 @@ async fn load_plugin_skills_dedupes_overlapping_manifest_roots() {
                 plugin_root.join("skills/edk"),
                 plugin_root.join("skills/abc"),
             ],
-            mcp_servers: None,
-            apps: None,
             hooks: None,
         },
         interface: None,
@@ -2333,9 +1453,7 @@ async fn load_plugins_ignores_manifest_component_paths_without_dot_slash() {
         &plugin_root.join(".codex-plugin/plugin.json"),
         r#"{
   "name": "sample",
-  "skills": "custom-skills",
-  "mcpServers": "config/custom.mcp.json",
-  "apps": "config/custom.app.json"
+  "skills": "custom-skills"
 }"#,
     );
     write_file(
@@ -2346,49 +1464,6 @@ async fn load_plugins_ignores_manifest_component_paths_without_dot_slash() {
         &plugin_root.join("custom-skills/custom-skill/SKILL.md"),
         "---\nname: custom-skill\ndescription: custom skill\n---\n",
     );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "default": {
-      "type": "http",
-      "url": "https://default.example/mcp"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &plugin_root.join("config/custom.mcp.json"),
-        r#"{
-  "mcpServers": {
-    "custom": {
-      "type": "http",
-      "url": "https://custom.example/mcp"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &plugin_root.join(".app.json"),
-        r#"{
-  "apps": {
-    "default-app": {
-      "id": "connector_default"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &plugin_root.join("config/custom.app.json"),
-        r#"{
-  "apps": {
-    "custom-app": {
-      "id": "connector_custom"
-    }
-  }
-}"#,
-    );
-
     let outcome = load_plugins_from_config(
         &plugin_config_toml(/*enabled*/ true, /*plugins_feature_enabled*/ true),
         codex_home.path(),
@@ -2399,40 +1474,6 @@ async fn load_plugins_ignores_manifest_component_paths_without_dot_slash() {
     assert_eq!(
         outcome.plugins()[0].skill_roots,
         vec![plugin_root.join("skills").abs()]
-    );
-    assert_eq!(
-        outcome.plugins()[0].mcp_servers,
-        HashMap::from([(
-            "default".to_string(),
-            McpServerConfig {
-                auth: Default::default(),
-                transport: McpServerTransportConfig::StreamableHttp {
-                    url: "https://default.example/mcp".to_string(),
-                    bearer_token_env_var: None,
-                    http_headers: None,
-                    env_http_headers: None,
-                },
-                environment_id: "local".to_string(),
-                enabled: true,
-                required: false,
-                supports_parallel_tool_calls: false,
-                omit_tools_from: None,
-                disabled_reason: None,
-                startup_timeout_sec: None,
-                tool_timeout_sec: None,
-                default_tools_approval_mode: None,
-                enabled_tools: None,
-                disabled_tools: None,
-                scopes: None,
-                oauth: None,
-                oauth_resource: None,
-                tools: HashMap::new(),
-            },
-        )])
-    );
-    assert_eq!(
-        outcome.plugins()[0].apps,
-        vec![app_declaration("default-app", "connector_default")]
     );
 }
 
@@ -2486,17 +1527,6 @@ async fn load_plugins_preserves_disabled_plugins_without_effective_contributions
         &plugin_root.join(".codex-plugin/plugin.json"),
         r#"{"name":"sample"}"#,
     );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "sample": {
-      "type": "http",
-      "url": "https://sample.example/mcp"
-    }
-  }
-}"#,
-    );
 
     let outcome = load_plugins_from_config(
         &plugin_config_toml(
@@ -2521,257 +1551,12 @@ async fn load_plugins_preserves_disabled_plugins_without_effective_contributions
             skill_discovery_mode: SkillDiscoveryMode::Recursive,
             disabled_skill_paths: HashSet::new(),
             has_enabled_skills: false,
-            mcp_servers: HashMap::new(),
-            apps: Vec::new(),
             hook_sources: Vec::new(),
             hook_load_warnings: Vec::new(),
             error: None,
         }]
     );
     assert!(outcome.effective_skill_roots().is_empty());
-    assert!(outcome.effective_mcp_servers().is_empty());
-}
-
-#[tokio::test]
-async fn effective_apps_dedupes_connector_ids_across_plugins() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_a_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/plugin-a/local");
-    let plugin_b_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/plugin-b/local");
-
-    write_file(
-        &plugin_a_root.join(".codex-plugin/plugin.json"),
-        r#"{"name":"plugin-a"}"#,
-    );
-    write_file(
-        &plugin_a_root.join(".app.json"),
-        r#"{
-  "apps": {
-    "example": {
-      "id": "connector_example"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &plugin_b_root.join(".codex-plugin/plugin.json"),
-        r#"{"name":"plugin-b"}"#,
-    );
-    write_file(
-        &plugin_b_root.join(".app.json"),
-        r#"{
-  "apps": {
-    "chat": {
-      "id": "connector_example"
-    },
-    "gmail": {
-      "id": "connector_gmail"
-    }
-  }
-}"#,
-    );
-
-    let mut root = toml::map::Map::new();
-    let mut features = toml::map::Map::new();
-    features.insert("plugins".to_string(), Value::Boolean(true));
-    features.insert("apps".to_string(), Value::Boolean(true));
-    root.insert("features".to_string(), Value::Table(features));
-
-    let mut plugins = toml::map::Map::new();
-
-    let mut plugin_a = toml::map::Map::new();
-    plugin_a.insert("enabled".to_string(), Value::Boolean(true));
-    plugins.insert("plugin-a@test".to_string(), Value::Table(plugin_a));
-
-    let mut plugin_b = toml::map::Map::new();
-    plugin_b.insert("enabled".to_string(), Value::Boolean(true));
-    plugins.insert("plugin-b@test".to_string(), Value::Table(plugin_b));
-
-    root.insert("plugins".to_string(), Value::Table(plugins));
-    let config_toml =
-        toml::to_string(&Value::Table(root)).expect("plugin test config should serialize");
-
-    let outcome =
-        load_plugins_from_config(&config_toml, codex_home.path(), Some(AuthMode::Chatgpt)).await;
-
-    assert_eq!(
-        outcome.effective_apps(),
-        vec![
-            AppConnectorId("connector_example".to_string()),
-            AppConnectorId("connector_gmail".to_string()),
-        ]
-    );
-}
-
-#[tokio::test]
-async fn effective_apps_preserves_app_config_order() {
-    let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/sample/local");
-
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{"name":"sample"}"#,
-    );
-    write_file(
-        &plugin_root.join(".app.json"),
-        r#"{
-  "apps": {
-    "slack": {
-      "id": "connector_slack"
-    },
-    "github": {
-      "id": "connector_github"
-    },
-    "slack-copy": {
-      "id": "connector_slack"
-    }
-  }
-}"#,
-    );
-
-    let outcome = load_plugins_from_config(
-        &plugin_config_toml(/*enabled*/ true, /*plugins_feature_enabled*/ true),
-        codex_home.path(),
-        Some(AuthMode::Chatgpt),
-    )
-    .await;
-
-    assert_eq!(
-        outcome.effective_apps(),
-        vec![
-            AppConnectorId("connector_slack".to_string()),
-            AppConnectorId("connector_github".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn capability_index_filters_inactive_and_zero_capability_plugins() {
-    let codex_home = TempDir::new().unwrap();
-    let connector = |id: &str| AppConnectorId(id.to_string());
-    let app = |name: &str, connector_id: &str| app_declaration(name, connector_id);
-    let http_server = |url: &str| McpServerConfig {
-        auth: Default::default(),
-        transport: McpServerTransportConfig::StreamableHttp {
-            url: url.to_string(),
-            bearer_token_env_var: None,
-            http_headers: None,
-            env_http_headers: None,
-        },
-        environment_id: "local".to_string(),
-        enabled: true,
-        required: false,
-        supports_parallel_tool_calls: false,
-        omit_tools_from: None,
-        disabled_reason: None,
-        startup_timeout_sec: None,
-        tool_timeout_sec: None,
-        default_tools_approval_mode: None,
-        enabled_tools: None,
-        disabled_tools: None,
-        scopes: None,
-        oauth: None,
-        oauth_resource: None,
-        tools: HashMap::new(),
-    };
-    let plugin = |config_name: &str, dir_name: &str, manifest_name: &str| LoadedPlugin {
-        config_name: config_name.to_string(),
-        remote_plugin_id: None,
-        manifest_name: Some(manifest_name.to_string()),
-        plugin_namespace: Some(
-            config_name
-                .split_once('@')
-                .map_or(config_name, |(name, _)| name)
-                .to_string(),
-        ),
-        manifest_description: None,
-        root: AbsolutePathBuf::try_from(codex_home.path().join(dir_name)).unwrap(),
-        enabled: true,
-        skill_roots: Vec::new(),
-        skill_discovery_mode: SkillDiscoveryMode::Recursive,
-        disabled_skill_paths: HashSet::new(),
-        has_enabled_skills: false,
-        mcp_servers: HashMap::new(),
-        apps: Vec::new(),
-        hook_sources: Vec::new(),
-        hook_load_warnings: Vec::new(),
-        error: None,
-    };
-    let summary = |config_name: &str, display_name: &str| PluginCapabilitySummary {
-        config_name: config_name.to_string(),
-        display_name: display_name.to_string(),
-        plugin_namespace: Some(
-            config_name
-                .split_once('@')
-                .map_or(config_name, |(name, _)| name)
-                .to_string(),
-        ),
-        description: None,
-        ..PluginCapabilitySummary::default()
-    };
-    let outcome = PluginLoadOutcome::from_plugins(vec![
-        LoadedPlugin {
-            skill_roots: vec![codex_home.path().join("skills-plugin/skills").abs()],
-            has_enabled_skills: true,
-            ..plugin("skills@test", "skills-plugin", "skills-plugin")
-        },
-        LoadedPlugin {
-            mcp_servers: HashMap::from([("alpha".to_string(), http_server("https://alpha"))]),
-            apps: vec![app("example", "connector_example")],
-            ..plugin("alpha@test", "alpha-plugin", "alpha-plugin")
-        },
-        LoadedPlugin {
-            mcp_servers: HashMap::from([("beta".to_string(), http_server("https://beta"))]),
-            apps: vec![
-                app("example", "connector_example"),
-                app("gmail", "connector_gmail"),
-            ],
-            ..plugin("beta@test", "beta-plugin", "beta-plugin")
-        },
-        plugin("empty@test", "empty-plugin", "empty-plugin"),
-        LoadedPlugin {
-            enabled: false,
-            skill_roots: vec![codex_home.path().join("disabled-plugin/skills").abs()],
-            apps: vec![app("hidden", "connector_hidden")],
-            ..plugin("disabled@test", "disabled-plugin", "disabled-plugin")
-        },
-        LoadedPlugin {
-            apps: vec![app("broken", "connector_broken")],
-            error: Some("failed to load".to_string()),
-            ..plugin("broken@test", "broken-plugin", "broken-plugin")
-        },
-    ]);
-
-    assert_eq!(
-        outcome.capability_summaries(),
-        &[
-            PluginCapabilitySummary {
-                has_skills: true,
-                ..summary("skills@test", "skills-plugin")
-            },
-            PluginCapabilitySummary {
-                mcp_server_names: vec!["alpha".to_string()],
-                app_connector_ids: vec![connector("connector_example")],
-                ..summary("alpha@test", "alpha-plugin")
-            },
-            PluginCapabilitySummary {
-                mcp_server_names: vec!["beta".to_string()],
-                app_connector_ids: vec![
-                    connector("connector_example"),
-                    connector("connector_gmail"),
-                ],
-                ..summary("beta@test", "beta-plugin")
-            },
-        ]
-    );
 }
 
 #[tokio::test]
@@ -2808,24 +1593,10 @@ async fn load_plugins_returns_empty_when_feature_disabled() {
 #[tokio::test]
 async fn plugin_cache_ignores_unrelated_session_overrides() {
     let codex_home = TempDir::new().unwrap();
-    let plugin_root = codex_home
-        .path()
-        .join("plugins/cache")
-        .join("test/sample/local");
     write_plugin(
         codex_home.path().join("plugins/cache/test").as_path(),
         "sample/local",
         "sample",
-    );
-    write_file(
-        &plugin_root.join(".mcp.json"),
-        r#"{
-  "mcpServers": {
-    "sample": {
-      "url": "https://sample.example/mcp"
-    }
-  }
-}"#,
     );
 
     let user_file = codex_home.path().join(CONFIG_TOML_FILE).abs();
@@ -2868,13 +1639,11 @@ async fn plugin_cache_ignores_unrelated_session_overrides() {
     let first = manager
         .plugins_for_config(&config(r#"model = "first""#))
         .await;
-    std::fs::remove_file(plugin_root.join(".mcp.json")).unwrap();
     let second = manager
         .plugins_for_config(&config(r#"model = "second""#))
         .await;
 
     assert_eq!(second, first);
-    assert_eq!(second.plugins()[0].mcp_servers.len(), 1);
 }
 
 #[tokio::test]
@@ -3019,7 +1788,6 @@ async fn load_plugins_rejects_invalid_plugin_keys() {
         Some("invalid plugin key `sample`; expected <plugin>@<marketplace>")
     );
     assert!(outcome.effective_skill_roots().is_empty());
-    assert!(outcome.effective_mcp_servers().is_empty());
 }
 
 #[tokio::test]
@@ -3818,271 +2586,6 @@ enabled = true
 }
 
 #[tokio::test]
-async fn read_plugin_for_config_filters_mcp_servers_for_codex_backend_auth() {
-    let tmp = tempfile::tempdir().unwrap();
-    let repo_root = tmp.path().join("repo");
-    fs::create_dir_all(repo_root.join(".git")).unwrap();
-    fs::create_dir_all(repo_root.join(".agents/plugins")).unwrap();
-    write_file(
-        &repo_root.join(".agents/plugins/marketplace.json"),
-        r#"{
-  "name": "debug",
-  "plugins": [
-    {
-      "name": "sample-plugin",
-      "source": {
-        "source": "local",
-        "path": "./sample-plugin"
-      }
-    }
-  ]
-}"#,
-    );
-    write_file(
-        &repo_root.join("sample-plugin/.codex-plugin/plugin.json"),
-        r#"{"name":"sample-plugin"}"#,
-    );
-    write_file(
-        &repo_root.join("sample-plugin/.app.json"),
-        r#"{"apps":{"sample-mcp":{"id":"connector_sample"}}}"#,
-    );
-    write_file(
-        &repo_root.join("sample-plugin/.mcp.json"),
-        r#"{"mcpServers":{"other-mcp":{"command":"other-mcp"},"sample-mcp":{"command":"sample-mcp"}}}"#,
-    );
-    write_file(
-        &tmp.path().join(CONFIG_TOML_FILE),
-        r#"[features]
-plugins = true
-"#,
-    );
-
-    let config = load_config(tmp.path(), &repo_root).await;
-    let request = PluginReadRequest {
-        plugin_name: "sample-plugin".to_string(),
-        marketplace_path: AbsolutePathBuf::try_from(
-            repo_root.join(".agents/plugins/marketplace.json"),
-        )
-        .unwrap(),
-    };
-
-    let chatgpt_outcome = PluginsManager::new_with_options(
-        tmp.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::Chatgpt),
-    )
-    .read_plugin_for_config(&config, &request)
-    .await
-    .unwrap();
-    assert_eq!(
-        chatgpt_outcome.plugin.mcp_server_names,
-        vec!["other-mcp".to_string()]
-    );
-    assert_eq!(
-        chatgpt_outcome.plugin.apps,
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-
-    let api_key_outcome = PluginsManager::new_with_options(
-        tmp.path().to_path_buf(),
-        Some(Product::Codex),
-        Some(AuthMode::ApiKey),
-    )
-    .read_plugin_for_config(&config, &request)
-    .await
-    .unwrap();
-    assert_eq!(
-        api_key_outcome.plugin.mcp_server_names,
-        vec!["other-mcp".to_string(), "sample-mcp".to_string()]
-    );
-    assert!(api_key_outcome.plugin.apps.is_empty());
-}
-
-#[tokio::test]
-async fn read_plugin_for_config_uses_marketplace_manifest_fallback_paths_for_local_source() {
-    let tmp = tempfile::tempdir().unwrap();
-    let repo_root = tmp.path().join("repo");
-    let plugin_root = repo_root.join("sample-plugin");
-    fs::create_dir_all(repo_root.join(".git")).unwrap();
-    fs::create_dir_all(repo_root.join(".agents/plugins")).unwrap();
-    write_file(
-        &repo_root.join(".agents/plugins/marketplace.json"),
-        r#"{
-  "name": "debug",
-  "plugins": [
-    {
-      "name": "sample-plugin",
-      "source": "./sample-plugin",
-      "apps": "./config/custom.app.json",
-      "mcpServers": {
-        "sample-mcp": {
-          "command": "sample-mcp"
-        }
-      }
-    }
-  ]
-}"#,
-    );
-    write_file(
-        &plugin_root.join("config/custom.app.json"),
-        r#"{"apps":{"sample-app":{"id":"connector_sample"}}}"#,
-    );
-    write_file(
-        &tmp.path().join(CONFIG_TOML_FILE),
-        r#"[features]
-plugins = true
-"#,
-    );
-
-    let config = load_config(tmp.path(), &repo_root).await;
-    let manager = PluginsManager::new(tmp.path().to_path_buf());
-    let outcome = manager
-        .read_plugin_for_config(
-            &config,
-            &PluginReadRequest {
-                plugin_name: "sample-plugin".to_string(),
-                marketplace_path: AbsolutePathBuf::try_from(
-                    repo_root.join(".agents/plugins/marketplace.json"),
-                )
-                .unwrap(),
-            },
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        outcome.plugin.apps,
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-    assert_eq!(
-        outcome.plugin.mcp_server_names,
-        vec!["sample-mcp".to_string()]
-    );
-
-    let listed_plugin = manager
-        .list_marketplaces_for_config(
-            &config,
-            &[AbsolutePathBuf::try_from(repo_root.clone()).unwrap()],
-            /*include_openai_curated*/ false,
-        )
-        .unwrap()
-        .marketplaces
-        .into_iter()
-        .find(|marketplace| {
-            marketplace.path
-                == AbsolutePathBuf::try_from(repo_root.join(".agents/plugins/marketplace.json"))
-                    .unwrap()
-        })
-        .unwrap()
-        .plugins
-        .into_iter()
-        .find(|plugin| plugin.name == "sample-plugin")
-        .unwrap();
-    let listed_detail = manager
-        .read_plugin_detail_for_marketplace_plugin(&config, "debug", listed_plugin)
-        .await
-        .unwrap();
-    assert_eq!(
-        listed_detail.apps,
-        vec![AppConnectorId("connector_sample".to_string())]
-    );
-    assert_eq!(
-        listed_detail.mcp_server_names,
-        vec!["sample-mcp".to_string()]
-    );
-}
-
-#[tokio::test]
-async fn agent_plugin_read_and_tool_suggestions_use_portable_capabilities_only() {
-    let tmp = tempfile::tempdir().unwrap();
-    let repo_root = tmp.path().join("repo");
-    let plugin_root = repo_root.join("agent-plugin");
-    fs::create_dir_all(repo_root.join(".git")).unwrap();
-    fs::create_dir_all(repo_root.join(".agents/plugins")).unwrap();
-    write_file(
-        &repo_root.join(".agents/plugins/marketplace.json"),
-        r#"{"name":"debug","plugins":[{"name":"agent-plugin","source":"./agent-plugin"}]}"#,
-    );
-    write_file(
-        &plugin_root.join("plugin.json"),
-        r#"{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"agent.tools"}"#,
-    );
-    write_file(
-        &plugin_root.join("skills/direct/SKILL.md"),
-        "---\nname: direct\ndescription: Direct skill\n---\n",
-    );
-    write_file(
-        &plugin_root.join("skills/group/nested/SKILL.md"),
-        "---\nname: nested\ndescription: Nested skill\n---\n",
-    );
-    write_file(
-        &plugin_root.join("mcp.json"),
-        r#"{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"portable":{"type":"stdio","command":"echo"}}}"#,
-    );
-    write_file(
-        &plugin_root.join(".codex-plugin/plugin.json"),
-        r#"{"apps":"./.app.json","hooks":"./hooks/hooks.json"}"#,
-    );
-    write_file(
-        &plugin_root.join(".app.json"),
-        r#"{"apps":{"legacy":{"id":"connector_legacy"}}}"#,
-    );
-    write_file(
-        &plugin_root.join("hooks/hooks.json"),
-        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"echo legacy"}]}]}}"#,
-    );
-    write_file(
-        &tmp.path().join(CONFIG_TOML_FILE),
-        "[features]\nplugins = true\n",
-    );
-
-    let config = load_config(tmp.path(), &repo_root).await;
-    let manager = PluginsManager::new(tmp.path().to_path_buf());
-    let plugin = manager
-        .list_marketplaces_for_config(
-            &config,
-            &[AbsolutePathBuf::try_from(repo_root).unwrap()],
-            /*include_openai_curated*/ false,
-        )
-        .unwrap()
-        .marketplaces
-        .into_iter()
-        .find(|marketplace| marketplace.name == "debug")
-        .unwrap()
-        .plugins
-        .into_iter()
-        .find(|plugin| plugin.name == "agent-plugin")
-        .unwrap();
-    let detail = manager
-        .read_plugin_detail_for_marketplace_plugin(&config, "debug", plugin.clone())
-        .await
-        .unwrap();
-    let suggestion = manager
-        .tool_suggest_metadata_for_marketplace_plugin(
-            "debug",
-            &plugin,
-            &SkillConfigRules::default(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        detail
-            .skills
-            .iter()
-            .map(|skill| skill.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["agent.tools:direct"]
-    );
-    assert_eq!(detail.mcp_server_names, vec!["portable"]);
-    assert!(detail.apps.is_empty());
-    assert!(detail.hooks.is_empty());
-    assert!(suggestion.has_skills);
-    assert_eq!(suggestion.mcp_server_names, vec!["portable"]);
-    assert!(suggestion.app_connector_ids.is_empty());
-}
-
-#[tokio::test]
 async fn read_plugin_for_config_does_not_fallback_from_invalid_plugin_manifest() {
     let tmp = tempfile::tempdir().unwrap();
     let repo_root = tmp.path().join("repo");
@@ -4259,8 +2762,6 @@ plugins = true
         Some(expected_description.as_str())
     );
     assert!(outcome.plugin.skills.is_empty());
-    assert!(outcome.plugin.apps.is_empty());
-    assert!(outcome.plugin.mcp_server_names.is_empty());
     assert!(
         !tmp.path()
             .join("plugins/.marketplace-plugin-source-staging")
@@ -4310,25 +2811,6 @@ async fn read_plugin_for_config_installed_git_source_reads_from_cache_without_cl
     write_file(
         &cached_plugin_root.join("skills/search/SKILL.md"),
         "---\nname: search\ndescription: search cached data\n---\n",
-    );
-    write_file(
-        &cached_plugin_root.join(".app.json"),
-        r#"{
-  "apps": {
-    "calendar": {
-      "id": "connector_calendar",
-      "category": "First Category"
-    },
-    "calendar_duplicate": {
-      "id": "connector_calendar",
-      "category": "Second Category"
-    }
-  }
-}"#,
-    );
-    write_file(
-        &cached_plugin_root.join(".mcp.json"),
-        r#"{"mcpServers":{"toolkit":{"command":"toolkit-mcp"}}}"#,
     );
     write_file(
         &cached_plugin_root.join("hooks/hooks.json"),
@@ -4406,17 +2888,6 @@ enabled = false
     assert_eq!(outcome.plugin.skills.len(), 1);
     assert_eq!(outcome.plugin.skills[0].name, "toolkit:search");
     assert_eq!(
-        outcome.plugin.apps,
-        vec![AppConnectorId("connector_calendar".to_string())]
-    );
-    assert_eq!(
-        outcome.plugin.app_category_by_id,
-        HashMap::from([(
-            "connector_calendar".to_string(),
-            "First Category".to_string()
-        )])
-    );
-    assert_eq!(
         outcome.plugin.hooks,
         vec![
             PluginHookSummary {
@@ -4433,7 +2904,6 @@ enabled = false
             },
         ]
     );
-    assert_eq!(outcome.plugin.mcp_server_names, vec!["toolkit".to_string()]);
     assert!(
         !tmp.path()
             .join("plugins/.marketplace-plugin-source-staging")
@@ -5006,7 +3476,6 @@ source = "{remote_repo_url}"
         plugins: config.clone(),
         configured_plugin_ids: HashSet::from(["sample@debug".to_string()]),
         disabled_plugin_ids: HashSet::new(),
-        loaded_plugin_app_connector_ids: HashSet::new(),
     };
     let expected = ToolSuggestDiscoverablePlugin {
         id: "sample@debug".to_string(),
@@ -5014,8 +3483,6 @@ source = "{remote_repo_url}"
         name: "sample".to_string(),
         description: Some("Before upgrade".to_string()),
         has_skills: true,
-        mcp_server_names: vec!["sample-docs".to_string()],
-        app_connector_ids: vec!["connector_calendar".to_string()],
     };
     assert_eq!(
         manager
@@ -5557,10 +4024,7 @@ plugins = true
                         {
                             "id": "plugin_slack",
                             "name": "slack",
-                            "release": {
-                                "display_name": "Slack",
-                                "app_ids": ["connector_slack"]
-                            }
+                            "release": {"display_name": "Slack"}
                         },
                         {
                             "id": "plugin_github",
@@ -5585,13 +4049,11 @@ plugins = true
                 config_id: "github@openai-curated-remote".to_string(),
                 remote_plugin_id: "plugin_github".to_string(),
                 display_name: "GitHub".to_string(),
-                app_connector_ids: Vec::new(),
             },
             RecommendedPlugin {
                 config_id: "slack@openai-curated-remote".to_string(),
                 remote_plugin_id: "plugin_slack".to_string(),
                 display_name: "Slack".to_string(),
-                app_connector_ids: vec!["connector_slack".to_string()],
             },
         ],
     };
@@ -5675,8 +4137,6 @@ plugins = true
             name: "Slack".to_string(),
             description: None,
             has_skills: false,
-            mcp_server_names: Vec::new(),
-            app_connector_ids: Vec::new(),
         })])
     );
 }

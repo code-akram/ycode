@@ -33,20 +33,6 @@ pub struct ExternalAgentConfigDetectOptions {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExternalAgentConfigDetection {
     pub items: Vec<ExternalAgentConfigMigrationItem>,
-    pub connectors: Vec<DetectedConnectorCandidate>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DetectedConnectorCandidate {
-    pub name: String,
-    pub session_count: u32,
-    pub source: DetectedConnectorSource,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DetectedConnectorSource {
-    RemoteMcpServersConfig,
-    SessionToolUse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +41,6 @@ pub enum ExternalAgentConfigMigrationItemType {
     Skills,
     AgentsMd,
     Plugins,
-    McpServerConfig,
     Subagents,
     Hooks,
     Commands,
@@ -79,7 +64,6 @@ pub struct MigrationDetails {
     pub plugins: Vec<PluginsMigration>,
     pub skills: Vec<NamedMigration>,
     pub sessions: Vec<ExternalAgentSessionMigration>,
-    pub mcp_servers: Vec<NamedMigration>,
     pub hooks: Vec<NamedMigration>,
     pub subagents: Vec<NamedMigration>,
     pub commands: Vec<NamedMigration>,

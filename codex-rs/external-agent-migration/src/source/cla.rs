@@ -3,7 +3,6 @@ use super::build_config;
 use super::is_non_empty_text_file;
 use super::read_json_file;
 use crate::RewriteProfile;
-use crate::build_mcp_config_from_external;
 use crate::hook_migration_event_names_cla;
 use crate::import_hooks_cla;
 use crate::import_subagents_with_rewrite_profile;
@@ -30,48 +29,6 @@ impl ClaSource {
             "claude",
         ],
     );
-
-    pub fn connector_metadata_roots(external_agent_home: &Path) -> Vec<PathBuf> {
-        let Some(home) = external_agent_home
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-        else {
-            return Vec::new();
-        };
-
-        #[cfg(target_os = "macos")]
-        {
-            vec![home.join("Library/Application Support/Claude")]
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            let default_roaming = home.join("AppData/Roaming");
-            let default_local = home.join("AppData/Local");
-            let roaming = std::env::var_os("APPDATA")
-                .map(PathBuf::from)
-                .filter(|path| path.is_absolute())
-                .unwrap_or_else(|| default_roaming.clone());
-            let local = std::env::var_os("LOCALAPPDATA")
-                .map(PathBuf::from)
-                .filter(|path| path.is_absolute())
-                .unwrap_or_else(|| default_local.clone());
-            let mut roots = vec![
-                local.join("Packages/Claude_pzs8sxrjxfjjc/LocalCache/Roaming/Claude"),
-                roaming.join("Claude"),
-                default_local.join("Packages/Claude_pzs8sxrjxfjjc/LocalCache/Roaming/Claude"),
-                default_roaming.join("Claude"),
-            ];
-            roots.sort();
-            roots.dedup();
-            roots
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            vec![home.join(".config/Claude")]
-        }
-    }
 
     pub fn effective_settings(project_settings: &Path) -> io::Result<Option<JsonValue>> {
         let mut effective = read_json_file(project_settings)?;
@@ -112,14 +69,6 @@ impl ClaSource {
                 TomlValue::String("workspace-write".to_string()),
             );
         }
-    }
-
-    pub fn build_mcp_config(
-        source_root: &Path,
-        external_agent_home: &Path,
-        settings: Option<&JsonValue>,
-    ) -> io::Result<TomlValue> {
-        build_mcp_config_from_external(source_root, Some(external_agent_home), settings)
     }
 
     pub fn repo_instruction_source_groups(

@@ -148,7 +148,7 @@ pub(crate) async fn run(
 /// Handler selection may include internal matcher aliases, but hook stdin keeps
 /// the canonical `tool_name` for logs and for consumers that pair pre/post
 /// events across processes. Shell-like tools pass `{ "command": ... }` as
-/// `tool_input`; MCP tools pass their resolved JSON arguments.
+/// `tool_input`; structured tools pass their resolved JSON arguments.
 fn command_input_json(request: &PostToolUseRequest) -> Result<String, serde_json::Error> {
     let subagent = SubagentCommandInputFields::from(request.subagent.as_ref());
     serde_json::to_string(&PostToolUseCommandInput {
@@ -403,36 +403,6 @@ mod tests {
             vec![HookOutputEntry {
                 kind: HookOutputEntryKind::Context,
                 text: "Remember the bash cleanup note.".to_string(),
-            }]
-        );
-    }
-
-    #[test]
-    fn unsupported_updated_mcp_tool_output_fails_open() {
-        let parsed = parse_completed(
-            &handler(),
-            run_result(
-                Some(0),
-                r#"{"hookSpecificOutput":{"hookEventName":"PostToolUse","updatedMCPToolOutput":{"ok":true}}}"#,
-                "",
-            ),
-            Some("turn-1".to_string()),
-        );
-
-        assert_eq!(
-            parsed.data,
-            PostToolUseHandlerData {
-                should_block: false,
-                additional_contexts_for_model: Vec::new(),
-                feedback_messages_for_model: Vec::new(),
-            }
-        );
-        assert_eq!(parsed.completed.run.status, HookRunStatus::Failed);
-        assert_eq!(
-            parsed.completed.run.entries,
-            vec![HookOutputEntry {
-                kind: HookOutputEntryKind::Error,
-                text: "PostToolUse hook returned unsupported updatedMCPToolOutput".to_string(),
             }]
         );
     }

@@ -453,15 +453,7 @@ fn validate_identity(event: &Value, expected: &ExpectedPlugin) -> Result<()> {
 
 fn validate_used_metadata(event: &Value) -> Result<()> {
     let params = &event["event_params"];
-    for field in [
-        "has_skills",
-        "mcp_server_count",
-        "connector_ids",
-        "mcp_server_names",
-        "thread_id",
-        "turn_id",
-        "model_slug",
-    ] {
+    for field in ["has_skills", "thread_id", "turn_id", "model_slug"] {
         if params.get(field).is_none_or(Value::is_null) {
             bail!("codex_plugin_used event has null or missing `{field}`");
         }

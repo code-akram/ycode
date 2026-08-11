@@ -517,9 +517,6 @@ pub struct CapabilityTextFile {
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveredPluginFiles {
     pub manifest: CapabilityTextFile,
-    /// File-backed MCP declarations, including the conventional `.mcp.json` fallback.
-    #[serde(default)]
-    pub mcp_config: Option<CapabilityTextFile>,
     /// File-backed connector declarations.
     #[serde(default)]
     pub apps_config: Option<CapabilityTextFile>,
@@ -623,9 +620,9 @@ pub enum HttpRedirectPolicy {
 
 /// Executor-side HTTP request envelope.
 ///
-/// This intentionally stays transport-shaped rather than MCP-shaped so callers
-/// can use it for Streamable HTTP, OAuth discovery, and future executor-owned
-/// HTTP probes without introducing one protocol method per higher-level use.
+/// This intentionally stays transport-shaped so callers can use it for OAuth
+/// discovery and future executor-owned HTTP probes without introducing one
+/// protocol method per higher-level use.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HttpRequestParams {

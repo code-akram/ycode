@@ -1,7 +1,6 @@
 mod shared;
 
 mod account;
-mod apps;
 mod attestation;
 mod collaboration_mode;
 mod command_exec;
@@ -13,7 +12,6 @@ mod feedback;
 mod fs;
 mod hook;
 mod item;
-mod mcp;
 mod model;
 mod notification;
 mod permissions;
@@ -28,7 +26,6 @@ mod thread_data;
 mod turn;
 
 pub use account::*;
-pub use apps::*;
 pub use attestation::*;
 pub use collaboration_mode::*;
 pub use command_exec::*;
@@ -40,7 +37,6 @@ pub use feedback::*;
 pub use fs::*;
 pub use hook::*;
 pub use item::*;
-pub use mcp::*;
 pub use model::*;
 pub use notification::*;
 pub use permissions::*;

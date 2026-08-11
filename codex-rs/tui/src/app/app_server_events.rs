@@ -6,8 +6,6 @@ use super::app_server_event_targets::server_notification_thread_target;
 use super::app_server_event_targets::server_request_thread_id;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
-use crate::app_event::ConnectorsSnapshot;
-use crate::app_info::app_info_from_api;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::status_account_display_from_auth_mode;
 use codex_app_server_client::AppServerEvent;
@@ -17,18 +15,6 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 
 impl App {
-    pub(super) fn refresh_mcp_startup_expected_servers_from_config(&mut self) {
-        let enabled_config_mcp_servers: Vec<String> = self
-            .config
-            .mcp_servers
-            .get()
-            .iter()
-            .filter_map(|(name, server)| server.enabled.then_some(name.clone()))
-            .collect();
-        self.chat_widget
-            .set_mcp_startup_expected_servers(enabled_config_mcp_servers);
-    }
-
     pub(super) async fn handle_app_server_event(
         &mut self,
         app_server_client: &AppServerSession,
@@ -40,8 +26,6 @@ impl App {
                     skipped,
                     "app-server event consumer lagged; dropping ignored events"
                 );
-                self.refresh_mcp_startup_expected_servers_from_config();
-                self.chat_widget.finish_mcp_startup_after_lag();
             }
             AppServerEvent::ServerNotification(notification) => {
                 self.handle_server_notification_event(app_server_client, *notification)
@@ -72,9 +56,6 @@ impl App {
                 {
                     self.chat_widget.dismiss_app_server_request(&request);
                 }
-            }
-            ServerNotification::McpServerStatusUpdated(_) => {
-                self.refresh_mcp_startup_expected_servers_from_config();
             }
             ServerNotification::AccountRateLimitsUpdated(notification) => {
                 if matches!(
@@ -137,20 +118,6 @@ impl App {
                 }
                 return;
             }
-            ServerNotification::AppListUpdated(notification) => {
-                self.chat_widget.on_connectors_loaded(
-                    Ok(ConnectorsSnapshot {
-                        connectors: notification
-                            .data
-                            .iter()
-                            .cloned()
-                            .map(app_info_from_api)
-                            .collect(),
-                    }),
-                    /*is_final*/ false,
-                );
-                return;
-            }
             _ => {}
         }
 
@@ -174,12 +141,6 @@ impl App {
                 tracing::warn!(
                     thread_id,
                     "ignoring app-server notification with invalid thread_id"
-                );
-                return;
-            }
-            ServerNotificationThreadTarget::AppScoped => {
-                tracing::debug!(
-                    "ignoring app-scoped MCP startup notification without a TUI app-level target"
                 );
                 return;
             }

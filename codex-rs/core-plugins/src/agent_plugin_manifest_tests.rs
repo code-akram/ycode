@@ -1,5 +1,4 @@
 use super::PluginManifest;
-use super::PluginManifestMcpServers;
 use super::load_plugin_manifest;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::AGENT_PLUGIN_SCHEMA_URI;
@@ -52,13 +51,6 @@ fn uses_portable_metadata_and_fixed_components() {
             AbsolutePathBuf::from_absolute_path_checked(plugin_root.join("skills"))
                 .expect("skills path")
         ]
-    );
-    assert_eq!(
-        manifest.paths.mcp_servers,
-        Some(PluginManifestMcpServers::Path(
-            AbsolutePathBuf::from_absolute_path_checked(plugin_root.join("mcp.json"))
-                .expect("MCP path")
-        ))
     );
     let interface = manifest.interface.expect("default portable interface");
     assert_eq!(interface.display_name.as_deref(), Some("demo-plugin"));
@@ -208,7 +200,6 @@ fn legacy_codex_overlay_keeps_portable_components_fixed() {
   "version": "9.9.9",
   "description": "Codex description",
   "skills": [],
-  "mcpServers": null,
   "interface": {"displayName": "Codex Demo"}
 }"#,
     )
@@ -228,13 +219,6 @@ fn legacy_codex_overlay_keeps_portable_components_fixed() {
             AbsolutePathBuf::from_absolute_path_checked(plugin_root.join("skills"))
                 .expect("skills path")
         ]
-    );
-    assert_eq!(
-        manifest.paths.mcp_servers,
-        Some(PluginManifestMcpServers::Path(
-            AbsolutePathBuf::from_absolute_path_checked(plugin_root.join("mcp.json"))
-                .expect("MCP path")
-        ))
     );
     assert_eq!(
         manifest

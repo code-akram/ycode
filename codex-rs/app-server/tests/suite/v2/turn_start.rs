@@ -1154,8 +1154,8 @@ async fn turn_start_accepts_text_at_limit_with_mention_item() -> Result<()> {
                         text_elements: Vec::new(),
                     },
                     V2UserInput::Mention {
-                        name: "Demo App".to_string(),
-                        path: "app://demo-app".to_string(),
+                        name: "Sample Plugin".to_string(),
+                        path: "plugin://sample@test".to_string(),
                     },
                 ],
                 ..Default::default()

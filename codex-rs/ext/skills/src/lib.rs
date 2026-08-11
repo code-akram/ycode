@@ -30,7 +30,6 @@ pub use host_service::bundled_skills_enabled_from_stack;
 pub use host_snapshot::HostSkillsSnapshot;
 pub use provider::ExecutorSkillProvider;
 pub use provider::HostSkillProvider;
-pub use provider::OrchestratorSkillProvider;
 pub use provider::SkillProvider;
 pub use sources::SkillProviderSource;
 pub use sources::SkillProviders;

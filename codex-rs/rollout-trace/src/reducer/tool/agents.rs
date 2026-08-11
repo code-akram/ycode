@@ -116,7 +116,6 @@ impl TraceReducer {
             ToolCallKind::ExecCommand
             | ToolCallKind::WriteStdin
             | ToolCallKind::ApplyPatch
-            | ToolCallKind::Mcp { .. }
             | ToolCallKind::Web
             | ToolCallKind::ImageGeneration
             | ToolCallKind::SpawnAgent
@@ -175,7 +174,6 @@ impl TraceReducer {
             ToolCallKind::ExecCommand
             | ToolCallKind::WriteStdin
             | ToolCallKind::ApplyPatch
-            | ToolCallKind::Mcp { .. }
             | ToolCallKind::Web
             | ToolCallKind::ImageGeneration
             | ToolCallKind::WaitAgent

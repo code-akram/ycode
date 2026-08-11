@@ -3,7 +3,6 @@ use pretty_assertions::assert_eq;
 use std::io;
 use tempfile::TempDir;
 
-const EXTERNAL_AGENT_PROJECT_CONFIG_FILE: &str = ".claude.json";
 const EXTERNAL_AGENT_PLUGIN_MANIFEST_DIR: &str = ".claude-plugin";
 const SOURCE_EXTERNAL_AGENT_NAME: &str = "claude";
 const SOURCE_EXTERNAL_AGENT_DISPLAY_NAME: &str = "Claude";

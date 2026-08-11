@@ -1,6 +1,4 @@
 use super::*;
-use crate::ServerNotification;
-use codex_protocol::approvals::ElicitationRequest as CoreElicitationRequest;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::AgentMessageItem;
@@ -13,15 +11,11 @@ use codex_protocol::items::DynamicToolCallItem;
 use codex_protocol::items::DynamicToolCallStatus as CoreDynamicToolCallStatus;
 use codex_protocol::items::FileChangeItem;
 use codex_protocol::items::ImageViewItem;
-use codex_protocol::items::McpToolCallItem;
-use codex_protocol::items::McpToolCallStatus as CoreMcpToolCallStatus;
 use codex_protocol::items::ReasoningItem;
 use codex_protocol::items::SubAgentActivityItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::items::WebSearchItem as CoreWebSearchItem;
-use codex_protocol::mcp::CallToolResult;
-use codex_protocol::mcp::McpServerInfo;
 use codex_protocol::memory_citation::MemoryCitation as CoreMemoryCitation;
 use codex_protocol::memory_citation::MemoryCitationEntry as CoreMemoryCitationEntry;
 use codex_protocol::models::AdditionalPermissionProfile as CoreAdditionalPermissionProfile;
@@ -50,7 +44,6 @@ use codex_utils_absolute_path::test_support::test_path_buf;
 use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
 use pretty_assertions::assert_eq;
-use serde_json::Value as JsonValue;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -70,22 +63,6 @@ fn absolute_path(path: &str) -> AbsolutePathBuf {
 
 fn test_absolute_path() -> AbsolutePathBuf {
     absolute_path("readable")
-}
-
-#[test]
-fn external_agent_config_detect_response_defaults_connectors_for_older_servers() {
-    let response = serde_json::from_value::<ExternalAgentConfigDetectResponse>(json!({
-        "items": [],
-    }))
-    .expect("older detect response should deserialize");
-
-    assert_eq!(
-        response,
-        ExternalAgentConfigDetectResponse {
-            items: Vec::new(),
-            connectors: Vec::new(),
-        }
-    );
 }
 
 #[test]
@@ -1829,7 +1806,6 @@ fn ask_for_approval_granular_round_trips_request_permissions_flag() {
         rules: false,
         skill_approval: false,
         request_permissions: true,
-        mcp_elicitations: false,
     };
 
     let core_policy = v2_policy.to_core();
@@ -1840,7 +1816,6 @@ fn ask_for_approval_granular_round_trips_request_permissions_flag() {
             rules: false,
             skill_approval: false,
             request_permissions: true,
-            mcp_elicitations: false,
         })
     );
 
@@ -1854,7 +1829,6 @@ fn ask_for_approval_granular_defaults_missing_optional_flags_to_false() {
         "granular": {
             "sandbox_approval": true,
             "rules": false,
-            "mcp_elicitations": true,
         }
     }))
     .expect("granular approval policy should deserialize");
@@ -1866,7 +1840,6 @@ fn ask_for_approval_granular_defaults_missing_optional_flags_to_false() {
             rules: false,
             skill_approval: false,
             request_permissions: false,
-            mcp_elicitations: true,
         }
     );
 }
@@ -1879,7 +1852,6 @@ fn ask_for_approval_granular_is_marked_experimental() {
             rules: false,
             skill_approval: false,
             request_permissions: false,
-            mcp_elicitations: true,
         });
 
     assert_eq!(reason, Some("askForApproval.granular"));
@@ -1903,7 +1875,6 @@ fn config_granular_approval_policy_is_marked_experimental() {
             rules: true,
             skill_approval: false,
             request_permissions: false,
-            mcp_elicitations: true,
         }),
         approvals_reviewer: None,
         sandbox_mode: None,
@@ -1970,7 +1941,6 @@ fn config_requirements_granular_allowed_approval_policy_is_marked_experimental()
                 rules: true,
                 skill_approval: false,
                 request_permissions: false,
-                mcp_elicitations: false,
             }]),
             allowed_approvals_reviewers: None,
             allowed_sandbox_modes: None,
@@ -2037,7 +2007,6 @@ fn client_request_thread_start_granular_approval_policy_is_marked_experimental()
                     rules: false,
                     skill_approval: false,
                     request_permissions: true,
-                    mcp_elicitations: false,
                 }),
                 ..Default::default()
             },
@@ -2059,7 +2028,6 @@ fn client_request_thread_resume_granular_approval_policy_is_marked_experimental(
                     rules: true,
                     skill_approval: false,
                     request_permissions: false,
-                    mcp_elicitations: true,
                 }),
                 ..Default::default()
             },
@@ -2081,7 +2049,6 @@ fn client_request_thread_fork_granular_approval_policy_is_marked_experimental() 
                     rules: false,
                     skill_approval: false,
                     request_permissions: false,
-                    mcp_elicitations: true,
                 }),
                 ..Default::default()
             },
@@ -2105,7 +2072,6 @@ fn client_request_turn_start_granular_approval_policy_is_marked_experimental() {
                     rules: true,
                     skill_approval: false,
                     request_permissions: false,
-                    mcp_elicitations: true,
                 }),
                 ..Default::default()
             },
@@ -2113,434 +2079,6 @@ fn client_request_turn_start_granular_approval_policy_is_marked_experimental() {
     );
 
     assert_eq!(reason, Some("askForApproval.granular"));
-}
-
-#[test]
-fn mcp_server_elicitation_response_round_trips_rmcp_result() {
-    let rmcp_result = rmcp::model::ElicitResult::new(rmcp::model::ElicitationAction::Accept)
-        .with_content(json!({
-            "confirmed": true,
-        }));
-
-    let v2_response = McpServerElicitationRequestResponse::from(rmcp_result.clone());
-    assert_eq!(
-        v2_response,
-        McpServerElicitationRequestResponse {
-            action: McpServerElicitationAction::Accept,
-            content: Some(json!({
-                "confirmed": true,
-            })),
-            meta: None,
-        }
-    );
-    assert_eq!(rmcp::model::ElicitResult::from(v2_response), rmcp_result);
-}
-
-#[test]
-fn mcp_server_elicitation_request_from_core_url_request() {
-    let request = McpServerElicitationRequest::try_from(CoreElicitationRequest::Url {
-        meta: None,
-        message: "Finish sign-in".to_string(),
-        url: "https://example.com/complete".to_string(),
-        elicitation_id: "elicitation-123".to_string(),
-    })
-    .expect("URL request should convert");
-
-    assert_eq!(
-        request,
-        McpServerElicitationRequest::Url {
-            meta: None,
-            message: "Finish sign-in".to_string(),
-            url: "https://example.com/complete".to_string(),
-            elicitation_id: "elicitation-123".to_string(),
-        }
-    );
-}
-
-#[test]
-fn mcp_server_elicitation_request_from_core_form_request() {
-    let request = McpServerElicitationRequest::try_from(CoreElicitationRequest::Form {
-        meta: None,
-        message: "Allow this request?".to_string(),
-        requested_schema: json!({
-            "type": "object",
-            "properties": {
-                "confirmed": {
-                    "type": "boolean",
-                }
-            },
-            "required": ["confirmed"],
-        }),
-    })
-    .expect("form request should convert");
-
-    let expected_schema: McpElicitationSchema = serde_json::from_value(json!({
-        "type": "object",
-        "properties": {
-            "confirmed": {
-                "type": "boolean",
-            }
-        },
-        "required": ["confirmed"],
-    }))
-    .expect("expected schema should deserialize");
-
-    assert_eq!(
-        request,
-        McpServerElicitationRequest::Form {
-            meta: None,
-            message: "Allow this request?".to_string(),
-            requested_schema: expected_schema,
-        }
-    );
-}
-
-#[test]
-fn mcp_server_elicitation_request_from_core_openai_form_request() {
-    let requested_schema = json!({
-        "type": "object",
-        "properties": {
-            "template": {
-                "type": "openai/imagePicker",
-                "title": "Template",
-                "items": [{
-                    "id": "monthly-review",
-                    "title": "Monthly review",
-                    "image": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=",
-                }],
-            },
-        },
-        "required": ["template"],
-    });
-    let request = McpServerElicitationRequest::try_from(CoreElicitationRequest::OpenAiForm {
-        meta: None,
-        message: "Choose a report".to_string(),
-        requested_schema: requested_schema.clone(),
-    })
-    .expect("OpenAI form request should convert");
-
-    assert_eq!(
-        request,
-        McpServerElicitationRequest::OpenAiForm {
-            meta: None,
-            message: "Choose a report".to_string(),
-            requested_schema,
-        }
-    );
-}
-
-#[test]
-fn mcp_elicitation_schema_matches_mcp_2025_11_25_primitives() {
-    let schema: McpElicitationSchema = serde_json::from_value(json!({
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-            "email": {
-                "type": "string",
-                "title": "Email",
-                "description": "Work email address",
-                "format": "email",
-                "default": "dev@example.com",
-            },
-            "count": {
-                "type": "integer",
-                "title": "Count",
-                "description": "How many items to create",
-                "minimum": 1,
-                "maximum": 5,
-                "default": 3,
-            },
-            "confirmed": {
-                "type": "boolean",
-                "title": "Confirm",
-                "description": "Approve the pending action",
-                "default": true,
-            },
-            "legacyChoice": {
-                "type": "string",
-                "title": "Action",
-                "description": "Legacy titled enum form",
-                "enum": ["allow", "deny"],
-                "enumNames": ["Allow", "Deny"],
-                "default": "allow",
-            },
-        },
-        "required": ["email", "confirmed"],
-    }))
-    .expect("schema should deserialize");
-
-    assert_eq!(
-        schema,
-        McpElicitationSchema {
-            schema_uri: Some("https://json-schema.org/draft/2020-12/schema".to_string()),
-            type_: McpElicitationObjectType::Object,
-            properties: BTreeMap::from([
-                (
-                    "confirmed".to_string(),
-                    McpElicitationPrimitiveSchema::Boolean(McpElicitationBooleanSchema {
-                        type_: McpElicitationBooleanType::Boolean,
-                        title: Some("Confirm".to_string()),
-                        description: Some("Approve the pending action".to_string()),
-                        default: Some(true),
-                    }),
-                ),
-                (
-                    "count".to_string(),
-                    McpElicitationPrimitiveSchema::Number(McpElicitationNumberSchema {
-                        type_: McpElicitationNumberType::Integer,
-                        title: Some("Count".to_string()),
-                        description: Some("How many items to create".to_string()),
-                        minimum: Some(1.0),
-                        maximum: Some(5.0),
-                        default: Some(3.0),
-                    }),
-                ),
-                (
-                    "email".to_string(),
-                    McpElicitationPrimitiveSchema::String(McpElicitationStringSchema {
-                        type_: McpElicitationStringType::String,
-                        title: Some("Email".to_string()),
-                        description: Some("Work email address".to_string()),
-                        min_length: None,
-                        max_length: None,
-                        format: Some(McpElicitationStringFormat::Email),
-                        default: Some("dev@example.com".to_string()),
-                    }),
-                ),
-                (
-                    "legacyChoice".to_string(),
-                    McpElicitationPrimitiveSchema::Enum(McpElicitationEnumSchema::Legacy(
-                        McpElicitationLegacyTitledEnumSchema {
-                            type_: McpElicitationStringType::String,
-                            title: Some("Action".to_string()),
-                            description: Some("Legacy titled enum form".to_string()),
-                            enum_: vec!["allow".to_string(), "deny".to_string()],
-                            enum_names: Some(vec!["Allow".to_string(), "Deny".to_string(),]),
-                            default: Some("allow".to_string()),
-                        },
-                    )),
-                ),
-            ]),
-            required: Some(vec!["email".to_string(), "confirmed".to_string()]),
-        }
-    );
-}
-
-#[test]
-fn mcp_elicitation_preserves_integer_and_number_schema_wire_values() {
-    for (number_type, expected_type, expected_minimum, expected_maximum, expected_default) in [
-        (
-            McpElicitationNumberType::Integer,
-            "integer",
-            json!(1),
-            json!(99),
-            json!(30),
-        ),
-        (
-            McpElicitationNumberType::Number,
-            "number",
-            json!(1.0),
-            json!(99.0),
-            json!(30.0),
-        ),
-    ] {
-        let schema = McpElicitationPrimitiveSchema::Number(McpElicitationNumberSchema {
-            type_: number_type,
-            title: None,
-            description: None,
-            minimum: Some(1.0),
-            maximum: Some(99.0),
-            default: Some(30.0),
-        });
-
-        assert_eq!(
-            serde_json::to_value(schema).expect("numeric elicitation schema must serialize"),
-            json!({
-                "type": expected_type,
-                "minimum": expected_minimum,
-                "maximum": expected_maximum,
-                "default": expected_default,
-            })
-        );
-    }
-}
-
-#[test]
-fn mcp_server_elicitation_request_rejects_null_core_form_schema() {
-    let result = McpServerElicitationRequest::try_from(CoreElicitationRequest::Form {
-        meta: Some(json!({
-            "persist": "session",
-        })),
-        message: "Allow this request?".to_string(),
-        requested_schema: JsonValue::Null,
-    });
-
-    assert!(result.is_err());
-}
-
-#[test]
-fn mcp_server_elicitation_request_rejects_invalid_core_form_schema() {
-    let result = McpServerElicitationRequest::try_from(CoreElicitationRequest::Form {
-        meta: None,
-        message: "Allow this request?".to_string(),
-        requested_schema: json!({
-            "type": "object",
-            "properties": {
-                "confirmed": {
-                    "type": "object",
-                }
-            },
-        }),
-    });
-
-    assert!(result.is_err());
-}
-
-#[test]
-fn mcp_server_elicitation_response_serializes_nullable_content() {
-    let response = McpServerElicitationRequestResponse {
-        action: McpServerElicitationAction::Decline,
-        content: None,
-        meta: None,
-    };
-
-    assert_eq!(
-        serde_json::to_value(response).expect("response should serialize"),
-        json!({
-            "action": "decline",
-            "content": null,
-            "_meta": null,
-        })
-    );
-}
-
-#[test]
-fn mcp_server_status_serializes_absent_server_info_as_null() {
-    let response = ListMcpServerStatusResponse {
-        data: vec![McpServerStatus {
-            name: "not-ready".to_string(),
-            server_info: None,
-            tools: HashMap::new(),
-            resources: Vec::new(),
-            resource_templates: Vec::new(),
-            auth_status: McpAuthStatus::Unknown,
-        }],
-        next_cursor: None,
-    };
-
-    assert_eq!(
-        serde_json::to_value(response).expect("response should serialize"),
-        json!({
-            "data": [{
-                "name": "not-ready",
-                "serverInfo": null,
-                "tools": {},
-                "resources": [],
-                "resourceTemplates": [],
-                "authStatus": "unknown",
-            }],
-            "nextCursor": null,
-        })
-    );
-}
-
-#[test]
-fn mcp_server_status_updated_accepts_missing_thread_id() {
-    let notification: McpServerStatusUpdatedNotification = serde_json::from_value(json!({
-        "name": "optional_broken",
-        "status": "failed",
-        "error": "handshake failed",
-    }))
-    .expect("notification without threadId should deserialize");
-
-    let expected = McpServerStatusUpdatedNotification {
-        thread_id: None,
-        name: "optional_broken".to_string(),
-        status: McpServerStartupState::Failed,
-        error: Some("handshake failed".to_string()),
-        failure_reason: None,
-    };
-    assert_eq!(notification, expected);
-    assert_eq!(
-        serde_json::to_value(notification).expect("notification should serialize"),
-        json!({
-            "threadId": null,
-            "name": "optional_broken",
-            "status": "failed",
-            "error": "handshake failed",
-            "failureReason": null,
-        })
-    );
-}
-
-#[test]
-fn mcp_server_status_updated_serializes_failure_reason() {
-    let notification =
-        ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
-            thread_id: Some("thread-1".to_string()),
-            name: "expired-oauth".to_string(),
-            status: McpServerStartupState::Failed,
-            error: Some("OAuth credentials expired".to_string()),
-            failure_reason: Some(McpServerStartupFailureReason::ReauthenticationRequired),
-        });
-
-    assert_eq!(
-        serde_json::to_value(notification).expect("notification should serialize"),
-        json!({
-            "method": "mcpServer/startupStatus/updated",
-            "params": {
-                "threadId": "thread-1",
-                "name": "expired-oauth",
-                "status": "failed",
-                "error": "OAuth credentials expired",
-                "failureReason": "reauthenticationRequired",
-            },
-        })
-    );
-}
-
-#[test]
-fn mcp_server_status_serializes_absent_server_info_metadata_as_null() {
-    let response = ListMcpServerStatusResponse {
-        data: vec![McpServerStatus {
-            name: "initialized".to_string(),
-            server_info: Some(McpServerInfo {
-                name: "lookup-server".to_string(),
-                title: None,
-                version: "1.0.0".to_string(),
-                description: None,
-                icons: None,
-                website_url: None,
-            }),
-            tools: HashMap::new(),
-            resources: Vec::new(),
-            resource_templates: Vec::new(),
-            auth_status: McpAuthStatus::Unsupported,
-        }],
-        next_cursor: None,
-    };
-
-    assert_eq!(
-        serde_json::to_value(response).expect("response should serialize"),
-        json!({
-            "data": [{
-                "name": "initialized",
-                "serverInfo": {
-                    "name": "lookup-server",
-                    "title": null,
-                    "version": "1.0.0",
-                    "description": null,
-                    "icons": null,
-                    "websiteUrl": null,
-                },
-                "tools": {},
-                "resources": [],
-                "resourceTemplates": [],
-                "authStatus": "unsupported",
-            }],
-            "nextCursor": null,
-        })
-    );
 }
 
 #[test]
@@ -2804,8 +2342,8 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
                 path: PathBuf::from("/repo/.codex/skills/skill-creator/SKILL.md"),
             },
             CoreUserInput::Mention {
-                name: "Demo App".to_string(),
-                path: "app://demo-app".to_string(),
+                name: "Sample Plugin".to_string(),
+                path: "plugin://sample@test".to_string(),
             },
         ],
     });
@@ -2839,8 +2377,8 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
                     path: PathBuf::from("/repo/.codex/skills/skill-creator/SKILL.md"),
                 },
                 UserInput::Mention {
-                    name: "Demo App".to_string(),
-                    path: "app://demo-app".to_string(),
+                    name: "Sample Plugin".to_string(),
+                    path: "plugin://sample@test".to_string(),
                 },
             ],
         }
@@ -3156,163 +2694,6 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
             }],
             status: PatchApplyStatus::Completed,
         }
-    );
-
-    let mcp_tool_call_item = TurnItem::McpToolCall(McpToolCallItem {
-        id: "mcp-1".to_string(),
-        server: "server".to_string(),
-        tool: "tool".to_string(),
-        arguments: json!({"arg": "value"}),
-        connector_id: Some("calendar".to_string()),
-        mcp_app_resource_uri: Some("app://connector".to_string()),
-        link_id: Some("link_calendar".to_string()),
-        app_name: Some("Calendar".to_string()),
-        action_name: Some("create_event".to_string()),
-        plugin_id: Some("sample@test".to_string()),
-        read_only_hint: Some(true),
-        status: CoreMcpToolCallStatus::InProgress,
-        result: None,
-        error: None,
-        duration: None,
-    });
-
-    assert_eq!(
-        ThreadItem::from(mcp_tool_call_item),
-        ThreadItem::McpToolCall {
-            id: "mcp-1".to_string(),
-            server: "server".to_string(),
-            tool: "tool".to_string(),
-            status: McpToolCallStatus::InProgress,
-            arguments: json!({"arg": "value"}),
-            app_context: Some(McpToolCallAppContext {
-                connector_id: "calendar".to_string(),
-                link_id: Some("link_calendar".to_string()),
-                resource_uri: Some("app://connector".to_string()),
-                app_name: Some("Calendar".to_string()),
-                action_name: Some("create_event".to_string()),
-            }),
-            mcp_app_resource_uri: Some("app://connector".to_string()),
-            plugin_id: Some("sample@test".to_string()),
-            read_only_hint: Some(true),
-            result: None,
-            error: None,
-            duration_ms: None,
-        }
-    );
-
-    let completed_mcp_tool_call_item = TurnItem::McpToolCall(McpToolCallItem {
-        id: "mcp-2".to_string(),
-        server: "server".to_string(),
-        tool: "tool".to_string(),
-        arguments: JsonValue::Null,
-        connector_id: None,
-        mcp_app_resource_uri: None,
-        link_id: None,
-        app_name: None,
-        action_name: None,
-        plugin_id: None,
-        read_only_hint: Some(false),
-        status: CoreMcpToolCallStatus::Completed,
-        result: Some(CallToolResult {
-            content: vec![json!({"type": "text", "text": "ok"})],
-            structured_content: Some(json!({"ok": true})),
-            is_error: Some(false),
-            meta: Some(json!({"trace": "1"})),
-        }),
-        error: None,
-        duration: Some(Duration::from_millis(42)),
-    });
-
-    assert_eq!(
-        ThreadItem::from(completed_mcp_tool_call_item),
-        ThreadItem::McpToolCall {
-            id: "mcp-2".to_string(),
-            server: "server".to_string(),
-            tool: "tool".to_string(),
-            status: McpToolCallStatus::Completed,
-            arguments: JsonValue::Null,
-            app_context: None,
-            mcp_app_resource_uri: None,
-            plugin_id: None,
-            read_only_hint: Some(false),
-            result: Some(Box::new(McpToolCallResult {
-                content: vec![json!({"type": "text", "text": "ok"})],
-                structured_content: Some(json!({"ok": true})),
-                meta: Some(json!({"trace": "1"})),
-            })),
-            error: None,
-            duration_ms: Some(42),
-        }
-    );
-}
-
-#[test]
-fn mcp_tool_call_app_context_serializes_connector_id() {
-    let item = ThreadItem::McpToolCall {
-        id: "mcp-1".to_string(),
-        server: "codex_apps".to_string(),
-        tool: "calendar.create_event".to_string(),
-        status: McpToolCallStatus::InProgress,
-        arguments: json!({}),
-        app_context: Some(McpToolCallAppContext {
-            connector_id: "calendar".to_string(),
-            link_id: Some("link_calendar".to_string()),
-            resource_uri: Some("app://connector".to_string()),
-            app_name: Some("Calendar".to_string()),
-            action_name: Some("create_event".to_string()),
-        }),
-        mcp_app_resource_uri: Some("app://connector".to_string()),
-        plugin_id: None,
-        read_only_hint: Some(false),
-        result: None,
-        error: None,
-        duration_ms: None,
-    };
-
-    assert_eq!(
-        serde_json::to_value(item).expect("MCP tool call should serialize"),
-        json!({
-            "type": "mcpToolCall",
-            "id": "mcp-1",
-            "server": "codex_apps",
-            "tool": "calendar.create_event",
-            "status": "inProgress",
-            "arguments": {},
-            "appContext": {
-                "connectorId": "calendar",
-                "linkId": "link_calendar",
-                "resourceUri": "app://connector",
-                "appName": "Calendar",
-                "actionName": "create_event",
-            },
-            "mcpAppResourceUri": "app://connector",
-            "pluginId": null,
-            "readOnlyHint": false,
-            "result": null,
-            "error": null,
-            "durationMs": null,
-        })
-    );
-}
-
-#[test]
-fn mcp_tool_call_app_context_serializes_missing_mixed_version_fields_as_null() {
-    assert_eq!(
-        serde_json::to_value(McpToolCallAppContext {
-            connector_id: "calendar".to_string(),
-            link_id: None,
-            resource_uri: None,
-            app_name: None,
-            action_name: None,
-        })
-        .expect("MCP tool call app context should serialize"),
-        json!({
-            "connectorId": "calendar",
-            "linkId": null,
-            "resourceUri": null,
-            "appName": null,
-            "actionName": null,
-        })
     );
 }
 
@@ -4590,7 +3971,6 @@ fn thread_settings_update_params_preserve_field_level_experimental_gates() {
             rules: true,
             skill_approval: false,
             request_permissions: false,
-            mcp_elicitations: true,
         }),
         ..Default::default()
     };

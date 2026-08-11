@@ -1,7 +1,5 @@
 //! Shared plugin package models, source providers, identifiers, and telemetry summaries.
 
-use std::collections::HashSet;
-
 pub use codex_utils_plugins::mention_syntax;
 pub use codex_utils_plugins::plugin_namespace_for_skill_path;
 
@@ -25,29 +23,6 @@ pub use provider::ResolvedPlugin;
 pub use provider::ResolvedPluginError;
 pub use provider::ResolvedPluginLocation;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AppConnectorId(pub String);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppDeclaration {
-    pub name: String,
-    pub connector_id: AppConnectorId,
-    pub category: Option<String>,
-}
-
-pub fn app_connector_ids_from_declarations<'a>(
-    app_declarations: impl IntoIterator<Item = &'a AppDeclaration>,
-) -> Vec<AppConnectorId> {
-    let mut connector_ids = Vec::new();
-    let mut seen_connector_ids = HashSet::new();
-    for app in app_declarations {
-        if seen_connector_ids.insert(&app.connector_id) {
-            connector_ids.push(app.connector_id.clone());
-        }
-    }
-    connector_ids
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PluginCapabilitySummary {
     pub config_name: String,
@@ -55,8 +30,6 @@ pub struct PluginCapabilitySummary {
     pub plugin_namespace: Option<String>,
     pub description: Option<String>,
     pub has_skills: bool,
-    pub mcp_server_names: Vec<String>,
-    pub app_connector_ids: Vec<AppConnectorId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::FileChangeApprovalDecision;
-use codex_app_server_protocol::McpServerElicitationAction;
-use codex_app_server_protocol::RequestId as AppServerRequestId;
 use codex_app_server_protocol::ReviewTarget;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
 use codex_app_server_protocol::UserInput;
@@ -65,13 +63,6 @@ pub(crate) enum AppCommand {
     PatchApproval {
         id: String,
         decision: FileChangeApprovalDecision,
-    },
-    ResolveElicitation {
-        server_name: String,
-        request_id: AppServerRequestId,
-        decision: McpServerElicitationAction,
-        content: Option<Value>,
-        meta: Option<Value>,
     },
     UserInputAnswer {
         id: String,
@@ -186,22 +177,6 @@ impl AppCommand {
 
     pub(crate) fn patch_approval(id: String, decision: FileChangeApprovalDecision) -> Self {
         Self::PatchApproval { id, decision }
-    }
-
-    pub(crate) fn resolve_elicitation(
-        server_name: String,
-        request_id: AppServerRequestId,
-        decision: McpServerElicitationAction,
-        content: Option<Value>,
-        meta: Option<Value>,
-    ) -> Self {
-        Self::ResolveElicitation {
-            server_name,
-            request_id,
-            decision,
-            content,
-            meta,
-        }
     }
 
     pub(crate) fn user_input_answer(id: String, response: ToolRequestUserInputResponse) -> Self {

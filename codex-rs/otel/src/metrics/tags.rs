@@ -14,7 +14,6 @@ const OTHER_ORIGINATOR_TAG_VALUE: &str = "other";
 const KNOWN_ORIGINATOR_TAG_VALUES: &[&str] = &[
     "codex_desktop",
     "codex-app-server",
-    "codex_mcp_server",
     "codex_cli_rs",
     "codex-tui",
     "codex_vscode",

@@ -32,8 +32,6 @@ use codex_api::ApiError;
 use codex_api::ResponsesWebsocketClient;
 use codex_api::is_azure_responses_provider;
 use codex_arg0::Arg0DispatchPaths;
-use codex_config::types::McpServerConfig;
-use codex_config::types::McpServerTransportConfig;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
@@ -359,7 +357,6 @@ async fn build_report(
                 updates_check,
                 network_check,
                 websocket_check,
-                mcp_check,
                 sandbox_check,
                 terminal_check,
                 git_check,
@@ -378,7 +375,6 @@ async fn build_report(
                     progress.clone(),
                     websocket_reachability_check(config, Some(auth_manager)),
                 ),
-                run_async_check("MCP", progress.clone(), mcp_check(config)),
                 async {
                     run_sync_check("sandbox", progress.clone(), || {
                         sandbox_check(config, arg0_paths)
@@ -418,7 +414,6 @@ async fn build_report(
                 updates_check,
                 network_check,
                 websocket_check,
-                mcp_check,
                 sandbox_check,
                 terminal_check,
                 git_check,
@@ -1093,7 +1088,6 @@ fn config_check(config: &Config) -> DoctorCheck {
         "sqlite home: {}",
         config.sqlite_config().home().display()
     ));
-    details.push(format!("mcp servers: {}", config.mcp_servers.get().len()));
     feature_flag_details(config, &mut details);
     config_toml_details(config, &mut details);
 
@@ -1119,7 +1113,6 @@ fn push_startup_warning_counts(details: &mut Vec<String>, warnings: &[String]) {
         ("startup warning skills", "skill"),
         ("startup warning hooks", "hook"),
         ("startup warning plugins", "plugin"),
-        ("startup warning MCP", "mcp"),
         ("startup warning deprecated", "deprecated"),
     ] {
         let count = warnings
@@ -1496,170 +1489,6 @@ fn read_probe_file(path: &Path) -> std::io::Result<()> {
     let mut buffer = [0_u8; 1];
     let _ = file.read(&mut buffer)?;
     Ok(())
-}
-
-async fn mcp_check(config: &Config) -> DoctorCheck {
-    mcp_check_from_servers(config.mcp_servers.get()).await
-}
-
-async fn mcp_check_from_servers(servers: &HashMap<String, McpServerConfig>) -> DoctorCheck {
-    if servers.is_empty() {
-        return DoctorCheck::new(
-            "mcp.config",
-            "mcp",
-            CheckStatus::Ok,
-            "no MCP servers configured",
-        );
-    }
-
-    let mut details = Vec::new();
-    let mut transport_counts: BTreeMap<&'static str, usize> = BTreeMap::new();
-    let mut disabled = 0usize;
-    let mut missing_env = Vec::new();
-    let mut unreachable_required_http = Vec::new();
-    let mut unreachable_optional_http = Vec::new();
-
-    for (name, server) in servers {
-        let disabled_server = !server.enabled || server.disabled_reason.is_some();
-        if disabled_server {
-            disabled += 1;
-        }
-        match &server.transport {
-            McpServerTransportConfig::Stdio {
-                command,
-                env,
-                env_vars,
-                cwd,
-                ..
-            } => {
-                *transport_counts.entry("stdio").or_default() += 1;
-                if disabled_server {
-                    continue;
-                }
-                let command_is_empty = command.trim().is_empty();
-                if command_is_empty {
-                    missing_env.push(format!("{name}: stdio command is empty"));
-                }
-                if server.is_local_environment() {
-                    let host_native_cwd = cwd.as_ref().map(|cwd| Path::new(cwd.as_str()));
-                    if let Some(cwd) = host_native_cwd
-                        && !cwd.exists()
-                    {
-                        missing_env.push(format!("{name}: cwd does not exist ({})", cwd.display()));
-                    }
-                    if !command_is_empty
-                        && let Err(err) =
-                            stdio_command_resolves(command, host_native_cwd, env.as_ref())
-                    {
-                        missing_env.push(format!(
-                            "{name}: stdio command {command:?} is not resolvable ({err})"
-                        ));
-                    }
-                } else {
-                    match cwd {
-                        Some(cwd) if cwd.to_inferred_path_uri().is_none() => {
-                            missing_env
-                                .push(format!("{name}: remote stdio cwd is not absolute ({cwd})"));
-                        }
-                        None => missing_env
-                            .push(format!("{name}: remote stdio requires an explicit cwd")),
-                        Some(_) => {}
-                    }
-                }
-                if let Some(env) = env {
-                    for key in env.keys().filter(|key| key.trim().is_empty()) {
-                        missing_env.push(format!("{name}: empty env key {key}"));
-                    }
-                }
-                for env_var in env_vars {
-                    if env_var.is_remote_source() {
-                        if server.is_local_environment() {
-                            missing_env.push(format!(
-                                "{name}: env_vars entry `{}` uses source `remote`, which requires remote MCP stdio",
-                                env_var.name()
-                            ));
-                        }
-                    } else if !env_var_present(env_var.name()) {
-                        missing_env.push(format!("{name}: env var {} is not set", env_var.name()));
-                    }
-                }
-            }
-            McpServerTransportConfig::StreamableHttp {
-                url,
-                bearer_token_env_var,
-                env_http_headers,
-                ..
-            } => {
-                *transport_counts.entry("streamable_http").or_default() += 1;
-                if disabled_server {
-                    continue;
-                }
-                if let Some(env_var) = bearer_token_env_var
-                    && !env_var_present(env_var)
-                {
-                    missing_env.push(format!("{name}: bearer token env var {env_var} is not set"));
-                }
-                if let Some(headers) = env_http_headers {
-                    for env_var in headers.values() {
-                        if !env_var_present(env_var) {
-                            missing_env
-                                .push(format!("{name}: header env var {env_var} is not set"));
-                        }
-                    }
-                }
-                if let Err(err) = mcp_http_probe_url(url).await {
-                    let detail = format!("{name}: {url} ({err})");
-                    if server.required {
-                        unreachable_required_http.push(detail);
-                    } else {
-                        unreachable_optional_http.push(detail);
-                    }
-                }
-            }
-        }
-    }
-
-    details.push(format!("configured servers: {}", servers.len()));
-    details.push(format!("disabled servers: {disabled}"));
-    for (transport, count) in transport_counts {
-        details.push(format!("{transport} servers: {count}"));
-    }
-    details.extend(missing_env.iter().cloned());
-    details.extend(
-        unreachable_required_http
-            .iter()
-            .map(|detail| format!("required reachability failed: {detail}")),
-    );
-    details.extend(
-        unreachable_optional_http
-            .iter()
-            .map(|detail| format!("optional reachability failed: {detail}")),
-    );
-
-    let required_missing = servers.iter().any(|(name, server)| {
-        server.required
-            && missing_env
-                .iter()
-                .any(|missing| missing.starts_with(&format!("{name}:")))
-    });
-    let status = if required_missing || !unreachable_required_http.is_empty() {
-        CheckStatus::Fail
-    } else if !missing_env.is_empty() || !unreachable_optional_http.is_empty() {
-        CheckStatus::Warning
-    } else {
-        CheckStatus::Ok
-    };
-    let summary = match status {
-        CheckStatus::Ok => "MCP configuration is locally consistent",
-        CheckStatus::Warning => "MCP configuration has optional issues",
-        CheckStatus::Fail => "MCP configuration has failing required inputs or reachability",
-    };
-
-    let mut check = DoctorCheck::new("mcp.config", "mcp", status, summary).details(details);
-    if status != CheckStatus::Ok {
-        check = check.remediation("Set the missing MCP env vars or disable the affected server.");
-    }
-    check
 }
 
 fn sandbox_check(config: &Config, arg0_paths: &Arg0DispatchPaths) -> DoctorCheck {
@@ -2881,20 +2710,6 @@ async fn http_probe_url(url: &str) -> Result<String, String> {
     http_probe_url_with_timeout(url, Duration::from_secs(3)).await
 }
 
-async fn mcp_http_probe_url(url: &str) -> Result<String, String> {
-    mcp_http_probe_url_with_timeout(url, Duration::from_secs(3)).await
-}
-
-async fn mcp_http_probe_url_with_timeout(url: &str, timeout: Duration) -> Result<String, String> {
-    match http_probe_url_with_timeout(url, timeout).await {
-        Ok(status) => Ok(status),
-        Err(head_err) => match http_get_probe_url_with_timeout(url, timeout).await {
-            Ok(status) => Ok(status),
-            Err(get_err) => Err(format!("HEAD {head_err}; GET {get_err}")),
-        },
-    }
-}
-
 async fn http_probe_url_with_timeout(url: &str, timeout: Duration) -> Result<String, String> {
     let response = create_client_without_request_logging()
         .head(url)
@@ -2915,12 +2730,6 @@ async fn http_probe_url_with_timeout(url: &str, timeout: Duration) -> Result<Str
     Ok(format!("HTTP {}", response.status().as_u16()))
 }
 
-async fn http_get_probe_url_with_timeout(url: &str, timeout: Duration) -> Result<String, String> {
-    http_get_probe_status_with_timeout(url, timeout)
-        .await
-        .map(|status| format!("HTTP {status}"))
-}
-
 async fn http_get_probe_status_with_timeout(url: &str, timeout: Duration) -> Result<u16, String> {
     let response = create_client_without_request_logging()
         .get(url)
@@ -2939,75 +2748,6 @@ async fn http_get_probe_status_with_timeout(url: &str, timeout: Duration) -> Res
             }
         })?;
     Ok(response.status().as_u16())
-}
-
-fn stdio_command_resolves(
-    command: &str,
-    cwd: Option<&Path>,
-    server_env: Option<&HashMap<String, String>>,
-) -> Result<(), String> {
-    let command_path = Path::new(command);
-    if command_path.is_absolute() {
-        return executable_path_exists(command_path);
-    }
-
-    if command_path.components().count() > 1 {
-        let base = cwd
-            .map(Path::to_path_buf)
-            .or_else(|| env::current_dir().ok())
-            .unwrap_or_else(|| PathBuf::from("."));
-        return executable_path_exists(&base.join(command_path));
-    }
-
-    let Some(path_env) = server_env
-        .and_then(|env| env.get("PATH").map(String::as_str))
-        .map(std::ffi::OsString::from)
-        .or_else(|| env::var_os("PATH"))
-    else {
-        return Err("PATH is not set".to_string());
-    };
-
-    for dir in env::split_paths(&path_env) {
-        let candidate = dir.join(command);
-        if executable_path_exists(&candidate).is_ok() {
-            return Ok(());
-        }
-        #[cfg(windows)]
-        {
-            let pathext = env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
-            for extension in pathext.split(';').filter(|extension| !extension.is_empty()) {
-                let candidate = dir.join(format!("{command}{extension}"));
-                if executable_path_exists(&candidate).is_ok() {
-                    return Ok(());
-                }
-            }
-        }
-    }
-    Err("not found on PATH".to_string())
-}
-
-fn executable_path_exists(path: &Path) -> Result<(), String> {
-    match std::fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() => executable_file_permission(path, &metadata),
-        Ok(_) => Err("path is not a file".to_string()),
-        Err(err) => Err(err.to_string()),
-    }
-}
-
-#[cfg(unix)]
-fn executable_file_permission(path: &Path, metadata: &std::fs::Metadata) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-
-    if metadata.permissions().mode() & 0o111 == 0 {
-        Err(format!("{} is not executable", path.display()))
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(not(unix))]
-fn executable_file_permission(_path: &Path, _metadata: &std::fs::Metadata) -> Result<(), String> {
-    Ok(())
 }
 
 fn path_readiness(details: &mut Vec<String>, label: &str, path: &Path) {
@@ -3230,7 +2970,6 @@ mod tests {
             "Skipped loading 2 skill(s) due to invalid SKILL.md files.".to_string(),
             "[features].codex_hooks is deprecated. Use [features].hooks instead.".to_string(),
             "plugin example failed to load".to_string(),
-            "MCP server example failed to start".to_string(),
         ];
         let mut details = Vec::new();
 
@@ -3239,11 +2978,10 @@ mod tests {
         assert_eq!(
             details,
             vec![
-                "startup warnings: 4",
+                "startup warnings: 3",
                 "startup warning skills: 1",
                 "startup warning hooks: 1",
                 "startup warning plugins: 1",
-                "startup warning MCP: 1",
                 "startup warning deprecated: 1",
             ]
         );
@@ -3317,13 +3055,13 @@ mod tests {
                 .detail("GH_PAGER: less")
                 .detail("LESS: -FRX"),
                 DoctorCheck::new(
-                    "mcp.config",
-                    "mcp",
+                    "network.proxy",
+                    "network",
                     CheckStatus::Warning,
-                    "MCP configuration has optional issues",
+                    "Network proxy has optional issues",
                 )
                 .detail(
-                    "optional reachability failed: remote: https://user:pass@example.com/mcp?x=abc (connect failed)",
+                    "optional reachability failed: remote: https://user:pass@example.com/api?x=abc (connect failed)",
                 )
                 .detail("OPENAI_API_KEY: sk-live-secret")
                 .detail("duplicate: one")
@@ -3332,10 +3070,10 @@ mod tests {
                 .issue(
                     DoctorIssue::new(
                         CheckStatus::Warning,
-                        "remote https://user:pass@example.com/mcp?x=abc is unreachable",
+                        "remote https://user:pass@example.com/api?x=abc is unreachable",
                     )
-                    .measured("https://user:pass@example.com/mcp?x=abc")
-                    .expected("reachable MCP endpoint")
+                    .measured("https://user:pass@example.com/api?x=abc")
+                    .expected("reachable endpoint")
                     .remedy("Check https://user:pass@example.com/help?x=abc.")
                     .field("optional reachability failed"),
                 )
@@ -3353,7 +3091,7 @@ mod tests {
         assert!(!redacted.contains("AKIAEXAMPLE"));
         assert!(!redacted.contains("pager-secret"));
         assert!(!redacted.contains("code --wait"));
-        assert!(redacted.contains("https://example.com/mcp"));
+        assert!(redacted.contains("https://example.com/api"));
         assert_eq!(json["checks"].is_object(), true);
         assert_eq!(
             json["checks"]["system.environment"]["details"]["VISUAL"],
@@ -3379,129 +3117,27 @@ mod tests {
             json["checks"]["system.environment"]["details"]["LESS"],
             "set"
         );
-        assert_eq!(json["checks"]["mcp.config"]["id"], "mcp.config");
+        assert_eq!(json["checks"]["network.proxy"]["id"], "network.proxy");
         assert_eq!(
-            json["checks"]["mcp.config"]["details"]["OPENAI_API_KEY"],
+            json["checks"]["network.proxy"]["details"]["OPENAI_API_KEY"],
             "<redacted>"
         );
         assert_eq!(
-            json["checks"]["mcp.config"]["details"]["duplicate"],
+            json["checks"]["network.proxy"]["details"]["duplicate"],
             serde_json::json!(["one", "two"])
         );
         assert_eq!(
-            json["checks"]["mcp.config"]["notes"],
+            json["checks"]["network.proxy"]["notes"],
             serde_json::json!(["freeform note"])
         );
         assert_eq!(
-            json["checks"]["mcp.config"]["issues"][0]["measured"],
-            "https://example.com/mcp"
+            json["checks"]["network.proxy"]["issues"][0]["measured"],
+            "https://example.com/api"
         );
         assert_eq!(
-            json["checks"]["mcp.config"]["issues"][0]["remedy"],
+            json["checks"]["network.proxy"]["issues"][0]["remedy"],
             "Check https://example.com/help."
         );
-    }
-
-    #[tokio::test]
-    async fn mcp_check_ignores_disabled_servers() {
-        let disabled_server: McpServerConfig = toml::from_str(
-            r#"
-                url = "http://127.0.0.1:9/mcp"
-                enabled = false
-                required = true
-                bearer_token_env_var = "CODEX_DOCTOR_DISABLED_MCP_TOKEN"
-            "#,
-        )
-        .expect("should deserialize disabled MCP config");
-        let servers = HashMap::from([("disabled".to_string(), disabled_server)]);
-
-        let check = mcp_check_from_servers(&servers).await;
-
-        assert_eq!(check.status, CheckStatus::Ok);
-        assert_eq!(check.summary, "MCP configuration is locally consistent");
-        assert!(check.details.contains(&"disabled servers: 1".to_string()));
-        assert!(
-            check
-                .details
-                .iter()
-                .all(|detail| !detail.contains("CODEX_DOCTOR_DISABLED_MCP_TOKEN"))
-        );
-        assert!(
-            check
-                .details
-                .iter()
-                .all(|detail| !detail.contains("reachability failed"))
-        );
-    }
-
-    #[tokio::test]
-    async fn mcp_check_warns_for_optional_http_reachability() {
-        let optional_server: McpServerConfig = toml::from_str(
-            r#"
-                url = "http://127.0.0.1:9/mcp"
-            "#,
-        )
-        .expect("should deserialize optional MCP config");
-        let servers = HashMap::from([("optional".to_string(), optional_server)]);
-
-        let check = mcp_check_from_servers(&servers).await;
-
-        assert_eq!(check.status, CheckStatus::Warning);
-        assert_eq!(check.summary, "MCP configuration has optional issues");
-        assert!(
-            check
-                .details
-                .iter()
-                .any(|detail| detail.contains("optional reachability failed: optional:"))
-        );
-    }
-
-    #[tokio::test]
-    async fn mcp_check_fails_required_remote_stdio_env_var() {
-        let command = toml::Value::String(
-            std::env::current_exe()
-                .expect("current exe")
-                .to_string_lossy()
-                .into_owned(),
-        );
-        let required_server: McpServerConfig = toml::from_str(&format!(
-            r#"
-                command = {command}
-                required = true
-                env_vars = [{{ name = "REMOTE_ONLY_TOKEN", source = "remote" }}]
-            "#,
-        ))
-        .expect("should deserialize required MCP config");
-        let servers = HashMap::from([("required".to_string(), required_server)]);
-
-        let check = mcp_check_from_servers(&servers).await;
-
-        assert_eq!(check.status, CheckStatus::Fail);
-        assert!(check.details.iter().any(|detail| {
-            detail.contains(
-                "required: env_vars entry `REMOTE_ONLY_TOKEN` uses source `remote`, which requires remote MCP stdio",
-            )
-        }));
-    }
-
-    #[tokio::test]
-    async fn mcp_check_does_not_probe_environment_stdio_on_the_host() {
-        let remote_server: McpServerConfig = toml::from_str(
-            r#"
-                command = "remote-only-command"
-                environment_id = "remote"
-                cwd = "C:\\plugins\\demo"
-                required = true
-                env_vars = [{ name = "REMOTE_ONLY_TOKEN", source = "remote" }]
-            "#,
-        )
-        .expect("remote MCP config");
-        let servers = HashMap::from([("remote".to_string(), remote_server)]);
-
-        let check = mcp_check_from_servers(&servers).await;
-
-        assert_eq!(check.status, CheckStatus::Ok);
-        assert_eq!(check.summary, "MCP configuration is locally consistent");
     }
 
     #[test]
@@ -3862,132 +3498,10 @@ mod tests {
                 .expect("write response");
         });
 
-        let status = http_probe_url(&format!("http://{addr}/mcp")).await;
+        let status = http_probe_url(&format!("http://{addr}/api")).await;
         server.join().expect("probe server thread should finish");
 
         assert_eq!(status, Ok("HTTP 405".to_string()));
-    }
-
-    #[tokio::test]
-    async fn mcp_http_probe_falls_back_to_get_when_head_times_out() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
-        let addr = listener.local_addr().expect("listener address");
-        let server = std::thread::spawn(move || {
-            let (mut head_stream, _) = listener.accept().expect("accept HEAD probe request");
-            let head = std::thread::spawn(move || {
-                let mut request = [0; 1024];
-                let _ = head_stream.read(&mut request);
-                std::thread::sleep(Duration::from_millis(50));
-            });
-
-            let (mut get_stream, _) = listener.accept().expect("accept GET probe request");
-            let mut request = [0; 1024];
-            let _ = get_stream.read(&mut request);
-            get_stream
-                .write_all(
-                    b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                )
-                .expect("write response");
-            head.join().expect("HEAD holder should finish");
-        });
-
-        let status = mcp_http_probe_url_with_timeout(
-            &format!("http://{addr}/mcp"),
-            Duration::from_millis(10),
-        )
-        .await;
-        server.join().expect("probe server thread should finish");
-
-        assert_eq!(status, Ok("HTTP 405".to_string()));
-    }
-
-    #[tokio::test]
-    async fn mcp_check_fails_required_missing_stdio_command() {
-        let required_server: McpServerConfig = toml::from_str(
-            r#"
-                command = "definitely-missing-codex-doctor-mcp"
-                required = true
-            "#,
-        )
-        .expect("should deserialize required MCP config");
-        let servers = HashMap::from([("required".to_string(), required_server)]);
-
-        let check = mcp_check_from_servers(&servers).await;
-
-        assert_eq!(check.status, CheckStatus::Fail);
-        assert_eq!(
-            check.summary,
-            "MCP configuration has failing required inputs or reachability"
-        );
-        assert!(check.details.iter().any(|detail| {
-            detail.contains(
-                "required: stdio command \"definitely-missing-codex-doctor-mcp\" is not resolvable",
-            )
-        }));
-    }
-
-    #[tokio::test]
-    async fn mcp_check_skips_host_path_checks_for_remote_stdio() {
-        #[cfg(not(windows))]
-        let cwd = r"C:\Users\openai\share";
-        #[cfg(windows)]
-        let cwd = "/home/openai/share";
-        let cwd = toml::Value::String(cwd.to_string());
-        let remote_server: McpServerConfig = toml::from_str(&format!(
-            r#"
-                command = "definitely-missing-codex-doctor-mcp"
-                environment_id = "remote"
-                cwd = {cwd}
-                required = true
-                env_vars = [{{ name = "REMOTE_ONLY_TOKEN", source = "remote" }}]
-            "#,
-        ))
-        .expect("should deserialize remote MCP config");
-        let servers = HashMap::from([("remote".to_string(), remote_server)]);
-
-        let check = mcp_check_from_servers(&servers).await;
-
-        assert_eq!(check.status, CheckStatus::Ok);
-        assert_eq!(check.summary, "MCP configuration is locally consistent");
-    }
-
-    #[tokio::test]
-    async fn mcp_check_validates_remote_stdio_cwd() {
-        let missing_cwd: McpServerConfig = toml::from_str(
-            r#"
-                command = "echo"
-                environment_id = "remote"
-                required = true
-            "#,
-        )
-        .expect("should deserialize remote MCP config without cwd");
-        let relative_cwd: McpServerConfig = toml::from_str(
-            r#"
-                command = "echo"
-                environment_id = "remote"
-                cwd = "relative"
-                required = true
-            "#,
-        )
-        .expect("should deserialize remote MCP config with relative cwd");
-        let servers = HashMap::from([
-            ("missing".to_string(), missing_cwd),
-            ("relative".to_string(), relative_cwd),
-        ]);
-
-        let check = mcp_check_from_servers(&servers).await;
-
-        assert_eq!(check.status, CheckStatus::Fail);
-        assert!(
-            check
-                .details
-                .contains(&"missing: remote stdio requires an explicit cwd".to_string())
-        );
-        assert!(
-            check
-                .details
-                .contains(&"relative: remote stdio cwd is not absolute (relative)".to_string())
-        );
     }
 
     #[cfg(unix)]
@@ -4011,30 +3525,6 @@ mod tests {
         permissions.set_mode(0o600);
         std::fs::set_permissions(file.path(), permissions).expect("restore read permissions");
         assert!(result.is_err());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn executable_path_exists_rejects_non_executable_file() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let file = tempfile::NamedTempFile::new().expect("create temp file");
-        std::fs::write(file.path(), "#!/bin/sh\n").expect("write temp file");
-        let mut permissions = std::fs::metadata(file.path())
-            .expect("metadata")
-            .permissions();
-        permissions.set_mode(0o600);
-        std::fs::set_permissions(file.path(), permissions).expect("set non-executable mode");
-
-        let result = executable_path_exists(file.path());
-
-        assert!(result.is_err());
-        let mut permissions = std::fs::metadata(file.path())
-            .expect("metadata")
-            .permissions();
-        permissions.set_mode(0o700);
-        std::fs::set_permissions(file.path(), permissions).expect("set executable mode");
-        assert_eq!(executable_path_exists(file.path()), Ok(()));
     }
 
     #[test]

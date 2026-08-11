@@ -355,7 +355,7 @@ async fn detect_repo_still_reports_non_plugin_items_when_home_config_is_invalid(
 }
 
 #[tokio::test]
-async fn detect_repo_lists_mcp_hooks_commands_and_subagents() {
+async fn detect_repo_lists_hooks_commands_and_subagents() {
     let root = TempDir::new().expect("create tempdir");
     let repo_root = root.path().join("repo");
     fs::create_dir_all(repo_root.join(".git")).expect("create git dir");
@@ -367,11 +367,6 @@ async fn detect_repo_lists_mcp_hooks_commands_and_subagents() {
     )
     .expect("create commands");
     fs::create_dir_all(repo_root.join(EXTERNAL_AGENT_DIR).join("agents")).expect("create agents");
-    fs::write(
-        repo_root.join(".mcp.json"),
-        r#"{"mcpServers":{"docs":{"command":"docs-server"}}}"#,
-    )
-    .expect("write mcp");
     fs::write(
         repo_root.join(EXTERNAL_AGENT_DIR).join("settings.json"),
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo external-agent","timeout":3},{"type":"http","url":"https://example.invalid/hook"}]}]}}"#,
@@ -410,21 +405,6 @@ async fn detect_repo_lists_mcp_hooks_commands_and_subagents() {
     assert_eq!(
         items,
         vec![
-            ExternalAgentConfigMigrationItem {
-                item_type: ExternalAgentConfigMigrationItemType::McpServerConfig,
-                description: format!(
-                    "Migrate MCP servers from {} into {}",
-                    repo_root.display(),
-                    repo_root.join(".codex").join("config.toml").display()
-                ),
-                cwd: Some(repo_root.clone()),
-                details: Some(MigrationDetails {
-                    mcp_servers: vec![NamedMigration {
-                        name: "docs".to_string(),
-                    }],
-                    ..Default::default()
-                }),
-            },
             ExternalAgentConfigMigrationItem {
                 item_type: ExternalAgentConfigMigrationItemType::Hooks,
                 description: format!(
@@ -505,7 +485,7 @@ async fn detect_repo_skips_hooks_when_only_unsupported_hooks_exist() {
 }
 
 #[tokio::test]
-async fn import_repo_migrates_mcp_hooks_commands_and_subagents() {
+async fn import_repo_migrates_hooks_commands_and_subagents() {
     let root = TempDir::new().expect("create tempdir");
     let repo_root = root.path().join("repo");
     fs::create_dir_all(repo_root.join(".git")).expect("create git dir");
@@ -517,29 +497,6 @@ async fn import_repo_migrates_mcp_hooks_commands_and_subagents() {
     )
     .expect("create commands");
     fs::create_dir_all(repo_root.join(EXTERNAL_AGENT_DIR).join("agents")).expect("create agents");
-    fs::write(
-        repo_root.join(".mcp.json"),
-        r#"{
-          "mcpServers": {
-            "docs": {
-              "command": "docs-server",
-              "args": ["--stdio"],
-              "headers": {"X-Ignored": "unsupported for stdio"},
-              "env": {"DOCS_TOKEN": "${DOCS_TOKEN}", "STATIC": "yes"}
-            },
-            "api": {
-              "url": "https://example.com/mcp",
-              "args": ["ignored-for-http"],
-              "env": {"IGNORED": "unsupported for http"},
-              "headers": {
-                "Authorization": "Bearer ${API_TOKEN}",
-                "X-Team": "${TEAM}"
-              }
-            }
-          }
-        }"#,
-    )
-    .expect("write mcp");
     fs::write(
         repo_root.join(EXTERNAL_AGENT_DIR).join("settings.json"),
         r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo external-agent","timeout":3},{"type":"prompt","prompt":"skip"}]}],"Stop":[{"matcher":"ignored","hooks":[{"command":"echo done"}]}]}}"#,
@@ -569,12 +526,6 @@ async fn import_repo_migrates_mcp_hooks_commands_and_subagents() {
     )
     .import(vec![
         ExternalAgentConfigMigrationItem {
-            item_type: ExternalAgentConfigMigrationItemType::McpServerConfig,
-            description: String::new(),
-            cwd: Some(repo_root.clone()),
-            details: None,
-        },
-        ExternalAgentConfigMigrationItem {
             item_type: ExternalAgentConfigMigrationItemType::Hooks,
             description: String::new(),
             cwd: Some(repo_root.clone()),
@@ -594,42 +545,6 @@ async fn import_repo_migrates_mcp_hooks_commands_and_subagents() {
         },
     ])
     .await;
-
-    let config: TomlValue = toml::from_str(
-        &fs::read_to_string(repo_root.join(".codex").join("config.toml")).expect("read config"),
-    )
-    .expect("parse config");
-    let expected_config: TomlValue = toml::from_str(
-        r#"
-[mcp_servers.api]
-url = "https://example.com/mcp"
-bearer_token_env_var = "API_TOKEN"
-
-[mcp_servers.api.env_http_headers]
-X-Team = "TEAM"
-
-[mcp_servers.docs]
-command = "docs-server"
-args = ["--stdio"]
-env_vars = ["DOCS_TOKEN"]
-
-[mcp_servers.docs.env]
-STATIC = "yes"
-"#,
-    )
-    .expect("parse expected config");
-    assert_eq!(config, expected_config);
-    let mcp_servers = config
-        .get("mcp_servers")
-        .cloned()
-        .ok_or_else(|| io::Error::other("missing mcp_servers"))
-        .expect("mcp servers");
-    let _supported_mcp_config: std::collections::HashMap<
-        String,
-        codex_config::types::McpServerConfig,
-    > = mcp_servers
-        .try_into()
-        .expect("migrated MCP config should be supported");
 
     let hooks: JsonValue = serde_json::from_str(
         &fs::read_to_string(repo_root.join(".codex").join("hooks.json")).expect("read hooks"),

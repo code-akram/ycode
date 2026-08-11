@@ -13,14 +13,6 @@ interface:
   brand_color: "#3B82F6"
   default_prompt: "Optional surrounding prompt to use the skill with"
 
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "github"
-      description: "GitHub MCP server"
-      transport: "streamable_http"
-      url: "https://api.githubcopilot.com/mcp/"
-
 policy:
   allow_implicit_invocation: true
 ```
@@ -39,11 +31,6 @@ Top-level constraints:
 - `interface.icon_large`: Path to a larger logo asset (relative to skill dir). Default to `./assets/` and place icons in the skill's `assets/` folder.
 - `interface.brand_color`: Hex color used for UI accents (e.g., badges).
 - `interface.default_prompt`: Default prompt snippet inserted when invoking the skill.
-- `dependencies.tools[].type`: Dependency category. Only `mcp` is supported for now.
-- `dependencies.tools[].value`: Identifier of the tool or dependency.
-- `dependencies.tools[].description`: Human-readable explanation of the dependency.
-- `dependencies.tools[].transport`: Connection type when `type` is `mcp`.
-- `dependencies.tools[].url`: MCP server URL when `type` is `mcp`.
 - `policy.allow_implicit_invocation`: When false, the skill is not injected into
   the model context by default, but can still be invoked explicitly via `$skill`.
   Defaults to true.

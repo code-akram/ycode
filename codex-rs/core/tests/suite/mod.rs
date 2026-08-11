@@ -69,21 +69,11 @@ mod git_enrichment;
 mod guardian_review;
 #[cfg(not(target_os = "windows"))]
 mod hooks;
-#[cfg(not(target_os = "windows"))]
-mod hooks_mcp;
 mod image_rollout;
 mod injected_models_cache;
 mod items;
 mod json_result;
 mod live_cli;
-mod mcp_auth_elicitation;
-mod mcp_auth_refresh;
-#[cfg(unix)]
-mod mcp_refresh_cleanup;
-mod mcp_startup_refresh_http_proxy;
-mod mcp_tool_cache;
-mod mcp_tool_exposure;
-mod mcp_turn_metadata;
 mod model_overrides;
 mod model_runtime_selectors;
 mod model_switching;
@@ -95,7 +85,6 @@ mod multi_agent_resume;
 #[cfg(unix)]
 mod multi_exec_server_sandbox;
 mod network_approval;
-mod openai_file_mcp;
 mod otel;
 mod override_updates;
 mod pending_input;
@@ -115,7 +104,6 @@ mod request_compression;
 mod request_permissions;
 #[cfg(not(target_os = "windows"))]
 mod request_permissions_tool;
-mod request_plugin_install;
 mod request_user_input;
 mod responses_api_proxy_headers;
 mod responses_lite;
@@ -124,7 +112,6 @@ mod responses_system_proxy;
 mod resume;
 mod resume_warning;
 mod review;
-mod rmcp_client;
 mod rollout_budget;
 mod rollout_list_find;
 mod safety_buffering;

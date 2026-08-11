@@ -83,7 +83,6 @@ pub(crate) fn external_agent_config_migration_item_label(
         ExternalAgentConfigMigrationItemType::Config => "Settings",
         ExternalAgentConfigMigrationItemType::Skills => "Skills",
         ExternalAgentConfigMigrationItemType::Plugins => "Plugins",
-        ExternalAgentConfigMigrationItemType::McpServerConfig => "MCP servers",
         ExternalAgentConfigMigrationItemType::Subagents => "Agents",
         ExternalAgentConfigMigrationItemType::Hooks => "Hooks",
         ExternalAgentConfigMigrationItemType::Commands => "Slash commands",
@@ -100,7 +99,6 @@ pub(crate) fn external_agent_config_migration_type_label(
         ExternalAgentConfigMigrationItemType::Config => "Settings",
         ExternalAgentConfigMigrationItemType::Skills => "Skills",
         ExternalAgentConfigMigrationItemType::Plugins => "Plugins",
-        ExternalAgentConfigMigrationItemType::McpServerConfig => "MCP servers",
         ExternalAgentConfigMigrationItemType::Subagents => "Agents",
         ExternalAgentConfigMigrationItemType::Hooks => "Hooks",
         ExternalAgentConfigMigrationItemType::Commands => "Slash commands",
@@ -154,10 +152,6 @@ pub(crate) fn external_agent_config_migration_item_count(
                     .sum()
             })
         }
-        ExternalAgentConfigMigrationItemType::McpServerConfig => item
-            .details
-            .as_ref()
-            .map_or(1, |details| details.mcp_servers.len()),
         ExternalAgentConfigMigrationItemType::Subagents => item
             .details
             .as_ref()
@@ -197,14 +191,6 @@ pub(crate) fn external_agent_config_migration_item_detail(
             "skill",
             details.skills.len(),
             details.skills.iter().map(|skill| skill.name.as_str()),
-        )),
-        ExternalAgentConfigMigrationItemType::McpServerConfig => Some(format_counted_details(
-            "MCP server",
-            details.mcp_servers.len(),
-            details
-                .mcp_servers
-                .iter()
-                .map(|server| server.name.as_str()),
         )),
         ExternalAgentConfigMigrationItemType::Subagents => Some(format_counted_details(
             "agent",

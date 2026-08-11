@@ -1,7 +1,7 @@
 //! Mapping from Codex protocol events into raw rollout-trace events.
 //!
 //! The session layer already emits protocol events for turn lifecycle, terminal
-//! sessions, patch application, MCP calls, and collaboration tools. Rollout
+//! sessions, patch application, and collaboration tools. Rollout
 //! tracing reuses those observations instead of adding another set of hooks in
 //! `codex-core`: this module translates the protocol surface into the smaller
 //! trace vocabulary and keeps the mapping isolated inside `codex-rollout-trace`.
@@ -16,8 +16,6 @@ use codex_protocol::protocol::ExecCommandBeginEvent;
 use codex_protocol::protocol::ExecCommandEndEvent;
 use codex_protocol::protocol::ExecCommandSource;
 use codex_protocol::protocol::ExecCommandStatus;
-use codex_protocol::protocol::McpToolCallBeginEvent;
-use codex_protocol::protocol::McpToolCallEndEvent;
 use codex_protocol::protocol::PatchApplyBeginEvent;
 use codex_protocol::protocol::PatchApplyEndEvent;
 use codex_protocol::protocol::PatchApplyStatus;
@@ -102,8 +100,6 @@ pub(crate) enum ToolRuntimePayload<'a> {
     ExecCommandEnd(&'a ExecCommandEndEvent),
     PatchApplyBegin(&'a PatchApplyBeginEvent),
     PatchApplyEnd(&'a PatchApplyEndEvent),
-    McpToolCallBegin(&'a McpToolCallBeginEvent),
-    McpToolCallEnd(&'a McpToolCallEndEvent),
     CollabAgentSpawnBegin(&'a codex_protocol::protocol::CollabAgentSpawnBeginEvent),
     CollabAgentSpawnEnd(&'a codex_protocol::protocol::CollabAgentSpawnEndEvent),
     CollabAgentInteractionBegin(&'a codex_protocol::protocol::CollabAgentInteractionBeginEvent),
@@ -129,8 +125,6 @@ impl Serialize for ToolRuntimePayload<'_> {
             }
             ToolRuntimePayload::PatchApplyBegin(event) => event.serialize(serializer),
             ToolRuntimePayload::PatchApplyEnd(event) => event.serialize(serializer),
-            ToolRuntimePayload::McpToolCallBegin(event) => event.serialize(serializer),
-            ToolRuntimePayload::McpToolCallEnd(event) => event.serialize(serializer),
             ToolRuntimePayload::CollabAgentSpawnBegin(event) => event.serialize(serializer),
             ToolRuntimePayload::CollabAgentSpawnEnd(event) => event.serialize(serializer),
             ToolRuntimePayload::CollabAgentInteractionBegin(event) => event.serialize(serializer),
@@ -297,19 +291,6 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
             status: event.status.trace_execution_status(),
             payload: ToolRuntimePayload::PatchApplyEnd(event),
         }),
-        EventMsg::McpToolCallBegin(event) => Some(ToolRuntimeTraceEvent::Started {
-            tool_call_id: &event.call_id,
-            payload: ToolRuntimePayload::McpToolCallBegin(event),
-        }),
-        EventMsg::McpToolCallEnd(event) => Some(ToolRuntimeTraceEvent::Ended {
-            tool_call_id: &event.call_id,
-            status: if event.result.is_ok() {
-                ExecutionStatus::Completed
-            } else {
-                ExecutionStatus::Failed
-            },
-            payload: ToolRuntimePayload::McpToolCallEnd(event),
-        }),
         EventMsg::CollabAgentSpawnBegin(event) => Some(ToolRuntimeTraceEvent::Started {
             tool_call_id: &event.call_id,
             payload: ToolRuntimePayload::CollabAgentSpawnBegin(event),
@@ -383,8 +364,6 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
         | EventMsg::SessionConfigured(_)
         | EventMsg::EnvironmentConnected(_)
         | EventMsg::EnvironmentDisconnected(_)
-        | EventMsg::McpStartupUpdate(_)
-        | EventMsg::McpStartupComplete(_)
         | EventMsg::WebSearchBegin(_)
         | EventMsg::WebSearchEnd(_)
         | EventMsg::ImageGenerationBegin(_)
@@ -399,7 +378,6 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
         | EventMsg::RequestUserInput(_)
         | EventMsg::DynamicToolCallRequest(_)
         | EventMsg::DynamicToolCallResponse(_)
-        | EventMsg::ElicitationRequest(_)
         | EventMsg::ApplyPatchApprovalRequest(_)
         | EventMsg::GuardianAssessment(_)
         | EventMsg::DeprecationNotice(_)
@@ -457,10 +435,6 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
         | EventMsg::AgentReasoningRawContent(_)
         | EventMsg::AgentReasoningSectionBreak(_)
         | EventMsg::ThreadGoalUpdated(_)
-        | EventMsg::McpStartupUpdate(_)
-        | EventMsg::McpStartupComplete(_)
-        | EventMsg::McpToolCallBegin(_)
-        | EventMsg::McpToolCallEnd(_)
         | EventMsg::WebSearchBegin(_)
         | EventMsg::WebSearchEnd(_)
         | EventMsg::ImageGenerationBegin(_)
@@ -475,7 +449,6 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
         | EventMsg::RequestUserInput(_)
         | EventMsg::DynamicToolCallRequest(_)
         | EventMsg::DynamicToolCallResponse(_)
-        | EventMsg::ElicitationRequest(_)
         | EventMsg::ApplyPatchApprovalRequest(_)
         | EventMsg::GuardianAssessment(_)
         | EventMsg::DeprecationNotice(_)

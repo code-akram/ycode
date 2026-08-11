@@ -50,7 +50,6 @@
         "CONFIG",
         "SKILLS",
         "PLUGINS",
-        "MCP_SERVER_CONFIG",
         "SUBAGENTS",
         "HOOKS",
         "COMMANDS",
@@ -60,17 +59,6 @@
       "type": "string"
     },
     "HookMigration": {
-      "properties": {
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
-    "McpServerMigration": {
       "properties": {
         "name": {
           "type": "string"
@@ -94,13 +82,6 @@
           "default": [],
           "items": {
             "$ref": "#/definitions/HookMigration"
-          },
-          "type": "array"
-        },
-        "mcpServers": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/McpServerMigration"
           },
           "type": "array"
         },

@@ -12,7 +12,6 @@ use super::title::fallback_title_from_user_message;
 use serde_json::Value as JsonValue;
 use sha2::Digest;
 use sha2::Sha256;
-use std::collections::BTreeSet;
 use std::fs::File;
 use std::io;
 use std::io::BufRead;
@@ -133,7 +132,6 @@ pub(super) fn read_session_import(
         ai_title: None,
         messages,
         content_sha256: format!("{:x}", hasher.finalize()),
-        attributed_mcp_server_ids: BTreeSet::new(),
     })
 }
 

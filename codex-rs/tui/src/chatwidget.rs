@@ -17,10 +17,7 @@
 //! every draw.
 //!
 //! The bottom pane exposes a single "task running" indicator that drives the spinner and interrupt
-//! hints. This module treats that indicator as derived UI-busy state: it is set while an agent turn
-//! is in progress and while MCP server startup is in progress. Those lifecycles are tracked
-//! independently (`agent_turn_running` and `mcp_startup_status`) and synchronized via
-//! `update_task_running_state`.
+//! hints while an agent turn is in progress.
 //!
 //! For preamble-capable models, assistant output may include commentary before
 //! the final answer. During streaming we hide the status row to avoid duplicate
@@ -80,7 +77,6 @@ use crate::token_usage::TokenUsageInfo;
 use crate::version::CODEX_CLI_VERSION;
 use codex_app_server_protocol::AddCreditsNudgeCreditType;
 use codex_app_server_protocol::AddCreditsNudgeEmailStatus;
-use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
@@ -92,13 +88,9 @@ use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::GuardianApprovalReviewAction;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
-use codex_app_server_protocol::McpServerElicitationRequest;
-use codex_app_server_protocol::McpServerElicitationRequestParams;
-use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::ModelVerification as AppServerModelVerification;
 use codex_app_server_protocol::RateLimitReachedType;
 use codex_app_server_protocol::RateLimitSnapshot;
-use codex_app_server_protocol::RequestId as AppServerRequestId;
 use codex_app_server_protocol::ReviewTarget;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
@@ -120,7 +112,6 @@ use codex_config::Constrained;
 use codex_config::ConstraintResult;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::Notifications;
-use codex_connectors::AppInfo;
 use codex_features::FEATURES;
 use codex_features::Feature;
 #[cfg(test)]
@@ -192,7 +183,6 @@ const MEMORIES_ENABLE_NOTICE: &str = "Memories will be enabled in the next sessi
 const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "Apply reasoning change";
 const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "Apply to Plan mode override";
 const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "Apply to global default and Plan mode override";
-const CONNECTORS_SELECTION_VIEW_ID: &str = "connectors-selection";
 const PET_SELECTION_LOADING_VIEW_ID: &str = "pet-selection-loading";
 const AMBIENT_PET_WRAP_GAP_COLUMNS: u16 = 2;
 const TUI_STUB_MESSAGE: &str = "Not available in TUI yet.";
@@ -282,8 +272,6 @@ use crate::bottom_pane::GoalStatusIndicator;
 use crate::bottom_pane::HistoryEntry;
 use crate::bottom_pane::InputResult;
 use crate::bottom_pane::LocalImageAttachment;
-use crate::bottom_pane::McpElicitationApprovalRequest;
-use crate::bottom_pane::McpServerElicitationFormRequest;
 use crate::bottom_pane::MemoriesSettingsView;
 use crate::bottom_pane::MentionBinding;
 use crate::bottom_pane::PermissionsApprovalRequest;
@@ -307,8 +295,6 @@ use crate::history_cell;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::HistoryRenderMode;
 use crate::history_cell::HookCell;
-use crate::history_cell::McpInvocation;
-use crate::history_cell::McpToolCallCell;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::WebSearchCell;
 use crate::key_hint;
@@ -330,9 +316,7 @@ use crate::status_indicator_widget::StatusDetailsCapitalization;
 use crate::text_formatting::truncate_text;
 use crate::tui::FrameRequester;
 mod command_lifecycle;
-mod connectors;
 mod constructor;
-use self::connectors::ConnectorsState;
 mod exec_state;
 use self::exec_state::RunningCommand;
 use self::exec_state::UnifiedExecProcessSummary;
@@ -356,8 +340,6 @@ mod input_submission;
 mod interrupts;
 use self::interrupts::InterruptManager;
 mod keymap_picker;
-mod mcp_startup;
-use self::mcp_startup::McpStartupStatus;
 mod pets;
 mod session_flow;
 mod session_header;
@@ -368,12 +350,9 @@ mod interaction;
 mod skills;
 mod slash_dispatch;
 use self::skills::collect_tool_mentions;
-use self::skills::find_app_mentions;
 use self::skills::find_skill_mentions_with_tool_mentions;
-use self::skills::is_app_mentionable;
 mod plugin_catalog;
 mod plugins;
-use self::plugins::PluginInstallAuthFlowState;
 use self::plugins::PluginListFetchState;
 use self::plugins::PluginsCacheState;
 mod plan_implementation;
@@ -602,32 +581,12 @@ pub(crate) struct ChatWidget {
     safety_buffering: SafetyBufferingState,
     task_complete_pending: bool,
     unified_exec_processes: Vec<UnifiedExecProcessSummary>,
-    /// Tracks per-server MCP startup state while startup is in progress.
-    ///
-    /// The map is `Some(_)` from the first startup status update until the
-    /// app-server-backed startup round settles, and the bottom pane is treated
-    /// as "running" while this is populated, even if no agent turn is currently
-    /// executing.
-    mcp_startup_status: Option<HashMap<String, McpStartupStatus>>,
-    /// Expected MCP servers for the current startup round, seeded from enabled local config.
-    mcp_startup_expected_servers: Option<HashSet<String>>,
-    /// After startup settles, ignore stale updates until enough notifications confirm a new round.
-    mcp_startup_ignore_updates_until_next_start: bool,
-    /// A lag signal for the next round means terminal-only updates are enough to settle it.
-    mcp_startup_allow_terminal_only_next_round: bool,
-    /// Buffers post-settle MCP startup updates until they cover a full fresh round.
-    mcp_startup_pending_next_round: HashMap<String, McpStartupStatus>,
-    /// Tracks whether the buffered next round has seen any `Starting` update yet.
-    mcp_startup_pending_next_round_saw_starting: bool,
-    connectors: ConnectorsState,
     ide_context: IdeContextState,
     plugins_cache: PluginsCacheState,
     plugins_fetch_state: PluginListFetchState,
     plugin_remote_sections_loading: bool,
     plugin_remote_sections_loaded: bool,
     plugin_remote_section_errors: Vec<crate::app_event::PluginRemoteSectionError>,
-    plugin_install_apps_needing_auth: Vec<AppSummary>,
-    plugin_install_auth_flow: Option<PluginInstallAuthFlowState>,
     plugins_active_tab_id: Option<String>,
     newly_installed_marketplace_tab_id: Option<String>,
     // Queue of interruptive UI events deferred during an active write cycle
@@ -1004,16 +963,6 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    pub(crate) fn open_app_link_view(&mut self, params: crate::bottom_pane::AppLinkViewParams) {
-        let view = crate::bottom_pane::AppLinkView::new_with_keymap(
-            params,
-            self.app_event_tx.clone(),
-            self.bottom_pane.list_keymap(),
-        );
-        self.bottom_pane.show_view(Box::new(view));
-        self.request_redraw();
-    }
-
     pub(crate) fn dismiss_app_server_request(&mut self, request: &ResolvedAppServerRequest) {
         // A remotely resolved request must not remain user-actionable. It may be
         // materialized in the bottom pane or still deferred behind active streaming.
@@ -1360,8 +1309,6 @@ impl ChatWidget {
             // Insert finalized cell into history and keep grouping consistent.
             if let Some(exec) = cell.as_any_mut().downcast_mut::<ExecCell>() {
                 exec.mark_failed();
-            } else if let Some(tool) = cell.as_any_mut().downcast_mut::<McpToolCallCell>() {
-                tool.mark_failed();
             }
             self.add_boxed_history(cell);
             self.request_pending_usage_output_insertion();
@@ -1515,44 +1462,6 @@ impl ChatWidget {
             line.extend([". To resume this session run ".into(), hint.cyan()]);
         }
         PlainHistoryCell::new(vec![line.into()])
-    }
-
-    /// Begin the asynchronous MCP inventory flow: show a loading spinner and
-    /// request the app-server fetch via `AppEvent::FetchMcpInventory`.
-    ///
-    /// The spinner lives in `active_cell` and is cleared by
-    /// [`clear_mcp_inventory_loading`] once the result arrives.
-    pub(crate) fn add_mcp_output(&mut self, detail: McpServerStatusDetail) {
-        self.flush_answer_stream_with_separator();
-        self.flush_active_cell();
-        self.transcript.active_cell = Some(Box::new(history_cell::new_mcp_inventory_loading(
-            self.config.animations,
-        )));
-        self.bump_active_cell_revision();
-        self.request_redraw();
-        self.app_event_tx.send(AppEvent::FetchMcpInventory {
-            detail,
-            thread_id: self.thread_id(),
-        });
-    }
-
-    /// Remove the MCP loading spinner if it is still the active cell.
-    ///
-    /// Uses `Any`-based type checking so that a late-arriving inventory result
-    /// does not accidentally clear an unrelated cell that was set in the meantime.
-    pub(crate) fn clear_mcp_inventory_loading(&mut self) {
-        let Some(active) = self.transcript.active_cell.as_ref() else {
-            return;
-        };
-        if !active
-            .as_any()
-            .is::<history_cell::McpInventoryLoadingCell>()
-        {
-            return;
-        }
-        self.transcript.active_cell = None;
-        self.bump_active_cell_revision();
-        self.request_redraw();
     }
 
     /// Forward file-search results to the bottom pane.

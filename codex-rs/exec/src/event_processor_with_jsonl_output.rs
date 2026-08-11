@@ -6,7 +6,6 @@ use std::sync::atomic::Ordering;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecutionStatus;
-use codex_app_server_protocol::McpToolCallStatus;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::ServerNotification;
@@ -35,10 +34,6 @@ use crate::exec_events::FileUpdateChange;
 use crate::exec_events::ItemCompletedEvent;
 use crate::exec_events::ItemStartedEvent;
 use crate::exec_events::ItemUpdatedEvent;
-use crate::exec_events::McpToolCallItem;
-use crate::exec_events::McpToolCallItemError;
-use crate::exec_events::McpToolCallItemResult;
-use crate::exec_events::McpToolCallStatus as ExecMcpToolCallStatus;
 use crate::exec_events::PatchApplyStatus as ExecPatchApplyStatus;
 use crate::exec_events::PatchChangeKind as ExecPatchChangeKind;
 use crate::exec_events::ReasoningItem;
@@ -201,35 +196,6 @@ impl EventProcessorWithJsonOutput {
                             ExecPatchApplyStatus::Failed
                         }
                     },
-                }),
-            }),
-            ThreadItem::McpToolCall {
-                server,
-                tool,
-                status,
-                arguments,
-                result,
-                error,
-                ..
-            } => Some(ExecThreadItem {
-                id: make_id(),
-                details: ThreadItemDetails::McpToolCall(McpToolCallItem {
-                    server,
-                    tool,
-                    status: match status {
-                        McpToolCallStatus::InProgress => ExecMcpToolCallStatus::InProgress,
-                        McpToolCallStatus::Completed => ExecMcpToolCallStatus::Completed,
-                        McpToolCallStatus::Failed => ExecMcpToolCallStatus::Failed,
-                    },
-                    arguments,
-                    result: result.map(|result| McpToolCallItemResult {
-                        content: result.content,
-                        meta: result.meta,
-                        structured_content: result.structured_content,
-                    }),
-                    error: error.map(|error| McpToolCallItemError {
-                        message: error.message,
-                    }),
                 }),
             }),
             ThreadItem::CollabAgentToolCall {

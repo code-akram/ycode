@@ -11,7 +11,7 @@ need to live in `core/src/tools/spec.rs` or `core/src/client_common.rs`:
   `ResponsesApiNamespaceTool`
 - host discovery models used while assembling tool sets, including
   discoverable-tool models and request-plugin-install helpers
-- host adapters such as schema sanitization, MCP/dynamic conversion, code-mode
+- host adapters such as schema sanitization, dynamic conversion, code-mode
   augmentation, and image-detail normalization
 - shared executable-tool contracts such as `ToolExecutor`, `ToolCall`, and
   `ToolOutput`
@@ -29,7 +29,7 @@ multiple consumers, for example:
 
 - host-visible aggregate tool models
 - tool-set planning and discovery helpers
-- MCP and dynamic-tool adaptation into Responses API shapes
+- dynamic-tool adaptation into Responses API shapes
 - code-mode compatibility shims that do not depend on `codex-core`
 - other narrowly scoped host utilities that multiple crates need
 

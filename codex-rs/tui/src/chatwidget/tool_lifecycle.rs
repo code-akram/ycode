@@ -1,6 +1,6 @@
 //! Non-command tool lifecycle rendering for `ChatWidget`.
 //!
-//! This module handles patch, MCP, web search, image, and collaborator tool
+//! This module handles patch, web search, image, and collaborator tool
 //! events as transcript cells.
 
 use super::*;
@@ -49,22 +49,6 @@ impl ChatWidget {
             item,
             InterruptManager::push_item_completed,
             Self::handle_file_change_completed_now,
-        );
-    }
-
-    pub(super) fn on_mcp_tool_call_started(&mut self, item: ThreadItem) {
-        self.defer_or_handle(
-            item,
-            InterruptManager::push_item_started,
-            Self::handle_mcp_tool_call_started_now,
-        );
-    }
-
-    pub(super) fn on_mcp_tool_call_completed(&mut self, item: ThreadItem) {
-        self.defer_or_handle(
-            item,
-            InterruptManager::push_item_completed,
-            Self::handle_mcp_tool_call_completed_now,
         );
     }
 
@@ -164,102 +148,9 @@ impl ChatWidget {
         self.transcript.had_work_activity = true;
     }
 
-    pub(crate) fn handle_mcp_tool_call_started_now(&mut self, item: ThreadItem) {
-        let ThreadItem::McpToolCall {
-            id,
-            server,
-            tool,
-            arguments,
-            ..
-        } = item
-        else {
-            return;
-        };
-        self.flush_answer_stream_with_separator();
-        self.flush_active_cell();
-        self.transcript.active_cell = Some(Box::new(history_cell::new_active_mcp_tool_call(
-            id,
-            McpInvocation {
-                server,
-                tool,
-                arguments: Some(arguments),
-            },
-            self.config.animations,
-        )));
-        self.bump_active_cell_revision();
-        self.request_redraw();
-    }
-
-    pub(crate) fn handle_mcp_tool_call_completed_now(&mut self, item: ThreadItem) {
-        self.flush_answer_stream_with_separator();
-
-        let ThreadItem::McpToolCall {
-            id,
-            server,
-            tool,
-            arguments,
-            result,
-            error,
-            duration_ms,
-            ..
-        } = item
-        else {
-            return;
-        };
-        let invocation = McpInvocation {
-            server,
-            tool,
-            arguments: Some(arguments),
-        };
-        let duration = Duration::from_millis(duration_ms.unwrap_or_default().max(0) as u64);
-        let result = match (result, error) {
-            (_, Some(error)) => Err(error.message),
-            (Some(result), None) => {
-                let result = *result;
-                Ok(codex_protocol::mcp::CallToolResult {
-                    content: result.content,
-                    structured_content: result.structured_content,
-                    is_error: Some(false),
-                    meta: None,
-                })
-            }
-            (None, None) => Err("MCP tool call completed without a result".to_string()),
-        };
-
-        let extra_cell = match self
-            .transcript
-            .active_cell
-            .as_mut()
-            .and_then(|cell| cell.as_any_mut().downcast_mut::<McpToolCallCell>())
-        {
-            Some(cell) if cell.call_id() == id => cell.complete(duration, result),
-            _ => {
-                self.flush_active_cell();
-                let mut cell =
-                    history_cell::new_active_mcp_tool_call(id, invocation, self.config.animations);
-                let extra_cell = cell.complete(duration, result);
-                self.transcript.active_cell = Some(Box::new(cell));
-                extra_cell
-            }
-        };
-
-        self.flush_active_cell();
-        if let Some(extra) = extra_cell {
-            self.add_boxed_history(extra);
-        }
-        // Mark that actual work was done (MCP tool call)
-        self.transcript.had_work_activity = true;
-    }
-
     pub(crate) fn handle_queued_item_started_now(&mut self, item: ThreadItem) {
-        match item {
-            item @ ThreadItem::CommandExecution { .. } => {
-                self.handle_command_execution_started_now(item);
-            }
-            item @ ThreadItem::McpToolCall { .. } => {
-                self.handle_mcp_tool_call_started_now(item);
-            }
-            _ => {}
+        if let item @ ThreadItem::CommandExecution { .. } = item {
+            self.handle_command_execution_started_now(item);
         }
     }
 
@@ -269,7 +160,6 @@ impl ChatWidget {
                 self.handle_command_execution_completed_now(item);
             }
             item @ ThreadItem::FileChange { .. } => self.handle_file_change_completed_now(item),
-            item @ ThreadItem::McpToolCall { .. } => self.handle_mcp_tool_call_completed_now(item),
             _ => {}
         }
     }

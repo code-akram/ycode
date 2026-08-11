@@ -18,7 +18,6 @@ use std::path::PathBuf;
 
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_event::AppEvent;
-use crate::app_event::ConnectorsSnapshot;
 use crate::app_event::HistoryLookupResponse;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
@@ -55,9 +54,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 mod action_required_title;
-mod app_link_view;
 mod approval_overlay;
-mod mcp_server_elicitation;
 mod multi_select_picker;
 mod request_user_input;
 mod status_line_setup;
@@ -66,19 +63,12 @@ mod status_surface_preview;
 mod title_setup;
 pub(crate) use action_required_title::ACTION_REQUIRED_PREVIEW_PREFIX;
 pub(crate) use action_required_title::build_action_required_title_text;
-pub(crate) use app_link_view::AppLinkElicitationTarget;
-pub(crate) use app_link_view::AppLinkSuggestionType;
-pub(crate) use app_link_view::AppLinkView;
-pub(crate) use app_link_view::AppLinkViewParams;
 pub(crate) use approval_overlay::ApplyPatchApprovalRequest;
 pub(crate) use approval_overlay::ApprovalOverlay;
 pub(crate) use approval_overlay::ApprovalRequest;
 pub(crate) use approval_overlay::ExecApprovalRequest;
-pub(crate) use approval_overlay::McpElicitationApprovalRequest;
 pub(crate) use approval_overlay::PermissionsApprovalRequest;
 pub(crate) use approval_overlay::format_requested_permissions_rule;
-pub(crate) use mcp_server_elicitation::McpServerElicitationFormRequest;
-pub(crate) use mcp_server_elicitation::McpServerElicitationOverlay;
 pub(crate) use request_user_input::RequestUserInputOverlay;
 pub(crate) use status_line_style::status_line_from_segments;
 mod bottom_pane_view;
@@ -96,7 +86,7 @@ pub(crate) struct MentionBinding {
     pub(crate) sigil: char,
     /// Mention token text without the leading sigil (`$` or `@`).
     pub(crate) mention: String,
-    /// Canonical mention target (for example `app://...` or absolute SKILL.md path).
+    /// Canonical mention target (for example `plugin://...` or an absolute SKILL.md path).
     pub(crate) path: String,
 }
 mod chat_composer;
@@ -348,11 +338,6 @@ impl BottomPane {
         self.composer.set_active_reasoning_effort_baseline(effort);
     }
 
-    pub fn set_connectors_snapshot(&mut self, snapshot: Option<ConnectorsSnapshot>) {
-        self.composer.set_connector_mentions(snapshot);
-        self.request_redraw();
-    }
-
     pub fn set_plugin_mentions(&mut self, plugins: Option<Vec<PluginCapabilitySummary>>) {
         self.composer.set_plugin_mentions(plugins);
         self.request_redraw();
@@ -419,10 +404,6 @@ impl BottomPane {
     pub fn set_collaboration_modes_enabled(&mut self, enabled: bool) {
         self.composer.set_collaboration_modes_enabled(enabled);
         self.request_redraw();
-    }
-
-    pub fn set_connectors_enabled(&mut self, enabled: bool) {
-        self.composer.set_connectors_enabled(enabled);
     }
 
     pub fn set_collaboration_mode_indicator(
@@ -1490,93 +1471,6 @@ impl BottomPane {
         self.set_composer_input_enabled(
             /*enabled*/ false,
             Some("Answer the questions to continue.".to_string()),
-        );
-        self.push_view(Box::new(modal));
-    }
-
-    pub(crate) fn push_mcp_server_elicitation_request(
-        &mut self,
-        request: McpServerElicitationFormRequest,
-    ) {
-        let request = if let Some(view) = self.view_stack.last_mut() {
-            match view.try_consume_mcp_server_elicitation_request(request) {
-                Some(request) => request,
-                None => {
-                    self.request_redraw();
-                    return;
-                }
-            }
-        } else {
-            request
-        };
-
-        if let Some(tool_suggestion) = request.tool_suggestion()
-            && let Some(install_url) = tool_suggestion.install_url.clone()
-        {
-            let suggestion_type = match tool_suggestion.suggest_type {
-                mcp_server_elicitation::ToolSuggestionType::Install => {
-                    AppLinkSuggestionType::Install
-                }
-                mcp_server_elicitation::ToolSuggestionType::Enable => AppLinkSuggestionType::Enable,
-            };
-            let is_installed = matches!(
-                tool_suggestion.suggest_type,
-                mcp_server_elicitation::ToolSuggestionType::Enable
-            );
-            let view = AppLinkView::new_with_keymap(
-                AppLinkViewParams {
-                    app_id: tool_suggestion.tool_id.clone(),
-                    title: tool_suggestion.tool_name.clone(),
-                    description: None,
-                    instructions: match suggestion_type {
-                        AppLinkSuggestionType::Install => {
-                            "Install this app in your browser, then return here.".to_string()
-                        }
-                        AppLinkSuggestionType::Enable => {
-                            "Enable this app to use it for the current request.".to_string()
-                        }
-                        AppLinkSuggestionType::Auth => unreachable!(
-                            "auth uses URL mode elicitation, not tool suggestion forms"
-                        ),
-                        AppLinkSuggestionType::ExternalAction => unreachable!(
-                            "external actions use URL mode elicitation, not tool suggestion forms"
-                        ),
-                    },
-                    url: install_url,
-                    is_installed,
-                    is_enabled: false,
-                    suggest_reason: Some(tool_suggestion.suggest_reason.clone()),
-                    suggestion_type: Some(suggestion_type),
-                    elicitation_target: Some(AppLinkElicitationTarget {
-                        thread_id: request.thread_id(),
-                        server_name: request.server_name().to_string(),
-                        request_id: request.request_id().clone(),
-                    }),
-                },
-                self.app_event_tx.clone(),
-                self.keymap.list.clone(),
-            );
-            self.pause_status_timer_for_modal();
-            self.set_composer_input_enabled(
-                /*enabled*/ false,
-                Some("Respond to the tool suggestion to continue.".to_string()),
-            );
-            self.push_view(Box::new(view));
-            return;
-        }
-
-        let modal = McpServerElicitationOverlay::new_with_keymap(
-            request,
-            self.app_event_tx.clone(),
-            self.has_input_focus,
-            self.enhanced_keys_supported,
-            self.disable_paste_burst,
-            self.keymap.clone(),
-        );
-        self.pause_status_timer_for_modal();
-        self.set_composer_input_enabled(
-            /*enabled*/ false,
-            Some("Respond to the MCP server request to continue.".to_string()),
         );
         self.push_view(Box::new(modal));
     }

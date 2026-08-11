@@ -38,7 +38,7 @@ async fn records_completion_by_import_id() -> anyhow::Result<()> {
                     title: None,
                 },
                 ExternalAgentConfigImportSuccessRecord {
-                    item_type: "MCP_SERVER_CONFIG".to_string(),
+                    item_type: "PLUGIN".to_string(),
                     cwd: None,
                     source: Some("github".to_string()),
                     target: Some("github".to_string()),
@@ -46,7 +46,7 @@ async fn records_completion_by_import_id() -> anyhow::Result<()> {
                 },
             ],
             &[ExternalAgentConfigImportFailureRecord {
-                item_type: "MCP_SERVER_CONFIG".to_string(),
+                item_type: "PLUGIN".to_string(),
                 error_type: None,
                 sub_error_type: Some("failed_to_copy_plugin_file".to_string()),
                 failure_stage: "import".to_string(),
@@ -71,7 +71,7 @@ async fn records_completion_by_import_id() -> anyhow::Result<()> {
                     title: None,
                 },
                 ExternalAgentConfigImportSuccessRecord {
-                    item_type: "MCP_SERVER_CONFIG".to_string(),
+                    item_type: "PLUGIN".to_string(),
                     cwd: None,
                     source: Some("github".to_string()),
                     target: Some("github".to_string()),
@@ -79,7 +79,7 @@ async fn records_completion_by_import_id() -> anyhow::Result<()> {
                 }
             ],
             failures: vec![ExternalAgentConfigImportFailureRecord {
-                item_type: "MCP_SERVER_CONFIG".to_string(),
+                item_type: "PLUGIN".to_string(),
                 error_type: None,
                 sub_error_type: Some("failed_to_copy_plugin_file".to_string()),
                 failure_stage: "import".to_string(),
@@ -114,7 +114,7 @@ async fn records_completion_by_import_id() -> anyhow::Result<()> {
                     title: None,
                 },
                 ExternalAgentConfigImportSuccessRecord {
-                    item_type: "MCP_SERVER_CONFIG".to_string(),
+                    item_type: "PLUGIN".to_string(),
                     cwd: None,
                     source: Some("github".to_string()),
                     target: Some("github".to_string()),
@@ -122,7 +122,7 @@ async fn records_completion_by_import_id() -> anyhow::Result<()> {
                 }
             ],
             vec![ExternalAgentConfigImportFailureRecord {
-                item_type: "MCP_SERVER_CONFIG".to_string(),
+                item_type: "PLUGIN".to_string(),
                 error_type: None,
                 sub_error_type: Some("failed_to_copy_plugin_file".to_string()),
                 failure_stage: "import".to_string(),

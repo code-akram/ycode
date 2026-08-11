@@ -274,53 +274,6 @@ impl App {
                     },
                 )),
             ),
-            ServerRequest::McpServerElicitationRequest { request_id, params } => {
-                if let Some(params) = AppLinkViewParams::from_url_app_server_request(
-                    thread_id,
-                    &params.server_name,
-                    request_id.clone(),
-                    &params.request,
-                ) {
-                    Some(ThreadInteractiveRequest::AppLink(params))
-                } else if let Some(request) =
-                    McpServerElicitationFormRequest::from_app_server_request(
-                        thread_id,
-                        request_id.clone(),
-                        params,
-                    )
-                {
-                    Some(ThreadInteractiveRequest::McpServerElicitation(request))
-                } else {
-                    match &params.request {
-                        codex_app_server_protocol::McpServerElicitationRequest::Form {
-                            message,
-                            ..
-                        } => Some(ThreadInteractiveRequest::Approval(
-                            ApprovalRequest::McpElicitation(McpElicitationApprovalRequest {
-                                thread_id,
-                                thread_label,
-                                server_name: params.server_name.clone(),
-                                request_id: request_id.clone(),
-                                message: message.clone(),
-                            }),
-                        )),
-                        codex_app_server_protocol::McpServerElicitationRequest::OpenAiForm {
-                            ..
-                        }
-                        | codex_app_server_protocol::McpServerElicitationRequest::Url { .. } => {
-                            self.app_event_tx.resolve_elicitation(
-                                thread_id,
-                                params.server_name.clone(),
-                                request_id.clone(),
-                                codex_app_server_protocol::McpServerElicitationAction::Decline,
-                                /*content*/ None,
-                                /*meta*/ None,
-                            );
-                            None
-                        }
-                    }
-                }
-            }
             ServerRequest::PermissionsRequestApproval { params, .. } => {
                 // TODO(anp): Remove this native-path localization error path once core permission
                 // paths remain PathUri after crossing the app-server boundary.
@@ -347,16 +300,9 @@ impl App {
 
     pub(super) fn push_thread_interactive_request(&mut self, request: ThreadInteractiveRequest) {
         match request {
-            ThreadInteractiveRequest::AppLink(params) => {
-                self.chat_widget.open_app_link_view(params);
-            }
             ThreadInteractiveRequest::Approval(request) => {
                 self.render_inactive_patch_preview(&request);
                 self.chat_widget.push_approval_request(request);
-            }
-            ThreadInteractiveRequest::McpServerElicitation(request) => {
-                self.chat_widget
-                    .push_mcp_server_elicitation_request(request);
             }
         }
     }
@@ -1452,7 +1398,6 @@ impl App {
         snapshot: ThreadEventSnapshot,
         resume_restored_queue: bool,
     ) {
-        self.refresh_mcp_startup_expected_servers_from_config();
         let should_buffer_replay = !snapshot.turns.is_empty() || !snapshot.events.is_empty();
         if should_buffer_replay {
             self.app_event_tx

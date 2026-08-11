@@ -3,7 +3,6 @@ use super::build_config;
 use super::is_non_empty_text_file;
 use super::read_json_file;
 use crate::RewriteProfile;
-use crate::build_mcp_config_from_json_file;
 use crate::hook_migration_event_names_cur;
 use crate::import_hooks_cur;
 use crate::import_subagents_with_rewrite_profile;
@@ -113,10 +112,6 @@ impl CurSource {
                 TomlValue::Table(workspace_write),
             );
         }
-    }
-
-    pub fn build_mcp_config(source_dir: &Path) -> io::Result<TomlValue> {
-        build_mcp_config_from_json_file(&source_dir.join("mcp.json"))
     }
 
     pub fn repo_instruction_source_groups(

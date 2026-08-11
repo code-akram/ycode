@@ -2,7 +2,6 @@ use crate::AgentPath;
 use crate::ResponseItemId;
 use crate::ThreadId;
 use crate::dynamic_tools::DynamicToolCallOutputContentItem;
-use crate::mcp::CallToolResult;
 use crate::memory_citation::MemoryCitation;
 use crate::models::ContentItem;
 use crate::models::ImageDetail;
@@ -70,7 +69,6 @@ pub enum TurnItem {
     EnteredReviewMode(EnteredReviewModeItem),
     ExitedReviewMode(ExitedReviewModeItem),
     FileChange(FileChangeItem),
-    McpToolCall(McpToolCallItem),
     ContextCompaction(ContextCompactionItem),
 }
 
@@ -374,63 +372,6 @@ pub struct FileChangeItem {
     pub stderr: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase")]
-pub struct McpToolCallItem {
-    pub id: String,
-    pub server: String,
-    pub tool: String,
-    pub arguments: serde_json::Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub connector_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub mcp_app_resource_uri: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub link_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub app_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub action_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub plugin_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub read_only_hint: Option<bool>,
-    pub status: McpToolCallStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub result: Option<CallToolResult>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub error: Option<McpToolCallError>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "string", optional)]
-    pub duration: Option<Duration>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase")]
-pub enum McpToolCallStatus {
-    InProgress,
-    Completed,
-    Failed,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase")]
-pub struct McpToolCallError {
-    pub message: String,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct ContextCompactionItem {
     pub id: String,
@@ -676,7 +617,6 @@ impl TurnItem {
             TurnItem::EnteredReviewMode(item) => item.id.clone(),
             TurnItem::ExitedReviewMode(item) => item.id.clone(),
             TurnItem::FileChange(item) => item.id.clone(),
-            TurnItem::McpToolCall(item) => item.id.clone(),
             TurnItem::ContextCompaction(item) => item.id.clone(),
         }
     }

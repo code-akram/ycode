@@ -131,7 +131,7 @@ async fn http_response_body_stream_uses_generated_ids_and_receives_ordered_delta
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp".to_string(),
+                url: "https://example.test/api".to_string(),
                 headers: vec![HttpHeader {
                     name: "accept".to_string(),
                     value: "text/event-stream".to_string(),
@@ -190,7 +190,7 @@ async fn http_response_body_stream_uses_generated_ids_and_receives_ordered_delta
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/reuse".to_string(),
+                url: "https://example.test/api/reuse".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -217,7 +217,7 @@ async fn http_response_body_stream_uses_generated_ids_and_receives_ordered_delta
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp".to_string(),
+            url: "https://example.test/api".to_string(),
             headers: vec![HttpHeader {
                 name: "accept".to_string(),
                 value: "text/event-stream".to_string(),
@@ -259,7 +259,7 @@ async fn http_response_body_stream_uses_generated_ids_and_receives_ordered_delta
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/reuse".to_string(),
+            url: "https://example.test/api/reuse".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -296,7 +296,7 @@ async fn http_response_body_stream_drops_queued_terminal_before_next_generated_i
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/queued-terminal".to_string(),
+                url: "https://example.test/api/queued-terminal".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -330,7 +330,7 @@ async fn http_response_body_stream_drops_queued_terminal_before_next_generated_i
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/retry-queued-terminal".to_string(),
+                url: "https://example.test/api/retry-queued-terminal".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -357,7 +357,7 @@ async fn http_response_body_stream_drops_queued_terminal_before_next_generated_i
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/queued-terminal".to_string(),
+            url: "https://example.test/api/queued-terminal".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -382,7 +382,7 @@ async fn http_response_body_stream_drops_queued_terminal_before_next_generated_i
     // id is ignored, so the request uses the next generated route id.
     let params = HttpRequestParams {
         method: "GET".to_string(),
-        url: "https://example.test/mcp/retry-queued-terminal".to_string(),
+        url: "https://example.test/api/retry-queued-terminal".to_string(),
         headers: Vec::new(),
         body: None,
         timeout_ms: None,
@@ -422,7 +422,7 @@ async fn http_response_body_stream_ignores_late_deltas_after_cancelled_request()
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/cancel".to_string(),
+                url: "https://example.test/api/cancel".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -442,7 +442,7 @@ async fn http_response_body_stream_ignores_late_deltas_after_cancelled_request()
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/retry-cancelled".to_string(),
+                url: "https://example.test/api/retry-cancelled".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -487,7 +487,7 @@ async fn http_response_body_stream_ignores_late_deltas_after_cancelled_request()
         let _ = client_for_request
             .http_request_stream(HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/cancel".to_string(),
+                url: "https://example.test/api/cancel".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -509,7 +509,7 @@ async fn http_response_body_stream_ignores_late_deltas_after_cancelled_request()
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/retry-cancelled".to_string(),
+            url: "https://example.test/api/retry-cancelled".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -556,7 +556,7 @@ async fn http_response_body_stream_ignores_late_deltas_after_drop() -> Result<()
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/drop".to_string(),
+                url: "https://example.test/api/drop".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -596,7 +596,7 @@ async fn http_response_body_stream_ignores_late_deltas_after_drop() -> Result<()
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/retry-dropped".to_string(),
+                url: "https://example.test/api/retry-dropped".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -632,7 +632,7 @@ async fn http_response_body_stream_ignores_late_deltas_after_drop() -> Result<()
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/drop".to_string(),
+            url: "https://example.test/api/drop".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -665,7 +665,7 @@ async fn http_response_body_stream_ignores_late_deltas_after_drop() -> Result<()
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/retry-dropped".to_string(),
+            url: "https://example.test/api/retry-dropped".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -710,7 +710,7 @@ async fn http_response_body_stream_fails_when_transport_disconnects() -> Result<
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/disconnect".to_string(),
+                url: "https://example.test/api/disconnect".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -737,7 +737,7 @@ async fn http_response_body_stream_fails_when_transport_disconnects() -> Result<
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/disconnect".to_string(),
+            url: "https://example.test/api/disconnect".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -779,7 +779,7 @@ async fn http_response_body_stream_rejects_oversized_delta() -> Result<()> {
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/oversized-delta".to_string(),
+                url: "https://example.test/api/oversized-delta".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -804,7 +804,7 @@ async fn http_response_body_stream_rejects_oversized_delta() -> Result<()> {
 
     let request = HttpRequestParams {
         method: "GET".to_string(),
-        url: "https://example.test/mcp/oversized-delta".to_string(),
+        url: "https://example.test/api/oversized-delta".to_string(),
         headers: Vec::new(),
         body: None,
         timeout_ms: None,
@@ -839,7 +839,7 @@ async fn http_response_body_stream_enforces_queued_byte_budget() -> Result<()> {
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/byte-budget".to_string(),
+                url: "https://example.test/api/byte-budget".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -874,7 +874,7 @@ async fn http_response_body_stream_enforces_queued_byte_budget() -> Result<()> {
             barrier_params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/byte-budget-barrier".to_string(),
+                url: "https://example.test/api/byte-budget-barrier".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -910,7 +910,7 @@ async fn http_response_body_stream_enforces_queued_byte_budget() -> Result<()> {
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/byte-budget".to_string(),
+            url: "https://example.test/api/byte-budget".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -928,7 +928,7 @@ async fn http_response_body_stream_enforces_queued_byte_budget() -> Result<()> {
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/byte-budget-barrier".to_string(),
+            url: "https://example.test/api/byte-budget-barrier".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -977,8 +977,8 @@ async fn http_response_body_streams_share_queued_byte_budget() -> Result<()> {
     let (finish_tx, finish_rx) = oneshot::channel();
     let server = spawn_scripted_exec_server(|mut peer| async move {
         for (request_id, url) in [
-            ("http-1", "https://example.test/mcp/shared-budget-one"),
-            ("http-2", "https://example.test/mcp/shared-budget-two"),
+            ("http-1", "https://example.test/api/shared-budget-one"),
+            ("http-2", "https://example.test/api/shared-budget-two"),
         ] {
             let (rpc_request_id, params) = peer.read_http_request().await?;
             assert_eq!(
@@ -1032,7 +1032,7 @@ async fn http_response_body_streams_share_queued_byte_budget() -> Result<()> {
             barrier_params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/shared-budget-barrier".to_string(),
+                url: "https://example.test/api/shared-budget-barrier".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -1074,7 +1074,7 @@ async fn http_response_body_streams_share_queued_byte_budget() -> Result<()> {
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/shared-budget-one".to_string(),
+            url: "https://example.test/api/shared-budget-one".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -1089,7 +1089,7 @@ async fn http_response_body_streams_share_queued_byte_budget() -> Result<()> {
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/shared-budget-two".to_string(),
+            url: "https://example.test/api/shared-budget-two".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -1107,7 +1107,7 @@ async fn http_response_body_streams_share_queued_byte_budget() -> Result<()> {
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/shared-budget-barrier".to_string(),
+            url: "https://example.test/api/shared-budget-barrier".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -1171,7 +1171,7 @@ async fn http_response_body_stream_reports_disconnect_when_queue_is_full() -> Re
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/disconnect-full-queue".to_string(),
+                url: "https://example.test/api/disconnect-full-queue".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -1209,7 +1209,7 @@ async fn http_response_body_stream_reports_disconnect_when_queue_is_full() -> Re
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/disconnect-full-queue".to_string(),
+            url: "https://example.test/api/disconnect-full-queue".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,
@@ -1266,7 +1266,7 @@ async fn http_response_body_stream_reports_backpressure_truncation() -> Result<(
             params,
             HttpRequestParams {
                 method: "GET".to_string(),
-                url: "https://example.test/mcp/backpressure".to_string(),
+                url: "https://example.test/api/backpressure".to_string(),
                 headers: Vec::new(),
                 body: None,
                 timeout_ms: None,
@@ -1309,7 +1309,7 @@ async fn http_response_body_stream_reports_backpressure_truncation() -> Result<(
         TEST_TIMEOUT,
         client.http_request_stream(HttpRequestParams {
             method: "GET".to_string(),
-            url: "https://example.test/mcp/backpressure".to_string(),
+            url: "https://example.test/api/backpressure".to_string(),
             headers: Vec::new(),
             body: None,
             timeout_ms: None,

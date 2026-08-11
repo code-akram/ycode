@@ -6,7 +6,6 @@ use codex_core::test_support::auth_manager_from_auth;
 use codex_login::CodexAuth;
 use codex_login::OPENAI_API_KEY_ENV_VAR;
 use codex_protocol::ThreadId;
-use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CodexErrorInfo;
@@ -2727,7 +2726,6 @@ async fn conversation_startup_context_current_thread_selects_many_turns_by_budge
             InitialHistory::Forked(history),
             auth_manager_from_auth(CodexAuth::from_api_key("dummy")),
             /*parent_trace*/ None,
-            ClientMcpExtensions::default(),
         )
         .await?;
     let codex = resumed_thread.thread;

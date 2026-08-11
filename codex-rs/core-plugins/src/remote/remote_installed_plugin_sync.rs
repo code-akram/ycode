@@ -240,7 +240,6 @@ pub async fn sync_remote_installed_plugin_bundles_once(
                 &plugin.name,
                 release_version,
                 plugin.release.bundle_download_url.as_deref(),
-                plugin.release.app_manifest.clone(),
             ) {
                 Ok(bundle) => bundle,
                 Err(err) => {

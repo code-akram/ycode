@@ -252,10 +252,6 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
             /*success*/ true,
             "secret output\nsecond line",
             &[],
-            &[
-                ("mcp_server", "internal-mcp"),
-                ("mcp_server_origin", "stdio"),
-            ],
         );
     });
 
@@ -277,14 +273,6 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
     assert_eq!(
         tool_log_attrs.get("output").map(String::as_str),
         Some("secret output\nsecond line")
-    );
-    assert_eq!(
-        tool_log_attrs.get("mcp_server").map(String::as_str),
-        Some("internal-mcp")
-    );
-    assert_eq!(
-        tool_log_attrs.get("mcp_server_origin").map(String::as_str),
-        Some("stdio")
     );
 
     let spans = span_exporter.get_finished_spans().expect("span export");
@@ -310,8 +298,6 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
     );
     assert!(!tool_trace_attrs.contains_key("arguments"));
     assert!(!tool_trace_attrs.contains_key("output"));
-    assert!(!tool_trace_attrs.contains_key("mcp_server"));
-    assert!(!tool_trace_attrs.contains_key("mcp_server_origin"));
 }
 
 #[test]
@@ -510,7 +496,6 @@ fn otel_export_routing_policy_routes_api_request_auth_observability() {
             /*auto_compact_token_limit*/ None,
             AskForApproval::Never,
             SandboxPolicy::DangerFullAccess,
-            Vec::new(),
         );
         let agent_identity_telemetry = AgentIdentityTelemetry {
             agent_id: "agent-runtime-otel".to_string(),

@@ -1455,7 +1455,7 @@ impl Inner {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Do not register a process session that can never receive environment
-        // notifications. Without this check, remote MCP startup could create a
+        // notifications. Without this check, remote process startup could create a
         // dead session and wait for process output that will never arrive.
         if let Some(message) = self.failure_message() {
             return Err(ExecServerError::Disconnected(message));
@@ -1531,7 +1531,7 @@ fn fail_all_sessions(inner: &Arc<Inner>, message: String) {
         session.network_policy_controller.store(None);
         // Sessions synthesize a closed read response and emit a pushed Failed
         // event. That covers both polling consumers and streaming consumers
-        // such as environment-backed MCP stdio.
+        // such as environment-backed process streams.
         session.set_failure(message.clone());
     }
 }

@@ -14,7 +14,6 @@ use codex_extension_api::ExtensionFuture;
 use codex_extension_api::ExtensionMetrics;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::ExtensionWarning;
-use codex_extension_api::McpServerContributionContext;
 use codex_extension_api::PromptFragment;
 use codex_extension_api::PromptSlot;
 use codex_extension_api::SkillInvocationContributor;
@@ -41,30 +40,6 @@ use codex_protocol::protocol::WarningEvent;
 use pretty_assertions::assert_eq;
 
 struct AllContributors;
-
-#[test]
-fn mcp_contribution_context_identifies_the_running_thread() {
-    let config = ();
-    let thread_init = ExtensionDataInit::new();
-    let thread_store = ExtensionData::new("child-thread");
-    let session_source = SessionSource::SubAgent(SubAgentSource::Review);
-
-    let thread_context = McpServerContributionContext::for_step(
-        &config,
-        &thread_init,
-        &thread_store,
-        "codex_work_cca",
-        &[],
-        /*executor_capability_discovery*/ None,
-    )
-    .with_session_source(&session_source);
-
-    assert_eq!(thread_context.session_source(), Some(&session_source));
-    assert_eq!(
-        McpServerContributionContext::global(&config).session_source(),
-        None
-    );
-}
 
 impl ContextContributor for AllContributors {
     fn contribute_thread_context<'a>(

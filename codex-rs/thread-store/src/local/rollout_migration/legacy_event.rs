@@ -1,7 +1,7 @@
 //! Converts legacy persisted events into modern paginated turn items.
 //!
 //! Legacy rollouts persisted events like `ExecCommandEnd`, `PatchApplyEnd`, and
-//! `McpToolCallEnd`. Paginated history instead persists `ItemCompleted(item)` records containing
+//! paginated history instead persists `ItemCompleted(item)` records containing
 //! canonical `TurnItem`s.
 //!
 //! This module owns that old-event -> new-item mapping, including stable synthesized item IDs.
@@ -18,9 +18,6 @@ use codex_protocol::items::EnteredReviewModeItem;
 use codex_protocol::items::ExitedReviewModeItem;
 use codex_protocol::items::FileChangeItem;
 use codex_protocol::items::ImageGenerationItem;
-use codex_protocol::items::McpToolCallError;
-use codex_protocol::items::McpToolCallItem;
-use codex_protocol::items::McpToolCallStatus;
 use codex_protocol::items::SubAgentActivityItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
@@ -107,45 +104,6 @@ pub(super) fn completed_item(
             }),
             (!event.turn_id.is_empty()).then(|| event.turn_id.clone()),
         )),
-        EventMsg::McpToolCallEnd(event) => {
-            let (result, error) = match &event.result {
-                Ok(result) => (Some(result.clone()), None),
-                Err(message) => (
-                    None,
-                    Some(McpToolCallError {
-                        message: message.clone(),
-                    }),
-                ),
-            };
-            Some((
-                TurnItem::McpToolCall(McpToolCallItem {
-                    id: event.call_id.clone(),
-                    server: event.invocation.server.clone(),
-                    tool: event.invocation.tool.clone(),
-                    arguments: event
-                        .invocation
-                        .arguments
-                        .clone()
-                        .unwrap_or(serde_json::Value::Null),
-                    connector_id: event.connector_id.clone(),
-                    mcp_app_resource_uri: event.mcp_app_resource_uri.clone(),
-                    link_id: event.link_id.clone(),
-                    app_name: event.app_name.clone(),
-                    action_name: event.action_name.clone(),
-                    plugin_id: event.plugin_id.clone(),
-                    read_only_hint: event.read_only_hint,
-                    status: if event.is_success() {
-                        McpToolCallStatus::Completed
-                    } else {
-                        McpToolCallStatus::Failed
-                    },
-                    result,
-                    error,
-                    duration: Some(event.duration),
-                }),
-                None,
-            ))
-        }
         EventMsg::WebSearchEnd(event) => Some((
             TurnItem::WebSearch(WebSearchItem {
                 id: event.call_id.clone(),

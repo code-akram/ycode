@@ -4,7 +4,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use sha2::Digest;
 use sha2::Sha256;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
@@ -19,14 +18,6 @@ const SESSION_HASH_BUFFER_SIZE: usize = 64 * 1024;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ImportedExternalAgentSessionLedger {
     records: Vec<ImportedExternalAgentSessionRecord>,
-    #[serde(default)]
-    detected_connector_records: Vec<DetectedExternalAgentSessionConnectorRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct DetectedExternalAgentSessionConnectorRecord {
-    source_path: PathBuf,
-    connector_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,8 +29,6 @@ struct ImportedExternalAgentSessionRecord {
     #[serde(default)]
     source_modified_at: Option<i64>,
     #[serde(default)]
-    connector_names: Vec<String>,
-    #[serde(default)]
     title: Option<String>,
 }
 
@@ -48,7 +37,6 @@ pub struct CompletedExternalAgentSessionImport {
     pub source_path: PathBuf,
     pub source_content_sha256: String,
     pub imported_thread_id: ThreadId,
-    pub connector_names: Vec<String>,
     pub title: Option<String>,
 }
 
@@ -60,12 +48,6 @@ pub(crate) enum SessionImportSourceMapping {
         imported_thread_id: ThreadId,
     },
     Ambiguous,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ImportedConnectorCandidate {
-    pub name: String,
-    pub session_count: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -94,7 +76,6 @@ pub(crate) fn record_imported_session(
             source_content_sha256: session_content_sha256(&source_path)?,
             source_path,
             imported_thread_id,
-            connector_names: Vec::new(),
             title: None,
         }],
     )
@@ -184,130 +165,20 @@ pub fn record_completed_session_imports(
             record.imported_thread_id = import.imported_thread_id;
             record.imported_at = imported_at;
             record.source_modified_at = source_modified_at.or(record.source_modified_at);
-            append_connector_names(&mut record.connector_names, import.connector_names);
             record.title = import.title;
             ledger.records.push(record);
             continue;
         }
-        let mut connector_names = Vec::new();
-        append_connector_names(&mut connector_names, import.connector_names);
         ledger.records.push(ImportedExternalAgentSessionRecord {
             source_path: import.source_path,
             content_sha256: import.source_content_sha256,
             imported_thread_id: import.imported_thread_id,
             imported_at,
             source_modified_at,
-            connector_names,
             title: import.title,
         });
     }
     save_import_ledger(codex_home, &ledger)
-}
-
-pub fn record_detected_session_connectors(
-    codex_home: &Path,
-    connector_names_by_source_path: BTreeMap<PathBuf, Vec<String>>,
-) -> io::Result<()> {
-    if connector_names_by_source_path.is_empty() {
-        return Ok(());
-    }
-    let mut ledger = load_import_ledger(codex_home)?;
-    for (source_path, connector_names) in connector_names_by_source_path {
-        let source_path = canonical_source_path(&source_path)?;
-        if let Some(record) = ledger
-            .detected_connector_records
-            .iter_mut()
-            .find(|record| record.source_path == source_path)
-        {
-            append_connector_names(&mut record.connector_names, connector_names);
-            continue;
-        }
-        let mut detected_connector_names = Vec::new();
-        append_connector_names(&mut detected_connector_names, connector_names);
-        ledger
-            .detected_connector_records
-            .push(DetectedExternalAgentSessionConnectorRecord {
-                source_path,
-                connector_names: detected_connector_names,
-            });
-    }
-    save_import_ledger(codex_home, &ledger)
-}
-
-pub fn append_imported_session_connector_names(
-    codex_home: &Path,
-    connector_names_by_source_path: BTreeMap<PathBuf, Vec<String>>,
-) -> io::Result<()> {
-    if connector_names_by_source_path.is_empty() {
-        return Ok(());
-    }
-    let mut ledger = load_import_ledger(codex_home)?;
-    for (source_path, connector_names) in connector_names_by_source_path {
-        let source_path = canonical_source_path(&source_path)?;
-        for record in ledger
-            .records
-            .iter_mut()
-            .filter(|record| record.source_path == source_path)
-        {
-            append_connector_names(&mut record.connector_names, connector_names.clone());
-        }
-    }
-    save_import_ledger(codex_home, &ledger)
-}
-
-pub fn read_imported_connector_candidates(
-    codex_home: &Path,
-) -> io::Result<Vec<ImportedConnectorCandidate>> {
-    let ledger = load_import_ledger(codex_home)?;
-    let mut connector_names_by_source = BTreeMap::<PathBuf, Vec<String>>::new();
-    for record in ledger.detected_connector_records {
-        connector_names_by_source
-            .entry(record.source_path)
-            .or_default()
-            .extend(record.connector_names);
-    }
-    for record in ledger.records {
-        connector_names_by_source
-            .entry(record.source_path)
-            .or_default()
-            .extend(record.connector_names);
-    }
-    let mut candidates_by_name = BTreeMap::<String, ImportedConnectorCandidate>::new();
-    for connector_names in connector_names_by_source.into_values() {
-        let mut connector_names_by_key = BTreeMap::new();
-        for name in connector_names
-            .into_iter()
-            .filter_map(|name| super::normalized_connector_display_name(Some(&name)))
-        {
-            connector_names_by_key
-                .entry(name.to_lowercase())
-                .or_insert(name);
-        }
-        for (key, name) in connector_names_by_key {
-            let candidate = candidates_by_name
-                .entry(key)
-                .or_insert(ImportedConnectorCandidate {
-                    name,
-                    session_count: 0,
-                });
-            candidate.session_count = candidate.session_count.saturating_add(1);
-        }
-    }
-    let mut candidates = candidates_by_name.into_values().collect::<Vec<_>>();
-    candidates.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(candidates)
-}
-
-fn append_connector_names(connector_names: &mut Vec<String>, additional_names: Vec<String>) {
-    for name in additional_names {
-        if connector_names
-            .iter()
-            .any(|existing_name| existing_name.eq_ignore_ascii_case(&name))
-        {
-            continue;
-        }
-        connector_names.push(name);
-    }
 }
 
 impl ImportedExternalAgentSessionLedger {

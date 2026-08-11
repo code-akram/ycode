@@ -72,27 +72,6 @@ fn default_enabled_features_are_stable() {
 }
 
 #[test]
-fn removed_apps_mcp_path_override_shapes_are_ignored() {
-    let features = [
-        toml::from_str::<FeaturesToml>("apps_mcp_path_override = true")
-            .expect("boolean compatibility form should deserialize"),
-        toml::from_str::<FeaturesToml>(
-            r#"
-[apps_mcp_path_override]
-enabled = true
-path = "/custom/mcp"
-"#,
-        )
-        .expect("structured compatibility form should deserialize"),
-    ];
-
-    assert_eq!(
-        features.map(|features| features.entries()),
-        [BTreeMap::new(), BTreeMap::new()]
-    );
-}
-
-#[test]
 fn code_mode_only_requires_code_mode() {
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeModeOnly);
@@ -242,16 +221,6 @@ fn collab_is_legacy_alias_for_multi_agent() {
 fn codex_hooks_is_legacy_alias_for_hooks() {
     assert_eq!(feature_for_key("hooks"), Some(Feature::CodexHooks));
     assert_eq!(feature_for_key("codex_hooks"), Some(Feature::CodexHooks));
-}
-
-#[test]
-fn apps_require_feature_flag_and_chatgpt_auth() {
-    let mut features = Features::with_defaults();
-    assert!(!features.apps_enabled_for_auth(/*has_chatgpt_auth*/ false));
-
-    features.enable(Feature::Apps);
-    assert!(!features.apps_enabled_for_auth(/*has_chatgpt_auth*/ false));
-    assert!(features.apps_enabled_for_auth(/*has_chatgpt_auth*/ true));
 }
 
 #[test]
@@ -413,25 +382,6 @@ fn from_sources_ignores_removed_plugin_hooks_feature_key() {
 }
 
 #[test]
-fn from_sources_ignores_removed_tool_search_always_defer_mcp_tools_feature_key() {
-    let features_toml = FeaturesToml::from(BTreeMap::from([(
-        "tool_search_always_defer_mcp_tools".to_string(),
-        false,
-    )]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
-}
-
-#[test]
 fn multi_agent_v2_feature_config_deserializes_boolean_toggle() {
     let features: FeaturesToml = toml::from_str(
         r#"
@@ -500,53 +450,11 @@ non_code_mode_only = true
 }
 
 #[test]
-fn non_prefixed_mcp_tool_names_feature_config_deserializes_boolean_toggle() {
-    let features: FeaturesToml = toml::from_str("non_prefixed_mcp_tool_names = true")
-        .expect("features table should deserialize");
-
-    assert_eq!(
-        features.entries(),
-        BTreeMap::from([("non_prefixed_mcp_tool_names".to_string(), true)])
-    );
-    assert_eq!(
-        features.non_prefixed_mcp_tool_names,
-        Some(FeatureToml::Enabled(true))
-    );
-}
-
-#[test]
-fn non_prefixed_mcp_tool_names_feature_config_deserializes_table() {
-    let features: FeaturesToml = toml::from_str(
-        r#"
-[non_prefixed_mcp_tool_names]
-enabled = true
-server_names = ["history", "notes"]
-"#,
-    )
-    .expect("features table should deserialize");
-
-    assert_eq!(
-        features.entries(),
-        BTreeMap::from([("non_prefixed_mcp_tool_names".to_string(), true)])
-    );
-    assert_eq!(
-        features.non_prefixed_mcp_tool_names,
-        Some(FeatureToml::Config(
-            crate::NonPrefixedMcpToolNamesConfigToml {
-                enabled: Some(true),
-                server_names: Some(vec!["history".to_string(), "notes".to_string()]),
-            }
-        ))
-    );
-}
-
-#[test]
 fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config() {
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeMode);
     features.enable(Feature::MultiAgentV2);
     features.enable(Feature::NetworkProxy);
-    features.enable(Feature::NonPrefixedMcpToolNames);
     features.enable(Feature::RespectSystemProxy);
 
     let mut features_toml = FeaturesToml {
@@ -568,12 +476,6 @@ fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config(
             proxy_url: Some("http://127.0.0.1:43128".to_string()),
             ..Default::default()
         })),
-        non_prefixed_mcp_tool_names: Some(FeatureToml::Config(
-            crate::NonPrefixedMcpToolNamesConfigToml {
-                enabled: Some(false),
-                server_names: Some(vec!["history".to_string(), "notes".to_string()]),
-            },
-        )),
         entries: BTreeMap::new(),
         ..Default::default()
     };
@@ -619,15 +521,6 @@ fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config(
             proxy_url: Some("http://127.0.0.1:43128".to_string()),
             ..Default::default()
         }))
-    );
-    assert_eq!(
-        features_toml.non_prefixed_mcp_tool_names,
-        Some(FeatureToml::Config(
-            crate::NonPrefixedMcpToolNamesConfigToml {
-                enabled: Some(true),
-                server_names: Some(vec!["history".to_string(), "notes".to_string()]),
-            }
-        ))
     );
     let replayed = Features::from_sources(
         FeatureConfigSource {

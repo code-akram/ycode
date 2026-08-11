@@ -410,7 +410,6 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
         rules: true,
         skill_approval: true,
         request_permissions: false,
-        mcp_elicitations: true,
     });
     let permission_profile = CorePermissionProfile::read_only();
     let permission_profile_for_config = CorePermissionProfile::read_only();

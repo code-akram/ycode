@@ -4,14 +4,15 @@ use codex_code_mode_protocol::DEFAULT_IMAGE_DETAIL;
 use codex_code_mode_protocol::FunctionCallOutputContentItem;
 use codex_code_mode_protocol::ImageDetail;
 
-const IMAGE_HELPER_EXPECTS_MESSAGE: &str = "image expects a non-empty image URL string, an object with image_url and optional detail, or a raw MCP image block";
-const AUDIO_HELPER_EXPECTS_MESSAGE: &str = "audio expects a non-empty audio URL string, an object with audio_url, or a raw MCP audio block";
+const IMAGE_HELPER_EXPECTS_MESSAGE: &str =
+    "image expects a non-empty image URL string or an object with image_url and optional detail";
+const AUDIO_HELPER_EXPECTS_MESSAGE: &str =
+    "audio expects a non-empty audio URL string or an object with audio_url";
 const REMOTE_IMAGE_URL_ERROR: &str = "Tool call failed: remote image URLs are not supported in tool outputs. Pass a base64 data URI instead";
 const INVALID_IMAGE_URL_ERROR: &str =
     "Tool call failed: invalid image output. Pass a base64 data URI instead";
 const INVALID_AUDIO_URL_ERROR: &str =
     "Tool call failed: invalid audio output. Pass a base64 data URI instead";
-const CODEX_IMAGE_DETAIL_META_KEY: &str = "codex/imageDetail";
 
 pub(super) fn serialize_output_text(
     scope: &mut v8::PinScope<'_, '_>,
@@ -52,11 +53,7 @@ pub(super) fn normalize_output_image(
         } else if value.is_object() && !value.is_array() {
             let object = v8::Local::<v8::Object>::try_from(value)
                 .map_err(|_| IMAGE_HELPER_EXPECTS_MESSAGE.to_string())?;
-            if let Some(image) = parse_non_mcp_output_image(scope, object)? {
-                image
-            } else {
-                parse_mcp_output_image(scope, value)?
-            }
+            parse_output_image(scope, object)?
         } else {
             return Err(IMAGE_HELPER_EXPECTS_MESSAGE.to_string());
         };
@@ -105,17 +102,17 @@ pub(super) fn normalize_output_image(
     }
 }
 
-fn parse_non_mcp_output_image(
+fn parse_output_image(
     scope: &mut v8::PinScope<'_, '_>,
     object: v8::Local<'_, v8::Object>,
-) -> Result<Option<(String, Option<String>)>, String> {
+) -> Result<(String, Option<String>), String> {
     let image_url_key = v8::String::new(scope, "image_url")
         .ok_or_else(|| "failed to allocate image helper keys".to_string())?;
     let Some(image_url) = object.get(scope, image_url_key.into()) else {
-        return Ok(None);
+        return Err(IMAGE_HELPER_EXPECTS_MESSAGE.to_string());
     };
     if image_url.is_undefined() {
-        return Ok(None);
+        return Err(IMAGE_HELPER_EXPECTS_MESSAGE.to_string());
     }
     if !image_url.is_string() {
         return Err(IMAGE_HELPER_EXPECTS_MESSAGE.to_string());
@@ -123,54 +120,7 @@ fn parse_non_mcp_output_image(
     let detail_key = v8::String::new(scope, "detail")
         .ok_or_else(|| "failed to allocate image helper keys".to_string())?;
     let detail = parse_image_detail_value(scope, object.get(scope, detail_key.into()))?;
-    Ok(Some((image_url.to_rust_string_lossy(scope), detail)))
-}
-
-fn parse_mcp_output_image(
-    scope: &mut v8::PinScope<'_, '_>,
-    value: v8::Local<'_, v8::Value>,
-) -> Result<(String, Option<String>), String> {
-    let Some(result) = v8_value_to_json(scope, value)? else {
-        return Err(IMAGE_HELPER_EXPECTS_MESSAGE.to_string());
-    };
-    let JsonValue::Object(result) = result else {
-        return Err(IMAGE_HELPER_EXPECTS_MESSAGE.to_string());
-    };
-    let Some(item_type) = result.get("type").and_then(JsonValue::as_str) else {
-        return Err(IMAGE_HELPER_EXPECTS_MESSAGE.to_string());
-    };
-    if item_type != "image" {
-        return Err(format!(
-            "image only accepts MCP image blocks, got \"{item_type}\""
-        ));
-    }
-    let data = result
-        .get("data")
-        .and_then(JsonValue::as_str)
-        .ok_or_else(|| "image expected MCP image data".to_string())?;
-    if data.is_empty() {
-        return Err("image expected MCP image data".to_string());
-    }
-
-    let image_url = if data.to_ascii_lowercase().starts_with("data:") {
-        data.to_string()
-    } else {
-        let mime_type = result
-            .get("mimeType")
-            .or_else(|| result.get("mime_type"))
-            .and_then(JsonValue::as_str)
-            .filter(|mime_type| !mime_type.is_empty())
-            .unwrap_or("application/octet-stream");
-        format!("data:{mime_type};base64,{data}")
-    };
-    let detail = result
-        .get("_meta")
-        .and_then(JsonValue::as_object)
-        .and_then(|meta| meta.get(CODEX_IMAGE_DETAIL_META_KEY))
-        .and_then(JsonValue::as_str)
-        .filter(|detail| matches!(*detail, "auto" | "low" | "high" | "original"))
-        .map(str::to_string);
-    Ok((image_url, detail))
+    Ok((image_url.to_rust_string_lossy(scope), detail))
 }
 
 fn parse_image_detail_value<'s>(
@@ -195,11 +145,7 @@ pub(super) fn normalize_output_audio(
         } else if value.is_object() && !value.is_array() {
             let object = v8::Local::<v8::Object>::try_from(value)
                 .map_err(|_| AUDIO_HELPER_EXPECTS_MESSAGE.to_string())?;
-            if let Some(audio_url) = parse_non_mcp_output_audio(scope, object)? {
-                audio_url
-            } else {
-                parse_mcp_output_audio(scope, value)?
-            }
+            parse_output_audio(scope, object)?
         } else {
             return Err(AUDIO_HELPER_EXPECTS_MESSAGE.to_string());
         };
@@ -226,61 +172,22 @@ pub(super) fn normalize_output_audio(
     }
 }
 
-fn parse_non_mcp_output_audio(
+fn parse_output_audio(
     scope: &mut v8::PinScope<'_, '_>,
     object: v8::Local<'_, v8::Object>,
-) -> Result<Option<String>, String> {
+) -> Result<String, String> {
     let audio_url_key = v8::String::new(scope, "audio_url")
         .ok_or_else(|| "failed to allocate audio helper keys".to_string())?;
     let Some(audio_url) = object.get(scope, audio_url_key.into()) else {
-        return Ok(None);
+        return Err(AUDIO_HELPER_EXPECTS_MESSAGE.to_string());
     };
     if audio_url.is_undefined() {
-        return Ok(None);
+        return Err(AUDIO_HELPER_EXPECTS_MESSAGE.to_string());
     }
     if !audio_url.is_string() {
         return Err(AUDIO_HELPER_EXPECTS_MESSAGE.to_string());
     }
-    Ok(Some(audio_url.to_rust_string_lossy(scope)))
-}
-
-fn parse_mcp_output_audio(
-    scope: &mut v8::PinScope<'_, '_>,
-    value: v8::Local<'_, v8::Value>,
-) -> Result<String, String> {
-    let Some(result) = v8_value_to_json(scope, value)? else {
-        return Err(AUDIO_HELPER_EXPECTS_MESSAGE.to_string());
-    };
-    let JsonValue::Object(result) = result else {
-        return Err(AUDIO_HELPER_EXPECTS_MESSAGE.to_string());
-    };
-    let Some(item_type) = result.get("type").and_then(JsonValue::as_str) else {
-        return Err(AUDIO_HELPER_EXPECTS_MESSAGE.to_string());
-    };
-    if item_type != "audio" {
-        return Err(format!(
-            "audio only accepts MCP audio blocks, got \"{item_type}\""
-        ));
-    }
-    let data = result
-        .get("data")
-        .and_then(JsonValue::as_str)
-        .ok_or_else(|| "audio expected MCP audio data".to_string())?;
-    if data.is_empty() {
-        return Err("audio expected MCP audio data".to_string());
-    }
-
-    if data.to_ascii_lowercase().starts_with("data:") {
-        Ok(data.to_string())
-    } else {
-        let mime_type = result
-            .get("mimeType")
-            .or_else(|| result.get("mime_type"))
-            .and_then(JsonValue::as_str)
-            .filter(|mime_type| !mime_type.is_empty())
-            .unwrap_or("application/octet-stream");
-        Ok(format!("data:{mime_type};base64,{data}"))
-    }
+    Ok(audio_url.to_rust_string_lossy(scope))
 }
 
 pub(super) fn v8_value_to_json(

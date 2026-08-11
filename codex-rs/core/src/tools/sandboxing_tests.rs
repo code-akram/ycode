@@ -78,7 +78,6 @@ fn default_exec_approval_requirement_rejects_sandbox_prompt_when_granular_disabl
         rules: true,
         skill_approval: true,
         request_permissions: true,
-        mcp_elicitations: true,
     });
 
     let requirement =
@@ -99,7 +98,6 @@ fn default_exec_approval_requirement_keeps_prompt_when_granular_allows_sandbox_a
         rules: false,
         skill_approval: true,
         request_permissions: true,
-        mcp_elicitations: false,
     });
 
     let requirement =

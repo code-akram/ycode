@@ -141,7 +141,6 @@ fn save_config_resolved_fields(
     lock_config.plan_mode_reasoning_effort = config.plan_mode_reasoning_effort.clone();
     lock_config.model_verbosity = config.model_verbosity;
     lock_config.include_permissions_instructions = Some(config.include_permissions_instructions);
-    lock_config.include_apps_instructions = Some(config.include_apps_instructions);
     lock_config.include_collaboration_mode_instructions =
         Some(config.include_collaboration_mode_instructions);
     lock_config.include_environment_context = Some(config.include_environment_context);
@@ -207,13 +206,6 @@ fn save_config_resolved_fields(
         .skills
         .get_or_insert_with(OrchestratorFeatureToml::default)
         .enabled = Some(config.orchestrator_skills_enabled);
-    lock_config
-        .orchestrator
-        .get_or_insert_with(OrchestratorToml::default)
-        .mcp
-        .get_or_insert_with(Default::default)
-        .enabled = Some(config.orchestrator_mcp_enabled);
-
     Ok(())
 }
 
@@ -558,32 +550,6 @@ sandbox_private_desktop = false
             "{message}"
         );
         assert!(message.contains("model = "), "{message}");
-    }
-
-    #[tokio::test]
-    async fn lock_validation_ignores_removed_apps_mcp_path_override() {
-        let sc = crate::session::tests::make_session_configuration_for_tests().await;
-        let actual = sc.to_config_lockfile_toml().expect("lock should serialize");
-        let mut expected_value = toml::Value::try_from(&actual).expect("lock should become TOML");
-        expected_value["config"]["features"]
-            .as_table_mut()
-            .expect("features should be a table")
-            .insert(
-                "apps_mcp_path_override".to_string(),
-                toml::Value::Table(toml::Table::from_iter([
-                    ("enabled".to_string(), toml::Value::Boolean(true)),
-                    (
-                        "path".to_string(),
-                        toml::Value::String("/custom/mcp".to_string()),
-                    ),
-                ])),
-            );
-        let expected: ConfigLockfileToml = expected_value
-            .try_into()
-            .expect("lock with removed input should deserialize");
-
-        validate_config_lock_replay(&expected, &actual, ConfigLockReplayOptions::default())
-            .expect("removed compatibility input should not cause lock drift");
     }
 
     #[tokio::test]

@@ -222,8 +222,8 @@ pub(crate) struct PreToolUsePayload {
     pub(crate) tool_name: HookToolName,
     /// Tool-specific input exposed at `tool_input`.
     ///
-    /// Shell-like tools use `{ "command": ... }`; MCP tools use their resolved
-    /// JSON arguments.
+    /// Shell-like tools use `{ "command": ... }`; other tools use their
+    /// resolved JSON arguments.
     pub(crate) tool_input: Value,
 }
 
@@ -504,7 +504,6 @@ impl ToolRegistry {
                     /*success*/ false,
                     &message,
                     &base_tool_result_tags,
-                    /*extra_trace_fields*/ &[],
                 );
                 let err = FunctionCallError::RespondToModel(message);
                 dispatch_trace.record_failed(&err);
@@ -514,14 +513,9 @@ impl ToolRegistry {
         let telemetry_tags = tool.telemetry_tags(&invocation);
         let mut tool_result_tags =
             Vec::with_capacity(base_tool_result_tags.len() + telemetry_tags.len() + 1);
-        let mut extra_trace_fields = Vec::new();
         tool_result_tags.extend_from_slice(&base_tool_result_tags);
         for (key, value) in &telemetry_tags {
-            if matches!(*key, "mcp_server" | "mcp_server_origin") {
-                extra_trace_fields.push((*key, value.as_str()));
-            } else {
-                tool_result_tags.push((*key, value.as_str()));
-            }
+            tool_result_tags.push((*key, value.as_str()));
         }
         if !tool.matches_kind(&invocation.payload) {
             let message = format!("tool {tool_name} invoked with incompatible payload");
@@ -534,7 +528,6 @@ impl ToolRegistry {
                 /*success*/ false,
                 &message,
                 &tool_result_tags,
-                &extra_trace_fields,
             );
             let err = FunctionCallError::Fatal(message);
             dispatch_trace.record_failed(&err);
@@ -615,7 +608,6 @@ impl ToolRegistry {
                 &call_id_owned,
                 log_payload.as_ref(),
                 &tool_result_tags,
-                &extra_trace_fields,
                 || {
                     let tool = tool.clone();
                     let response_cell = &response_cell;

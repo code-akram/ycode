@@ -39,11 +39,6 @@ pub(crate) fn clear_config_value(key_path: impl Into<String>) -> ConfigEdit {
     replace_config_value(key_path, JsonValue::Null)
 }
 
-pub(crate) fn app_scoped_key_path(app_id: &str, key_path: &str) -> String {
-    let app_id = serde_json::Value::String(app_id.to_string()).to_string();
-    format!("apps.{app_id}.{key_path}")
-}
-
 pub(crate) fn format_config_error(err: &impl Display) -> String {
     format!("{err:#}")
 }

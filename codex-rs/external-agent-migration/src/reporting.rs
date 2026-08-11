@@ -11,7 +11,6 @@ fn migration_item_type_label(item_type: ExternalAgentConfigMigrationItemType) ->
         ExternalAgentConfigMigrationItemType::Skills => "skills",
         ExternalAgentConfigMigrationItemType::AgentsMd => "agents_md",
         ExternalAgentConfigMigrationItemType::Plugins => "plugins",
-        ExternalAgentConfigMigrationItemType::McpServerConfig => "mcp_server_config",
         ExternalAgentConfigMigrationItemType::Subagents => "subagents",
         ExternalAgentConfigMigrationItemType::Hooks => "hooks",
         ExternalAgentConfigMigrationItemType::Commands => "commands",

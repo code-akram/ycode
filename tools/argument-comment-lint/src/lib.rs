@@ -281,7 +281,7 @@ fn is_workspace_crate_name(name: &str) -> bool {
     name.starts_with("codex_")
         || matches!(
             name,
-            "app_test_support" | "core_test_support" | "mcp_test_support"
+            "app_test_support" | "core_test_support"
         )
 }
 

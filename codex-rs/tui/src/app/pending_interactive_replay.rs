@@ -6,26 +6,11 @@ use codex_app_server_protocol::ThreadItem;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ElicitationRequestKey {
-    server_name: String,
-    request_id: AppServerRequestId,
-}
-
-impl ElicitationRequestKey {
-    fn new(server_name: String, request_id: AppServerRequestId) -> Self {
-        Self {
-            server_name,
-            request_id,
-        }
-    }
-}
-
 #[derive(Debug, Default)]
 // Tracks which interactive prompts are still unresolved in the thread-event buffer.
 //
 // Thread snapshots are replayed when switching threads/agents. Most events should replay
-// verbatim, but interactive prompts (approvals, request_user_input, MCP elicitations) must
+// verbatim, but interactive prompts (approvals and request_user_input) must
 // only replay if they are still pending. This state is updated from:
 // - inbound events (`note_event`)
 // - outbound ops that resolve a prompt (`note_outbound_op`)
@@ -40,7 +25,6 @@ pub(super) struct PendingInteractiveReplayState {
     exec_approval_call_ids_by_turn_id: HashMap<String, Vec<String>>,
     patch_approval_call_ids: HashSet<String>,
     patch_approval_call_ids_by_turn_id: HashMap<String, Vec<String>>,
-    elicitation_requests: HashSet<ElicitationRequestKey>,
     request_permissions_call_ids: HashSet<String>,
     request_permissions_call_ids_by_turn_id: HashMap<String, Vec<String>>,
     request_user_input_call_ids: HashSet<String>,
@@ -58,7 +42,6 @@ enum PendingInteractiveRequest {
         turn_id: String,
         item_id: String,
     },
-    Elicitation(ElicitationRequestKey),
     RequestPermissions {
         turn_id: String,
         item_id: String,
@@ -79,7 +62,6 @@ impl PendingInteractiveReplayState {
             &op,
             AppCommand::ExecApproval { .. }
                 | AppCommand::PatchApproval { .. }
-                | AppCommand::ResolveElicitation { .. }
                 | AppCommand::RequestPermissionsResponse { .. }
                 | AppCommand::UserInputAnswer { .. }
         )
@@ -111,22 +93,6 @@ impl PendingInteractiveReplayState {
                 );
                 self.pending_requests_by_request_id
                     .retain(|_, pending| !matches!(pending, PendingInteractiveRequest::PatchApproval { item_id, .. } if item_id == id));
-            }
-            AppCommand::ResolveElicitation {
-                server_name,
-                request_id,
-                ..
-            } => {
-                self.elicitation_requests
-                    .remove(&ElicitationRequestKey::new(
-                        server_name.to_string(),
-                        request_id.clone(),
-                    ));
-                self.pending_requests_by_request_id.retain(
-                    |_, pending| {
-                        !matches!(pending, PendingInteractiveRequest::Elicitation(key) if key.server_name == *server_name && key.request_id == *request_id)
-                    },
-                );
             }
             AppCommand::RequestPermissionsResponse { id, .. } => {
                 self.request_permissions_call_ids.remove(id);
@@ -202,15 +168,6 @@ impl PendingInteractiveReplayState {
                         turn_id: params.turn_id.clone(),
                         item_id: params.item_id.clone(),
                     },
-                );
-            }
-            ServerRequest::McpServerElicitationRequest { request_id, params } => {
-                let key =
-                    ElicitationRequestKey::new(params.server_name.clone(), request_id.clone());
-                self.elicitation_requests.insert(key.clone());
-                self.pending_requests_by_request_id.insert(
-                    request_id.clone(),
-                    PendingInteractiveRequest::Elicitation(key),
                 );
             }
             ServerRequest::ToolRequestUserInput { request_id, params } => {
@@ -302,13 +259,6 @@ impl PendingInteractiveReplayState {
                     &params.item_id,
                 );
             }
-            ServerRequest::McpServerElicitationRequest { request_id, params } => {
-                self.elicitation_requests
-                    .remove(&ElicitationRequestKey::new(
-                        params.server_name.clone(),
-                        request_id.clone(),
-                    ));
-            }
             ServerRequest::ToolRequestUserInput { params, .. } => {
                 self.request_user_input_call_ids.remove(&params.item_id);
                 let mut remove_turn_entry = false;
@@ -357,12 +307,6 @@ impl PendingInteractiveReplayState {
             ServerRequest::FileChangeRequestApproval { params, .. } => {
                 self.patch_approval_call_ids.contains(&params.item_id)
             }
-            ServerRequest::McpServerElicitationRequest { request_id, params } => self
-                .elicitation_requests
-                .contains(&ElicitationRequestKey::new(
-                    params.server_name.clone(),
-                    request_id.clone(),
-                )),
             ServerRequest::ToolRequestUserInput { params, .. } => {
                 self.request_user_input_call_ids.contains(&params.item_id)
             }
@@ -376,7 +320,6 @@ impl PendingInteractiveReplayState {
     pub(super) fn has_pending_thread_approvals(&self) -> bool {
         !self.exec_approval_call_ids.is_empty()
             || !self.patch_approval_call_ids.is_empty()
-            || !self.elicitation_requests.is_empty()
             || !self.request_permissions_call_ids.is_empty()
     }
 
@@ -468,7 +411,6 @@ impl PendingInteractiveReplayState {
         self.exec_approval_call_ids_by_turn_id.clear();
         self.patch_approval_call_ids.clear();
         self.patch_approval_call_ids_by_turn_id.clear();
-        self.elicitation_requests.clear();
         self.request_permissions_call_ids.clear();
         self.request_permissions_call_ids_by_turn_id.clear();
         self.request_user_input_call_ids.clear();
@@ -499,9 +441,6 @@ impl PendingInteractiveReplayState {
                     &turn_id,
                     &item_id,
                 );
-            }
-            PendingInteractiveRequest::Elicitation(key) => {
-                self.elicitation_requests.remove(&key);
             }
             PendingInteractiveRequest::RequestPermissions { turn_id, item_id } => {
                 self.request_permissions_call_ids.remove(&item_id);
@@ -542,10 +481,6 @@ impl PendingInteractiveReplayState {
                 ServerRequest::FileChangeRequestApproval { params, .. },
             ) => turn_id == &params.turn_id && item_id == &params.item_id,
             (
-                PendingInteractiveRequest::Elicitation(key),
-                ServerRequest::McpServerElicitationRequest { request_id, params },
-            ) => key.server_name == params.server_name && key.request_id == *request_id,
-            (
                 PendingInteractiveRequest::RequestPermissions { turn_id, item_id },
                 ServerRequest::PermissionsRequestApproval { params, .. },
             ) => turn_id == &params.turn_id && item_id == &params.item_id,
@@ -566,11 +501,6 @@ mod tests {
     use codex_app_server_protocol::CommandExecutionApprovalDecision;
     use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
     use codex_app_server_protocol::FileChangeRequestApprovalParams;
-    use codex_app_server_protocol::McpElicitationObjectType;
-    use codex_app_server_protocol::McpElicitationSchema;
-    use codex_app_server_protocol::McpServerElicitationAction;
-    use codex_app_server_protocol::McpServerElicitationRequest;
-    use codex_app_server_protocol::McpServerElicitationRequestParams;
     use codex_app_server_protocol::RequestId as AppServerRequestId;
     use codex_app_server_protocol::ServerNotification;
     use codex_app_server_protocol::ServerRequest;
@@ -584,7 +514,6 @@ mod tests {
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
     use pretty_assertions::assert_eq;
-    use std::collections::BTreeMap;
     use std::collections::HashMap;
 
     fn request_user_input_request(call_id: &str, turn_id: &str) -> ServerRequest {
@@ -638,27 +567,6 @@ mod tests {
                 started_at_ms: 0,
                 reason: None,
                 grant_root: None,
-            },
-        }
-    }
-
-    fn elicitation_request(server_name: &str, request_id: &str, turn_id: &str) -> ServerRequest {
-        ServerRequest::McpServerElicitationRequest {
-            request_id: AppServerRequestId::String(request_id.to_string()),
-            params: McpServerElicitationRequestParams {
-                thread_id: "thread-1".to_string(),
-                turn_id: Some(turn_id.to_string()),
-                server_name: server_name.to_string(),
-                request: McpServerElicitationRequest::Form {
-                    meta: None,
-                    message: "Please confirm".to_string(),
-                    requested_schema: McpElicitationSchema {
-                        schema_uri: None,
-                        type_: McpElicitationObjectType::Object,
-                        properties: BTreeMap::new(),
-                        required: None,
-                    },
-                },
             },
         }
     }
@@ -896,27 +804,6 @@ mod tests {
                     )
             )
         }));
-    }
-
-    #[test]
-    fn thread_event_snapshot_drops_resolved_elicitation_after_outbound_resolution() {
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        let request_id = AppServerRequestId::String("request-1".to_string());
-        store.push_request(elicitation_request("server-1", "request-1", "turn-1"));
-
-        store.note_outbound_op(&Op::ResolveElicitation {
-            server_name: "server-1".to_string(),
-            request_id,
-            decision: McpServerElicitationAction::Accept,
-            content: None,
-            meta: None,
-        });
-
-        let snapshot = store.snapshot();
-        assert!(
-            snapshot.events.is_empty(),
-            "resolved elicitation prompt should not replay on thread switch"
-        );
     }
 
     #[test]

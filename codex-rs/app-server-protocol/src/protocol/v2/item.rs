@@ -1,7 +1,5 @@
 use super::AdditionalPermissionProfile;
 use super::ExecPolicyAmendment;
-use super::McpToolCallError;
-use super::McpToolCallResult;
 use super::NetworkApprovalContext;
 use super::NetworkApprovalProtocol;
 use super::NetworkPolicyAmendment;
@@ -27,7 +25,6 @@ use codex_protocol::items::CollabAgentTool as CoreCollabAgentTool;
 use codex_protocol::items::CollabAgentToolCallStatus as CoreCollabAgentToolCallStatus;
 use codex_protocol::items::CommandExecutionStatus as CoreCommandExecutionStatus;
 use codex_protocol::items::DynamicToolCallStatus as CoreDynamicToolCallStatus;
-use codex_protocol::items::McpToolCallStatus as CoreMcpToolCallStatus;
 use codex_protocol::items::TurnItem as CoreTurnItem;
 use codex_protocol::memory_citation::MemoryCitation as CoreMemoryCitation;
 use codex_protocol::memory_citation::MemoryCitationEntry as CoreMemoryCitationEntry;
@@ -304,27 +301,6 @@ pub enum ThreadItem {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
-    McpToolCall {
-        id: String,
-        server: String,
-        tool: String,
-        status: McpToolCallStatus,
-        arguments: JsonValue,
-        app_context: Option<McpToolCallAppContext>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional)]
-        /// Deprecated: use `appContext.resourceUri` instead.
-        mcp_app_resource_uri: Option<String>,
-        plugin_id: Option<String>,
-        read_only_hint: Option<bool>,
-        result: Option<Box<McpToolCallResult>>,
-        error: Option<McpToolCallError>,
-        /// The duration of the MCP tool call in milliseconds.
-        #[ts(type = "number | null")]
-        duration_ms: Option<i64>,
-    },
-    #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     DynamicToolCall {
         id: String,
         namespace: Option<String>,
@@ -399,17 +375,6 @@ pub enum ThreadItem {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase", export_to = "v2/")]
-pub struct McpToolCallAppContext {
-    pub connector_id: String,
-    pub link_id: Option<String>,
-    pub resource_uri: Option<String>,
-    pub app_name: Option<String>,
-    pub action_name: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase", export_to = "v2/")]
 pub struct HookPromptFragment {
     pub text: String,
     pub hook_run_id: String,
@@ -425,7 +390,6 @@ impl ThreadItem {
             | ThreadItem::Reasoning { id, .. }
             | ThreadItem::CommandExecution { id, .. }
             | ThreadItem::FileChange { id, .. }
-            | ThreadItem::McpToolCall { id, .. }
             | ThreadItem::DynamicToolCall { id, .. }
             | ThreadItem::CollabAgentToolCall { id, .. }
             | ThreadItem::SubAgentActivity { id, .. }
@@ -592,17 +556,6 @@ pub struct GuardianNetworkAccessReviewAction {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct GuardianMcpToolCallReviewAction {
-    pub server: String,
-    pub tool_name: String,
-    pub connector_id: Option<String>,
-    pub connector_name: Option<String>,
-    pub tool_title: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
 pub struct GuardianRequestPermissionsReviewAction {
     pub reason: Option<String>,
     pub permissions: RequestPermissionProfile,
@@ -641,15 +594,6 @@ pub enum GuardianApprovalReviewAction {
         host: String,
         protocol: NetworkApprovalProtocol,
         port: u16,
-    },
-    #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
-    McpToolCall {
-        server: String,
-        tool_name: String,
-        connector_id: Option<String>,
-        connector_name: Option<String>,
-        tool_title: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
@@ -695,19 +639,6 @@ impl From<CoreGuardianAssessmentAction> for GuardianApprovalReviewAction {
                 host,
                 protocol: protocol.into(),
                 port,
-            },
-            CoreGuardianAssessmentAction::McpToolCall {
-                server,
-                tool_name,
-                connector_id,
-                connector_name,
-                tool_title,
-            } => Self::McpToolCall {
-                server,
-                tool_name,
-                connector_id,
-                connector_name,
-                tool_title,
             },
             CoreGuardianAssessmentAction::RequestPermissions {
                 reason,
@@ -758,19 +689,6 @@ impl TryFrom<GuardianApprovalReviewAction> for CoreGuardianAssessmentAction {
                 host,
                 protocol: protocol.to_core(),
                 port,
-            },
-            GuardianApprovalReviewAction::McpToolCall {
-                server,
-                tool_name,
-                connector_id,
-                connector_name,
-                tool_title,
-            } => Self::McpToolCall {
-                server,
-                tool_name,
-                connector_id,
-                connector_name,
-                tool_title,
             },
             GuardianApprovalReviewAction::RequestPermissions {
                 reason,
@@ -949,32 +867,6 @@ impl From<CoreTurnItem> for ThreadItem {
                     .map(PatchApplyStatus::from)
                     .unwrap_or(PatchApplyStatus::InProgress),
             },
-            CoreTurnItem::McpToolCall(mcp) => {
-                let duration_ms = mcp
-                    .duration
-                    .and_then(|duration| i64::try_from(duration.as_millis()).ok());
-
-                ThreadItem::McpToolCall {
-                    id: mcp.id,
-                    server: mcp.server,
-                    tool: mcp.tool,
-                    status: McpToolCallStatus::from(mcp.status),
-                    arguments: mcp.arguments,
-                    app_context: mcp.connector_id.map(|connector_id| McpToolCallAppContext {
-                        connector_id,
-                        link_id: mcp.link_id,
-                        resource_uri: mcp.mcp_app_resource_uri.clone(),
-                        app_name: mcp.app_name,
-                        action_name: mcp.action_name,
-                    }),
-                    mcp_app_resource_uri: mcp.mcp_app_resource_uri,
-                    plugin_id: mcp.plugin_id,
-                    read_only_hint: mcp.read_only_hint,
-                    result: mcp.result.map(McpToolCallResult::from).map(Box::new),
-                    error: mcp.error.map(McpToolCallError::from),
-                    duration_ms,
-                }
-            }
             CoreTurnItem::ContextCompaction(compaction) => {
                 ThreadItem::ContextCompaction { id: compaction.id }
             }
@@ -1095,16 +987,6 @@ impl From<&CorePatchApplyStatus> for PatchApplyStatus {
     }
 }
 
-impl From<CoreMcpToolCallStatus> for McpToolCallStatus {
-    fn from(value: CoreMcpToolCallStatus) -> Self {
-        match value {
-            CoreMcpToolCallStatus::InProgress => McpToolCallStatus::InProgress,
-            CoreMcpToolCallStatus::Completed => McpToolCallStatus::Completed,
-            CoreMcpToolCallStatus::Failed => McpToolCallStatus::Failed,
-        }
-    }
-}
-
 impl From<CoreDynamicToolCallStatus> for DynamicToolCallStatus {
     fn from(value: CoreDynamicToolCallStatus) -> Self {
         match value {
@@ -1113,15 +995,6 @@ impl From<CoreDynamicToolCallStatus> for DynamicToolCallStatus {
             CoreDynamicToolCallStatus::Failed => Self::Failed,
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub enum McpToolCallStatus {
-    InProgress,
-    Completed,
-    Failed,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

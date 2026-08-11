@@ -1,8 +1,5 @@
 mod account;
 mod analytics;
-mod app_installed;
-mod app_list;
-mod app_read;
 mod attestation;
 mod auto_env;
 mod client_metadata;
@@ -15,16 +12,12 @@ mod config_rpc;
 mod connection_handling_websocket;
 #[cfg(unix)]
 mod connection_handling_websocket_unix;
-#[cfg(unix)]
-mod curated_mcp_sync;
 mod current_time;
 mod dynamic_tools;
 mod environment_add;
 mod environment_info;
 mod environment_status;
 mod exec_server_test_support;
-#[cfg(not(target_os = "windows"))]
-mod executor_mcp;
 mod executor_skills;
 mod experimental_api;
 mod experimental_feature_list;
@@ -39,10 +32,6 @@ mod initialize;
 mod marketplace_add;
 mod marketplace_remove;
 mod marketplace_upgrade;
-mod mcp_resource;
-mod mcp_server_elicitation;
-mod mcp_server_status;
-mod mcp_tool;
 mod memory_reset;
 mod model_list;
 mod model_provider_capabilities_read;
@@ -60,7 +49,6 @@ mod process_exec;
 mod rate_limit_reset_credits;
 mod rate_limits;
 mod realtime_conversation;
-mod recommended_plugins;
 mod remote_control;
 #[cfg(debug_assertions)]
 mod remote_thread_store;
@@ -70,8 +58,6 @@ mod request_validation;
 mod review;
 mod rollout_migration;
 mod safety_check_downgrade;
-#[cfg(not(target_os = "windows"))]
-mod selected_capability_stack;
 mod selected_environment;
 #[cfg(not(target_os = "windows"))]
 mod session_end;

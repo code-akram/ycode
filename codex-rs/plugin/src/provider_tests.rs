@@ -4,7 +4,6 @@ use super::ResolvedPluginError;
 use crate::manifest::PluginManifest;
 use crate::manifest::PluginManifestHooks;
 use crate::manifest::PluginManifestInterface;
-use crate::manifest::PluginManifestMcpServers;
 use crate::manifest::PluginManifestPaths;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
@@ -31,8 +30,6 @@ fn environment_descriptor_binds_every_manifest_resource() {
     let root_uri = path_uri(&root);
     let manifest_path = root.join(".codex-plugin/plugin.json");
     let skills = root.join("skills");
-    let mcp_servers = root.join(".mcp.json");
-    let apps = root.join(".app.json");
     let hooks = root.join("hooks/hooks.json");
     let composer_icon = root.join("assets/composer.svg");
     let logo = root.join("assets/logo.svg");
@@ -44,8 +41,6 @@ fn environment_descriptor_binds_every_manifest_resource() {
         keywords: Vec::new(),
         paths: PluginManifestPaths {
             skills: vec![path_uri(&skills)],
-            mcp_servers: Some(PluginManifestMcpServers::Path(path_uri(&mcp_servers))),
-            apps: Some(path_uri(&apps)),
             hooks: Some(PluginManifestHooks::Paths(vec![path_uri(&hooks)])),
         },
         interface: Some(PluginManifestInterface {
@@ -78,11 +73,6 @@ fn environment_descriptor_binds_every_manifest_resource() {
             keywords: Vec::new(),
             paths: PluginManifestPaths {
                 skills: vec![resource("executor-1", &skills)],
-                mcp_servers: Some(PluginManifestMcpServers::Path(resource(
-                    "executor-1",
-                    &mcp_servers,
-                ))),
-                apps: Some(resource("executor-1", &apps)),
                 hooks: Some(PluginManifestHooks::Paths(vec![resource(
                     "executor-1",
                     &hooks
@@ -102,16 +92,14 @@ fn environment_descriptor_binds_every_manifest_resource() {
 fn environment_descriptor_rejects_resources_outside_package_root() {
     let cwd = std::env::current_dir().expect("cwd");
     let root = absolute(cwd.join("plugin-root"));
-    let outside = absolute(cwd.join("outside/.mcp.json"));
+    let outside = absolute(cwd.join("outside/skills"));
     let manifest = PluginManifest {
         name: "demo".to_string(),
         version: None,
         description: None,
         keywords: Vec::new(),
         paths: PluginManifestPaths {
-            skills: Vec::new(),
-            mcp_servers: Some(PluginManifestMcpServers::Path(path_uri(&outside))),
-            apps: None,
+            skills: vec![path_uri(&outside)],
             hooks: None,
         },
         interface: None,

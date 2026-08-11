@@ -450,46 +450,6 @@ alpha = true
 }
 
 #[test]
-fn mcp_requirements_use_regular_toml_merge() {
-    let composed = compose(vec![
-        layer(
-            "req_low",
-            "Low",
-            r#"
-[mcp_servers.shared.identity]
-command = "low-mcp"
-
-[mcp_servers.low.identity]
-url = "https://low.example.com/mcp"
-"#,
-        ),
-        layer(
-            "req_high",
-            "High",
-            r#"
-[mcp_servers.shared.identity]
-command = "high-mcp"
-"#,
-        ),
-    ])
-    .expect("compose requirements")
-    .expect("requirements present");
-
-    assert_eq!(
-        composed,
-        expected_requirements(
-            r#"
-[mcp_servers.low.identity]
-url = "https://low.example.com/mcp"
-
-[mcp_servers.shared.identity]
-command = "high-mcp"
-"#
-        )
-    );
-}
-
-#[test]
 fn network_maps_use_regular_toml_merge() {
     let composed = compose(vec![
         layer(

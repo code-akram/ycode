@@ -5,11 +5,6 @@ mod dynamic;
 pub(crate) mod extension_tools;
 mod get_context_remaining;
 pub(crate) mod get_context_remaining_spec;
-mod list_available_plugins_to_install;
-pub(crate) mod list_available_plugins_to_install_spec;
-mod mcp;
-mod mcp_resource;
-pub(crate) mod mcp_resource_spec;
 pub(crate) mod multi_agents;
 pub(crate) mod multi_agents_common;
 pub(crate) mod multi_agents_spec;
@@ -19,8 +14,6 @@ pub(crate) mod new_context_window_spec;
 mod plan;
 pub(crate) mod plan_spec;
 mod request_permissions;
-mod request_plugin_install;
-pub(crate) mod request_plugin_install_spec;
 mod request_user_input;
 pub(crate) mod request_user_input_spec;
 mod shell;
@@ -58,15 +51,9 @@ use codex_protocol::protocol::AskForApproval;
 pub use current_time::CurrentTimeHandler;
 pub use dynamic::DynamicToolHandler;
 pub use get_context_remaining::GetContextRemainingHandler;
-pub use list_available_plugins_to_install::ListAvailablePluginsToInstallHandler;
-pub use mcp::McpHandler;
-pub use mcp_resource::ListMcpResourceTemplatesHandler;
-pub use mcp_resource::ListMcpResourcesHandler;
-pub use mcp_resource::ReadMcpResourceHandler;
 pub use new_context_window::NewContextWindowHandler;
 pub use plan::PlanHandler;
 pub use request_permissions::RequestPermissionsHandler;
-pub use request_plugin_install::RequestPluginInstallHandler;
 pub use request_user_input::RequestUserInputHandler;
 pub use shell::ShellCommandHandler;
 pub(crate) use shell::ShellCommandHandlerOptions;
@@ -381,7 +368,6 @@ mod tests {
                 rules: true,
                 skill_approval: true,
                 request_permissions: false,
-                mcp_elicitations: true,
             }),
             SandboxPermissions::WithAdditionalPermissions,
             Some(network_permissions()),

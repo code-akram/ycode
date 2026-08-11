@@ -40,7 +40,6 @@ fn wants_no_sandbox_approval_granular_respects_sandbox_flag() {
             rules: true,
             skill_approval: true,
             request_permissions: true,
-            mcp_elicitations: true,
         }))
     );
     assert!(
@@ -49,7 +48,6 @@ fn wants_no_sandbox_approval_granular_respects_sandbox_flag() {
             rules: true,
             skill_approval: true,
             request_permissions: true,
-            mcp_elicitations: true,
         }))
     );
 }

@@ -36,7 +36,6 @@ use super::keyring_service;
 const SECRETS_VERSION: u8 = 1;
 const LOCAL_SECRETS_FILENAME: &str = "local.age";
 const CODEX_AUTH_SECRETS_FILENAME: &str = "codex_auth.age";
-const MCP_OAUTH_SECRETS_FILENAME: &str = "mcp_oauth.age";
 
 /// Selects the local encrypted file used by a `LocalSecretsBackend`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -46,8 +45,6 @@ pub enum LocalSecretsNamespace {
     ManagedSecrets,
     /// Codex authentication credentials used by the CLI, TUI, app server, and other clients.
     CodexAuth,
-    /// OAuth credentials for external MCP servers.
-    McpOAuth,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -143,7 +140,6 @@ impl LocalSecretsBackend {
         let filename = match self.namespace {
             LocalSecretsNamespace::ManagedSecrets => LOCAL_SECRETS_FILENAME,
             LocalSecretsNamespace::CodexAuth => CODEX_AUTH_SECRETS_FILENAME,
-            LocalSecretsNamespace::McpOAuth => MCP_OAUTH_SECRETS_FILENAME,
         };
         self.secrets_dir().join(filename)
     }
@@ -458,24 +454,24 @@ mod tests {
             keyring.clone(),
             LocalSecretsNamespace::CodexAuth,
         );
-        let mcp_backend = LocalSecretsBackend::new_with_namespace(
+        let managed_backend = LocalSecretsBackend::new_with_namespace(
             codex_home.path().to_path_buf(),
             keyring,
-            LocalSecretsNamespace::McpOAuth,
+            LocalSecretsNamespace::ManagedSecrets,
         );
         let scope = SecretScope::Global;
         let name = SecretName::new("TEST_SECRET")?;
 
         codex_auth_backend.set(&scope, &name, "codex-auth-value")?;
-        mcp_backend.set(&scope, &name, "mcp-value")?;
+        managed_backend.set(&scope, &name, "managed-value")?;
 
         assert_eq!(
             codex_auth_backend.get(&scope, &name)?,
             Some("codex-auth-value".to_string())
         );
         assert_eq!(
-            mcp_backend.get(&scope, &name)?,
-            Some("mcp-value".to_string())
+            managed_backend.get(&scope, &name)?,
+            Some("managed-value".to_string())
         );
         assert!(
             codex_home
@@ -484,14 +480,7 @@ mod tests {
                 .join("codex_auth.age")
                 .exists()
         );
-        assert!(
-            codex_home
-                .path()
-                .join("secrets")
-                .join("mcp_oauth.age")
-                .exists()
-        );
-        assert!(!codex_home.path().join("secrets").join("local.age").exists());
+        assert!(codex_home.path().join("secrets").join("local.age").exists());
         Ok(())
     }
 }

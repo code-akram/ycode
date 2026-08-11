@@ -79,83 +79,13 @@
       ]
     },
     "ApprovalsReviewer": {
-      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
+      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
       "enum": [
         "user",
         "auto_review",
         "guardian_subagent"
       ],
       "type": "string"
-    },
-    "AppsInstalledParams": {
-      "description": "Read the committed installed connector runtime snapshot.",
-      "properties": {
-        "forceRefresh": {
-          "description": "When true and Apps are permitted, refresh and publish the hosted connector runtime tool snapshot first.",
-          "type": "boolean"
-        },
-        "threadId": {
-          "description": "Optional loaded thread id used to evaluate effective app configuration.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "AppsListParams": {
-      "description": "EXPERIMENTAL - list available apps/connectors.",
-      "properties": {
-        "cursor": {
-          "description": "Opaque pagination cursor returned by a previous call.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "forceRefetch": {
-          "description": "When true, bypass app caches and fetch the latest data from sources.",
-          "type": "boolean"
-        },
-        "limit": {
-          "description": "Optional page size; defaults to a reasonable server-side value.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "threadId": {
-          "description": "Optional thread id used to evaluate app feature gating from that thread's config.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "AppsReadParams": {
-      "description": "EXPERIMENTAL - read metadata for specific apps/connectors.",
-      "properties": {
-        "appIds": {
-          "description": "App ids to read. The server accepts at most 100 ids and deduplicates repeated ids while preserving their first-request order.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "includeTools": {
-          "description": "When true, include display-only public tool summaries in the returned metadata.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "appIds"
-      ],
-      "type": "object"
     },
     "AskForApproval": {
       "oneOf": [
@@ -172,9 +102,6 @@
           "properties": {
             "granular": {
               "properties": {
-                "mcp_elicitations": {
-                  "type": "boolean"
-                },
                 "request_permissions": {
                   "default": false,
                   "type": "boolean"
@@ -191,7 +118,6 @@
                 }
               },
               "required": [
-                "mcp_elicitations",
                 "rules",
                 "sandbox_approval"
               ],
@@ -1109,7 +1035,6 @@
         "CONFIG",
         "SKILLS",
         "PLUGINS",
-        "MCP_SERVER_CONFIG",
         "SUBAGENTS",
         "HOOKS",
         "COMMANDS",
@@ -1536,18 +1461,6 @@
           "description": "Opt into receiving experimental API methods and fields.",
           "type": "boolean"
         },
-        "extensions": {
-          "additionalProperties": true,
-          "description": "MCP extension settings declared by the app-server client.",
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "mcpServerOpenaiFormElicitation": {
-          "description": "Legacy opt-in for the `openai/form` MCP extension.\n\nNew clients should declare `openai/form` in [`Self::extensions`].",
-          "type": "boolean"
-        },
         "optOutNotificationMethods": {
           "description": "Exact notification method names that should be suppressed for this connection (for example `thread/started`).",
           "items": {
@@ -1601,44 +1514,6 @@
     },
     "LegacyAppPathString": {
       "type": "string"
-    },
-    "ListMcpServerStatusParams": {
-      "properties": {
-        "cursor": {
-          "description": "Opaque pagination cursor returned by a previous call.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "detail": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/McpServerStatusDetail"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Controls how much MCP inventory data to fetch for each server. Defaults to `Full` when omitted."
-        },
-        "limit": {
-          "description": "Optional page size; defaults to a server-defined value.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
     },
     "LocalShellAction": {
       "oneOf": [
@@ -1891,99 +1766,6 @@
       },
       "type": "object"
     },
-    "McpResourceReadParams": {
-      "properties": {
-        "server": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "server",
-        "uri"
-      ],
-      "type": "object"
-    },
-    "McpServerMigration": {
-      "properties": {
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
-    "McpServerOauthLoginParams": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "scopes": {
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "timeoutSecs": {
-          "format": "int64",
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
-    "McpServerStatusDetail": {
-      "enum": [
-        "full",
-        "toolsAndAuthOnly"
-      ],
-      "type": "string"
-    },
-    "McpServerToolCallParams": {
-      "properties": {
-        "_meta": true,
-        "arguments": true,
-        "server": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        },
-        "tool": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "server",
-        "threadId",
-        "tool"
-      ],
-      "type": "object"
-    },
     "MergeStrategy": {
       "enum": [
         "replace",
@@ -2023,13 +1805,6 @@
           "default": [],
           "items": {
             "$ref": "#/definitions/HookMigration"
-          },
-          "type": "array"
-        },
-        "mcpServers": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/McpServerMigration"
           },
           "type": "array"
         },
@@ -6295,78 +6070,6 @@
         },
         "method": {
           "enum": [
-            "app/read"
-          ],
-          "title": "App/readRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/AppsReadParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "App/readRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "app/list"
-          ],
-          "title": "App/listRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/AppsListParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "App/listRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "app/installed"
-          ],
-          "title": "App/installedRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/AppsInstalledParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "App/installedRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
             "fs/readFile"
           ],
           "title": "Fs/readFileRequestMethod",
@@ -6862,125 +6565,6 @@
         "params"
       ],
       "title": "ExperimentalFeature/enablement/setRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "mcpServer/oauth/login"
-          ],
-          "title": "McpServer/oauth/loginRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/McpServerOauthLoginParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "McpServer/oauth/loginRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "config/mcpServer/reload"
-          ],
-          "title": "Config/mcpServer/reloadRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "type": "null"
-        }
-      },
-      "required": [
-        "id",
-        "method"
-      ],
-      "title": "Config/mcpServer/reloadRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "mcpServerStatus/list"
-          ],
-          "title": "McpServerStatus/listRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/ListMcpServerStatusParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "McpServerStatus/listRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "mcpServer/resource/read"
-          ],
-          "title": "McpServer/resource/readRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/McpResourceReadParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "McpServer/resource/readRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "mcpServer/tool/call"
-          ],
-          "title": "McpServer/tool/callRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/McpServerToolCallParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "McpServer/tool/callRequest",
       "type": "object"
     },
     {

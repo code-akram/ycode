@@ -10,7 +10,6 @@ use codex_app_server_protocol::ThreadSectionMoveResponse;
 use codex_extension_api::ExtensionDataInit;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::error::CodexErrorDetails;
-use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -293,9 +292,6 @@ fn validate_dynamic_tools(tools: &[DynamicToolSpec]) -> Result<(), String> {
             ));
         }
         validate_dynamic_tool_identifier(name, "dynamic tool name", DYNAMIC_TOOL_NAME_MAX_LEN)?;
-        if name == "mcp" || name.starts_with("mcp__") {
-            return Err(format!("dynamic tool name is reserved: {name}"));
-        }
         if !seen.insert(name) {
             if let Some(namespace) = namespace {
                 return Err(format!(
@@ -347,9 +343,6 @@ fn validate_dynamic_tools(tools: &[DynamicToolSpec]) -> Result<(), String> {
                     return Err(format!(
                         "dynamic tool namespace description must be at most {DYNAMIC_TOOL_NAMESPACE_DESCRIPTION_MAX_LEN} characters"
                     ));
-                }
-                if name == "mcp" || name.starts_with("mcp__") {
-                    return Err(format!("dynamic tool namespace is reserved: {name}"));
                 }
                 if RESERVED_RESPONSES_NAMESPACES.contains(&name) {
                     return Err(format!(
@@ -454,7 +447,6 @@ impl ThreadRequestProcessor {
         params: ThreadStartParams,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-        client_mcp_extensions: ClientMcpExtensions,
         request_context: RequestContext,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         self.thread_start_inner(
@@ -462,7 +454,6 @@ impl ThreadRequestProcessor {
             params,
             app_server_client_name,
             app_server_client_version,
-            client_mcp_extensions,
             request_context,
         )
         .await
@@ -485,14 +476,12 @@ impl ThreadRequestProcessor {
         params: ThreadResumeParams,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-        client_mcp_extensions: ClientMcpExtensions,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         self.thread_resume_inner(
             request_id,
             params,
             app_server_client_name,
             app_server_client_version,
-            client_mcp_extensions,
         )
         .await
         .map(|()| None)
@@ -504,14 +493,12 @@ impl ThreadRequestProcessor {
         params: ThreadForkParams,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-        client_mcp_extensions: ClientMcpExtensions,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         self.thread_fork_inner(
             request_id,
             params,
             app_server_client_name,
             app_server_client_version,
-            client_mcp_extensions,
         )
         .await
         .map(|()| None)
@@ -857,16 +844,8 @@ impl ThreadRequestProcessor {
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
     ) -> Result<(), JSONRPCErrorError> {
-        let mcp_elicitations_auto_deny = xcode_26_4_mcp_elicitations_auto_deny(
-            app_server_client_name.as_deref(),
-            app_server_client_version.as_deref(),
-        );
         thread
-            .set_app_server_client_info(
-                app_server_client_name,
-                app_server_client_version,
-                mcp_elicitations_auto_deny,
-            )
+            .set_app_server_client_info(app_server_client_name, app_server_client_version)
             .await
             .map_err(|err| internal_error(format!("failed to set app server client info: {err}")))
     }
@@ -985,7 +964,6 @@ impl ThreadRequestProcessor {
         params: ThreadStartParams,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-        client_mcp_extensions: ClientMcpExtensions,
         request_context: RequestContext,
     ) -> Result<(), JSONRPCErrorError> {
         let ThreadStartParams {
@@ -1070,7 +1048,6 @@ impl ThreadRequestProcessor {
                 request_id,
                 app_server_client_name,
                 app_server_client_version,
-                client_mcp_extensions,
                 config,
                 typesafe_overrides,
                 dynamic_tools,
@@ -1147,7 +1124,6 @@ impl ThreadRequestProcessor {
         request_id: ConnectionRequestId,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-        client_mcp_extensions: ClientMcpExtensions,
         config_overrides: Option<HashMap<String, serde_json::Value>>,
         typesafe_overrides: ConfigOverrides,
         dynamic_tools: Option<Vec<DynamicToolSpec>>,
@@ -1292,7 +1268,6 @@ impl ThreadRequestProcessor {
                 parent_trace: request_trace,
                 environments: Some(environments),
                 thread_extension_init,
-                client_mcp_extensions,
                 ..StartThreadOptions::new(config)
             })
             .instrument(tracing::info_span!(
@@ -3059,7 +3034,6 @@ impl ThreadRequestProcessor {
         params: ThreadResumeParams,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-        client_mcp_extensions: ClientMcpExtensions,
     ) -> Result<(), JSONRPCErrorError> {
         if let Ok(thread_id) = ThreadId::from_string(&params.thread_id)
             && self
@@ -3088,9 +3062,6 @@ impl ThreadRequestProcessor {
                 .await;
             return Ok(());
         }
-        let redact_resume_payloads =
-            should_redact_thread_resume_payloads(app_server_client_name.as_deref());
-
         let _thread_list_state_permit = match self.acquire_thread_list_state_permit().await {
             Ok(permit) => permit,
             Err(error) => {
@@ -3229,7 +3200,6 @@ impl ThreadRequestProcessor {
                 thread_history,
                 self.auth_manager.clone(),
                 self.request_trace_context(&request_id).await,
-                client_mcp_extensions,
             )
             .await
         {
@@ -3356,7 +3326,7 @@ impl ThreadRequestProcessor {
                 let active_permission_profile = thread_response_active_permission_profile(
                     config_snapshot.active_permission_profile,
                 );
-                let mut initial_turns_page = if let Some(params) = initial_turns_page.as_ref() {
+                let initial_turns_page = if let Some(params) = initial_turns_page.as_ref() {
                     let initial_turns_page_result = if paginated_resume {
                         self.paginated_resume_initial_turns_page(thread_id, params)
                             .await
@@ -3391,13 +3361,6 @@ impl ThreadRequestProcessor {
                         restored_token_usage_turn_id(response_history.get_rollout_items(), turns)
                     })
                     .filter(|turn_id| !turn_id.is_empty());
-                if redact_resume_payloads {
-                    redact_thread_resume_payloads(&mut thread.turns);
-                    if let Some(initial_turns_page) = initial_turns_page.as_mut() {
-                        redact_thread_resume_payloads(&mut initial_turns_page.data);
-                    }
-                }
-
                 let thread_originator = config_snapshot.originator.clone();
                 let response = ThreadResumeResponse {
                     thread,
@@ -3587,8 +3550,6 @@ impl ThreadRequestProcessor {
                     mismatch_details.join("; ")
                 );
             }
-            let redact_resume_payloads =
-                should_redact_thread_resume_payloads(app_server_client_name.as_deref());
             let include_turns = !params.exclude_turns;
             let needs_history =
                 !paginated_resume && (include_turns || params.initial_turns_page.is_some());
@@ -3721,7 +3682,6 @@ impl ThreadRequestProcessor {
                     paginated_initial_turns_page,
                     paginated_initial_turns_page_with_active_slot,
                     resume_cursor_store,
-                    redact_resume_payloads,
                 }),
             );
             if listener_command_tx.send(command).is_err() {
@@ -4013,7 +3973,6 @@ impl ThreadRequestProcessor {
         params: ThreadForkParams,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-        client_mcp_extensions: ClientMcpExtensions,
     ) -> Result<(), JSONRPCErrorError> {
         let ThreadForkParams {
             thread_id,
@@ -4234,13 +4193,7 @@ impl ThreadRequestProcessor {
 
         let new_thread = if let Some(prepared_fork) = prepared_fork {
             self.thread_manager
-                .fork_prepared_thread(
-                    config,
-                    prepared_fork,
-                    thread_source,
-                    parent_trace,
-                    client_mcp_extensions.clone(),
-                )
+                .fork_prepared_thread(config, prepared_fork, thread_source, parent_trace)
                 .await
         } else {
             self.thread_manager
@@ -4254,7 +4207,6 @@ impl ThreadRequestProcessor {
                     }),
                     thread_source,
                     parent_trace,
-                    client_mcp_extensions,
                 )
                 .await
         };
@@ -4615,17 +4567,6 @@ impl ThreadRequestProcessor {
 
         Ok((items, next_cursor))
     }
-}
-
-fn xcode_26_4_mcp_elicitations_auto_deny(
-    client_name: Option<&str>,
-    client_version: Option<&str>,
-) -> bool {
-    // Xcode 26.4 shipped before app-server MCP elicitation requests were
-    // client-visible. Keep elicitations auto-denied for that client line.
-    // TODO: Remove this compatibility hack once Xcode 26.4 ages out.
-    client_name == Some("Xcode")
-        && client_version.is_some_and(|version| version.starts_with("26.4"))
 }
 
 const THREAD_TURNS_DEFAULT_LIMIT: usize = 25;

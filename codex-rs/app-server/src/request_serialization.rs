@@ -39,9 +39,6 @@ pub(crate) enum RequestSerializationQueueKey {
         connection_id: ConnectionId,
         watch_id: String,
     },
-    McpOauth {
-        server_name: String,
-    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,10 +90,6 @@ impl RequestSerializationQueueKey {
                     connection_id,
                     watch_id,
                 },
-                RequestSerializationAccess::Exclusive,
-            ),
-            ClientRequestSerializationScope::McpOauth { server_name } => (
-                Self::McpOauth { server_name },
                 RequestSerializationAccess::Exclusive,
             ),
         }

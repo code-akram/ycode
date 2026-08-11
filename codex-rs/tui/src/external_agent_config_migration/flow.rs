@@ -100,11 +100,6 @@ fn external_agent_config_migration_started_lines(
                     .iter()
                     .map(|skill| skill.name.as_str())
                     .collect(),
-                ExternalAgentConfigMigrationItemType::McpServerConfig => details
-                    .mcp_servers
-                    .iter()
-                    .map(|server| server.name.as_str())
-                    .collect(),
                 ExternalAgentConfigMigrationItemType::Subagents => details
                     .subagents
                     .iter()

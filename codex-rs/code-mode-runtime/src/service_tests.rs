@@ -925,9 +925,6 @@ text(JSON.stringify(returnsUndefined));
                     image_url: "data:image/png;base64,AAA".to_string(),
                     detail: Some(crate::DEFAULT_IMAGE_DETAIL),
                 },
-                FunctionCallOutputContentItem::InputAudio {
-                    audio_url: "data:audio/wav;base64,YXVkaW8=".to_string(),
-                },
                 FunctionCallOutputContentItem::InputText {
                     text: "[true,true,true,true]".to_string(),
                 },
@@ -938,7 +935,7 @@ text(JSON.stringify(returnsUndefined));
 }
 
 #[tokio::test]
-async fn audio_helper_accepts_audio_url_object_and_raw_mcp_audio_block() {
+async fn audio_helper_accepts_audio_url_object() {
     let service = InProcessCodeModeSession::new();
 
     let response = execute(
@@ -947,11 +944,6 @@ async fn audio_helper_accepts_audio_url_object_and_raw_mcp_audio_block() {
             source: r#"
 audio({
   audio_url: "data:audio/mpeg;base64,YXVkaW8=",
-});
-audio({
-  type: "audio",
-  data: "YXVkaW8=",
-  mimeType: "audio/wav",
 });
 "#
             .to_string(),
@@ -1008,41 +1000,6 @@ async fn audio_helper_rejects_non_data_urls() {
             }
         );
     }
-}
-
-#[tokio::test]
-async fn image_helper_accepts_raw_mcp_image_block_with_original_detail() {
-    let service = InProcessCodeModeSession::new();
-
-    let response = execute(
-            &service,
-            ExecuteRequest {
-                source: r#"
-image({
-  type: "image",
-  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
-  mimeType: "image/png",
-  _meta: { "codex/imageDetail": "original" },
-});
-"#
-                .to_string(),
-                yield_time_ms: None,
-                ..execute_request("")
-            },
-        )
-        .await;
-
-    assert_eq!(
-            response,
-            RuntimeResponse::Result {
-                cell_id: cell_id("1"),
-                content_items: vec![FunctionCallOutputContentItem::InputImage {
-                    image_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==".to_string(),
-                    detail: Some(crate::ImageDetail::Original),
-                }],
-                error_text: None,
-            }
-        );
 }
 
 #[tokio::test]
@@ -1120,44 +1077,6 @@ image(
 }
 
 #[tokio::test]
-async fn image_helper_second_arg_overrides_raw_mcp_image_detail() {
-    let service = InProcessCodeModeSession::new();
-
-    let response = execute(
-            &service,
-            ExecuteRequest {
-                source: r#"
-image(
-  {
-    type: "image",
-    data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
-    mimeType: "image/png",
-    _meta: { "codex/imageDetail": "original" },
-  },
-  "high",
-);
-"#
-                .to_string(),
-                yield_time_ms: None,
-                ..execute_request("")
-            },
-        )
-        .await;
-
-    assert_eq!(
-            response,
-            RuntimeResponse::Result {
-                cell_id: cell_id("1"),
-                content_items: vec![FunctionCallOutputContentItem::InputImage {
-                    image_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==".to_string(),
-                    detail: Some(crate::ImageDetail::High),
-                }],
-                error_text: None,
-            }
-        );
-}
-
-#[tokio::test]
 async fn image_helper_accepts_low_detail() {
     let service = InProcessCodeModeSession::new();
 
@@ -1228,8 +1147,7 @@ async fn image_helpers_reject_remote_urls() {
 
 #[tokio::test]
 async fn image_helpers_reject_invalid_image_outputs() {
-    let image_url =
-        "Error executing tool exec: Expected at least one message to convert to CallToolResult";
+    let image_url = "Error executing tool exec: expected a valid image output";
     for source in [
         format!("image({image_url:?}, \"original\");"),
         format!("generatedImage({{ image_url: {image_url:?} }});"),
@@ -1291,7 +1209,7 @@ image({
 }
 
 #[tokio::test]
-async fn image_helper_rejects_raw_mcp_result_container() {
+async fn image_helper_rejects_result_container() {
     let service = InProcessCodeModeSession::new();
 
     let response = execute(
@@ -1323,7 +1241,7 @@ image({
                 cell_id: cell_id("1"),
                 content_items: Vec::new(),
                 error_text: Some(
-                    "image expects a non-empty image URL string, an object with image_url and optional detail, or a raw MCP image block".to_string(),
+                    "image expects a non-empty image URL string or an object with image_url and optional detail".to_string(),
                 ),
             }
         );

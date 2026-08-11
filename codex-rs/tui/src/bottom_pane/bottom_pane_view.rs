@@ -1,6 +1,5 @@
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::bottom_pane::ApprovalRequest;
-use crate::bottom_pane::McpServerElicitationFormRequest;
 use crate::keymap::KeymapContextSet;
 use crate::render::renderable::Renderable;
 use codex_app_server_protocol::ToolRequestUserInputParams;
@@ -123,15 +122,6 @@ pub(crate) trait BottomPaneView: Renderable {
         &mut self,
         request: ToolRequestUserInputParams,
     ) -> Option<ToolRequestUserInputParams> {
-        Some(request)
-    }
-
-    /// Try to handle a supported MCP server elicitation form request; return the original value if
-    /// not consumed.
-    fn try_consume_mcp_server_elicitation_request(
-        &mut self,
-        request: McpServerElicitationFormRequest,
-    ) -> Option<McpServerElicitationFormRequest> {
         Some(request)
     }
 

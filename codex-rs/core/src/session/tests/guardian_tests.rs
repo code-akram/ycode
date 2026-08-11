@@ -743,7 +743,6 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         config.codex_home.clone(),
         /*bundled_skills_enabled*/ true,
     ));
-    let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let thread_store = Arc::new(codex_thread_store::LocalThreadStore::new(
         codex_thread_store::LocalThreadStoreConfig::from_config(&config),
         /*state_db*/ None,
@@ -759,7 +758,6 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
         skills_service,
         plugins_manager,
-        mcp_manager,
         code_mode_session_provider: Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
         extensions: codex_extension_api::empty_extension_registry(),
         conversation_history: InitialHistory::New,
@@ -782,7 +780,6 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         parent_trace: None,
         environment_selections: Vec::new(),
         thread_extension_init: codex_extension_api::ExtensionDataInit::default(),
-        client_mcp_extensions: ClientMcpExtensions::default(),
         analytics_events_client: None,
         thread_store,
         attestation_provider: None,

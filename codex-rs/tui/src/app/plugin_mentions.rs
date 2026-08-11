@@ -53,8 +53,6 @@ fn plugin_mention_from_summary(
         plugin_namespace: Some(plugin.name.clone()),
         description: plugin_mention_description(marketplace_name, &plugin),
         has_skills: false,
-        mcp_server_names: Vec::new(),
-        app_connector_ids: Vec::new(),
     })
 }
 
@@ -133,8 +131,6 @@ mod tests {
                     plugin_namespace: Some("active".to_string()),
                     description: Some("server-marketplace".to_string()),
                     has_skills: false,
-                    mcp_server_names: Vec::new(),
-                    app_connector_ids: Vec::new(),
                 },
                 PluginCapabilitySummary {
                     config_name: "active-shared@server-marketplace".to_string(),
@@ -142,8 +138,6 @@ mod tests {
                     plugin_namespace: Some("active-shared".to_string()),
                     description: Some("server-marketplace".to_string()),
                     has_skills: false,
-                    mcp_server_names: Vec::new(),
-                    app_connector_ids: Vec::new(),
                 }
             ]
         );

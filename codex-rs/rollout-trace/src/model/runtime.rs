@@ -13,7 +13,6 @@ use super::CompactionId;
 use super::CompactionRequestId;
 use super::ConversationItemId;
 use super::EdgeId;
-use super::McpCallId;
 use super::ModelVisibleCallId;
 use super::TerminalId;
 use super::TerminalOperationId;
@@ -114,8 +113,6 @@ pub struct CompactionRequest {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub tool_call_id: ToolCallId,
-    /// Globally unique MCP execution ID, when this tool reached an MCP backend.
-    pub mcp_call_id: Option<McpCallId>,
     /// Model-visible protocol call ID, if the model directly requested this tool.
     pub model_visible_call_id: Option<ModelVisibleCallId>,
     /// Code-mode runtime's internal tool invocation ID, if this call came from JS.
@@ -145,7 +142,7 @@ pub struct ToolCall {
     pub raw_result_payload_id: Option<RawPayloadId>,
     /// Runtime/protocol payloads observed while executing the tool.
     ///
-    /// Examples include exec begin/end, patch begin/end, and MCP begin/end
+    /// Examples include exec begin/end and patch begin/end
     /// events. Reducers can use these to build richer runtime objects such as
     /// terminal operations without overwriting the canonical invocation/result.
     pub raw_runtime_payload_ids: Vec<RawPayloadId>,
@@ -169,10 +166,6 @@ pub enum ToolCallKind {
     ExecCommand,
     WriteStdin,
     ApplyPatch,
-    Mcp {
-        server: String,
-        tool: String,
-    },
     Web,
     ImageGeneration,
     SpawnAgent,

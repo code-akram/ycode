@@ -49,7 +49,6 @@ pub(crate) struct PendingThreadResumeRequest {
     pub(crate) paginated_initial_turns_page_with_active_slot:
         Option<codex_app_server_protocol::TurnsPage>,
     pub(crate) resume_cursor_store: Option<Arc<dyn codex_thread_store::ThreadStore>>,
-    pub(crate) redact_resume_payloads: bool,
 }
 
 // ThreadListenerCommand is used to perform operations in the context of the thread listener, for serialization purposes.

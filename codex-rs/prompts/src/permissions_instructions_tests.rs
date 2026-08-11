@@ -599,7 +599,6 @@ fn granular_policy_lists_prompted_and_rejected_categories_separately() {
             rules: true,
             skill_approval: false,
             request_permissions: true,
-            mcp_elicitations: false,
         }),
         ApprovalsReviewer::User,
         /*approval_messages*/ None,
@@ -621,7 +620,6 @@ fn granular_policy_lists_prompted_and_rejected_categories_separately() {
                 &[
                     "- `sandbox_approval`",
                     "- `skill_approval`",
-                    "- `mcp_elicitations`",
                 ],
             ),
         ]
@@ -637,7 +635,6 @@ fn granular_policy_includes_command_permission_instructions_when_sandbox_approva
             rules: true,
             skill_approval: true,
             request_permissions: true,
-            mcp_elicitations: true,
         }),
         ApprovalsReviewer::User,
         /*approval_messages*/ None,
@@ -649,12 +646,7 @@ fn granular_policy_includes_command_permission_instructions_when_sandbox_approva
     assert_eq!(
         text,
         granular_prompt_expected(
-            &[
-                "- `sandbox_approval`",
-                "- `rules`",
-                "- `skill_approval`",
-                "- `mcp_elicitations`",
-            ],
+            &["- `sandbox_approval`", "- `rules`", "- `skill_approval`",],
             &[],
             /*include_shell_permission_request_instructions*/ true,
             /*include_request_permissions_tool_section*/ false,
@@ -670,7 +662,6 @@ fn granular_policy_omits_shell_permission_instructions_when_inline_requests_are_
             rules: true,
             skill_approval: true,
             request_permissions: true,
-            mcp_elicitations: true,
         }),
         ApprovalsReviewer::User,
         /*approval_messages*/ None,
@@ -682,12 +673,7 @@ fn granular_policy_omits_shell_permission_instructions_when_inline_requests_are_
     assert_eq!(
         text,
         granular_prompt_expected(
-            &[
-                "- `sandbox_approval`",
-                "- `rules`",
-                "- `skill_approval`",
-                "- `mcp_elicitations`",
-            ],
+            &["- `sandbox_approval`", "- `rules`", "- `skill_approval`",],
             &[],
             /*include_shell_permission_request_instructions*/ false,
             /*include_request_permissions_tool_section*/ false,
@@ -703,7 +689,6 @@ fn granular_policy_includes_request_permissions_tool_only_when_that_prompt_can_s
             rules: true,
             skill_approval: true,
             request_permissions: true,
-            mcp_elicitations: true,
         }),
         ApprovalsReviewer::User,
         /*approval_messages*/ None,
@@ -719,7 +704,6 @@ fn granular_policy_includes_request_permissions_tool_only_when_that_prompt_can_s
             rules: true,
             skill_approval: true,
             request_permissions: false,
-            mcp_elicitations: true,
         }),
         ApprovalsReviewer::User,
         /*approval_messages*/ None,
@@ -738,7 +722,6 @@ fn granular_policy_lists_request_permissions_category_without_tool_section_when_
             rules: false,
             skill_approval: false,
             request_permissions: true,
-            mcp_elicitations: false,
         }),
         ApprovalsReviewer::User,
         /*approval_messages*/ None,

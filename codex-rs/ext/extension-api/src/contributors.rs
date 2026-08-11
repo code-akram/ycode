@@ -13,7 +13,6 @@ use crate::ExtensionData;
 use crate::ExtensionMetrics;
 
 mod context;
-mod mcp;
 mod prompt;
 mod skill_invocation;
 mod thread_lifecycle;
@@ -23,8 +22,6 @@ mod turn_lifecycle;
 mod world_state;
 
 pub use context::TurnContextContributionInput;
-pub use mcp::McpServerContribution;
-pub use mcp::McpServerContributionContext;
 pub use prompt::PromptFragment;
 pub use prompt::PromptSlot;
 pub use skill_invocation::SkillInvocationInput;
@@ -52,26 +49,6 @@ pub use world_state::WorldStateSectionContribution;
 
 /// Boxed, sendable future returned by asynchronous extension contributors.
 pub type ExtensionFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-/// Extension contribution that resolves runtime MCP servers from host config.
-///
-/// Contributors run in registration order. Later contributions for the same
-/// name replace earlier ones. Implementations must contribute only names they
-/// own and must apply any source-specific policy before returning a server.
-/// Thread-scoped resolution exposes the host-seeded thread inputs; global
-/// resolution exposes none and must not imply a local fallback. Thread inputs
-/// are frozen for the runtime and do not include lifecycle-contributor state.
-/// Auto-discovered plugin servers are resolved by the plugin manager. A
-/// thread-selected plugin contribution must carry its own package provenance.
-pub trait McpServerContributor<C: Sync>: Send + Sync {
-    /// Stable identity used for registration provenance and conflict diagnostics.
-    fn id(&self) -> &'static str;
-
-    fn contribute<'a>(
-        &'a self,
-        context: McpServerContributionContext<'a, C>,
-    ) -> ExtensionFuture<'a, Vec<McpServerContribution>>;
-}
 
 /// Extension contribution that adds prompt fragments during prompt assembly.
 ///

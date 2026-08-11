@@ -42,7 +42,6 @@ pub(crate) struct CommandPopup {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CommandPopupFlags {
     pub(crate) collaboration_modes_enabled: bool,
-    pub(crate) connectors_enabled: bool,
     pub(crate) plugins_command_enabled: bool,
     pub(crate) token_activity_command_enabled: bool,
     pub(crate) service_tier_commands_enabled: bool,
@@ -55,7 +54,6 @@ impl From<CommandPopupFlags> for BuiltinCommandFlags {
     fn from(value: CommandPopupFlags) -> Self {
         Self {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
-            connectors_enabled: value.connectors_enabled,
             plugins_command_enabled: value.plugins_command_enabled,
             token_activity_command_enabled: value.token_activity_command_enabled,
             service_tier_commands_enabled: value.service_tier_commands_enabled,
@@ -75,9 +73,9 @@ impl CommandPopup {
         let commands = commands_for_input(flags.into(), &service_tier_commands)
             .into_iter()
             .filter_map(|command| match command {
-                SlashCommandItem::Builtin(cmd) => (!cmd.command().starts_with("debug")
-                    && cmd != SlashCommand::Apps)
-                    .then_some(CommandItem::Builtin(cmd)),
+                SlashCommandItem::Builtin(cmd) => {
+                    (!cmd.command().starts_with("debug")).then_some(CommandItem::Builtin(cmd))
+                }
                 SlashCommandItem::ServiceTier(command) => Some(CommandItem::ServiceTier(command)),
             })
             .collect();
@@ -383,8 +381,7 @@ mod tests {
             vec![
                 "model".to_string(),
                 "memories".to_string(),
-                "mention".to_string(),
-                "mcp".to_string()
+                "mention".to_string()
             ]
         );
     }
@@ -527,7 +524,6 @@ mod tests {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                connectors_enabled: false,
                 plugins_command_enabled: false,
                 token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
@@ -553,7 +549,6 @@ mod tests {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                connectors_enabled: false,
                 plugins_command_enabled: false,
                 token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
@@ -584,7 +579,6 @@ mod tests {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
                 collaboration_modes_enabled: true,
-                connectors_enabled: false,
                 plugins_command_enabled: false,
                 token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,

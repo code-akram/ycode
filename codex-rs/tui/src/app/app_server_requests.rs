@@ -8,7 +8,6 @@ use crate::app_server_session::AppServerSession;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::FileChangeRequestApprovalResponse;
 use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::McpServerElicitationRequestResponse;
 use codex_app_server_protocol::PermissionsRequestApprovalResponse;
 use codex_app_server_protocol::RequestId as AppServerRequestId;
 use codex_app_server_protocol::ServerRequest;
@@ -49,22 +48,10 @@ pub(super) struct UnsupportedAppServerRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ResolvedAppServerRequest {
-    ExecApproval {
-        id: String,
-    },
-    FileChangeApproval {
-        id: String,
-    },
-    PermissionsApproval {
-        id: String,
-    },
-    UserInput {
-        call_id: String,
-    },
-    McpElicitation {
-        server_name: String,
-        request_id: AppServerRequestId,
-    },
+    ExecApproval { id: String },
+    FileChangeApproval { id: String },
+    PermissionsApproval { id: String },
+    UserInput { call_id: String },
 }
 
 #[derive(Debug, Default)]
@@ -73,7 +60,6 @@ pub(super) struct PendingAppServerRequests {
     file_change_approvals: HashMap<String, AppServerRequestId>,
     permissions_approvals: HashMap<String, AppServerRequestId>,
     user_inputs: HashMap<String, VecDeque<PendingUserInputRequest>>,
-    mcp_requests: HashMap<McpRequestKey, AppServerRequestId>,
 }
 
 impl PendingAppServerRequests {
@@ -82,7 +68,6 @@ impl PendingAppServerRequests {
         self.file_change_approvals.clear();
         self.permissions_approvals.clear();
         self.user_inputs.clear();
-        self.mcp_requests.clear();
     }
 
     pub(super) fn note_server_request(
@@ -128,16 +113,6 @@ impl PendingAppServerRequests {
                         item_id: params.item_id.clone(),
                         request_id: request_id.clone(),
                     });
-                None
-            }
-            ServerRequest::McpServerElicitationRequest { request_id, params } => {
-                self.mcp_requests.insert(
-                    McpRequestKey {
-                        server_name: params.server_name.clone(),
-                        request_id: request_id.clone(),
-                    },
-                    request_id.clone(),
-                );
                 None
             }
             ServerRequest::DynamicToolCall { request_id, .. } => {
@@ -247,32 +222,6 @@ impl PendingAppServerRequests {
                     })
                 })
                 .transpose()?,
-            AppCommand::ResolveElicitation {
-                server_name,
-                request_id,
-                decision,
-                content,
-                meta,
-            } => self
-                .mcp_requests
-                .remove(&McpRequestKey {
-                    server_name: server_name.to_string(),
-                    request_id: request_id.clone(),
-                })
-                .map(|request_id| {
-                    Ok::<AppServerRequestResolution, String>(AppServerRequestResolution {
-                        request_id,
-                        result: serde_json::to_value(McpServerElicitationRequestResponse {
-                            action: *decision,
-                            content: content.clone(),
-                            meta: meta.clone(),
-                        })
-                        .map_err(|err| {
-                            format!("failed to serialize MCP elicitation response: {err}")
-                        })?,
-                    })
-                })
-                .transpose()?,
             _ => None,
         };
         Ok(resolution)
@@ -315,18 +264,6 @@ impl PendingAppServerRequests {
             });
         }
 
-        if let Some(key) = self
-            .mcp_requests
-            .iter()
-            .find_map(|(key, value)| (value == request_id).then(|| key.clone()))
-        {
-            self.mcp_requests.remove(&key);
-            return Some(ResolvedAppServerRequest::McpElicitation {
-                server_name: key.server_name,
-                request_id: key.request_id,
-            });
-        }
-
         None
     }
 
@@ -351,10 +288,6 @@ impl PendingAppServerRequests {
                         .any(|pending| &pending.request_id == request_id)
                 })
             }
-            ServerRequest::McpServerElicitationRequest { request_id, .. } => self
-                .mcp_requests
-                .values()
-                .any(|pending_request_id| pending_request_id == request_id),
             ServerRequest::DynamicToolCall { .. }
             | ServerRequest::ChatgptAuthTokensRefresh { .. }
             | ServerRequest::AttestationGenerate { .. }
@@ -407,12 +340,6 @@ struct PendingUserInputRequest {
     request_id: AppServerRequestId,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct McpRequestKey {
-    server_name: String,
-    request_id: AppServerRequestId,
-}
-
 #[cfg(test)]
 mod tests {
     use super::PendingAppServerRequests;
@@ -425,11 +352,6 @@ mod tests {
     use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
     use codex_app_server_protocol::FileChangeApprovalDecision;
     use codex_app_server_protocol::FileChangeRequestApprovalParams;
-    use codex_app_server_protocol::McpElicitationObjectType;
-    use codex_app_server_protocol::McpElicitationSchema;
-    use codex_app_server_protocol::McpServerElicitationAction;
-    use codex_app_server_protocol::McpServerElicitationRequest;
-    use codex_app_server_protocol::McpServerElicitationRequestParams;
     use codex_app_server_protocol::PermissionGrantScope;
     use codex_app_server_protocol::PermissionsRequestApprovalParams;
     use codex_app_server_protocol::PermissionsRequestApprovalResponse;
@@ -444,7 +366,6 @@ mod tests {
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use serde_json::json;
-    use std::collections::BTreeMap;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -671,54 +592,6 @@ mod tests {
     }
 
     #[test]
-    fn correlates_mcp_elicitation_server_request_with_resolution() {
-        let mut pending = PendingAppServerRequests::default();
-
-        assert_eq!(
-            pending.note_server_request(&ServerRequest::McpServerElicitationRequest {
-                request_id: AppServerRequestId::Integer(12),
-                params: McpServerElicitationRequestParams {
-                    thread_id: "thread-1".to_string(),
-                    turn_id: Some("turn-1".to_string()),
-                    server_name: "example".to_string(),
-                    request: McpServerElicitationRequest::Form {
-                        meta: None,
-                        message: "Need input".to_string(),
-                        requested_schema: McpElicitationSchema {
-                            schema_uri: None,
-                            type_: McpElicitationObjectType::Object,
-                            properties: BTreeMap::new(),
-                            required: None,
-                        },
-                    },
-                },
-            }),
-            None
-        );
-
-        let resolution = pending
-            .take_resolution(&Op::ResolveElicitation {
-                server_name: "example".to_string(),
-                request_id: AppServerRequestId::Integer(12),
-                decision: McpServerElicitationAction::Accept,
-                content: Some(json!({ "answer": "yes" })),
-                meta: Some(json!({ "source": "tui" })),
-            })
-            .expect("elicitation response should serialize")
-            .expect("elicitation request should be pending");
-
-        assert_eq!(resolution.request_id, AppServerRequestId::Integer(12));
-        assert_eq!(
-            resolution.result,
-            json!({
-                "action": "accept",
-                "content": { "answer": "yes" },
-                "_meta": { "source": "tui" }
-            })
-        );
-    }
-
-    #[test]
     fn rejects_dynamic_tool_calls_as_unsupported() {
         let mut pending = PendingAppServerRequests::default();
         let unsupported = pending
@@ -824,40 +697,6 @@ mod tests {
         assert_eq!(
             pending.resolve_notification(&AppServerRequestId::Integer(41)),
             None
-        );
-    }
-
-    #[test]
-    fn resolve_notification_returns_resolved_mcp_request() {
-        let mut pending = PendingAppServerRequests::default();
-        assert_eq!(
-            pending.note_server_request(&ServerRequest::McpServerElicitationRequest {
-                request_id: AppServerRequestId::Integer(12),
-                params: McpServerElicitationRequestParams {
-                    thread_id: "thread-1".to_string(),
-                    turn_id: Some("turn-1".to_string()),
-                    server_name: "example".to_string(),
-                    request: McpServerElicitationRequest::Form {
-                        meta: None,
-                        message: "Need input".to_string(),
-                        requested_schema: McpElicitationSchema {
-                            schema_uri: None,
-                            type_: McpElicitationObjectType::Object,
-                            properties: BTreeMap::new(),
-                            required: None,
-                        },
-                    },
-                },
-            }),
-            None
-        );
-
-        assert_eq!(
-            pending.resolve_notification(&AppServerRequestId::Integer(12)),
-            Some(ResolvedAppServerRequest::McpElicitation {
-                server_name: "example".to_string(),
-                request_id: AppServerRequestId::Integer(12),
-            })
         );
     }
 

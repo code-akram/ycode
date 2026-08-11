@@ -244,17 +244,6 @@ impl TurnContext {
             })
     }
 
-    pub(crate) fn apps_enabled(&self) -> bool {
-        let uses_codex_backend = self
-            .auth_manager
-            .as_deref()
-            .is_some_and(AuthManager::current_auth_uses_codex_backend);
-        self.config
-            .features
-            .apps_enabled_for_auth(uses_codex_backend)
-            && self.config.orchestrator_mcp_enabled
-    }
-
     pub(crate) async fn with_model(
         &self,
         model: String,
@@ -620,7 +609,6 @@ impl Session {
             let mut state = self.state.lock().await;
             match state.session_configuration.clone().apply(&updates) {
                 Ok(next) => {
-                    let mcp_inputs_changed = state.session_configuration.mcp_inputs_differ(&next);
                     let previous_permission_profile =
                         state.session_configuration.permission_profile();
                     let next_permission_profile = next.permission_profile();
@@ -642,13 +630,9 @@ impl Session {
                             .turn_environments
                             .update_environment_configs(&environment_config);
                     }
-                    if mcp_inputs_changed {
-                        self.mark_mcp_runtime_dirty();
-                    }
                     state.session_configuration = next.clone();
                     Ok((
                         next,
-                        mcp_inputs_changed,
                         permission_profile_changed,
                         previous_config,
                         new_config,
@@ -658,31 +642,23 @@ impl Session {
             }
         };
 
-        let (
-            session_configuration,
-            mcp_inputs_changed,
-            permission_profile_changed,
-            previous_config,
-            new_config,
-        ) = match update_result {
-            Ok(update) => update,
-            Err(err) => {
-                let message = err.to_string();
-                self.send_event_raw(Event {
-                    id: sub_id.clone(),
-                    msg: EventMsg::Error(ErrorEvent {
-                        message: message.clone(),
-                        codex_error_info: Some(CodexErrorInfo::BadRequest),
-                    }),
-                })
-                .await;
-                return Err(CodexErr::InvalidRequest(message));
-            }
-        };
+        let (session_configuration, permission_profile_changed, previous_config, new_config) =
+            match update_result {
+                Ok(update) => update,
+                Err(err) => {
+                    let message = err.to_string();
+                    self.send_event_raw(Event {
+                        id: sub_id.clone(),
+                        msg: EventMsg::Error(ErrorEvent {
+                            message: message.clone(),
+                            codex_error_info: Some(CodexErrorInfo::BadRequest),
+                        }),
+                    })
+                    .await;
+                    return Err(CodexErr::InvalidRequest(message));
+                }
+            };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
-        if mcp_inputs_changed {
-            self.schedule_mcp_prewarm();
-        }
 
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()

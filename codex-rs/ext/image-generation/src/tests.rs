@@ -98,17 +98,17 @@ async fn recent_image_fallback_selects_newest_images_in_chronological_order() {
         },
         ResponseItem::FunctionCall {
             id: None,
-            name: "mcp_image".to_string(),
+            name: "external_image".to_string(),
             namespace: None,
             arguments: "{}".to_string(),
-            call_id: "mcp-call".to_string(),
+            call_id: "external-call".to_string(),
             encrypted_function_args: None,
             internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::FunctionCallOutput {
             id: None,
-            call_id: "mcp-call".to_string(),
-            output: image_output("mcp"),
+            call_id: "external-call".to_string(),
+            output: image_output("external"),
             internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::CustomToolCall {
@@ -156,7 +156,7 @@ async fn recent_image_fallback_selects_newest_images_in_chronological_order() {
         .expect("history-backed edit request should build"),
         ImageRequest::Edit(expected_edit_request(
             "change the lighting",
-            &["user-2", "mcp", "code-mode", "generated"],
+            &["user-2", "external", "code-mode", "generated"],
         ))
     );
 }

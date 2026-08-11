@@ -1066,7 +1066,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 rules: true,
                 skill_approval: true,
                 request_permissions: true,
-                mcp_elicitations: true,
             }),
             sandbox_policy: workspace_write(false),
             action: ActionKind::RunCommand {

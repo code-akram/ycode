@@ -384,8 +384,7 @@ impl CatalogRequestProcessor {
                     description,
                     announcement,
                     enabled: config.features.enabled(spec.id)
-                        && (workspace_codex_plugins_enabled
-                            || !matches!(spec.id, Feature::Apps | Feature::Plugins)),
+                        && (workspace_codex_plugins_enabled || spec.id != Feature::Plugins),
                     default_enabled: spec.default_enabled,
                 }
             })

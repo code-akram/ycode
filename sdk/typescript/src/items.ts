@@ -1,7 +1,5 @@
 // based on item types from codex-rs/exec/src/exec_events.rs
 
-import type { ContentBlock as McpContentBlock } from "@modelcontextprotocol/sdk/types.js";
-
 /** The status of a command execution. */
 export type CommandExecutionStatus = "in_progress" | "completed" | "failed";
 
@@ -39,36 +37,6 @@ export type FileChangeItem = {
   changes: FileUpdateChange[];
   /** Whether the patch ultimately succeeded or failed. */
   status: PatchApplyStatus;
-};
-
-/** The status of an MCP tool call. */
-export type McpToolCallStatus = "in_progress" | "completed" | "failed";
-
-/**
- * Represents a call to an MCP tool. The item starts when the invocation is dispatched
- * and completes when the MCP server reports success or failure.
- */
-export type McpToolCallItem = {
-  id: string;
-  type: "mcp_tool_call";
-  /** Name of the MCP server handling the request. */
-  server: string;
-  /** The tool invoked on the MCP server. */
-  tool: string;
-  /** Arguments forwarded to the tool invocation. */
-  arguments: unknown;
-  /** Result payload returned by the MCP server for successful calls. */
-  result?: {
-    content: McpContentBlock[];
-    _meta?: unknown;
-    structured_content: unknown;
-  };
-  /** Error message reported for failed calls. */
-  error?: {
-    message: string;
-  };
-  /** Current status of the tool invocation. */
-  status: McpToolCallStatus;
 };
 
 /** Response from the agent. Either natural-language text or JSON when structured output is requested. */
@@ -122,7 +90,6 @@ export type ThreadItem =
   | ReasoningItem
   | CommandExecutionItem
   | FileChangeItem
-  | McpToolCallItem
   | WebSearchItem
   | TodoListItem
   | ErrorItem;

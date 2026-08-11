@@ -3,7 +3,6 @@ use codex_app_server_protocol::ExternalAgentConfigImportItemTypeFailure;
 use codex_app_server_protocol::ExternalAgentConfigImportItemTypeSuccess;
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
-use codex_app_server_protocol::McpServerMigration;
 use codex_app_server_protocol::MigrationDetails;
 use codex_app_server_protocol::PluginsMigration;
 use codex_app_server_protocol::SessionMigration;
@@ -55,22 +54,6 @@ fn selected_items() -> Vec<ExternalAgentConfigMigrationItem> {
                     },
                     SkillMigration {
                         name: "incident-review".to_string(),
-                    },
-                ],
-                ..Default::default()
-            }),
-        },
-        ExternalAgentConfigMigrationItem {
-            item_type: ExternalAgentConfigMigrationItemType::McpServerConfig,
-            description: "Import MCP servers".to_string(),
-            cwd: None,
-            details: Some(MigrationDetails {
-                mcp_servers: vec![
-                    McpServerMigration {
-                        name: "docs".to_string(),
-                    },
-                    McpServerMigration {
-                        name: "issues".to_string(),
                     },
                 ],
                 ..Default::default()
@@ -214,117 +197,6 @@ fn memory_without_a_selection_counts_as_zero() {
     };
 
     assert_eq!(external_agent_config_migration_item_count(&item), 0);
-}
-
-#[test]
-fn external_agent_config_migration_status_lines_use_semantic_colors() {
-    assert_eq!(
-        external_agent_config_migration_started_lines(
-            &selected_items(),
-            /*remaining_item_count*/ 0,
-        ),
-        vec![
-            Line::from(vec![
-                "• ".dim(),
-                "Import started.".cyan(),
-                " You can keep working while it finishes.".into(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "Imported setup will apply to new chats.".dim(),
-            ]),
-            Line::from(vec!["  ".into(), "Importing:".cyan().bold()]),
-            Line::from(vec![
-                "    ".into(),
-                "Settings".cyan(),
-                ": ".into(),
-                "1".green(),
-            ]),
-            Line::from(vec![
-                "    ".into(),
-                "Memory".cyan(),
-                ": ".into(),
-                "2".green(),
-                " — ".dim(),
-                "project-a, project-b".into(),
-            ]),
-            Line::from(vec![
-                "    ".into(),
-                "Skills".cyan(),
-                ": ".into(),
-                "4".green(),
-                " — ".dim(),
-                "triage, release-notes, risk-check, +1 more".into(),
-            ]),
-            Line::from(vec![
-                "    ".into(),
-                "MCP servers".cyan(),
-                ": ".into(),
-                "2".green(),
-                " — ".dim(),
-                "docs, issues".into(),
-            ]),
-            Line::from(vec![
-                "    ".into(),
-                "Chat sessions".cyan(),
-                ": ".into(),
-                "3".green(),
-                " — ".dim(),
-                "Alpha rollout, Beta review, Gamma notes".into(),
-            ]),
-            Line::from(vec![
-                "    ".into(),
-                "Plugins".cyan(),
-                ": ".into(),
-                "2".green(),
-                " — ".dim(),
-                "formatter, reviewer".into(),
-            ]),
-        ]
-    );
-
-    assert_eq!(
-        external_agent_config_migration_finished_lines(&completed_notification()),
-        vec![
-            Line::from(vec![
-                "• ".dim(),
-                "Import finished: ".into(),
-                "4 imported".green(),
-                ", ".into(),
-                "1 failed".red(),
-                ".".into(),
-            ]),
-            Line::from(vec!["  ".into(), "Results by type:".cyan().bold()]),
-            Line::from(vec![
-                "    ".into(),
-                "Settings".cyan(),
-                ": ".into(),
-                "1 imported".green(),
-                ", ".into(),
-                "0 failed".green(),
-            ]),
-            Line::from(vec![
-                "    ".into(),
-                "Memory".cyan(),
-                ": ".into(),
-                "2 imported".green(),
-                ", ".into(),
-                "0 failed".green(),
-            ]),
-            Line::from(vec![
-                "    ".into(),
-                "Plugins".cyan(),
-                ": ".into(),
-                "1 imported".green(),
-                ", ".into(),
-                "1 failed".red(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "Run /import again to check for additional items.".dim(),
-            ]),
-        ]
-    );
 }
 
 #[test]

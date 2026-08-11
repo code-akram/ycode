@@ -9,12 +9,12 @@ from .v2_all import AccountLoginCompletedNotification
 from .v2_all import AccountRateLimitsUpdatedNotification
 from .v2_all import AccountUpdatedNotification
 from .v2_all import AgentMessageDeltaNotification
-from .v2_all import AppListUpdatedNotification
 from .v2_all import CommandExecOutputDeltaNotification
 from .v2_all import CommandExecutionOutputDeltaNotification
 from .v2_all import ConfigWarningNotification
 from .v2_all import ContextCompactedNotification
 from .v2_all import DeprecationNoticeNotification
+from .v2_all import EnvironmentConnectionNotification
 from .v2_all import ErrorNotification
 from .v2_all import ExternalAgentConfigImportCompletedNotification
 from .v2_all import ExternalAgentConfigImportProgressNotification
@@ -30,9 +30,6 @@ from .v2_all import ItemCompletedNotification
 from .v2_all import ItemGuardianApprovalReviewCompletedNotification
 from .v2_all import ItemGuardianApprovalReviewStartedNotification
 from .v2_all import ItemStartedNotification
-from .v2_all import McpServerOauthLoginCompletedNotification
-from .v2_all import McpServerStatusUpdatedNotification
-from .v2_all import McpToolCallProgressNotification
 from .v2_all import ModelReroutedNotification
 from .v2_all import ModelSafetyBufferingUpdatedNotification
 from .v2_all import ModelVerificationNotification
@@ -71,14 +68,11 @@ from .v2_all import TurnModerationMetadataNotification
 from .v2_all import TurnPlanUpdatedNotification
 from .v2_all import TurnStartedNotification
 from .v2_all import WarningNotification
-from .v2_all import WindowsSandboxSetupCompletedNotification
-from .v2_all import WindowsWorldWritableWarningNotification
 
 NOTIFICATION_MODELS: dict[str, type[BaseModel]] = {
     "account/login/completed": AccountLoginCompletedNotification,
     "account/rateLimits/updated": AccountRateLimitsUpdatedNotification,
     "account/updated": AccountUpdatedNotification,
-    "app/list/updated": AppListUpdatedNotification,
     "command/exec/outputDelta": CommandExecOutputDeltaNotification,
     "configWarning": ConfigWarningNotification,
     "deprecationNotice": DeprecationNoticeNotification,
@@ -99,14 +93,11 @@ NOTIFICATION_MODELS: dict[str, type[BaseModel]] = {
     "item/completed": ItemCompletedNotification,
     "item/fileChange/outputDelta": FileChangeOutputDeltaNotification,
     "item/fileChange/patchUpdated": FileChangePatchUpdatedNotification,
-    "item/mcpToolCall/progress": McpToolCallProgressNotification,
     "item/plan/delta": PlanDeltaNotification,
     "item/reasoning/summaryPartAdded": ReasoningSummaryPartAddedNotification,
     "item/reasoning/summaryTextDelta": ReasoningSummaryTextDeltaNotification,
     "item/reasoning/textDelta": ReasoningTextDeltaNotification,
     "item/started": ItemStartedNotification,
-    "mcpServer/oauthLogin/completed": McpServerOauthLoginCompletedNotification,
-    "mcpServer/startupStatus/updated": McpServerStatusUpdatedNotification,
     "model/rerouted": ModelReroutedNotification,
     "model/safetyBuffering/updated": ModelSafetyBufferingUpdatedNotification,
     "model/verification": ModelVerificationNotification,
@@ -119,6 +110,8 @@ NOTIFICATION_MODELS: dict[str, type[BaseModel]] = {
     "thread/closed": ThreadClosedNotification,
     "thread/compacted": ContextCompactedNotification,
     "thread/deleted": ThreadDeletedNotification,
+    "thread/environment/connected": EnvironmentConnectionNotification,
+    "thread/environment/disconnected": EnvironmentConnectionNotification,
     "thread/goal/cleared": ThreadGoalClearedNotification,
     "thread/goal/updated": ThreadGoalUpdatedNotification,
     "thread/name/updated": ThreadNameUpdatedNotification,
@@ -141,8 +134,6 @@ NOTIFICATION_MODELS: dict[str, type[BaseModel]] = {
     "turn/plan/updated": TurnPlanUpdatedNotification,
     "turn/started": TurnStartedNotification,
     "warning": WarningNotification,
-    "windows/worldWritableWarning": WindowsWorldWritableWarningNotification,
-    "windowsSandbox/setupCompleted": WindowsSandboxSetupCompletedNotification,
 }
 
 DIRECT_TURN_ID_NOTIFICATION_TYPES: tuple[type[BaseModel], ...] = (
@@ -158,7 +149,6 @@ DIRECT_TURN_ID_NOTIFICATION_TYPES: tuple[type[BaseModel], ...] = (
     ItemGuardianApprovalReviewCompletedNotification,
     ItemGuardianApprovalReviewStartedNotification,
     ItemStartedNotification,
-    McpToolCallProgressNotification,
     ModelReroutedNotification,
     ModelSafetyBufferingUpdatedNotification,
     ModelVerificationNotification,

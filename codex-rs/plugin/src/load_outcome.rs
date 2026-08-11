@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -6,17 +5,14 @@ use codex_utils_plugins::PluginIdentity;
 use codex_utils_plugins::PluginSkillRoot;
 use codex_utils_plugins::SkillDiscoveryMode;
 
-use crate::AppConnectorId;
-use crate::AppDeclaration;
 use crate::PluginCapabilitySummary;
 use crate::PluginHookSource;
-use crate::app_connector_ids_from_declarations;
 
 const MAX_CAPABILITY_SUMMARY_DESCRIPTION_LEN: usize = 1024;
 
-/// A plugin that was loaded from disk, including merged MCP server definitions.
+/// A plugin that was loaded from disk.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LoadedPlugin<M> {
+pub struct LoadedPlugin {
     pub config_name: String,
     pub remote_plugin_id: Option<String>,
     pub manifest_name: Option<String>,
@@ -28,14 +24,12 @@ pub struct LoadedPlugin<M> {
     pub skill_discovery_mode: SkillDiscoveryMode,
     pub disabled_skill_paths: HashSet<AbsolutePathBuf>,
     pub has_enabled_skills: bool,
-    pub mcp_servers: HashMap<String, M>,
-    pub apps: Vec<AppDeclaration>,
     pub hook_sources: Vec<PluginHookSource>,
     pub hook_load_warnings: Vec<String>,
     pub error: Option<String>,
 }
 
-impl<M> LoadedPlugin<M> {
+impl LoadedPlugin {
     pub fn is_active(&self) -> bool {
         self.enabled && self.error.is_none()
     }
@@ -49,15 +43,10 @@ impl<M> LoadedPlugin<M> {
     }
 }
 
-fn plugin_capability_summary_from_loaded<M>(
-    plugin: &LoadedPlugin<M>,
-) -> Option<PluginCapabilitySummary> {
+fn plugin_capability_summary_from_loaded(plugin: &LoadedPlugin) -> Option<PluginCapabilitySummary> {
     if !plugin.is_active() {
         return None;
     }
-
-    let mut mcp_server_names: Vec<String> = plugin.mcp_servers.keys().cloned().collect();
-    mcp_server_names.sort_unstable();
 
     let summary = PluginCapabilitySummary {
         config_name: plugin.config_name.clone(),
@@ -65,14 +54,9 @@ fn plugin_capability_summary_from_loaded<M>(
         plugin_namespace: plugin.plugin_namespace.clone(),
         description: prompt_safe_plugin_description(plugin.manifest_description.as_deref()),
         has_skills: plugin.has_enabled_skills,
-        mcp_server_names,
-        app_connector_ids: app_connector_ids_from_declarations(&plugin.apps),
     };
 
-    (summary.has_skills
-        || !summary.mcp_server_names.is_empty()
-        || !summary.app_connector_ids.is_empty())
-    .then_some(summary)
+    summary.has_skills.then_some(summary)
 }
 
 /// Normalizes plugin descriptions for inclusion in model-facing capability summaries.
@@ -97,19 +81,19 @@ pub fn prompt_safe_plugin_description(description: Option<&str>) -> Option<Strin
 ///
 /// Callers must apply any runtime capability policies before constructing this outcome.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PluginLoadOutcome<M> {
-    plugins: Vec<LoadedPlugin<M>>,
+pub struct PluginLoadOutcome {
+    plugins: Vec<LoadedPlugin>,
     capability_summaries: Vec<PluginCapabilitySummary>,
 }
 
-impl<M: Clone> Default for PluginLoadOutcome<M> {
+impl Default for PluginLoadOutcome {
     fn default() -> Self {
         Self::from_plugins(Vec::new())
     }
 }
 
-impl<M: Clone> PluginLoadOutcome<M> {
-    pub fn from_plugins(plugins: Vec<LoadedPlugin<M>>) -> Self {
+impl PluginLoadOutcome {
+    pub fn from_plugins(plugins: Vec<LoadedPlugin>) -> Self {
         let capability_summaries = plugins
             .iter()
             .filter_map(plugin_capability_summary_from_loaded)
@@ -159,27 +143,6 @@ impl<M: Clone> PluginLoadOutcome<M> {
         skill_roots
     }
 
-    pub fn effective_mcp_servers(&self) -> HashMap<String, M> {
-        let mut mcp_servers = HashMap::new();
-        for plugin in self.plugins.iter().filter(|plugin| plugin.is_active()) {
-            for (name, config) in &plugin.mcp_servers {
-                mcp_servers
-                    .entry(name.clone())
-                    .or_insert_with(|| config.clone());
-            }
-        }
-        mcp_servers
-    }
-
-    pub fn effective_apps(&self) -> Vec<AppConnectorId> {
-        app_connector_ids_from_declarations(
-            self.plugins
-                .iter()
-                .filter(|plugin| plugin.is_active())
-                .flat_map(|plugin| plugin.apps.iter()),
-        )
-    }
-
     pub fn effective_plugin_hook_sources(&self) -> Vec<PluginHookSource> {
         self.plugins
             .iter()
@@ -200,20 +163,19 @@ impl<M: Clone> PluginLoadOutcome<M> {
         &self.capability_summaries
     }
 
-    pub fn plugins(&self) -> &[LoadedPlugin<M>] {
+    pub fn plugins(&self) -> &[LoadedPlugin] {
         &self.plugins
     }
 }
 
-/// Implemented by [`PluginLoadOutcome`] so callers (e.g. skills) can depend on `codex-plugin`
-/// without naming the MCP config type parameter.
+/// Implemented by [`PluginLoadOutcome`] so callers can depend on skill roots only.
 pub trait EffectiveSkillRoots {
     fn effective_skill_roots(&self) -> Vec<AbsolutePathBuf>;
 
     fn effective_plugin_skill_roots(&self) -> Vec<PluginSkillRoot>;
 }
 
-impl<M: Clone> EffectiveSkillRoots for PluginLoadOutcome<M> {
+impl EffectiveSkillRoots for PluginLoadOutcome {
     fn effective_skill_roots(&self) -> Vec<AbsolutePathBuf> {
         PluginLoadOutcome::effective_skill_roots(self)
     }
@@ -232,7 +194,7 @@ mod tests {
             .expect("absolute temp path")
     }
 
-    fn loaded_plugin(config_name: &str, skill_roots: Vec<AbsolutePathBuf>) -> LoadedPlugin<()> {
+    fn loaded_plugin(config_name: &str, skill_roots: Vec<AbsolutePathBuf>) -> LoadedPlugin {
         LoadedPlugin {
             config_name: config_name.to_string(),
             remote_plugin_id: None,
@@ -250,8 +212,6 @@ mod tests {
             skill_discovery_mode: SkillDiscoveryMode::Recursive,
             disabled_skill_paths: HashSet::new(),
             has_enabled_skills: true,
-            mcp_servers: HashMap::new(),
-            apps: Vec::new(),
             hook_sources: Vec::new(),
             hook_load_warnings: Vec::new(),
             error: None,

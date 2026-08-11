@@ -10,26 +10,18 @@ mod title;
 
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::RolloutItem;
-use std::collections::BTreeSet;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
-pub use crate::detect::sessions::ImportedSessionConnectorAttribution;
-pub use crate::detect::sessions::detect_imported_cla_session_connectors;
-pub use crate::detect::sessions::detect_imported_cla_session_connectors_by_source_path;
 pub use crate::detect::sessions::detect_recent_cla_sessions;
 pub use crate::detect::sessions::detect_recent_cur_sessions;
 pub use append::ExistingSessionAppend;
 pub use append::append_existing_session;
 use export::load_session_for_import_with_content_sha256;
 pub use ledger::CompletedExternalAgentSessionImport;
-pub use ledger::ImportedConnectorCandidate;
-pub use ledger::append_imported_session_connector_names;
 pub use ledger::has_current_session_been_imported;
-pub use ledger::read_imported_connector_candidates;
 pub use ledger::record_completed_session_imports;
-pub use ledger::record_detected_session_connectors;
 pub use records_cla::summarize_session;
 
 const SESSION_TITLE_MAX_LEN: usize = 120;
@@ -51,13 +43,6 @@ struct ParsedSessionImport {
     ai_title: Option<String>,
     messages: Vec<ConversationMessage>,
     content_sha256: String,
-    attributed_mcp_server_ids: BTreeSet<String>,
-}
-
-pub(crate) fn normalized_connector_display_name(name: Option<&str>) -> Option<String> {
-    name.map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(ToOwned::to_owned)
 }
 
 /// Selects whether session records must carry their own project metadata.
@@ -98,7 +83,6 @@ pub struct PendingSessionImport {
     pub source_path: PathBuf,
     pub source_content_sha256: String,
     pub target: SessionImportTarget,
-    pub attributed_mcp_server_ids: BTreeSet<String>,
     pub session: ImportedExternalAgentSession,
 }
 
@@ -151,7 +135,7 @@ fn load_importable_session(
         SessionMetadataMode::Embedded => (SessionRecordFormat::Cla, None),
         SessionMetadataMode::MigrationFallback => (SessionRecordFormat::Cur, Some(fallback_cwd)),
     };
-    let Some((imported_session, source_content_sha256, attributed_mcp_server_ids)) =
+    let Some((imported_session, source_content_sha256)) =
         load_session_for_import_with_content_sha256(&source_path, record_format, fallback_cwd)?
     else {
         return Ok(None);
@@ -163,7 +147,6 @@ fn load_importable_session(
             source_path,
             source_content_sha256,
             target: SessionImportTarget::New,
-            attributed_mcp_server_ids,
             session: imported_session,
         }))
 }
@@ -270,7 +253,6 @@ mod tests {
             source_path: source_path.clone(),
             source_content_sha256: source_content_sha256.to_string(),
             imported_thread_id: ThreadId::new(),
-            connector_names: Vec::new(),
             title: None,
         };
         ledger::record_completed_session_imports(

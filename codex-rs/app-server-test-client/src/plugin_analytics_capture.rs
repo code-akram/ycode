@@ -78,12 +78,7 @@ fn validate_event(event: &Value, expected: &PluginEventIdentity<'_>) -> Result<(
     require_string(params, "remote_plugin_id", expected.remote_plugin_id)?;
     require_string(params, "plugin_name", expected.plugin_name)?;
     require_string(params, "marketplace_name", expected.marketplace_name)?;
-    for field in [
-        "has_skills",
-        "mcp_server_count",
-        "connector_ids",
-        "product_client_id",
-    ] {
+    for field in ["has_skills", "product_client_id"] {
         if params.get(field).is_none_or(Value::is_null) {
             bail!(
                 "{} event has null or missing `{field}`",

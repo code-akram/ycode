@@ -1,6 +1,6 @@
 # Codex self-knowledge
 
-Use this manual-first route only for genuinely broad Codex setup, orientation, customization, troubleshooting, local-state guidance, or system-map synthesis across skills, plugins, MCP, hooks, `AGENTS.md`, automations, and product surfaces. Mixed Chat/Work/Codex comparisons belong to `official-docs.md` instead.
+Use this manual-first route only for genuinely broad Codex setup, orientation, customization, troubleshooting, local-state guidance, or system-map synthesis across skills, plugins, hooks, `AGENTS.md`, automations, and product surfaces. Mixed Chat/Work/Codex comparisons belong to `official-docs.md` instead.
 
 Narrow Codex documentation questions require official documentation search first, then an actual page open or fetch using an available documentation or official-domain web capability. This includes a single feature such as Codex Goals, a specific setting, documented behavior, exact error, or requested page citation. Search and fetch the exact official topic before inspecting local files or bundled references. Do not fetch the manual, read bundled references, inspect local configuration or caches, or turn a targeted documentation lookup into broad product synthesis. Current or latest model questions follow the model-selection route.
 
@@ -50,11 +50,10 @@ If official documentation conflicts with a callable capability verified in the c
 
 - Prompt or thread context: one-off task constraints.
 - Repository `AGENTS.md`: durable team conventions, commands, and verification expectations; nested files apply more specifically within their subtree.
-- Project `.codex/config.toml`: settings for a trusted repository, including sandbox, MCP, hooks, model, and reasoning defaults.
+- Project `.codex/config.toml`: settings for a trusted repository, including sandbox, hooks, model, and reasoning defaults.
 - Global config or global guidance: personal defaults across repositories.
 - Skill: a reusable workflow, optionally with focused references or scripts.
-- Plugin: an installable bundle of skills, tools, commands, MCP configuration, hooks, apps, assets, or related metadata.
-- MCP server or app connector: authorized live external data and actions. Use an authenticated connector, not web search or memory, for private Google Docs, Calendar, Slack, GitHub, Notion, or similar workspace data.
+- Plugin: an installable bundle of skills, tools, commands, hooks, apps, assets, or related metadata.
 - Automation: scheduled checks, reminders, monitors, or follow-ups; use an existing-thread heartbeat when continuity matters.
 - Hook: mechanical enforcement around lifecycle events, tool calls, commands, or edits.
 
@@ -64,8 +63,8 @@ For a surface recommendation, state what to use, why it fits, what to avoid, and
 
 For product surfaces, distinguish terminal-first CLI work, editor-attached IDE work, desktop planning or review, hosted cloud execution, in-app browser testing, the user's existing Chrome session, and desktop Computer Use. Keep `config.toml` defaults, `requirements.toml` constraints, and managed or administrator policy separate. An API key does not establish ChatGPT, Codex cloud, connector, or account access.
 
-For plugin or app failures, check the installed bundle, enabled state, connector authorization, MCP setup, restart or new-thread expectations, and workspace policy before inferring a cause. Route billing, entitlements, undocumented rollout labels, and unsupported access paths to the appropriate support or administrative owner.
+For plugin or app failures, check the installed bundle, enabled state, connector authorization, restart or new-thread expectations, and workspace policy before inferring a cause. Route billing, entitlements, undocumented rollout labels, and unsupported access paths to the appropriate support or administrative owner.
 
 Memory can provide user preferences or context, but explicit prompt instructions win and memory is not a source for current external facts. Sandbox or network denials require narrowly scoped escalation with a clear justification; destructive commands, writes outside the workspace, and broad access changes require explicit approval.
 
-When a page-specific citation helps, useful official anchors include `concepts/customization#agents-guidance`, `concepts/customization#skills`, `plugins/build#plugin-structure`, `concepts/customization#mcp`, `config-advanced#hooks`, `app/automations#thread-automations`, and `config-reference#configtoml`.
+When a page-specific citation helps, useful official anchors include `concepts/customization#agents-guidance`, `concepts/customization#skills`, `plugins/build#plugin-structure`, `config-advanced#hooks`, `app/automations#thread-automations`, and `config-reference#configtoml`.

@@ -520,15 +520,6 @@ pub(crate) fn response_input_to_response_item(input: &ResponseInputItem) -> Opti
             output: output.clone(),
             internal_chat_message_metadata_passthrough: None,
         }),
-        ResponseInputItem::McpToolCallOutput { call_id, output } => {
-            let output = output.as_function_call_output_payload();
-            Some(ResponseItem::FunctionCallOutput {
-                id: None,
-                call_id: call_id.clone(),
-                output,
-                internal_chat_message_metadata_passthrough: None,
-            })
-        }
         ResponseInputItem::ToolSearchOutput {
             call_id,
             status,

@@ -19,7 +19,7 @@
 
 ## Protocol
 
-Similar to [MCP](https://modelcontextprotocol.io/), `codex app-server` supports bidirectional communication using JSON-RPC 2.0 messages (with the `"jsonrpc":"2.0"` header omitted on the wire).
+`codex app-server` supports bidirectional communication using JSON-RPC 2.0 messages (with the `"jsonrpc":"2.0"` header omitted on the wire).
 
 Supported transports:
 
@@ -88,34 +88,6 @@ Clients must send a single `initialize` request per transport connection before 
 
 `initialize.params.capabilities` also supports per-connection notification opt-out via `optOutNotificationMethods`, which is a list of exact method names to suppress for that connection. Matching is exact (no wildcards/prefixes). Unknown method names are accepted and ignored.
 
-Clients declare supported MCP extensions during initialization. For OpenAI
-extended forms, clients must handle the request envelope, including a fallback
-for unsupported field types. `mcpServerOpenaiFormElicitation: true` remains a
-legacy alias for declaring the `openai/form` extension.
-
-```json
-{
-  "capabilities": {
-    "extensions": {
-      "openai/form": {},
-      "io.modelcontextprotocol/ui": {
-        "mimeTypes": ["text/html;profile=mcp-app"]
-      }
-    }
-  }
-}
-```
-
-App-server keeps the complete value under `io.modelcontextprotocol/ui`, rather
-than deriving a WebView boolean, so clients can advertise additional supported
-MIME types and future extension settings. The MCP extension profile is fixed
-when a Codex session is created by `thread/start`, `thread/resume`, or
-`thread/fork`. Codex advertises that profile in the downstream MCP
-`initialize` request; it is not repeated in individual tool-call metadata.
-Every turn and direct MCP tool call in that loaded session therefore uses the
-same initialized profile. A different app-server connection cannot change it
-by starting a later turn. Subagent sessions inherit the same extension profile.
-
 Applications building on top of `codex app-server` should identify themselves via the `clientInfo` parameter.
 
 **Important**: `clientInfo.name` is used to identify the client for the OpenAI Compliance Logs Platform. If
@@ -160,7 +132,7 @@ Example with notification opt-out:
 
 ## API Overview
 
-- `thread/start` — create a new thread; emits `thread/started` (including the current `thread.status`) and auto-subscribes you to turn/item events for that thread. Experimental `historyMode: "paginated"` selects projection-backed durable history. When the request includes a `cwd` and the resolved sandbox is `workspace-write` or full access, app-server also marks that project as trusted in the user `config.toml`. Pass `sessionStartSource: "clear"` when starting a replacement thread after clearing the current session so `SessionStart` hooks receive `source: "clear"` instead of the default `"startup"`. Experimental `allowProviderModelFallback` lets providers backed by an authoritative static model catalog replace an unavailable requested `model` with the catalog default; dynamic or cached catalogs preserve the requested model. Experimental `runtimeWorkspaceRoots` supplies the runtime workspace roots used when app-server creates default environment selections; paths must be absolute. For permissions, prefer experimental `permissions` profile selection by id; the legacy `sandbox` shorthand is still accepted but cannot be combined with `permissions`. Deprecated experimental `multiAgentMode` is ignored; use Ultra reasoning effort for proactive multi-agent behavior. Experimental `environments` selects the sticky execution environments for turns on the thread; omit it to use the server default, pass `[]` to disable environments, or pass explicit environment ids with per-environment `cwd` and optional environment-native `runtimeWorkspaceRoots`. Explicit environments ignore the top-level roots; omitted per-environment roots default to that environment's `cwd`, while an empty list explicitly selects no roots. Experimental `selectedCapabilityRoots` selects environment-owned plugin or standalone-skill roots using environment-native absolute paths. Skills found below those roots are listed and read through the owning environment. Stdio MCP servers declared by selected plugins are started in that environment, and HTTP MCP connections use that environment's HTTP client.
+- `thread/start` — create a new thread; emits `thread/started` (including the current `thread.status`) and auto-subscribes you to turn/item events for that thread. Experimental `historyMode: "paginated"` selects projection-backed durable history. When the request includes a `cwd` and the resolved sandbox is `workspace-write` or full access, app-server also marks that project as trusted in the user `config.toml`. Pass `sessionStartSource: "clear"` when starting a replacement thread after clearing the current session so `SessionStart` hooks receive `source: "clear"` instead of the default `"startup"`. Experimental `allowProviderModelFallback` lets providers backed by an authoritative static model catalog replace an unavailable requested `model` with the catalog default; dynamic or cached catalogs preserve the requested model. Experimental `runtimeWorkspaceRoots` supplies the runtime workspace roots used when app-server creates default environment selections; paths must be absolute. For permissions, prefer experimental `permissions` profile selection by id; the legacy `sandbox` shorthand is still accepted but cannot be combined with `permissions`. Deprecated experimental `multiAgentMode` is ignored; use Ultra reasoning effort for proactive multi-agent behavior. Experimental `environments` selects the sticky execution environments for turns on the thread; omit it to use the server default, pass `[]` to disable environments, or pass explicit environment ids with per-environment `cwd` and optional environment-native `runtimeWorkspaceRoots`. Explicit environments ignore the top-level roots; omitted per-environment roots default to that environment's `cwd`, while an empty list explicitly selects no roots. Experimental `selectedCapabilityRoots` selects environment-owned plugin or standalone-skill roots using environment-native absolute paths. Skills found below those roots are listed and read through the owning environment.
 - `thread/resume` — reopen an existing thread by id so subsequent `turn/start` calls append to it. Accepts the same permission override rules as `thread/start`.
 - `thread/fork` — fork an existing thread into a new thread id by copying the stored history; pass an optional `lastTurnId` to copy history only through that turn, inclusive, and drop later turns from the fork. An in-progress `lastTurnId` boundary is rejected. Experimental `beforeTurnId` instead copies history strictly before the referenced turn, including when that turn is in progress, and cannot be combined with `lastTurnId`. If both boundaries are null while the source thread is mid-turn, the fork records the same interruption marker as `turn/interrupt` instead of inheriting an unmarked partial turn suffix. The returned `thread.forkedFromId` points at the source thread when known. Accepts `ephemeral: true` for an in-memory temporary fork, emits `thread/started` (including the current `thread.status`), and auto-subscribes you to turn/item events for the new thread. Experimental clients can pass `excludeTurns: true` when they plan to page fork history via `thread/turns/list` instead of receiving the full turn array immediately, or `deferGoalContinuation: true` to carry the source thread's current goal into the fork and run an explicit turn before automatic continuation resumes. Deferred goal continuation is persisted until that turn starts and cannot be combined with `ephemeral: true`. Accepts the same permission override rules as `thread/start`.
 - `thread/start`, `thread/resume`, and `thread/fork` responses include the legacy `sandbox` compatibility projection. `instructionSources` lists loaded instruction files using each source environment's native absolute path syntax, including files loaded from remote environments. Experimental clients can read `runtimeWorkspaceRoots` for the thread-scoped runtime roots and `activePermissionProfile` for the named or implicit built-in profile identity/provenance when known. Their deprecated experimental `multiAgentMode` field, and the corresponding thread setting, always report `explicitRequestOnly`; Ultra reasoning effort is the source of proactive multi-agent behavior.
@@ -247,7 +219,7 @@ Example with notification opt-out:
 - `plugin/list` — list discovered plugin marketplaces and plugin state, including effective marketplace install/auth policy metadata, nullable remote install-policy provenance in `installPolicySource` (`WORKSPACE_SETTING` or `IMPLICIT_CANONICAL_APP`), the remote marketplace `version` and locally materialized `localVersion` when available, plugin `availability` (`AVAILABLE` by default or `DISABLED_BY_ADMIN` for remote plugins blocked upstream), fail-open `marketplaceLoadErrors` entries for marketplace files that could not be parsed or loaded, and best-effort `featuredPluginIds` for the official curated marketplace. Every `PluginSummary` returned by plugin list, installed, read, and share-list methods includes nullable `disabledReason` and `eligiblePlanTypes`, preserving plugin-service availability metadata and raw plan identifiers for remote plugins while returning `null` for local plugins or older remote responses. The same summaries include `mustShowInstallationInterstitial`: remote service values preserve `true` or `false`, while local plugins and remote responses that omit the policy return `null`. Clients should fail closed when the value is `null`. Clients can explicitly request the remote `workspace-directory`, `shared-with-me`, or `created-by-me-remote` marketplace kinds. Set `forceRefetch: true` to bypass TTL-backed remote catalog caches for the requested marketplaces and wait for fresh data; cache entries are replaced only after a successful fetch. When local marketplaces are included, the request also waits for configured plugin caches to reconcile before marketplace summaries are returned. At app-server startup, existing cached catalogs remain available to `plugin/list` while they refresh in the background. `interface.category` uses the marketplace category when present; otherwise it falls back to the plugin manifest category (**under development; do not call from production clients yet**).
 - `plugin/search` — search the remote plugin service directly and combine matching local marketplace plugins into the first result page. Accepts a `searchTerm`, optional `global`, `workspace`, or `personal` scope, optional `cwds` for discovering repo marketplaces, and optional `cursor` and `limit`; `personal` searches user-owned plugins. Local matching uses plugin names, display names, and keywords, with case- and punctuation-insensitive relevance ordering. Global searches include applicable built-in local plugins, personal searches include other local plugins, workspace searches remain remote-only, and an omitted scope includes all local plugins. When the remote global catalog is active, it is authoritative and replaces the local curated marketplace. Local results remain available with API-key authentication and when `remote_plugin` is disabled; in the latter case, omitted-scope and explicit workspace searches can still query the remote workspace catalog, while explicit global and personal searches do not query plugin-service. The first page includes at most 100 local matches and can exceed `limit`; subsequent pages contain remote results only, and the upstream pagination token is passed through unchanged as `nextCursor`. Local and remote copies are deduplicated by shared remote identity, with the remote summary retaining local installed state. Every result always explicitly returns `plugin.enabled: false`, including enabled local plugins, deduplicated plugins, and later remote-only pages; search reports discovery metadata rather than effective activation. Use `plugin/list` or `plugin/read` to determine whether a plugin is actually enabled. When `plugin_sharing` is disabled, shared/private workspace results are omitted after the remote page is fetched (**under development; do not call from production clients yet**).
 - `plugin/installed` — list installed plugin rows plus any explicitly requested local install-suggestion plugin names, without fetching the broader remote catalog. Remote rows include nullable `installPolicySource` and `installedAt`, the backend installation timestamp in Unix seconds. `installedAt` is also returned by `plugin/list`, `plugin/read`, and `plugin/share/list`; it is `null` for local plugins, uninstalled plugins, plugins installed by default, and older backend responses that do not include an installation timestamp. Mention surfaces can use this narrower view when they need plugin mention payloads rather than plugin-page discovery data (**under development; do not call from production clients yet**).
-- `plugin/read` — read one plugin by `marketplacePath` plus `pluginName`, returning marketplace info, a list-style `summary`, manifest descriptions/interface metadata, and bundled skills/hooks/apps/MCP server names. Remote plugin details can include scheduled task summaries from the catalog; `scheduledTasks: null` means the metadata is unavailable, while an empty array means the catalog found no scheduled tasks. Remote plugin details expose the canonical `shareUrl` supplied by the remote catalog when available; it is `null` for local plugins or when the catalog omits it. This field is separate from `summary.shareContext`, which continues to describe user and workspace sharing state. For owned workspace plugins, `summary.shareContext.canPublishToWorkspace` reports whether the current user may add the plugin to the workspace directory; `plugin/share/save` returns the same capability after creating or updating a share, and clients should fail closed when either value is `null`. Remote skill interfaces expose `iconSmallUrl` and `iconLargeUrl` when the catalog supplies icon URLs. Returned plugin skills include their current `enabled` state after local config filtering; bundled hooks are returned as lightweight declaration summaries keyed for correlation with `hooks/list`. Use `plugin/install`'s `appsNeedingAuth` to drive post-install authentication and `app/list`'s `isAccessible` to determine current connector accessibility (**under development; do not call from production clients yet**).
+- `plugin/read` — read one plugin by `marketplacePath` plus `pluginName`, returning marketplace info, a list-style `summary`, manifest descriptions/interface metadata, and bundled skills, hooks, and apps. Remote plugin details can include scheduled task summaries from the catalog; `scheduledTasks: null` means the metadata is unavailable, while an empty array means the catalog found no scheduled tasks. Remote plugin details expose the canonical `shareUrl` supplied by the remote catalog when available; it is `null` for local plugins or when the catalog omits it. This field is separate from `summary.shareContext`, which continues to describe user and workspace sharing state. For owned workspace plugins, `summary.shareContext.canPublishToWorkspace` reports whether the current user may add the plugin to the workspace directory; `plugin/share/save` returns the same capability after creating or updating a share, and clients should fail closed when either value is `null`. Remote skill interfaces expose `iconSmallUrl` and `iconLargeUrl` when the catalog supplies icon URLs. Returned plugin skills include their current `enabled` state after local config filtering; bundled hooks are returned as lightweight declaration summaries keyed for correlation with `hooks/list`. Use `plugin/install`'s `appsNeedingAuth` to drive post-install authentication and `app/list`'s `isAccessible` to determine current connector accessibility (**under development; do not call from production clients yet**).
 - `plugin/skill/read` — read remote plugin skill markdown on demand by `remoteMarketplaceName`, `remotePluginId`, and `skillName`. This lets clients preview uninstalled remote plugin skills without downloading the plugin bundle.
 - `skills/changed` — notification emitted when watched local skill files change.
 - `app/installed` — read installed connector runtime state from the last committed snapshot, optionally refreshing it first.
@@ -261,14 +233,9 @@ Example with notification opt-out:
 - `remoteControl/client/revoke` — experimental; revoke one controller device's grant for an environment. Pass `environmentId` and `clientId`; returns an empty object. This signed-in account-management operation works while the local relay is disabled or unenrolled.
 - `remoteControl/status/changed` — notification emitted when the remote-control status or client-visible environment id changes. `status` is one of `disabled`, `connecting`, `connected`, or `errored`; `serverName` is the local machine name used by this app-server process; `environmentId` is a string when the app-server has a current enrollment and `null` when that enrollment is cleared, invalidated, or remote control is disabled. Newly initialized app-server clients always receive the current status snapshot.
 - `skills/config/write` — write user-level skill config by name or absolute path.
-- `plugin/install` — install a plugin from a discovered marketplace entry, rejecting marketplace entries marked unavailable for install, install MCPs if any, and return the effective plugin auth policy plus any apps that still need auth (**under development; do not call from production clients yet**).
+- `plugin/install` — install a plugin from a discovered marketplace entry, rejecting marketplace entries marked unavailable for install, and return the effective plugin auth policy plus any apps that still need auth (**under development; do not call from production clients yet**).
 - `plugin/uninstall` — uninstall a local plugin by `pluginId` in `<plugin>@<marketplace>` form by removing its cached files and clearing its user-level config entry, or uninstall a remote ChatGPT plugin by backend `pluginId` by forwarding the uninstall to the ChatGPT plugin backend and removing any downloaded remote-plugin cache (**under development; do not call from production clients yet**).
-- `mcpServer/oauth/login` — start an OAuth login for a configured MCP server; pass `threadId` to resolve servers from that thread's selected plugins and executor, and receive an `authorization_url` followed by `mcpServer/oauthLogin/completed` once the browser flow finishes.
 - `tool/requestUserInput` — prompt the user with 1–3 short questions for a tool call and return their answers (experimental).
-- `config/mcpServer/reload` — reload MCP server config from disk and queue a refresh for loaded threads (applied on each thread's next active turn); returns `{}`. Use this after editing `config.toml` without restarting the server.
-- `mcpServerStatus/list` — enumerate configured MCP servers with their tools, auth status, server info, plus resources/resource templates for `full` detail; supports optional `threadId` and cursor+limit pagination. If `threadId` is omitted, the server reads from the latest global config directly. If `detail` is omitted, the server defaults to `full`. An `unknown` auth status means OAuth support could not be determined; `unsupported` means OAuth is known not to be supported.
-- `mcpServer/resource/read` — read a resource from a configured MCP server by optional `threadId`, `server`, and `uri`, returning text/blob resource `contents`. If `threadId` is omitted, the server reads from the latest MCP config directly.
-- `mcpServer/tool/call` — call a tool on a thread's configured MCP server by `threadId`, `server`, `tool`, optional `arguments`, and optional `_meta`, returning the MCP tool result.
 - `windowsSandbox/setupStart` — start Windows sandbox setup for the selected mode (`elevated` or `unelevated`); accepts an optional absolute `cwd` to target setup for a specific workspace, returns `{ started: true }` immediately, and later emits `windowsSandbox/setupCompleted`.
 - `feedback/upload` — submit a feedback report (classification + optional reason/logs, conversation_id, and optional `extraLogFiles` attachments array); returns the tracking thread id.
 - `config/read` — fetch the runtime-effective config after resolving config layering and managed requirements, including opaque `desktop` values stored in `config.toml`.
@@ -906,26 +873,6 @@ Invoke a skill explicitly by including `$<skill-name>` in the text input and add
 } } }
 ```
 
-### Example: Start a turn (invoke an app)
-
-Invoke an app by including `$<app-slug>` in the text input and adding a `mention` input item with the app id in `app://<connector-id>` form.
-
-```json
-{ "method": "turn/start", "id": 34, "params": {
-    "threadId": "thr_123",
-    "input": [
-        { "type": "text", "text": "$demo-app Summarize the latest updates." },
-        { "type": "mention", "name": "Demo App", "path": "app://demo-app" }
-    ]
-} }
-{ "id": 34, "result": { "turn": {
-    "id": "turn_458",
-    "status": "inProgress",
-    "items": [],
-    "error": null
-} } }
-```
-
 ### Example: Start a turn (invoke a plugin)
 
 Invoke a plugin by including a UI mention token such as `@sample` in the text input and adding a `mention` input item with the exact `plugin://<plugin-name>@<marketplace-name>` path returned by `plugin/installed` or `plugin/list`.
@@ -1510,10 +1457,6 @@ Because audio is intentionally separate from `ThreadItem`, clients can opt out o
 
 - `windowsSandbox/setupCompleted` — `{ mode, success, error }` after a `windowsSandbox/setupStart` request finishes.
 
-### MCP server startup events
-
-- `mcpServer/startupStatus/updated` — `{ threadId, name, status, error, failureReason }` when app-server observes an MCP server startup transition. `threadId` identifies the owning thread when startup is thread-scoped and is `null` when startup is app-scoped. `status` is one of `starting`, `ready`, `failed`, or `cancelled`. `error` and `failureReason` are `null` except for `failed`; `failureReason` is `reauthenticationRequired` when stored OAuth credentials have expired and cannot be refreshed, so clients can prompt the user to reconnect the named server.
-
 ### Turn events
 
 The app-server streams JSON-RPC notifications while a turn is running. Each turn emits `turn/started` when it begins running and ends with `turn/completed` (final `turn` status). Token usage events stream separately via `thread/tokenUsage/updated`. Clients subscribe to the events they care about, rendering each item incrementally as updates arrive. The per-item lifecycle is always: `item/started` → zero or more item-specific deltas → `item/completed`.
@@ -1541,7 +1484,6 @@ The app-server streams JSON-RPC notifications while a turn is running. Each turn
 - `commandExecution` — `{id, pluginId?, scriptPath?, command, cwd, status, commandActions, aggregatedOutput?, exitCode?, durationMs?}` for sandboxed commands; `pluginId` is present only for commands attributed to a trusted first-party plugin, newly attributed items also include `scriptPath` as a safe `/`-separated path relative to the trusted plugin root, older history may omit `scriptPath`, and `status` is `inProgress`, `completed`, `failed`, or `declined`. Ordinary execution items and their replay expose `command` and `commandActions` as redacted display values, not executable commands.
   `cwd` and read `commandActions[].path` use the executor's native path convention, even when the app-server runs on a different operating system. For example, an app-server running on Linux can return `C:\repo\src\main.rs` for a Windows executor; clients must not interpret that path as local to the app-server.
 - `fileChange` — `{id, changes, status}` describing proposed edits; `changes` list `{path, kind, diff}` and `status` is `inProgress`, `completed`, `failed`, or `declined`.
-- `mcpToolCall` — `{id, server, tool, status, arguments, appContext, mcpAppResourceUri?, pluginId, readOnlyHint, result?, error?}` describing MCP calls; `appContext` is `{connectorId, linkId, resourceUri, appName, actionName}` for calls through a trusted MCP app, where `connectorId` identifies the connector that owns the tool, `linkId` identifies the app link, `resourceUri` points to the widget template, `appName` is the connector's display name, and `actionName` is the stable connector `Action.name`. `readOnlyHint` is `true` for read-only tools, `false` for write-capable tools, and `null` when the annotation is unavailable, including older rollout entries. The hint describes tool capability, not whether an invocation succeeded or performed a write; use `status`, `result`, and `error` to determine the execution outcome. `appName` and `actionName` may be null for older rollout entries. The top-level `mcpAppResourceUri` is deprecated and temporarily duplicated for client migration. `tool` identifies the raw MCP tool. `status` is `inProgress`, `completed`, or `failed`.
 - `collabToolCall` — `{id, tool, status, senderThreadId, receiverThreadId?, newThreadId?, prompt?, agentStatus?}` describing collab tool calls (`spawn_agent`, `send_input`, `resume_agent`, `wait`, `close_agent`); `status` is `inProgress`, `completed`, or `failed`.
 - `webSearch` — `{id, query, action?, results?}` for a web search request issued by the agent; `action` mirrors the Responses API web_search action payload (`search`, `open_page`, `find_in_page`) and may be omitted until completion. For standalone web search, `results` contains the out-of-band structured result DTOs returned by `/v1/alpha/search`; clients should ignore result types and fields they do not understand.
 - `imageGeneration` — `{id, status, revisedPrompt, result, transparentBackground, savedPath?}` for a generated image. `transparentBackground` is `true` when the Images API reports a transparent background, `false` when it reports an opaque background, and `null` when the background is automatic, unavailable, or the item has not completed. The field is always present on v2 item payloads, including persisted and resumed items.
@@ -1559,7 +1501,7 @@ All items emit shared lifecycle events:
 - `item/autoApprovalReview/started` — [UNSTABLE] temporary auto-review notification carrying `{threadId, turnId, targetItemId, review, action}` when approval auto-review begins. This shape is expected to change soon.
 - `item/autoApprovalReview/completed` — [UNSTABLE] temporary auto-review notification carrying `{threadId, turnId, targetItemId, review, action}` when approval auto-review resolves. This shape is expected to change soon.
 
-`review` is [UNSTABLE] and currently has `{status, riskLevel?, userAuthorization?, rationale?}`, where `status` is one of `inProgress`, `approved`, `denied`, or `aborted`. `riskLevel` is one of `"low"`, `"medium"`, `"high"`, or `"critical"` when present. `userAuthorization` is one of `"unknown"`, `"low"`, `"medium"`, or `"high"` when present. `action` is a tagged union with `type: "command" | "execve" | "applyPatch" | "networkAccess" | "mcpToolCall"`. Command-like actions include a `source` discriminator (`"shell"` or `"unifiedExec"`). These notifications are separate from the target item's own `item/completed` lifecycle and are intentionally temporary while the auto-review app protocol is still being designed.
+`review` is [UNSTABLE] and currently has `{status, riskLevel?, userAuthorization?, rationale?}`, where `status` is one of `inProgress`, `approved`, `denied`, or `aborted`. `riskLevel` is one of `"low"`, `"medium"`, `"high"`, or `"critical"` when present. `userAuthorization` is one of `"unknown"`, `"low"`, `"medium"`, or `"high"` when present. `action` is a tagged union with `type: "command" | "execve" | "applyPatch" | "networkAccess"`. Command-like actions include a `source` discriminator (`"shell"` or `"unifiedExec"`). These notifications are separate from the target item's own `item/completed` lifecycle and are intentionally temporary while the auto-review app protocol is still being designed.
 
 There are additional item-specific events:
 
@@ -1652,30 +1594,6 @@ Desktop hosts that provide upstream attestation should set `capabilities.request
 ### Current time
 
 When `[features.current_time_reminder]` is enabled with `clock_source = "external"`, app-server sends the client subscribed to the thread an experimental `currentTime/read` request with `{ "threadId": "thr_123" }` when a time reminder is due. The client responds with `{ "currentTimeAt": 1781717655 }`, where `currentTimeAt` is an integer Unix timestamp in seconds. A failed, canceled, timed-out, or malformed response stops the turn before the model request is sent.
-
-### MCP server elicitations
-
-MCP servers can interrupt a turn and ask the client for structured input via `mcpServer/elicitation/request`.
-
-Order of messages:
-
-1. `mcpServer/elicitation/request` (request) — includes `threadId`, nullable `turnId`, `serverName`, and either:
-   - a form request: `{ "mode": "form", "message": "...", "requestedSchema": { ... } }`
-   - an OpenAI extended form request: `{ "mode": "openai/form", "message": "...", "requestedSchema": { ... } }`
-   - a URL request: `{ "mode": "url", "message": "...", "url": "...", "elicitationId": "..." }`
-2. Client response — `{ "action": "accept", "content": ... }`, `{ "action": "decline", "content": null }`, or `{ "action": "cancel", "content": null }`.
-3. `serverRequest/resolved` — `{ threadId, requestId }` confirms the pending request has been resolved or cleared, including lifecycle cleanup on turn start/complete/interrupt.
-
-`turnId` is best-effort. When the elicitation is correlated with an active turn, the request includes that turn id; otherwise it is `null`.
-
-For `openai/form`, app-server forwards `requestedSchema` as opaque JSON. The
-client owns validation and rendering of supported field types and must return a
-valid `decline` or `cancel` response when it cannot render a form.
-
-For MCP tool approval elicitations, form request `meta` includes
-`codex_approval_kind: "mcp_tool_call"` and may include `persist: "session"`,
-`persist: "always"`, or `persist: ["session", "always"]` to advertise whether
-the client can offer session-scoped and/or persistent approval choices.
 
 ### Permission requests
 
@@ -1959,195 +1877,6 @@ To disable a non-managed hook, upsert a state entry at `hooks.state` with `confi
 ```
 
 To re-enable it, upsert the same hook key with `"enabled": true`.
-## Apps
-
-Use `app/installed` to read installed apps and whether each app is currently enabled and callable.
-
-```json
-{ "method": "app/installed", "id": 49, "params": {
-    "threadId": "thr_123",
-    "forceRefresh": false
-} }
-{ "id": 49, "result": {
-    "apps": [
-        {
-            "id": "demo-app",
-            "runtimeName": "Demo App",
-            "enabled": true,
-            "callable": true
-        }
-    ]
-} }
-```
-
-`id` is the app's connector ID, and `runtimeName` is the nullable name reported by the runtime. `enabled` reflects effective app configuration and workspace policy. `callable` is true when the app is enabled and has at least one model-visible tool allowed by app and tool policy.
-
-When `threadId` is provided, the response uses that thread's effective configuration; otherwise it uses the current global configuration. `forceRefresh` defaults to `false`. Set it to `true` to refresh the hosted connector runtime tool snapshot before reading the response. When Apps are disabled by global or workspace policy, previously observed apps may still be returned with `enabled` and `callable` set to `false`.
-
-Use `app/list` to fetch available apps (connectors). Each entry includes metadata like the app `id`, display `name`, `installUrl`, legacy logo URLs, structured light and dark icon assets, `branding`, `appMetadata`, `labels`, whether it is currently accessible, and whether it is enabled in config.
-
-```json
-{ "method": "app/list", "id": 50, "params": {
-    "cursor": null,
-    "limit": 50,
-    "threadId": "thr_123",
-    "forceRefetch": false
-} }
-{ "id": 50, "result": {
-    "data": [
-        {
-            "id": "demo-app",
-            "name": "Demo App",
-            "description": "Example connector for documentation.",
-            "logoUrl": "https://example.com/demo-app.png",
-            "logoUrlDark": null,
-            "iconAssets": {
-                "256_square": "https://example.com/demo-app-square.png"
-            },
-            "iconDarkAssets": null,
-            "distributionChannel": null,
-            "branding": null,
-            "appMetadata": null,
-            "labels": null,
-            "installUrl": "https://chatgpt.com/apps/demo-app/demo-app",
-            "isAccessible": true,
-            "isEnabled": true
-        }
-    ],
-    "nextCursor": null
-} }
-```
-
-When `threadId` is provided, app feature gating (`Feature::Apps`) is evaluated using that thread's config snapshot. When omitted, the latest global config is used.
-
-`app/list` returns after both accessible apps and directory apps are loaded. Set `forceRefetch: true` to bypass app caches and fetch fresh data from sources. Cache entries are only replaced when those refetches succeed.
-
-The server also emits `app/list/updated` notifications when newly loaded accessible or directory apps change the merged app list. Each notification includes the latest merged app list. An initial cached `app/list` still emits one final notification so other initialized clients can refresh their app list, while reading an unchanged cached continuation page does not emit a duplicate notification; `forceRefetch: true` preserves the existing progressive notifications while fresh data loads.
-
-```json
-{
-  "method": "app/list/updated",
-  "params": {
-    "data": [
-      {
-        "id": "demo-app",
-        "name": "Demo App",
-        "description": "Example connector for documentation.",
-        "logoUrl": "https://example.com/demo-app.png",
-        "logoUrlDark": null,
-        "iconAssets": {
-          "256_square": "https://example.com/demo-app-square.png"
-        },
-        "iconDarkAssets": null,
-        "distributionChannel": null,
-        "branding": null,
-        "appMetadata": null,
-        "labels": null,
-        "installUrl": "https://chatgpt.com/apps/demo-app/demo-app",
-        "isAccessible": true,
-        "isEnabled": true
-      }
-    ]
-  }
-}
-```
-
-Use `app/read` when a client already has app ids and only needs metadata. The request accepts at
-most 100 `appIds`; repeated ids are deduplicated while preserving first-request order. Both `apps`
-and `missingAppIds` follow that order. Unknown or unauthorized ids are returned as partial misses
-instead of failing the whole request.
-
-```json
-{ "method": "app/read", "id": 51, "params": {
-    "appIds": ["demo-app", "missing-app"],
-    "includeTools": true
-} }
-{ "id": 51, "result": {
-    "apps": [
-        {
-            "id": "demo-app",
-            "name": "Demo App",
-            "description": "Example app for documentation.",
-            "iconUrl": "https://files.openai.com/content?id=demo-app",
-            "toolSummaries": [
-                {
-                    "name": "search",
-                    "title": "Search",
-                    "description": "Search the app.",
-                    "isEnabled": true,
-                    "disabledReason": null,
-                    "isReadOnly": true
-                }
-            ]
-        }
-    ],
-    "missingAppIds": ["missing-app"]
-} }
-```
-
-`app/read` reads fresh metadata records from a cache partitioned by backend URL and ChatGPT
-account/workspace identity, then makes at most one `POST /ps/apps/batch` for missing or
-expired ids. `includeTools` defaults to false and is forwarded as `include_tools`; a fresh
-metadata-only cache entry is refetched when tool summaries are requested. Backend or transport
-failures return an RPC error without replacing existing cache records. Its metadata shape can
-include display-only public tool summaries with enabled/read-only state and intentionally excludes
-runtime state, MCP tool state, full actions, and model descriptions.
-
-Connected apps may override the thread's approval reviewer in `config.toml`.
-Use `apps._default.approvals_reviewer` to set the reviewer for all apps, and a
-per-app value to override that default. When both are omitted, the app inherits
-the top-level `approvals_reviewer` value:
-
-```toml
-approvals_reviewer = "auto_review"
-
-[apps._default]
-approvals_reviewer = "user"
-default_tools_approval_mode = "prompt"
-
-[apps.demo-app]
-approvals_reviewer = "auto_review"
-default_tools_approval_mode = "approve"
-```
-
-Setting the app value to `"user"` routes its approval prompts to the user
-instead of Guardian; setting it to `"auto_review"` opts that app into Guardian
-review when allowed by configuration requirements.
-
-Use `apps._default.default_tools_approval_mode` to set the approval mode for
-tools without a per-app or per-tool override. Supported values are `"auto"`,
-`"prompt"`, `"writes"`, and `"approve"`. The `"writes"` mode prompts for tools
-that do not advertise `readOnlyHint = true` and skips declared read-only tools.
-Tool-level `approval_mode` takes precedence over
-the per-app `default_tools_approval_mode`, which takes precedence over the
-`apps._default` value. Managed tool requirements take precedence over all of
-these settings. When none are configured, the mode defaults to `"auto"`.
-
-Invoke an app by inserting `$<app-slug>` in the text input. The slug is derived from the app name and lowercased with non-alphanumeric characters replaced by `-` (for example, "Demo App" becomes `$demo-app`). Add a `mention` input item (recommended) so the server uses the exact `app://<connector-id>` path rather than guessing by name. Plugins use the same `mention` item shape, but with `plugin://<plugin-name>@<marketplace-name>` paths from `plugin/installed` or `plugin/list`.
-
-Example:
-
-```
-$demo-app Pull the latest updates from the team.
-```
-
-```json
-{
-  "method": "turn/start",
-  "id": 51,
-  "params": {
-    "threadId": "thread-1",
-    "input": [
-      {
-        "type": "text",
-        "text": "$demo-app Pull the latest updates from the team."
-      },
-      { "type": "mention", "name": "Demo App", "path": "app://demo-app" }
-    ]
-  }
-}
-```
-
 ## Auth endpoints
 
 The JSON-RPC auth/account surface exposes request/response methods plus server-initiated notifications (no `id`). Use these to determine auth state, start or cancel logins, logout, and inspect ChatGPT rate limits.
@@ -2176,8 +1905,6 @@ Codex supports these authentication modes. The current mode is surfaced in `acco
 - `account/rateLimits/updated` (notify) — emitted whenever a user's ChatGPT rate limits change. This is a sparse rolling update; merge available values into the most recent `account/rateLimits/read` response or refetch that snapshot.
   `spendControlReached` is `true` or `false` when the backend reports spend-control state; `null` means unavailable and must not clear a previously observed value in a sparse update.
 - `account/sendAddCreditsNudgeEmail` — ask ChatGPT to email the workspace owner about depleted credits or a reached usage limit.
-- `mcpServer/oauthLogin/completed` (notify) — emitted after a `mcpServer/oauth/login` flow finishes for a server; payload includes `{ name, threadId, success, error? }`.
-- `mcpServer/startupStatus/updated` (notify) — emitted when a configured MCP server's startup status changes; payload includes `{ threadId, name, status, error, failureReason }`, where `threadId` is the owning thread when startup is thread-scoped and `null` when it is app-scoped, and `status` is `starting`, `ready`, `failed`, or `cancelled`. `failureReason` is `reauthenticationRequired` when stored OAuth credentials have expired and cannot be refreshed, so clients can prompt the user to reconnect the named server.
 
 ### 1) Check auth state
 

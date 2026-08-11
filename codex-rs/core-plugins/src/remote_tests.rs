@@ -362,9 +362,6 @@ fn directory_plugin(id: &str, name: &str) -> RemotePluginDirectoryItem {
             display_name: name.to_string(),
             description: String::new(),
             bundle_download_url: None,
-            app_ids: Vec::new(),
-            app_manifest: None,
-            app_templates: Vec::new(),
             keywords: Vec::new(),
             interface: RemotePluginReleaseInterfaceResponse {
                 short_description: None,
@@ -384,7 +381,6 @@ fn directory_plugin(id: &str, name: &str) -> RemotePluginDirectoryItem {
                 screenshot_urls: Vec::new(),
             },
             skills: Vec::new(),
-            mcp_servers: Vec::new(),
             scheduled_tasks: None,
         },
     }
@@ -411,7 +407,6 @@ fn item(name: &str, display_name: &str) -> RecommendedPluginItem {
         installation_policy: None,
         release: RecommendedPluginRelease {
             display_name: display_name.to_string(),
-            app_ids: Vec::new(),
         },
     }
 }
@@ -481,7 +476,6 @@ fn recommended_plugins_are_validated_deduplicated_sorted_and_capped() {
         installation_policy: Some(PluginInstallPolicy::Available),
         release: RecommendedPluginRelease {
             display_name: "Disabled".to_string(),
-            app_ids: Vec::new(),
         },
     });
     plugins.push(RecommendedPluginItem {
@@ -491,7 +485,6 @@ fn recommended_plugins_are_validated_deduplicated_sorted_and_capped() {
         installation_policy: Some(PluginInstallPolicy::NotAvailable),
         release: RecommendedPluginRelease {
             display_name: "Not Available".to_string(),
-            app_ids: Vec::new(),
         },
     });
 
@@ -510,7 +503,6 @@ fn recommended_plugins_are_validated_deduplicated_sorted_and_capped() {
             config_id: "plugin-00@openai-curated-remote".to_string(),
             remote_plugin_id: "plugin_plugin-00".to_string(),
             display_name: "Plugin 00".to_string(),
-            app_connector_ids: Vec::new(),
         })
     );
     assert_eq!(
@@ -519,7 +511,6 @@ fn recommended_plugins_are_validated_deduplicated_sorted_and_capped() {
             config_id: "plugin-49@openai-curated-remote".to_string(),
             remote_plugin_id: "plugin_plugin-49".to_string(),
             display_name: "Plugin 49".to_string(),
-            app_connector_ids: Vec::new(),
         })
     );
 }
@@ -543,41 +534,6 @@ fn recommended_plugins_bound_model_visible_fields() {
                 config_id: "bounded@openai-curated-remote".to_string(),
                 remote_plugin_id: "plugin_bounded".to_string(),
                 display_name: "D".repeat(MAX_RECOMMENDED_PLUGIN_DISPLAY_NAME_LEN),
-                app_connector_ids: Vec::new(),
-            }],
-        }
-    );
-}
-
-#[test]
-fn recommended_plugins_preserve_install_identity_and_normalize_app_ids() {
-    let mode = recommended_plugins_mode(RecommendedPluginsResponse {
-        enabled: Some(true),
-        plugins: vec![RecommendedPluginItem {
-            id: "plugin_connector_sample".to_string(),
-            name: "sample".to_string(),
-            status: Some(PluginAvailability::Available),
-            installation_policy: Some(PluginInstallPolicy::Available),
-            release: RecommendedPluginRelease {
-                display_name: "Sample".to_string(),
-                app_ids: vec![
-                    "connector_one".to_string(),
-                    String::new(),
-                    "connector_two".to_string(),
-                    "connector_one".to_string(),
-                ],
-            },
-        }],
-    });
-
-    assert_eq!(
-        mode,
-        RecommendedPluginsMode::Endpoint {
-            plugins: vec![RecommendedPlugin {
-                config_id: "sample@openai-curated-remote".to_string(),
-                remote_plugin_id: "plugin_connector_sample".to_string(),
-                display_name: "Sample".to_string(),
-                app_connector_ids: vec!["connector_one".to_string(), "connector_two".to_string(),],
             }],
         }
     );
@@ -594,7 +550,6 @@ fn recommended_plugins_ignore_invalid_remote_plugin_ids() {
             installation_policy: None,
             release: RecommendedPluginRelease {
                 display_name: "Sample".to_string(),
-                app_ids: Vec::new(),
             },
         }],
     });

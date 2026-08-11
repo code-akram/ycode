@@ -26,7 +26,6 @@ use codex_utils_image::ImageProcessingError;
 use schemars::JsonSchema;
 
 use crate::ResponseItemId;
-use crate::mcp::CallToolResult;
 
 mod executed_tool_calls;
 
@@ -687,10 +686,6 @@ pub enum ResponseInputItem {
         #[ts(as = "FunctionCallOutputBody")]
         #[schemars(with = "FunctionCallOutputBody")]
         output: FunctionCallOutputPayload,
-    },
-    McpToolCallOutput {
-        call_id: String,
-        output: CallToolResult,
     },
     CustomToolCallOutput {
         call_id: String,
@@ -1621,15 +1616,6 @@ impl From<ResponseInputItem> for ResponseItem {
                 output,
                 internal_chat_message_metadata_passthrough: None,
             },
-            ResponseInputItem::McpToolCallOutput { call_id, output } => {
-                let output = output.into_function_call_output_payload();
-                Self::FunctionCallOutput {
-                    id: None,
-                    call_id,
-                    output,
-                    internal_chat_message_metadata_passthrough: None,
-                }
-            }
             ResponseInputItem::CustomToolCallOutput {
                 call_id,
                 name,
@@ -2021,194 +2007,6 @@ impl<'de> Deserialize<'de> for FunctionCallOutputPayload {
     }
 }
 
-impl CallToolResult {
-    pub fn from_result(result: Result<Self, String>) -> Self {
-        match result {
-            Ok(result) => result,
-            Err(error) => Self::from_error_text(error),
-        }
-    }
-
-    pub fn from_error_text(text: String) -> Self {
-        Self {
-            content: vec![serde_json::json!({
-                "type": "text",
-                "text": text,
-            })],
-            structured_content: None,
-            is_error: Some(true),
-            meta: None,
-        }
-    }
-
-    pub fn success(&self) -> bool {
-        self.is_error != Some(true)
-    }
-
-    pub fn as_function_call_output_payload(&self) -> FunctionCallOutputPayload {
-        let content_items = convert_mcp_content_to_items(&self.content);
-        if content_items.as_ref().is_some_and(|items| {
-            items
-                .iter()
-                .any(|item| matches!(item, FunctionCallOutputContentItem::EncryptedContent { .. }))
-        }) {
-            return FunctionCallOutputPayload {
-                body: FunctionCallOutputBody::ContentItems(content_items.unwrap_or_default()),
-                success: Some(self.success()),
-            };
-        }
-
-        if let Some(structured_content) = &self.structured_content
-            && !structured_content.is_null()
-        {
-            match serde_json::to_string(structured_content) {
-                Ok(serialized_structured_content) => {
-                    return FunctionCallOutputPayload {
-                        body: FunctionCallOutputBody::Text(serialized_structured_content),
-                        success: Some(self.success()),
-                    };
-                }
-                Err(err) => {
-                    return FunctionCallOutputPayload {
-                        body: FunctionCallOutputBody::Text(err.to_string()),
-                        success: Some(false),
-                    };
-                }
-            }
-        }
-
-        let serialized_content = match serde_json::to_string(&self.content) {
-            Ok(serialized_content) => serialized_content,
-            Err(err) => {
-                return FunctionCallOutputPayload {
-                    body: FunctionCallOutputBody::Text(err.to_string()),
-                    success: Some(false),
-                };
-            }
-        };
-
-        let body = match content_items {
-            Some(content_items) => FunctionCallOutputBody::ContentItems(content_items),
-            None => FunctionCallOutputBody::Text(serialized_content),
-        };
-
-        FunctionCallOutputPayload {
-            body,
-            success: Some(self.success()),
-        }
-    }
-
-    pub fn into_function_call_output_payload(self) -> FunctionCallOutputPayload {
-        self.as_function_call_output_payload()
-    }
-}
-
-fn convert_mcp_content_to_items(
-    contents: &[serde_json::Value],
-) -> Option<Vec<FunctionCallOutputContentItem>> {
-    const CODEX_ENCRYPTED_CONTENT_META_KEY: &str = "codex/encryptedContent";
-    const CODEX_IMAGE_DETAIL_META_KEY: &str = "codex/imageDetail";
-
-    #[derive(serde::Deserialize)]
-    #[serde(tag = "type")]
-    enum McpContent {
-        #[serde(rename = "text")]
-        Text {
-            text: String,
-            #[serde(rename = "_meta", default)]
-            meta: Option<serde_json::Value>,
-        },
-        #[serde(rename = "image")]
-        Image {
-            data: String,
-            #[serde(rename = "mimeType", alias = "mime_type")]
-            mime_type: Option<String>,
-            #[serde(rename = "_meta", default)]
-            meta: Option<serde_json::Value>,
-        },
-        #[serde(rename = "audio")]
-        Audio {
-            data: String,
-            #[serde(rename = "mimeType", alias = "mime_type")]
-            mime_type: Option<String>,
-            #[serde(rename = "_meta", default)]
-            _meta: Option<serde_json::Value>,
-        },
-        #[serde(other)]
-        Unknown,
-    }
-
-    let mut saw_content_item = false;
-    let mut items = Vec::with_capacity(contents.len());
-
-    for content in contents {
-        let item = match serde_json::from_value::<McpContent>(content.clone()) {
-            Ok(McpContent::Text { text, meta }) => {
-                if meta
-                    .as_ref()
-                    .and_then(|meta| meta.get(CODEX_ENCRYPTED_CONTENT_META_KEY))
-                    .and_then(serde_json::Value::as_bool)
-                    == Some(true)
-                {
-                    saw_content_item = true;
-                    FunctionCallOutputContentItem::EncryptedContent {
-                        encrypted_content: text,
-                    }
-                } else {
-                    FunctionCallOutputContentItem::InputText { text }
-                }
-            }
-            Ok(McpContent::Image {
-                data,
-                mime_type,
-                meta,
-            }) => {
-                saw_content_item = true;
-                let image_url = if data.starts_with("data:") {
-                    data
-                } else {
-                    let mime_type = mime_type.unwrap_or_else(|| "application/octet-stream".into());
-                    format!("data:{mime_type};base64,{data}")
-                };
-                FunctionCallOutputContentItem::InputImage {
-                    image_url,
-                    detail: meta
-                        .as_ref()
-                        .and_then(serde_json::Value::as_object)
-                        .and_then(|meta| meta.get(CODEX_IMAGE_DETAIL_META_KEY))
-                        .and_then(serde_json::Value::as_str)
-                        .and_then(|detail| match detail {
-                            "auto" => Some(ImageDetail::Auto),
-                            "low" => Some(ImageDetail::Low),
-                            "high" => Some(ImageDetail::High),
-                            "original" => Some(ImageDetail::Original),
-                            _ => None,
-                        })
-                        .or(Some(DEFAULT_IMAGE_DETAIL)),
-                }
-            }
-            Ok(McpContent::Audio {
-                data, mime_type, ..
-            }) => {
-                saw_content_item = true;
-                let audio_url = if data.starts_with("data:") {
-                    data
-                } else {
-                    let mime_type = mime_type.unwrap_or_else(|| "application/octet-stream".into());
-                    format!("data:{mime_type};base64,{data}")
-                };
-                FunctionCallOutputContentItem::InputAudio { audio_url }
-            }
-            Ok(McpContent::Unknown) | Err(_) => FunctionCallOutputContentItem::InputText {
-                text: serde_json::to_string(content).unwrap_or_else(|_| "<content>".to_string()),
-            },
-        };
-        items.push(item);
-    }
-
-    if saw_content_item { Some(items) } else { None }
-}
-
 // Implement Display so callers can treat the payload like a plain string when logging or doing
 // trivial substring checks in tests (existing tests call `.contains()` on the output). For
 // `ContentItems`, Display emits a JSON representation.
@@ -2451,24 +2249,6 @@ mod tests {
                 uses_additional_permissions
             );
         }
-    }
-
-    #[test]
-    fn convert_mcp_content_to_items_preserves_data_urls() {
-        let contents = vec![serde_json::json!({
-            "type": "image",
-            "data": "data:image/png;base64,Zm9v",
-            "mimeType": "image/png",
-        })];
-
-        let items = convert_mcp_content_to_items(&contents).expect("expected image items");
-        assert_eq!(
-            items,
-            vec![FunctionCallOutputContentItem::InputImage {
-                image_url: "data:image/png;base64,Zm9v".to_string(),
-                detail: Some(DEFAULT_IMAGE_DETAIL),
-            }]
-        );
     }
 
     #[test]
@@ -2759,63 +2539,6 @@ mod tests {
     }
 
     #[test]
-    fn convert_mcp_content_to_items_builds_data_urls_when_missing_prefix() {
-        let contents = vec![serde_json::json!({
-            "type": "image",
-            "data": "Zm9v",
-            "mimeType": "image/png",
-        })];
-
-        let items = convert_mcp_content_to_items(&contents).expect("expected image items");
-        assert_eq!(
-            items,
-            vec![FunctionCallOutputContentItem::InputImage {
-                image_url: "data:image/png;base64,Zm9v".to_string(),
-                detail: Some(DEFAULT_IMAGE_DETAIL),
-            }]
-        );
-    }
-
-    #[test]
-    fn convert_mcp_audio_content_builds_data_urls_and_preserves_existing_data_urls() {
-        let contents = vec![
-            serde_json::json!({
-                "type": "audio",
-                "data": "Zm9v",
-                "mimeType": "audio/wav",
-                "_meta": {"source": "microphone"},
-            }),
-            serde_json::json!({
-                "type": "audio",
-                "data": "data:audio/ogg;base64,YmFy",
-                "mimeType": "audio/ogg",
-            }),
-        ];
-
-        assert_eq!(
-            convert_mcp_content_to_items(&contents),
-            Some(vec![
-                FunctionCallOutputContentItem::InputAudio {
-                    audio_url: "data:audio/wav;base64,Zm9v".to_string(),
-                },
-                FunctionCallOutputContentItem::InputAudio {
-                    audio_url: "data:audio/ogg;base64,YmFy".to_string(),
-                },
-            ])
-        );
-    }
-
-    #[test]
-    fn convert_mcp_content_to_items_returns_none_without_media() {
-        let contents = vec![serde_json::json!({
-            "type": "text",
-            "text": "hello",
-        })];
-
-        assert_eq!(convert_mcp_content_to_items(&contents), None);
-    }
-
-    #[test]
     fn function_call_output_content_items_to_text_joins_text_segments() {
         let content_items = vec![
             FunctionCallOutputContentItem::InputText {
@@ -2883,8 +2606,8 @@ mod tests {
     fn function_call_deserializes_optional_namespace() {
         let item: ResponseItem = serde_json::from_value(serde_json::json!({
             "type": "function_call",
-            "name": "mcp__codex_apps__gmail_get_recent_emails",
-            "namespace": "mcp__codex_apps__gmail",
+            "name": "calendar_get_recent_events",
+            "namespace": "calendar",
             "arguments": "{\"top_k\":5}",
             "call_id": "call-1",
         }))
@@ -2894,8 +2617,8 @@ mod tests {
             item,
             ResponseItem::FunctionCall {
                 id: None,
-                name: "mcp__codex_apps__gmail_get_recent_emails".to_string(),
-                namespace: Some("mcp__codex_apps__gmail".to_string()),
+                name: "calendar_get_recent_events".to_string(),
+                namespace: Some("calendar".to_string()),
                 arguments: "{\"top_k\":5}".to_string(),
                 encrypted_function_args: None,
                 call_id: "call-1".to_string(),
@@ -3009,99 +2732,6 @@ mod tests {
     }
 
     #[test]
-    fn serializes_image_outputs_as_array() -> Result<()> {
-        let call_tool_result = CallToolResult {
-            content: vec![
-                serde_json::json!({"type":"text","text":"caption"}),
-                serde_json::json!({"type":"image","data":"BASE64","mimeType":"image/png"}),
-            ],
-            structured_content: None,
-            is_error: Some(false),
-            meta: None,
-        };
-
-        let payload = call_tool_result.into_function_call_output_payload();
-        assert_eq!(payload.success, Some(true));
-        let Some(items) = payload.content_items() else {
-            panic!("expected content items");
-        };
-        let items = items.to_vec();
-        assert_eq!(
-            items,
-            vec![
-                FunctionCallOutputContentItem::InputText {
-                    text: "caption".into(),
-                },
-                FunctionCallOutputContentItem::InputImage {
-                    image_url: "data:image/png;base64,BASE64".into(),
-                    detail: Some(DEFAULT_IMAGE_DETAIL),
-                },
-            ]
-        );
-
-        let item = ResponseInputItem::FunctionCallOutput {
-            call_id: "call1".into(),
-            output: payload,
-        };
-
-        let json = serde_json::to_string(&item)?;
-        let v: serde_json::Value = serde_json::from_str(&json)?;
-
-        let output = v.get("output").expect("output field");
-        assert!(output.is_array(), "expected array output");
-
-        Ok(())
-    }
-
-    #[test]
-    fn serializes_audio_outputs_as_array() -> Result<()> {
-        let call_tool_result = CallToolResult {
-            content: vec![
-                serde_json::json!({"type":"text","text":"caption"}),
-                serde_json::json!({"type":"audio","data":"BASE64","mimeType":"audio/wav"}),
-            ],
-            structured_content: None,
-            is_error: Some(false),
-            meta: None,
-        };
-
-        let payload = call_tool_result.into_function_call_output_payload();
-        assert_eq!(
-            payload,
-            FunctionCallOutputPayload {
-                body: FunctionCallOutputBody::ContentItems(vec![
-                    FunctionCallOutputContentItem::InputText {
-                        text: "caption".into(),
-                    },
-                    FunctionCallOutputContentItem::InputAudio {
-                        audio_url: "data:audio/wav;base64,BASE64".into(),
-                    },
-                ]),
-                success: Some(true),
-            }
-        );
-
-        let item = ResponseInputItem::FunctionCallOutput {
-            call_id: "call1".into(),
-            output: payload,
-        };
-
-        assert_eq!(
-            serde_json::to_value(item)?,
-            serde_json::json!({
-                "type": "function_call_output",
-                "call_id": "call1",
-                "output": [
-                    {"type": "input_text", "text": "caption"},
-                    {"type": "input_audio", "audio_url": "data:audio/wav;base64,BASE64"},
-                ],
-            })
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn serializes_custom_tool_image_outputs_as_array() -> Result<()> {
         let item = ResponseInputItem::CustomToolCallOutput {
             call_id: "call1".into(),
@@ -3147,99 +2777,6 @@ mod tests {
                     }
                 ],
             })
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn preserves_existing_image_data_urls() -> Result<()> {
-        let call_tool_result = CallToolResult {
-            content: vec![serde_json::json!({
-                "type": "image",
-                "data": "data:image/png;base64,BASE64",
-                "mimeType": "image/png"
-            })],
-            structured_content: None,
-            is_error: Some(false),
-            meta: None,
-        };
-
-        let payload = call_tool_result.into_function_call_output_payload();
-        let Some(items) = payload.content_items() else {
-            panic!("expected content items");
-        };
-        let items = items.to_vec();
-        assert_eq!(
-            items,
-            vec![FunctionCallOutputContentItem::InputImage {
-                image_url: "data:image/png;base64,BASE64".into(),
-                detail: Some(DEFAULT_IMAGE_DETAIL),
-            }]
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn preserves_original_detail_metadata_on_mcp_images() -> Result<()> {
-        let call_tool_result = CallToolResult {
-            content: vec![serde_json::json!({
-                "type": "image",
-                "data": "BASE64",
-                "mimeType": "image/png",
-                "_meta": {
-                    "codex/imageDetail": "original",
-                },
-            })],
-            structured_content: None,
-            is_error: Some(false),
-            meta: None,
-        };
-
-        let payload = call_tool_result.into_function_call_output_payload();
-        let Some(items) = payload.content_items() else {
-            panic!("expected content items");
-        };
-        let items = items.to_vec();
-        assert_eq!(
-            items,
-            vec![FunctionCallOutputContentItem::InputImage {
-                image_url: "data:image/png;base64,BASE64".into(),
-                detail: Some(ImageDetail::Original),
-            }]
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn preserves_standard_detail_metadata_on_mcp_images() -> Result<()> {
-        let call_tool_result = CallToolResult {
-            content: vec![serde_json::json!({
-                "type": "image",
-                "data": "BASE64",
-                "mimeType": "image/png",
-                "_meta": {
-                    "codex/imageDetail": "high",
-                },
-            })],
-            structured_content: None,
-            is_error: Some(false),
-            meta: None,
-        };
-
-        let payload = call_tool_result.into_function_call_output_payload();
-        let Some(items) = payload.content_items() else {
-            panic!("expected content items");
-        };
-        let items = items.to_vec();
-        assert_eq!(
-            items,
-            vec![FunctionCallOutputContentItem::InputImage {
-                image_url: "data:image/png;base64,BASE64".into(),
-                detail: Some(ImageDetail::High),
-            }]
         );
 
         Ok(())
@@ -3679,7 +3216,7 @@ mod tests {
             execution: "client".to_string(),
             tools: vec![serde_json::json!({
                 "type": "function",
-                "name": "mcp__codex_apps__calendar_create_event",
+                "name": "calendar_create_event",
                 "description": "Create a calendar event.",
                 "defer_loading": true,
                 "parameters": {
@@ -3701,7 +3238,7 @@ mod tests {
                 execution: "client".to_string(),
                 tools: vec![serde_json::json!({
                     "type": "function",
-                    "name": "mcp__codex_apps__calendar_create_event",
+                    "name": "calendar_create_event",
                     "description": "Create a calendar event.",
                     "defer_loading": true,
                     "parameters": {
@@ -3726,7 +3263,7 @@ mod tests {
                 "execution": "client",
                 "tools": [{
                     "type": "function",
-                    "name": "mcp__codex_apps__calendar_create_event",
+                    "name": "calendar_create_event",
                     "description": "Create a calendar event.",
                     "defer_loading": true,
                     "parameters": {

@@ -24,7 +24,7 @@ use crate::tools::context::ToolPayload;
 use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use crate::turn_metadata::McpTurnMetadataContext;
+use crate::turn_metadata::ExtensionToolMetadataContext;
 
 pub(crate) struct ExtensionToolAdapter(Arc<dyn codex_tools::ToolExecutor<ExtensionToolCall>>);
 
@@ -136,7 +136,7 @@ async fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall {
     let codex_turn_metadata = invocation
         .turn
         .turn_metadata_state
-        .current_meta_value_for_mcp_request(McpTurnMetadataContext {
+        .current_meta_value_for_extension_tool(ExtensionToolMetadataContext {
             model: invocation.turn.model_info.slug.as_str(),
             reasoning_effort: invocation.turn.effective_reasoning_effort(),
         })

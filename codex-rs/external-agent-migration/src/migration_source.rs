@@ -2,13 +2,8 @@ use crate::ClaSource;
 use crate::CurSource;
 use crate::RewriteProfile;
 use crate::detect::plugins;
-use crate::detect::sessions::detect_cla_session_connectors;
-use crate::detect::sessions::detect_cla_session_connectors_by_source_path;
-use crate::detect::sessions::detect_cur_session_connectors;
-use crate::detect::sessions::detect_cur_session_connectors_by_source_path;
 use crate::detect::sessions::detect_recent_cla_sessions_with_limits;
 use crate::detect::sessions::detect_recent_cur_sessions_with_limits;
-use crate::model::DetectedConnectorCandidate;
 use crate::model::ExternalAgentSessionImportLimits;
 use crate::sessions::ExternalAgentSessionMigration;
 use crate::sessions::SessionMetadataMode;
@@ -155,41 +150,6 @@ impl ExternalAgentSource {
         }
     }
 
-    pub(super) fn connector_metadata_roots(self, external_agent_home: &Path) -> Vec<PathBuf> {
-        match self {
-            Self::Cla => ClaSource::connector_metadata_roots(external_agent_home),
-            Self::Cur => Vec::new(),
-        }
-    }
-
-    pub(super) fn detect_session_connectors(
-        self,
-        sessions: &[ExternalAgentSessionMigration],
-        connector_metadata_roots: &[PathBuf],
-        external_agent_home: &Path,
-    ) -> Vec<DetectedConnectorCandidate> {
-        match self {
-            Self::Cla => detect_cla_session_connectors(sessions, connector_metadata_roots),
-            Self::Cur => detect_cur_session_connectors(sessions, external_agent_home),
-        }
-    }
-
-    pub(super) fn detect_session_connectors_by_source_path(
-        self,
-        sessions: &[ExternalAgentSessionMigration],
-        connector_metadata_roots: &[PathBuf],
-        external_agent_home: &Path,
-    ) -> BTreeMap<PathBuf, Vec<DetectedConnectorCandidate>> {
-        match self {
-            Self::Cla => {
-                detect_cla_session_connectors_by_source_path(sessions, connector_metadata_roots)
-            }
-            Self::Cur => {
-                detect_cur_session_connectors_by_source_path(sessions, external_agent_home)
-            }
-        }
-    }
-
     pub(super) fn marketplace_import_sources(
         self,
         external_agent_home: &Path,
@@ -208,30 +168,6 @@ impl ExternalAgentSource {
                 })
                 .unwrap_or_default()),
             Self::Cur => source_cur::marketplace_import_sources(external_agent_home),
-        }
-    }
-
-    pub(super) fn build_mcp_config(
-        self,
-        source_root: &Path,
-        source_config_dir: &Path,
-        external_agent_home: &Path,
-        settings: Option<&JsonValue>,
-    ) -> io::Result<TomlValue> {
-        match self {
-            Self::Cla => ClaSource::build_mcp_config(source_root, external_agent_home, settings),
-            Self::Cur => CurSource::build_mcp_config(source_config_dir),
-        }
-    }
-
-    pub(super) fn mcp_source_path(
-        self,
-        source_root: PathBuf,
-        source_config_dir: PathBuf,
-    ) -> PathBuf {
-        match self {
-            Self::Cla => source_root,
-            Self::Cur => source_config_dir.join("mcp.json"),
         }
     }
 

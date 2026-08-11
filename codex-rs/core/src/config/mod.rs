@@ -11,8 +11,6 @@ use codex_config::ConfigRequirementsToml;
 use codex_config::ConstrainedWithSource;
 use codex_config::FeatureRequirementsToml;
 use codex_config::ManagedAuthPolicy;
-use codex_config::McpServerRequirement;
-use codex_config::PluginRequirementsToml;
 use codex_config::ProfileV2Name;
 use codex_config::ResidencyRequirement;
 use codex_config::SandboxModeRequirement;
@@ -34,12 +32,9 @@ use codex_config::types::ApprovalsReviewer;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::History;
-use codex_config::types::McpServerConfig;
-use codex_config::types::McpServerDisabledReason;
 use codex_config::types::MemoriesConfig;
 use codex_config::types::ModelAvailabilityNuxConfig;
 use codex_config::types::Notice;
-use codex_config::types::OAuthCredentialsStoreMode;
 use codex_config::types::ResumeCwdMode;
 use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestConfig;
@@ -50,7 +45,6 @@ use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
 use codex_config::types::UriBasedFileOpener;
 use codex_config::types::WindowsSandboxModeToml;
-use codex_core_plugins::PluginLoadOutcome;
 use codex_core_plugins::PluginsConfigInput;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::LOCAL_FS;
@@ -74,11 +68,6 @@ use codex_http_client::OutboundProxyPolicy;
 use codex_install_context::InstallContext;
 use codex_login::AuthManagerConfig;
 use codex_login::AuthRouteConfig;
-use codex_mcp::McpConfig;
-use codex_mcp::McpPluginAttribution;
-use codex_mcp::McpProtocolMode;
-use codex_mcp::McpServerRegistration;
-use codex_mcp::ResolvedMcpCatalog;
 use codex_memories_read::memory_root;
 use codex_model_provider::ProviderCapabilities;
 use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
@@ -116,9 +105,6 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use codex_utils_path_uri::PathUri;
 use http::HeaderValue;
-use rmcp::model::ElicitationCapability;
-use rmcp::model::FormElicitationCapability;
-use rmcp::model::UrlElicitationCapability;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -305,19 +291,6 @@ fn resolve_cli_auth_credentials_store_mode(
             LOCAL_DEV_BUILD_VERSION,
             AuthCredentialsStoreMode::Keyring | AuthCredentialsStoreMode::Auto,
         ) => AuthCredentialsStoreMode::File,
-        (_, mode) => mode,
-    }
-}
-
-fn resolve_mcp_oauth_credentials_store_mode(
-    configured: OAuthCredentialsStoreMode,
-    package_version: &str,
-) -> OAuthCredentialsStoreMode {
-    match (package_version, configured) {
-        (
-            LOCAL_DEV_BUILD_VERSION,
-            OAuthCredentialsStoreMode::Keyring | OAuthCredentialsStoreMode::Auto,
-        ) => OAuthCredentialsStoreMode::File,
         (_, mode) => mode,
     }
 }
@@ -699,9 +672,6 @@ pub struct Config {
     /// Whether to inject the `<permissions instructions>` developer block.
     pub include_permissions_instructions: bool,
 
-    /// Whether to inject the `<apps_instructions>` developer block.
-    pub include_apps_instructions: bool,
-
     /// Whether to inject the `<collaboration_mode>` developer block.
     pub include_collaboration_mode_instructions: bool,
 
@@ -710,9 +680,6 @@ pub struct Config {
 
     /// Whether orchestrator-owned skills are exposed to the model.
     pub orchestrator_skills_enabled: bool,
-
-    /// Whether orchestrator-owned MCP tools are exposed to the model.
-    pub orchestrator_mcp_enabled: bool,
 
     /// Whether to inject the `<environment_context>` user block.
     pub include_environment_context: bool,
@@ -831,33 +798,6 @@ pub struct Config {
     /// keyring: Use an OS-specific keyring service.
     /// auto: Use the OS-specific keyring service if available, otherwise use a file.
     pub cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
-
-    /// Definition for MCP servers that Codex can reach out to for tool calls.
-    pub mcp_servers: Constrained<HashMap<String, McpServerConfig>>,
-
-    /// When present, only these MCP servers omit the legacy `mcp__` namespace prefix.
-    pub non_prefixed_mcp_tool_servers: Option<Vec<String>>,
-
-    /// Preferred store for MCP OAuth credentials.
-    /// keyring: Use an OS-specific keyring service.
-    ///          Credentials stored in the keyring will only be readable by Codex unless the user explicitly grants access via OS-level keyring access.
-    ///          https://github.com/openai/codex/blob/main/codex-rs/rmcp-client/src/oauth.rs#L2
-    /// file: CODEX_HOME/.credentials.json
-    ///       This file will be readable to Codex and other applications running as the same user.
-    /// auto (default): keyring if available, otherwise file.
-    pub mcp_oauth_credentials_store_mode: OAuthCredentialsStoreMode,
-
-    /// Optional fixed port to use for the local HTTP callback server used during MCP OAuth login.
-    ///
-    /// When unset, Codex will bind to an ephemeral port chosen by the OS.
-    pub mcp_oauth_callback_port: Option<u16>,
-
-    /// Optional redirect URI to use during MCP OAuth login.
-    ///
-    /// When set, this URI is used in the OAuth authorization request instead
-    /// of the local listener address. The local callback listener still binds
-    /// to 127.0.0.1 (using `mcp_oauth_callback_port` when provided).
-    pub mcp_oauth_callback_url: Option<String>,
 
     /// Combined provider map (defaults plus user-defined providers).
     pub model_providers: HashMap<String, ModelProviderInfo>,
@@ -987,9 +927,6 @@ pub struct Config {
 
     /// Process-only ChatGPT routing selection supplied when Codex is launched.
     pub psp: bool,
-
-    /// Optional product SKU forwarded to the host-owned apps MCP server.
-    pub apps_mcp_product_sku: Option<String>,
 
     /// Machine-local realtime audio device preferences used by realtime voice.
     pub realtime_audio: RealtimeAudioConfig,
@@ -1664,152 +1601,6 @@ impl Config {
         )
     }
 
-    /// Applies managed MCP requirements to servers supplied by one plugin.
-    pub fn apply_plugin_mcp_server_requirements(
-        &self,
-        plugin_id: &str,
-        mcp_servers: &mut HashMap<String, McpServerConfig>,
-    ) {
-        filter_plugin_mcp_servers_by_requirements(
-            plugin_id,
-            mcp_servers,
-            self.config_layer_stack.requirements().plugins.as_ref(),
-        );
-        let empty_mcp_allowlist = self
-            .config_layer_stack
-            .requirements()
-            .mcp_servers
-            .as_ref()
-            .filter(|requirements| requirements.value.is_empty());
-        filter_mcp_servers_by_requirements(mcp_servers, empty_mcp_allowlist);
-    }
-
-    pub async fn to_mcp_config(
-        &self,
-        plugins_manager: &codex_core_plugins::PluginsManager,
-    ) -> McpConfig {
-        self.to_mcp_config_with_plugin_registrations(
-            plugins_manager,
-            std::iter::empty::<McpServerRegistration>(),
-        )
-        .await
-    }
-
-    pub(crate) async fn to_mcp_config_with_plugin_registrations(
-        &self,
-        plugins_manager: &codex_core_plugins::PluginsManager,
-        additional_plugin_registrations: impl IntoIterator<Item = McpServerRegistration>,
-    ) -> McpConfig {
-        let plugins_input = self.plugins_config_input();
-        let loaded_plugins = plugins_manager.plugins_for_config(&plugins_input).await;
-        self.to_mcp_config_with_loaded_plugins(&loaded_plugins, additional_plugin_registrations)
-    }
-
-    pub(crate) fn to_mcp_config_with_loaded_plugins(
-        &self,
-        loaded_plugins: &PluginLoadOutcome,
-        additional_plugin_registrations: impl IntoIterator<Item = McpServerRegistration>,
-    ) -> McpConfig {
-        let mut catalog = ResolvedMcpCatalog::builder();
-        for (plugin_order, plugin) in loaded_plugins
-            .plugins()
-            .iter()
-            .filter(|plugin| plugin.is_active())
-            .enumerate()
-        {
-            let mut plugin_mcp_servers = plugin.mcp_servers.clone();
-            self.apply_plugin_mcp_server_requirements(&plugin.config_name, &mut plugin_mcp_servers);
-            let attribution = if plugin.is_agent_plugin() {
-                McpPluginAttribution::agent_plugin(
-                    plugin.config_name.clone(),
-                    plugin.display_name().to_string(),
-                )
-            } else {
-                McpPluginAttribution::new(
-                    plugin.config_name.clone(),
-                    plugin.display_name().to_string(),
-                )
-            };
-            for (name, plugin_server) in plugin_mcp_servers {
-                catalog.register(McpServerRegistration::from_plugin(
-                    name,
-                    attribution.clone(),
-                    plugin_order,
-                    plugin_server,
-                ));
-            }
-        }
-        for registration in additional_plugin_registrations {
-            catalog.register(registration);
-        }
-        for (name, server) in self.mcp_servers.get() {
-            catalog.register(McpServerRegistration::from_config(
-                name.clone(),
-                server.clone(),
-            ));
-        }
-
-        McpConfig {
-            chatgpt_base_url: self.chatgpt_base_url.clone(),
-            apps_mcp_product_sku: self.apps_mcp_product_sku.clone(),
-            codex_home: self.codex_home.to_path_buf(),
-            mcp_oauth_credentials_store_mode: self.mcp_oauth_credentials_store_mode,
-            auth_keyring_backend_kind: self.auth_keyring_backend_kind(),
-            mcp_oauth_callback_port: self.mcp_oauth_callback_port,
-            mcp_oauth_callback_url: self.mcp_oauth_callback_url.clone(),
-            skill_mcp_dependency_install_enabled: self
-                .features
-                .enabled(Feature::SkillMcpDependencyInstall),
-            approval_policy: self.permissions.approval_policy.clone(),
-            permission_profile: self.permissions.permission_profile().clone(),
-            config_layer_stack: self.config_layer_stack.clone(),
-            approvals_reviewer: self.approvals_reviewer,
-            environment_cwds: HashMap::new(),
-            codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.clone(),
-            use_legacy_landlock: self.features.use_legacy_landlock(),
-            apps_enabled: self.features.enabled(Feature::Apps),
-            prefix_mcp_tool_names: self.prefix_mcp_tool_names(),
-            non_prefixed_mcp_tool_servers: if self
-                .features
-                .enabled(Feature::NonPrefixedMcpToolNames)
-            {
-                self.non_prefixed_mcp_tool_servers
-                    .clone()
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            },
-            protocol_mode: self.mcp_protocol_mode(),
-            client_elicitation_capability: if self.features.enabled(Feature::AuthElicitation) {
-                ElicitationCapability::new()
-                    .with_form(FormElicitationCapability::new())
-                    .with_url(UrlElicitationCapability::new())
-            } else {
-                // https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation#capabilities
-                // indicates this should be an empty object.
-                ElicitationCapability::default()
-            },
-            mcp_server_catalog: catalog.build(),
-            connector_snapshot:
-                codex_connectors::ConnectorSnapshot::from_plugin_capability_summaries(
-                    loaded_plugins.capability_summaries(),
-                ),
-        }
-    }
-
-    pub(crate) fn prefix_mcp_tool_names(&self) -> bool {
-        !self.features.enabled(Feature::NonPrefixedMcpToolNames)
-            || self.non_prefixed_mcp_tool_servers.is_some()
-    }
-
-    pub fn mcp_protocol_mode(&self) -> McpProtocolMode {
-        if self.features.enabled(Feature::Mcp20260728) {
-            McpProtocolMode::V20260728
-        } else {
-            McpProtocolMode::Legacy
-        }
-    }
-
     pub async fn rebuild_preserving_session_layers(
         &self,
         refreshed_config: &Config,
@@ -2082,82 +1873,6 @@ fn load_model_catalog(
         .transpose()
 }
 
-fn filter_mcp_servers_by_requirements(
-    mcp_servers: &mut HashMap<String, McpServerConfig>,
-    mcp_requirements: Option<&Sourced<BTreeMap<String, McpServerRequirement>>>,
-) {
-    let Some(allowlist) = mcp_requirements else {
-        return;
-    };
-
-    let source = allowlist.source.clone();
-    for (name, server) in mcp_servers.iter_mut() {
-        let allowed = allowlist
-            .value
-            .get(name)
-            .is_some_and(|requirement| requirement.matches(server));
-        if allowed {
-            server.disabled_reason = None;
-        } else {
-            server.enabled = false;
-            server.disabled_reason = Some(McpServerDisabledReason::Requirements {
-                source: source.clone(),
-            });
-        }
-    }
-}
-
-fn filter_plugin_mcp_servers_by_requirements(
-    plugin_config_name: &str,
-    mcp_servers: &mut HashMap<String, McpServerConfig>,
-    plugin_requirements: Option<&Sourced<BTreeMap<String, PluginRequirementsToml>>>,
-) {
-    let Some(requirements) = plugin_requirements else {
-        return;
-    };
-    if !requirements
-        .value
-        .values()
-        .any(|plugin| plugin.mcp_servers.is_some())
-    {
-        return;
-    }
-    let source = requirements.source.clone();
-    let plugin_mcp_requirements = requirements
-        .value
-        .get(plugin_config_name)
-        .and_then(|plugin| plugin.mcp_servers.as_ref());
-
-    for (name, server) in mcp_servers.iter_mut() {
-        let allowed = plugin_mcp_requirements
-            .and_then(|mcp_requirements| mcp_requirements.get(name))
-            .is_some_and(|requirement| requirement.matches(server));
-        if allowed {
-            server.disabled_reason = None;
-        } else {
-            server.enabled = false;
-            server.disabled_reason = Some(McpServerDisabledReason::Requirements {
-                source: source.clone(),
-            });
-        }
-    }
-}
-
-fn constrain_mcp_servers(
-    mcp_servers: HashMap<String, McpServerConfig>,
-    mcp_requirements: Option<&Sourced<BTreeMap<String, McpServerRequirement>>>,
-) -> ConstraintResult<Constrained<HashMap<String, McpServerConfig>>> {
-    if mcp_requirements.is_none() {
-        return Ok(Constrained::allow_any(mcp_servers));
-    }
-
-    let mcp_requirements = mcp_requirements.cloned();
-    Constrained::normalized(mcp_servers, move |mut servers| {
-        filter_mcp_servers_by_requirements(&mut servers, mcp_requirements.as_ref());
-        servers
-    })
-}
-
 fn apply_requirement_constrained_value<T>(
     field_name: &'static str,
     configured_value: T,
@@ -2192,63 +1907,6 @@ where
     }
 
     Ok(false)
-}
-
-pub async fn load_global_mcp_servers(
-    codex_home: &Path,
-) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    // In general, Config::load_with_cli_overrides() should be used to load the
-    // full config with requirements.toml applied, but in this case, we need
-    // access to the raw TOML in order to warn the user about deprecated fields.
-    //
-    // Note that a more precise way to do this would be to audit the individual
-    // config layers for deprecated fields rather than reporting on the merged
-    // result.
-    let cli_overrides = Vec::<(String, TomlValue)>::new();
-    // There is no cwd/project context for this query, so this will not include
-    // MCP servers defined in in-repo .codex/ folders.
-    let cwd: Option<AbsolutePathBuf> = None;
-    let config_layer_stack = load_config_layers_state(
-        LOCAL_FS.as_ref(),
-        codex_home,
-        cwd,
-        &cli_overrides,
-        LoaderOverrides::default(),
-        &codex_config::NoopThreadConfigLoader,
-    )
-    .await?;
-    let merged_toml = config_layer_stack.effective_config();
-    let Some(servers_value) = merged_toml.get("mcp_servers") else {
-        return Ok(BTreeMap::new());
-    };
-
-    ensure_no_inline_bearer_tokens(servers_value)?;
-
-    servers_value
-        .clone()
-        .try_into()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-}
-
-/// We briefly allowed plain text bearer_token fields in MCP server configs.
-/// We want to warn people who recently added these fields but can remove this after a few months.
-fn ensure_no_inline_bearer_tokens(value: &TomlValue) -> std::io::Result<()> {
-    let Some(servers_table) = value.as_table() else {
-        return Ok(());
-    };
-
-    for (server_name, server_value) in servers_table {
-        if let Some(server_table) = server_value.as_table()
-            && server_table.contains_key("bearer_token")
-        {
-            let message = format!(
-                "mcp_servers.{server_name} uses unsupported `bearer_token`; set `bearer_token_env_var`."
-            );
-            return Err(std::io::Error::new(ErrorKind::InvalidData, message));
-        }
-    }
-
-    Ok(())
 }
 
 pub(crate) fn set_project_trust_level_inner(
@@ -3165,10 +2823,7 @@ fn validate_multi_agent_v2_tool_namespace(namespace: Option<&str>) -> std::io::R
             format!("{LABEL} must be at most {MAX_LEN} characters"),
         ));
     }
-    if namespace == "mcp"
-        || namespace.starts_with("mcp__")
-        || RESERVED_RESPONSES_NAMESPACES.contains(&namespace)
-    {
+    if RESERVED_RESPONSES_NAMESPACES.contains(&namespace) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!("{LABEL} uses a reserved namespace: {namespace}"),
@@ -3218,8 +2873,6 @@ impl Config {
         let orchestrator = cfg.orchestrator.as_ref();
         let orchestrator_skills_enabled =
             resolve_orchestrator_feature_enabled(orchestrator.and_then(|value| value.skills.as_ref()));
-        let orchestrator_mcp_enabled =
-            resolve_orchestrator_feature_enabled(orchestrator.and_then(|value| value.mcp.as_ref()));
         let mut startup_warnings = config_layer_stack
             .startup_warnings()
             .unwrap_or_default()
@@ -3253,8 +2906,6 @@ impl Config {
             computer_use: _,
             feature_requirements,
             managed_hooks: _,
-            mcp_servers,
-            plugins: _,
             marketplaces: _,
             exec_policy: _,
             enforce_residency,
@@ -3347,17 +2998,6 @@ impl Config {
             feature_requirements,
             &mut startup_warnings,
         )?;
-        let non_prefixed_mcp_tool_servers = if features.enabled(Feature::NonPrefixedMcpToolNames) {
-            cfg.features
-                .as_ref()
-                .and_then(|features| features.non_prefixed_mcp_tool_names.as_ref())
-                .and_then(|feature| match feature {
-                    FeatureToml::Enabled(_) => None,
-                    FeatureToml::Config(config) => config.server_names.clone(),
-                })
-        } else {
-            None
-        };
         let respect_system_proxy = features.enabled(Feature::RespectSystemProxy);
         let enable_network_proxy = features.enabled(Feature::NetworkProxy);
         let windows_sandbox_mode = None;
@@ -3878,7 +3518,6 @@ impl Config {
             .or(cfg.instructions.clone());
         let developer_instructions = developer_instructions.or(cfg.developer_instructions);
         let include_permissions_instructions = cfg.include_permissions_instructions.unwrap_or(true);
-        let include_apps_instructions = cfg.include_apps_instructions.unwrap_or(true);
         let include_collaboration_mode_instructions =
             cfg.include_collaboration_mode_instructions.unwrap_or(true);
         let include_skill_instructions = cfg
@@ -3999,9 +3638,6 @@ impl Config {
             &mut startup_warnings,
         )?;
 
-        let mcp_servers = constrain_mcp_servers(cfg.mcp_servers.clone(), mcp_servers.as_ref())
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{e}")))?;
-
         let network_permission_profile = constrained_permission_profile.get().clone();
         let network = build_network_proxy_spec(
             configured_network_proxy_config,
@@ -4086,11 +3722,9 @@ impl Config {
             developer_instructions,
             compact_prompt,
             include_permissions_instructions,
-            include_apps_instructions,
             include_collaboration_mode_instructions,
             include_skill_instructions,
             orchestrator_skills_enabled,
-            orchestrator_mcp_enabled,
             include_environment_context,
             // The config.toml omits "_mode" because it's a config file. However, "_mode"
             // is important in code to differentiate the mode from the store implementation.
@@ -4098,16 +3732,6 @@ impl Config {
                 cfg.cli_auth_credentials_store.unwrap_or_default(),
                 env!("CARGO_PKG_VERSION"),
             ),
-            mcp_servers,
-            non_prefixed_mcp_tool_servers,
-            // The config.toml omits "_mode" because it's a config file. However, "_mode"
-            // is important in code to differentiate the mode from the store implementation.
-            mcp_oauth_credentials_store_mode: resolve_mcp_oauth_credentials_store_mode(
-                cfg.mcp_oauth_credentials_store.unwrap_or_default(),
-                env!("CARGO_PKG_VERSION"),
-            ),
-            mcp_oauth_callback_port: cfg.mcp_oauth_callback_port,
-            mcp_oauth_callback_url: cfg.mcp_oauth_callback_url.clone(),
             model_providers,
             project_doc_max_bytes: cfg.project_doc_max_bytes.unwrap_or(AGENTS_MD_MAX_BYTES),
             project_doc_fallback_filenames: cfg
@@ -4180,7 +3804,6 @@ impl Config {
                 .unwrap_or("https://chatgpt.com/backend-api/".to_string()),
             respect_system_proxy,
             psp: psp.unwrap_or_default(),
-            apps_mcp_product_sku: cfg.apps_mcp_product_sku.clone(),
             realtime_audio: cfg
                 .audio
                 .map_or_else(RealtimeAudioConfig::default, |audio| RealtimeAudioConfig {

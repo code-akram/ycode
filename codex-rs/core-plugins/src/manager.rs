@@ -1,16 +1,13 @@
 use super::LoadedPlugin;
 use super::PluginLoadOutcome;
-use crate::app_mcp_routing::apply_app_mcp_routing_policy;
 use crate::installed_marketplaces::installed_marketplace_roots_from_layer_stack;
 use crate::is_openai_curated_marketplace_name;
 use crate::loader::PluginHookLoadOutcome;
 use crate::loader::TargetCuratedMarketplace;
 use crate::loader::configured_curated_plugin_ids_from_codex_home;
 use crate::loader::curated_plugin_cache_version;
-use crate::loader::load_plugin_apps_from_manifest;
 use crate::loader::load_plugin_hooks;
 use crate::loader::load_plugin_hooks_from_layer_stack;
-use crate::loader::load_plugin_mcp_servers_from_manifest_with_format;
 use crate::loader::load_plugin_skill_inventory;
 use crate::loader::load_plugins_from_layer_stack;
 use crate::loader::log_plugin_load_errors;
@@ -82,12 +79,10 @@ use codex_http_client::HttpClientFactory;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider::AMAZON_BEDROCK_PROVIDER_ID;
-use codex_plugin::AppConnectorId;
 use codex_plugin::PluginCapabilitySummary;
 use codex_plugin::PluginId;
 use codex_plugin::PluginIdError;
 use codex_plugin::PluginTelemetryMetadata;
-use codex_plugin::app_connector_ids_from_declarations;
 use codex_plugin::prompt_safe_plugin_description;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::HookEventName;
@@ -96,7 +91,6 @@ use codex_skills::SkillConfigRules;
 use codex_skills::SkillMetadata;
 use codex_tools::DiscoverablePluginInfo;
 use codex_tools::DiscoverableTool;
-use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::PluginIdentity;
 use codex_utils_plugins::PluginSkillRoot;
@@ -201,8 +195,8 @@ struct RemoteInstalledPluginsCacheRefreshRequest {
     service_config: RemotePluginServiceConfig,
     auth: Option<CodexAuth>,
     notify: RemoteInstalledPluginsCacheRefreshNotify,
-    // App-server attaches side effects such as skills metadata invalidation and MCP refreshes when
-    // remote installed state changes.
+    // App-server attaches side effects such as skills metadata invalidation when remote installed
+    // state changes.
     on_effective_plugins_changed: Option<EffectivePluginsChangedCallback>,
     change: EffectivePluginsChange,
 }
@@ -210,9 +204,8 @@ struct RemoteInstalledPluginsCacheRefreshRequest {
 #[derive(Clone, Copy)]
 enum RemoteInstalledPluginsCacheRefreshNotify {
     IfCacheChanged,
-    // Remote mutations may change local bundles or active MCP state even when the installed set is
-    // unchanged. Notify after `/installed` succeeds so MCP refreshes are ordered after the remote
-    // installed cache.
+    // Remote mutations may change local bundles even when the installed set is unchanged. Notify
+    // after `/installed` succeeds so consumers observe the refreshed cache.
     AfterSuccessfulRefresh,
 }
 
@@ -362,9 +355,6 @@ pub struct PluginDetail {
     pub skills: Vec<SkillMetadata>,
     pub disabled_skill_paths: HashSet<AbsolutePathBuf>,
     pub hooks: Vec<PluginHookSummary>,
-    pub apps: Vec<AppConnectorId>,
-    pub app_category_by_id: HashMap<String, String>,
-    pub mcp_server_names: Vec<String>,
     pub details_unavailable_reason: Option<PluginDetailsUnavailableReason>,
 }
 
@@ -421,8 +411,6 @@ impl From<PluginDetail> for PluginCapabilitySummary {
             plugin_namespace: None,
             description: prompt_safe_plugin_description(value.description.as_deref()),
             has_skills,
-            mcp_server_names: value.mcp_server_names,
-            app_connector_ids: value.apps,
         }
     }
 }
@@ -523,7 +511,7 @@ impl PluginsManager {
         // listing, install, and curated refresh all consult this restriction context before new
         // plugins enter local config or cache. After admission, runtime plugin loading trusts the
         // contents of that CODEX_HOME and does not re-filter configured plugins by product, so
-        // already-admitted plugins may continue exposing MCP servers/tools from shared local state.
+        // already-admitted plugins may continue exposing capabilities from shared local state.
         //
         // This assumes a single CODEX_HOME is only used by one product.
         Self {
@@ -717,15 +705,6 @@ impl PluginsManager {
                 target_curated_marketplace,
             )
         });
-        for plugin in &mut plugins {
-            let plugin_active = plugin.is_active();
-            apply_app_mcp_routing_policy(
-                &mut plugin.apps,
-                &mut plugin.mcp_servers,
-                auth_mode,
-                plugin_active,
-            );
-        }
         PluginLoadOutcome::from_plugins(plugins)
     }
 
@@ -1412,15 +1391,10 @@ impl PluginsManager {
                     name: plugin.display_name,
                     description: None,
                     has_skills: false,
-                    mcp_server_names: Vec::new(),
-                    app_connector_ids: plugin.app_connector_ids,
                 })
             })
             .collect();
-        Some(filter_request_plugin_install_discoverable_tools_for_client(
-            candidates,
-            input.app_server_client_name,
-        ))
+        Some(candidates)
     }
 
     fn cached_recommended_plugins_mode(
@@ -1965,9 +1939,6 @@ impl PluginsManager {
                 skills: Vec::new(),
                 disabled_skill_paths: HashSet::new(),
                 hooks: Vec::new(),
-                apps: Vec::new(),
-                app_category_by_id: HashMap::new(),
-                mcp_server_names: Vec::new(),
                 details_unavailable_reason: Some(
                     PluginDetailsUnavailableReason::InstallRequiredForRemoteSource,
                 ),
@@ -2059,44 +2030,6 @@ impl PluginsManager {
                 event_name: hook.event_name,
             })
             .collect();
-        let auth_mode = self.auth_mode();
-        let mut app_declarations = if manifest_format == PluginManifestFormat::Legacy {
-            load_plugin_apps_from_manifest(source_path.as_path(), &manifest.paths).await
-        } else {
-            Vec::new()
-        };
-        let mcp_data_root = (manifest_format == PluginManifestFormat::AgentPlugin)
-            .then(|| self.store.mcp_data_root(&plugin_id, manifest_format));
-        let mut mcp_servers = load_plugin_mcp_servers_from_manifest_with_format(
-            source_path.as_path(),
-            &manifest.paths,
-            /*plugin_policy*/ None,
-            mcp_data_root.as_deref(),
-            manifest_format,
-        )
-        .await;
-        if manifest_format == PluginManifestFormat::Legacy && auth_mode.is_some() {
-            apply_app_mcp_routing_policy(
-                &mut app_declarations,
-                &mut mcp_servers,
-                auth_mode,
-                /*plugin_active*/ true,
-            );
-        }
-        let apps = app_connector_ids_from_declarations(&app_declarations);
-        let mut seen_app_connector_ids = HashSet::new();
-        let mut app_category_by_id = HashMap::new();
-        for app in &app_declarations {
-            if seen_app_connector_ids.insert(app.connector_id.0.as_str())
-                && let Some(category) = &app.category
-            {
-                app_category_by_id.insert(app.connector_id.0.clone(), category.clone());
-            }
-        }
-        let mut mcp_server_names = mcp_servers.into_keys().collect::<Vec<_>>();
-        mcp_server_names.sort_unstable();
-        mcp_server_names.dedup();
-
         Ok(PluginDetail {
             id: plugin.id,
             name: plugin.name,
@@ -2111,9 +2044,6 @@ impl PluginsManager {
             skills: resolved_skills.skills,
             disabled_skill_paths: resolved_skills.disabled_skill_paths,
             hooks,
-            apps,
-            app_category_by_id,
-            mcp_server_names,
             details_unavailable_reason: None,
         })
     }

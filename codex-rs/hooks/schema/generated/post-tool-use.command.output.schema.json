@@ -18,9 +18,6 @@
         "hookEventName": {
           "const": "PostToolUse",
           "type": "string"
-        },
-        "updatedMCPToolOutput": {
-          "default": null
         }
       },
       "required": [

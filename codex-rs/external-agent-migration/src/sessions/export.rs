@@ -20,7 +20,6 @@ use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_utils_output_truncation::approx_tokens_from_byte_count_i64;
-use std::collections::BTreeSet;
 use std::io;
 use std::path::Path;
 
@@ -33,14 +32,14 @@ fn load_session_for_import(path: &Path) -> io::Result<Option<ImportedExternalAge
         SessionRecordFormat::Cla,
         /*fallback_cwd*/ None,
     )?
-    .map(|(session, _content_sha256, _attributed_mcp_server_ids)| session))
+    .map(|(session, _content_sha256)| session))
 }
 
 pub(crate) fn load_session_for_import_with_content_sha256(
     path: &Path,
     record_format: SessionRecordFormat,
     fallback_cwd: Option<&Path>,
-) -> io::Result<Option<(ImportedExternalAgentSession, String, BTreeSet<String>)>> {
+) -> io::Result<Option<(ImportedExternalAgentSession, String)>> {
     let parsed = match record_format {
         SessionRecordFormat::Cla => records_cla::read_session_import(path)?,
         SessionRecordFormat::Cur => records_cur::read_session_import(path, fallback_cwd)?,
@@ -48,7 +47,6 @@ pub(crate) fn load_session_for_import_with_content_sha256(
     let Some(cwd) = parsed.cwd else {
         return Ok(None);
     };
-    let attributed_mcp_server_ids = parsed.attributed_mcp_server_ids;
     let messages = parsed.messages;
     let first_user_message_text = messages
         .iter()
@@ -78,7 +76,6 @@ pub(crate) fn load_session_for_import_with_content_sha256(
             rollout_items,
         },
         parsed.content_sha256,
-        attributed_mcp_server_ids,
     )))
 }
 

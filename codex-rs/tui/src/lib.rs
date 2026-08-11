@@ -92,7 +92,6 @@ mod app_backtrack;
 mod app_command;
 mod app_event;
 mod app_event_sender;
-mod app_info;
 mod app_server_approval_conversions;
 mod app_server_session;
 mod approval_events;
@@ -412,7 +411,6 @@ async fn connect_remote_app_server(
         client_name: "codex-tui".to_string(),
         client_version: env!("CARGO_PKG_VERSION").to_string(),
         experimental_api: true,
-        mcp_server_openai_form_elicitation: false,
         opt_out_notification_methods: Vec::new(),
         channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
     })
@@ -572,7 +570,6 @@ where
         client_name: "codex-tui".to_string(),
         client_version: env!("CARGO_PKG_VERSION").to_string(),
         experimental_api: true,
-        mcp_server_openai_form_elicitation: false,
         opt_out_notification_methods: Vec::new(),
         channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
     })
@@ -1182,9 +1179,8 @@ pub async fn run_main(
 
         let log_file = log_file_opts.open(log_dir.join(TUI_LOG_FILE_NAME))?;
         let (non_blocking, guard) = non_blocking(log_file);
-        let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new("codex_core=info,codex_tui=info,codex_rmcp_client=info")
-        });
+        let env_filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("codex_core=info,codex_tui=info"));
         let file_layer = tracing_subscriber::fmt::layer()
             .with_writer(non_blocking)
             .with_target(true)

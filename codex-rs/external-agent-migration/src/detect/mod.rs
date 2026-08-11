@@ -3,9 +3,7 @@ pub(crate) mod plugins;
 pub(crate) mod sessions;
 
 use crate::config_values::is_empty_toml_table;
-use crate::config_values::merge_missing_mcp_servers;
 use crate::config_values::merge_missing_toml_values;
-use crate::config_values::migrated_mcp_server_names;
 use crate::count_missing_subagents;
 use crate::migration_source::InstructionSourceGroup;
 use crate::migration_source::PluginDetectionContext;
@@ -117,46 +115,6 @@ impl ExternalAgentConfigService {
                         /*skills_count*/ None,
                     );
                 }
-            }
-        }
-
-        let mcp_source_path = self
-            .source
-            .mcp_source_path(self.source_root(scope), self.source_config_dir(scope));
-        let migrated_mcp = self.build_mcp_config(scope, settings.clone())?;
-        let mut mcp_server_names = migrated_mcp_server_names(&migrated_mcp);
-        if !is_empty_toml_table(&migrated_mcp) {
-            if target_config.exists() {
-                let existing_raw = fs::read_to_string(&target_config)?;
-                let mut existing = if existing_raw.trim().is_empty() {
-                    TomlValue::Table(Default::default())
-                } else {
-                    toml::from_str::<TomlValue>(&existing_raw).map_err(|err| {
-                        invalid_data_error(format!("invalid existing config.toml: {err}"))
-                    })?
-                };
-                mcp_server_names = merge_missing_mcp_servers(&mut existing, &migrated_mcp)?;
-            }
-
-            if !mcp_server_names.is_empty() {
-                items.push(ExternalAgentConfigMigrationItem {
-                    item_type: ExternalAgentConfigMigrationItemType::McpServerConfig,
-                    description: format!(
-                        "Migrate MCP servers from {} into {}",
-                        mcp_source_path.display(),
-                        target_config.display()
-                    ),
-                    cwd: cwd.clone(),
-                    details: Some(MigrationDetails {
-                        mcp_servers: named_migrations(mcp_server_names),
-                        ..Default::default()
-                    }),
-                });
-                emit_migration_metric(
-                    EXTERNAL_AGENT_CONFIG_DETECT_METRIC,
-                    ExternalAgentConfigMigrationItemType::McpServerConfig,
-                    /*skills_count*/ None,
-                );
             }
         }
 

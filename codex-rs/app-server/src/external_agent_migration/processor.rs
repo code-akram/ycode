@@ -24,13 +24,10 @@ use codex_app_server_protocol::ExternalAgentConfigImportResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult as ProtocolImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
-use codex_app_server_protocol::ExternalAgentImportedConnectorCandidate;
-use codex_app_server_protocol::ExternalAgentImportedConnectorSource;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ServerNotification;
 use codex_arg0::Arg0DispatchPaths;
 use codex_core::ThreadManager;
-use codex_external_agent_migration::DetectedConnectorCandidate;
 use codex_external_agent_migration::ExternalAgentConfigDetectOptions;
 use codex_external_agent_migration::ExternalAgentConfigImportItemResult as CoreImportItemResult;
 use codex_external_agent_migration::ExternalAgentConfigImportOutcome as CoreImportOutcome;
@@ -40,14 +37,11 @@ use codex_external_agent_migration::ExternalAgentSessionImportLimits;
 use codex_external_agent_migration::PluginImportOutcome;
 use codex_external_agent_migration::record_import_error;
 use codex_external_agent_migration::sessions::ExternalAgentSessionMigration as CoreSessionMigration;
-use codex_external_agent_migration::sessions::read_imported_connector_candidates;
-use codex_external_agent_migration::sessions::record_detected_session_connectors;
 use codex_features::Feature;
 use codex_rollout::StateDbHandle;
 use codex_state::ExternalAgentConfigImportFailureRecord;
 use codex_state::ExternalAgentConfigImportSuccessRecord;
 use codex_thread_store::ThreadStore;
-use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -103,7 +97,6 @@ impl ExternalAgentConfigRequestProcessor {
         );
         let session_importer = ExternalAgentSessionImporter::new(
             codex_home,
-            migration_service.connector_metadata_roots().to_vec(),
             Arc::clone(&thread_manager),
             thread_store,
             config_manager.clone(),
@@ -149,24 +142,7 @@ impl ExternalAgentConfigRequestProcessor {
             .detect(options)
             .await
             .map_err(|err| internal_error(err.to_string()))?;
-        let sessions = items
-            .iter()
-            .filter_map(|item| item.details.as_ref())
-            .flat_map(|details| details.sessions.iter().cloned())
-            .collect::<Vec<_>>();
-        let (connector_names_by_source_path, connectors) =
-            detected_session_connectors(&migration_service, &sessions);
-        record_detected_session_connectors(
-            self.migration_service.codex_home(),
-            connector_names_by_source_path,
-        )
-        .map_err(|err| {
-            internal_error(format!(
-                "failed to record detected connector candidates: {err}"
-            ))
-        })?;
-
-        Ok(detect_response(items, connectors))
+        Ok(detect_response(items))
     }
 
     pub(crate) async fn import(
@@ -270,8 +246,6 @@ impl ExternalAgentConfigRequestProcessor {
         });
         let pending_plugin_imports = import_outcome.pending_plugin_imports;
         tokio::spawn(async move {
-            let connector_names_by_source_path =
-                detected_session_connectors(&plugin_migration_service, &pending_session_imports).0;
             let session_progress_outgoing = Arc::clone(&outgoing);
             let session_import_id = import_id.clone();
             let session_imports = async move {
@@ -281,7 +255,6 @@ impl ExternalAgentConfigRequestProcessor {
                         pending_session_imports,
                         session_import_result,
                         session_metadata_mode,
-                        connector_names_by_source_path,
                     )
                     .await;
                 send_import_progress(&session_progress_outgoing, &session_import_id, &item_result)
@@ -387,21 +360,7 @@ impl ExternalAgentConfigRequestProcessor {
             .into_iter()
             .map(protocol_import_history)
             .collect::<Result<Vec<_>, _>>()?;
-        let connectors = read_imported_connector_candidates(self.migration_service.codex_home())
-            .map_err(|err| {
-                internal_error(format!(
-                    "failed to read imported connector candidates: {err}"
-                ))
-            })?
-            .into_iter()
-            .map(|candidate| ExternalAgentImportedConnectorCandidate {
-                name: candidate.name,
-                session_count: candidate.session_count,
-                source: ExternalAgentImportedConnectorSource::RemoteMcpServersConfig,
-            })
-            .collect();
-
-        Ok(ExternalAgentConfigImportHistoriesReadResponse { data, connectors })
+        Ok(ExternalAgentConfigImportHistoriesReadResponse { data })
     }
 
     pub(crate) async fn record_import_history(
@@ -643,7 +602,6 @@ fn analytics_migration_item_type(item_type: ExternalAgentConfigMigrationItemType
         ExternalAgentConfigMigrationItemType::Config => "CONFIG",
         ExternalAgentConfigMigrationItemType::Skills => "SKILLS",
         ExternalAgentConfigMigrationItemType::Plugins => "PLUGINS",
-        ExternalAgentConfigMigrationItemType::McpServerConfig => "MCP_SERVER_CONFIG",
         ExternalAgentConfigMigrationItemType::Subagents => "SUBAGENTS",
         ExternalAgentConfigMigrationItemType::Hooks => "HOOKS",
         ExternalAgentConfigMigrationItemType::Commands => "COMMANDS",
@@ -710,47 +668,6 @@ async fn record_import_history(
         .await
 }
 
-fn detected_session_connectors(
-    migration_service: &ExternalAgentConfigService,
-    sessions: &[CoreSessionMigration],
-) -> (
-    BTreeMap<PathBuf, Vec<String>>,
-    Vec<DetectedConnectorCandidate>,
-) {
-    let mut connector_names_by_source_path = BTreeMap::new();
-    let mut connectors_by_name = BTreeMap::<String, DetectedConnectorCandidate>::new();
-    let sessions = sessions
-        .iter()
-        .filter(|session| session.path.is_file())
-        .cloned()
-        .collect::<Vec<_>>();
-    for (source_path, session_connectors) in
-        migration_service.detect_session_connectors_by_source_path(&sessions)
-    {
-        connector_names_by_source_path.insert(
-            source_path,
-            session_connectors
-                .iter()
-                .map(|candidate| candidate.name.clone())
-                .collect(),
-        );
-        for candidate in session_connectors {
-            let key = candidate.name.to_lowercase();
-            let session_count = candidate.session_count;
-            let connector = connectors_by_name.entry(key).or_insert_with(|| {
-                let mut connector = candidate;
-                connector.session_count = 0;
-                connector
-            });
-            connector.session_count = connector.session_count.saturating_add(session_count);
-        }
-    }
-    (
-        connector_names_by_source_path,
-        connectors_by_name.into_values().collect(),
-    )
-}
-
 fn apply_plugin_outcome_to_item_result(
     item_result: &mut CoreImportItemResult,
     plugin_outcome: PluginImportOutcome,
@@ -773,7 +690,6 @@ fn migration_items_need_runtime_refresh(items: &[ExternalAgentConfigMigrationIte
             item.item_type,
             ExternalAgentConfigMigrationItemType::Config
                 | ExternalAgentConfigMigrationItemType::Skills
-                | ExternalAgentConfigMigrationItemType::McpServerConfig
                 | ExternalAgentConfigMigrationItemType::Hooks
                 | ExternalAgentConfigMigrationItemType::Commands
                 | ExternalAgentConfigMigrationItemType::Plugins

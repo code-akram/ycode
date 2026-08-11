@@ -85,7 +85,6 @@ pub struct RemoteAppServerConnectArgs {
     pub client_name: String,
     pub client_version: String,
     pub experimental_api: bool,
-    pub mcp_server_openai_form_elicitation: bool,
     pub opt_out_notification_methods: Vec<String>,
     pub channel_capacity: usize,
 }
@@ -94,13 +93,11 @@ impl RemoteAppServerConnectArgs {
         let capabilities = InitializeCapabilities {
             experimental_api: self.experimental_api,
             request_attestation: false,
-            extensions: None,
             opt_out_notification_methods: if self.opt_out_notification_methods.is_empty() {
                 None
             } else {
                 Some(self.opt_out_notification_methods.clone())
             },
-            mcp_server_openai_form_elicitation: self.mcp_server_openai_form_elicitation,
         };
 
         InitializeParams {

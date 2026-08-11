@@ -56,7 +56,7 @@ On Windows, use the equivalent path under the user profile.
 python3 scripts/create_basic_plugin.py my-plugin \
   --path <parent-plugin-directory> \
   --marketplace-path <marketplace-json-path> \
-  --with-skills --with-hooks --with-scripts --with-assets --with-mcp --with-apps --with-marketplace
+  --with-skills --with-hooks --with-scripts --with-assets --with-apps --with-marketplace
 ```
 
 `<parent-plugin-directory>` is the directory where the plugin folder `<plugin-name>` will be
@@ -98,7 +98,6 @@ See `references/installing-and-updating.md` for the expected cachebuster and rei
   - `hooks/`
   - `scripts/`
   - `assets/`
-  - `.mcp.json`
   - `.app.json`
 
 ## Marketplace workflow
@@ -185,7 +184,7 @@ See `references/installing-and-updating.md` for the expected cachebuster and rei
 - Outer folder name and `plugin.json` `"name"` are always the same normalized plugin name.
 - Do not remove required structure; keep `.codex-plugin/plugin.json` present.
 - Do not leave `[TODO: ...]` placeholders in plugin manifests.
-- Keep `apps` and `mcpServers` out of `plugin.json` unless their companion files are actually created.
+- Keep `apps` out of `plugin.json` unless its companion file is actually created.
 - Omit unsupported plugin manifest fields that validation rejects, including `hooks`.
 - If creating files inside an existing plugin path, use `--force` only when overwrite is intentional.
 - Preserve any existing marketplace `interface.displayName`.

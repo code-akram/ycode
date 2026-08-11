@@ -17,7 +17,6 @@ export type {
   ReasoningItem,
   CommandExecutionItem,
   FileChangeItem,
-  McpToolCallItem,
   WebSearchItem,
   TodoListItem,
   ErrorItem,

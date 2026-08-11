@@ -32,6 +32,8 @@ use codex_sandboxing::seatbelt::create_seatbelt_command_args;
 use codex_sandboxing::with_managed_mitm_ca_readable_root;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::CliConfigOverrides;
+use codex_utils_path_uri::PathUri;
+use serde::Deserialize;
 use tokio::process::Child;
 use tokio::process::Command as TokioCommand;
 use toml::Value as TomlValue;
@@ -42,6 +44,16 @@ use crate::exit_status::handle_exit_status;
 
 #[cfg(target_os = "macos")]
 use seatbelt::DenialLogger;
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SandboxState {
+    permission_profile: PermissionProfile,
+    codex_linux_sandbox_exe: Option<PathBuf>,
+    sandbox_cwd: PathUri,
+    #[serde(default)]
+    use_legacy_landlock: bool,
+}
 
 #[cfg(target_os = "macos")]
 pub async fn run_command_under_seatbelt(
@@ -175,7 +187,7 @@ async fn run_command_under_sandbox(
         .sandbox_state
         .sandbox_state_json
         .as_deref()
-        .map(serde_json::from_str::<codex_mcp::SandboxState>)
+        .map(serde_json::from_str::<SandboxState>)
         .transpose()
         .map_err(|err| anyhow::anyhow!("invalid --sandbox-state-json value: {err}"))?;
     let sandbox_state_readable_root = config_options

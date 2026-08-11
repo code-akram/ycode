@@ -1,5 +1,4 @@
 use super::input_queue::InputQueue;
-use super::mcp_refresh::McpRefresh;
 use super::*;
 use crate::agents_md_manager::AgentsMdManager;
 use crate::config::ConstraintError;
@@ -18,13 +17,14 @@ use codex_protocol::SessionId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
-use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnEnvironmentSelections;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::OnceLock;
 use tokio::sync::Semaphore;
 
@@ -44,13 +44,6 @@ pub(crate) struct Session {
     /// session.
     pub(super) features: ManagedFeatures,
     pub(super) multi_agent_version: OnceLock<MultiAgentVersion>,
-    /// Owns invalidation and serializes refreshes without blocking captured calls.
-    pub(super) mcp_refresh: McpRefresh,
-    pub(super) mcp_elicitation_reviewer_handle: OnceLock<codex_mcp::ElicitationReviewerHandle>,
-    pub(super) mcp_elicitation_lifecycle_handle: OnceLock<codex_mcp::ElicitationLifecycle>,
-    pub(super) mcp_prewarm_tx: async_channel::Sender<()>,
-    pub(super) mcp_prewarm_shutdown: CancellationToken,
-    pub(super) mcp_prewarm_task: std::sync::Mutex<Option<JoinHandle<()>>>,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
     pub(crate) pending_user_message_admissions:
@@ -107,7 +100,7 @@ pub(crate) struct SessionConfiguration {
     pub(super) metrics_service_name: Option<String>,
     pub(super) app_server_client_name: Option<String>,
     pub(super) app_server_client_version: Option<String>,
-    /// Source of the session (cli, vscode, exec, mcp, ...)
+    /// Source of the session (CLI, app server, exec, and so on).
     pub(super) session_source: SessionSource,
     /// Persisted thread history contract selected when this thread was created.
     pub(super) history_mode: ThreadHistoryMode,
@@ -166,13 +159,6 @@ impl SessionConfiguration {
 
     pub(super) fn permission_profile(&self) -> PermissionProfile {
         self.permission_profile_state.permission_profile().clone()
-    }
-
-    pub(super) fn mcp_inputs_differ(&self, next: &Self) -> bool {
-        self.environments != next.environments
-            || self.approval_policy.value() != next.approval_policy.value()
-            || self.approvals_reviewer != next.approvals_reviewer
-            || self.permission_profile() != next.permission_profile()
     }
 
     fn materialized_permission_profile(&self) -> PermissionProfile {
@@ -521,11 +507,9 @@ impl Session {
         session_source: SessionSource,
         skills_service: Arc<HostSkillsService>,
         plugins_manager: Arc<PluginsManager>,
-        mcp_manager: Arc<McpManager>,
         code_mode_session_provider: Arc<dyn codex_code_mode::CodeModeSessionProvider>,
         extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
         mut thread_extension_init: ExtensionDataInit,
-        client_mcp_extensions: ClientMcpExtensions,
         agent_control: AgentControl,
         environment_manager: Arc<EnvironmentManager>,
         inherited_environments: Option<TurnEnvironmentSnapshot>,
@@ -615,7 +599,6 @@ impl Session {
         thread_extension_init.insert(codex_extension_api::ThreadOriginator(
             session_configuration.originator.clone(),
         ));
-        let mcp_thread_init = thread_extension_init.clone();
         let thread_extension_data = codex_extension_api::ExtensionData::new_with_init(
             thread_id.to_string(),
             thread_extension_init,
@@ -728,45 +711,17 @@ impl Session {
             session_init.ephemeral = config.ephemeral,
         ));
 
-        let mut mcp_auth_changes = auth_manager.auth_change_receiver();
         let auth_manager_clone = Arc::clone(&auth_manager);
-        let config_for_mcp = Arc::clone(&config);
-        let mcp_manager_for_mcp = Arc::clone(&mcp_manager);
-        let mcp_thread_init_for_startup = &mcp_thread_init;
-        let thread_extension_data_for_mcp = &thread_extension_data;
-        let mcp_originator = session_configuration.originator.clone();
-        let mcp_session_source = session_configuration.session_source.clone();
-        let mcp_runtime_cwd = session_configuration
-            .environment_selections()
-            .first()
-            .and_then(|environment| environment.cwd.to_abs_path().ok())
-            .map(|cwd| cwd.to_path_buf())
-            .unwrap_or_else(|| session_configuration.cwd().to_path_buf());
-        let auth_and_mcp_fut = async move {
-            let auth = auth_manager_clone.auth().await;
-            let mcp_projection = mcp_manager_for_mcp
-                .runtime_config_for_step(
-                    &config_for_mcp,
-                    mcp_thread_init_for_startup,
-                    thread_extension_data_for_mcp,
-                    McpThreadIdentity {
-                        session_source: &mcp_session_source,
-                        originator: &mcp_originator,
-                    },
-                    /*ready_selected_capability_roots*/ &[],
-                    /*executor_capability_discovery*/ None,
-                )
-                .await;
-            (auth, mcp_projection)
-        }
-        .instrument(info_span!(
-            "session_init.auth_mcp",
-            otel.name = "session_init.auth_mcp",
+        let auth_fut: Pin<Box<dyn Future<Output = Option<CodexAuth>> + Send>> =
+            Box::pin(async move { auth_manager_clone.auth().await });
+        let auth_fut = auth_fut.instrument(info_span!(
+            "session_init.auth",
+            otel.name = "session_init.auth",
         ));
 
         // Join all independent futures.
-        let (thread_persistence_result, state_db_ctx, (auth, mcp_projection)) =
-            tokio::join!(thread_persistence_fut, state_db_fut, auth_and_mcp_fut);
+        let (thread_persistence_result, state_db_ctx, auth) =
+            tokio::join!(thread_persistence_fut, state_db_fut, auth_fut);
 
         let mut live_thread_init =
             LiveThreadInitGuard::new(thread_persistence_result.map_err(|e| {
@@ -897,13 +852,6 @@ impl Session {
                 )],
             );
 
-            let mcp_server_names =
-                codex_mcp::effective_mcp_servers(
-                    &mcp_projection.config,
-                    auth.as_ref(),
-                )
-                    .into_keys()
-                    .collect::<Vec<_>>();
             session_telemetry.conversation_starts(
                 config.model_provider.name.as_str(),
                 session_configuration.collaboration_mode.reasoning_effort(),
@@ -916,7 +864,6 @@ impl Session {
                 config
                     .permissions
                     .legacy_sandbox_policy(session_configuration.cwd().as_path()),
-                mcp_server_names.iter().map(String::as_str).collect(),
             );
 
             let use_zsh_fork_shell = config.features.enabled(Feature::ShellZshFork);
@@ -1077,13 +1024,8 @@ impl Session {
                     config.analytics_enabled,
                 )
             });
-            // Extensions need a stable thread-owned resource client before the Session exists.
-            let mcp_runtime = Arc::new(McpRuntime::empty(
-                mcp_projection.config.prefix_mcp_tool_names,
-            ));
             let session_extension_data =
                 codex_extension_api::ExtensionData::new(session_id.to_string());
-            let mcp_resource_client = Arc::new(McpResourceClient::new(Arc::clone(&mcp_runtime)));
             let extension_metrics =
                 extension_metrics::from_session_telemetry(session_telemetry.clone());
             for contributor in extensions.thread_lifecycle_contributors() {
@@ -1092,7 +1034,6 @@ impl Session {
                     session_source: &session_configuration.session_source,
                     persistent_thread_state_available: state_db_ctx.is_some(),
                     environments: session_configuration.environment_selections(),
-                    mcp_resource_client: Some(Arc::clone(&mcp_resource_client)),
                     extension_metrics: Some(Arc::clone(&extension_metrics)),
                     session_store: &session_extension_data,
                     thread_store: &thread_extension_data,
@@ -1104,9 +1045,6 @@ impl Session {
                 .enabled(Feature::ExecutedToolCallMetadata)
                 .then(|| Arc::new(crate::state::ExecutedToolCallRecorder::default()));
             let services = SessionServices {
-                // Start with an empty connection set. The initialized set is
-                // published after SessionConfigured so MCP events follow it.
-                mcp_runtime,
                 unified_exec_manager: UnifiedExecProcessManager::new(
                     config.background_terminal_max_timeout,
                 ),
@@ -1133,14 +1071,11 @@ impl Session {
                 skills_service,
                 agents_md_manager,
                 plugins_manager: Arc::clone(&plugins_manager),
-                mcp_manager: Arc::clone(&mcp_manager),
                 extensions,
                 // TODO(jif): extract session to share between sub-agents
                 session_extension_data,
                 thread_extension_data,
                 selected_capability_roots,
-                mcp_thread_init,
-                client_mcp_extensions,
                 agent_control,
                 network_proxy: arc_swap::ArcSwapOption::from(network_proxy.map(Arc::new)),
                 network_proxy_audit_metadata,
@@ -1186,7 +1121,6 @@ impl Session {
                 tool_search_handler_cache: Default::default(),
                 turn_environments: Arc::clone(&turn_environments),
             };
-            let (mcp_prewarm_tx, mcp_prewarm_rx) = async_channel::bounded(1);
             let sess = Arc::new(Session {
                 thread_id,
                 installation_id,
@@ -1196,12 +1130,6 @@ impl Session {
                 managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
                 features: config.features.clone(),
                 multi_agent_version,
-                mcp_refresh: McpRefresh::new(),
-                mcp_elicitation_reviewer_handle: OnceLock::new(),
-                mcp_elicitation_lifecycle_handle: OnceLock::new(),
-                mcp_prewarm_tx,
-                mcp_prewarm_shutdown: CancellationToken::new(),
-                mcp_prewarm_task: std::sync::Mutex::new(None),
                 conversation: Arc::new(RealtimeConversationManager::new()),
                 active_turn: Mutex::new(None),
                 pending_user_message_admissions: Default::default(),
@@ -1254,45 +1182,6 @@ impl Session {
             }
             turn_environments.start_connection_event_forwarding(tx_event.clone());
 
-            let startup_auth_changed = mcp_auth_changes.has_changed().unwrap_or(false);
-            if startup_auth_changed {
-                mcp_auth_changes.mark_unchanged();
-            }
-            let latest_auth = sess.services.auth_manager.auth().await;
-            let mcp_projection = if startup_auth_changed
-                || mcp_auth_changes.has_changed().unwrap_or(false)
-            {
-                sess.services
-                    .plugins_manager
-                    .set_auth_mode(latest_auth.as_ref().map(CodexAuth::api_auth_mode));
-                sess.services
-                    .mcp_manager
-                    .runtime_config_for_step(
-                        config.as_ref(),
-                        &sess.services.mcp_thread_init,
-                        &sess.services.thread_extension_data,
-                        McpThreadIdentity {
-                            session_source: &session_configuration.session_source,
-                            originator: &session_configuration.originator,
-                        },
-                        /*ready_selected_capability_roots*/ &[],
-                        /*executor_capability_discovery*/ None,
-                    )
-                    .await
-            } else {
-                mcp_projection
-            };
-            sess.install_initial_mcp_runtime(
-                &session_configuration,
-                latest_auth,
-                mcp_projection,
-                &resolved_environments,
-                mcp_runtime_cwd,
-            )
-            .await?;
-            sess.start_mcp_prewarm_worker(mcp_prewarm_rx, mcp_auth_changes);
-            sess.schedule_startup_prewarm(session_configuration.base_instructions.clone())
-                .await;
             let session_start_source = match &initial_history {
                 InitialHistory::Resumed(_) => codex_hooks::SessionStartSource::Resume,
                 InitialHistory::New | InitialHistory::Forked(_) => {

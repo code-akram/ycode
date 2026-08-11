@@ -1,13 +1,9 @@
 use crate::config_values::is_empty_toml_table;
-use crate::config_values::merge_missing_mcp_servers;
 use crate::config_values::merge_missing_toml_values;
-use crate::config_values::migrated_mcp_server_names;
 use crate::config_values::write_toml_file;
 use crate::memory_import;
 use crate::migration_source::ExternalAgentSource;
 use crate::migration_source::InstructionSourceGroup;
-pub use crate::model::DetectedConnectorCandidate;
-pub use crate::model::DetectedConnectorSource;
 pub use crate::model::ExternalAgentConfigDetectOptions;
 pub use crate::model::ExternalAgentConfigDetection;
 pub use crate::model::ExternalAgentConfigImportItemResult;
@@ -27,7 +23,6 @@ use crate::reporting::emit_migration_metric;
 use crate::reporting::migration_metric_tags;
 pub use crate::reporting::record_import_error;
 use crate::scope::MigrationScope;
-use crate::sessions::ExternalAgentSessionMigration;
 use crate::sessions::SessionMetadataMode;
 #[cfg(test)]
 use crate::source_cla::KNOWN_MARKETPLACES_PATH as EXTERNAL_AGENT_KNOWN_MARKETPLACES_PATH;
@@ -65,7 +60,6 @@ const EXTERNAL_AGENT_CONFIG_IMPORT_METRIC: &str = "codex.external_agent_config.i
 #[derive(Clone)]
 pub struct ExternalAgentConfigService {
     pub(super) codex_home: PathBuf,
-    pub(super) connector_metadata_roots: Vec<PathBuf>,
     pub(crate) external_agent_home: PathBuf,
     pub(crate) analytics_events_client: Option<AnalyticsEventsClient>,
     pub(crate) source: ExternalAgentSource,
@@ -81,10 +75,8 @@ impl ExternalAgentConfigService {
     ) -> Self {
         let source = ExternalAgentSource::default();
         let external_agent_home = default_external_agent_home(source);
-        let connector_metadata_roots = source.connector_metadata_roots(&external_agent_home);
         Self {
             codex_home,
-            connector_metadata_roots,
             external_agent_home,
             analytics_events_client: Some(analytics_events_client),
             source,
@@ -96,10 +88,8 @@ impl ExternalAgentConfigService {
     pub fn with_migration_source(&self, migration_source: Option<&str>) -> Self {
         let source = ExternalAgentSource::from_migration_source(migration_source);
         let external_agent_home = default_external_agent_home(source);
-        let connector_metadata_roots = source.connector_metadata_roots(&external_agent_home);
         Self {
             codex_home: self.codex_home.clone(),
-            connector_metadata_roots,
             external_agent_home,
             analytics_events_client: self.analytics_events_client.clone(),
             source,
@@ -118,32 +108,6 @@ impl ExternalAgentConfigService {
         self.source.session_metadata_mode()
     }
 
-    pub fn connector_metadata_roots(&self) -> &[PathBuf] {
-        &self.connector_metadata_roots
-    }
-
-    pub fn detect_session_connectors(
-        &self,
-        sessions: &[ExternalAgentSessionMigration],
-    ) -> Vec<DetectedConnectorCandidate> {
-        self.source.detect_session_connectors(
-            sessions,
-            &self.connector_metadata_roots,
-            &self.external_agent_home,
-        )
-    }
-
-    pub fn detect_session_connectors_by_source_path(
-        &self,
-        sessions: &[ExternalAgentSessionMigration],
-    ) -> BTreeMap<PathBuf, Vec<DetectedConnectorCandidate>> {
-        self.source.detect_session_connectors_by_source_path(
-            sessions,
-            &self.connector_metadata_roots,
-            &self.external_agent_home,
-        )
-    }
-
     pub fn codex_home(&self) -> &Path {
         &self.codex_home
     }
@@ -151,10 +115,8 @@ impl ExternalAgentConfigService {
     #[cfg(test)]
     fn new_for_test(codex_home: PathBuf, external_agent_home: PathBuf) -> Self {
         let source = ExternalAgentSource::default();
-        let connector_metadata_roots = source.connector_metadata_roots(&external_agent_home);
         Self {
             codex_home,
-            connector_metadata_roots,
             external_agent_home,
             analytics_events_client: None,
             source,
@@ -316,23 +278,6 @@ impl ExternalAgentConfigService {
                     }
                     .await
                 }
-                ExternalAgentConfigMigrationItemType::McpServerConfig => (|| {
-                    let migrated_server_names =
-                        self.import_mcp_server_config(migration_item.cwd.as_deref())?;
-                    emit_migration_metric(
-                        EXTERNAL_AGENT_CONFIG_IMPORT_METRIC,
-                        ExternalAgentConfigMigrationItemType::McpServerConfig,
-                        /*skills_count*/ None,
-                    );
-                    for server_name in migrated_server_names {
-                        item_result.record_success(
-                            Some(server_name.clone()),
-                            Some(server_name),
-                            /*title*/ None,
-                        );
-                    }
-                    Ok(())
-                })(),
                 ExternalAgentConfigMigrationItemType::Subagents => (|| {
                     let imported_subagents =
                         self.import_subagents(migration_item.cwd.as_deref())?;
@@ -480,20 +425,6 @@ impl ExternalAgentConfigService {
             .effective_settings(self.source_config_dir(scope).as_path(), &source_settings)
     }
 
-    pub(crate) fn build_mcp_config(
-        &self,
-        scope: &MigrationScope,
-        settings: Option<JsonValue>,
-    ) -> io::Result<TomlValue> {
-        let settings = self.mcp_settings(scope, settings)?;
-        self.source.build_mcp_config(
-            self.source_root(scope).as_path(),
-            self.source_config_dir(scope).as_path(),
-            self.external_agent_home.as_path(),
-            settings.as_ref(),
-        )
-    }
-
     pub(crate) fn repo_agents_md_source_groups(
         &self,
         repo_root: &Path,
@@ -504,42 +435,6 @@ impl ExternalAgentConfigService {
     pub(crate) fn home_agents_md_sources(&self) -> io::Result<Vec<PathBuf>> {
         self.source
             .home_instruction_sources(self.external_agent_home.as_path())
-    }
-
-    fn mcp_settings(
-        &self,
-        scope: &MigrationScope,
-        source_settings: Option<JsonValue>,
-    ) -> io::Result<Option<JsonValue>> {
-        if !scope.is_home() && source_settings.is_none() {
-            let home_scope = MigrationScope::home();
-            let home_settings = self.source_settings(&home_scope);
-            match self.effective_source_settings(&home_scope) {
-                Ok(settings) => Ok(settings),
-                Err(err) => {
-                    tracing::warn!(
-                        path = %home_settings.display(),
-                        error = %err,
-                        "ignoring invalid external agent home settings during repo MCP migration"
-                    );
-                    Ok(None)
-                }
-            }
-        } else {
-            Ok(source_settings)
-        }
-    }
-
-    pub(crate) fn source_root(&self, scope: &MigrationScope) -> PathBuf {
-        scope.repo_root().map_or_else(
-            || {
-                self.external_agent_home
-                    .parent()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| PathBuf::from("."))
-            },
-            Path::to_path_buf,
-        )
     }
 
     fn import_config(&self, cwd: Option<&Path>) -> io::Result<Option<(String, String)>> {
@@ -589,44 +484,6 @@ impl ExternalAgentConfigService {
             source_settings.display().to_string(),
             target_config.display().to_string(),
         )))
-    }
-
-    fn import_mcp_server_config(&self, cwd: Option<&Path>) -> io::Result<Vec<String>> {
-        let Some(scope) = MigrationScope::from_cwd(cwd)? else {
-            return Ok(Vec::new());
-        };
-        let target_config = match &scope {
-            MigrationScope::Home => self.codex_home.join("config.toml"),
-            MigrationScope::Repository { root } => root.join(".codex").join("config.toml"),
-        };
-        let settings = self.effective_source_settings(&scope)?;
-        let migrated = self.build_mcp_config(&scope, settings)?;
-        if is_empty_toml_table(&migrated) {
-            return Ok(Vec::new());
-        }
-
-        let Some(target_parent) = target_config.parent() else {
-            return Err(invalid_data_error("config target path has no parent"));
-        };
-        fs::create_dir_all(target_parent)?;
-        if !target_config.exists() {
-            let migrated_server_names = migrated_mcp_server_names(&migrated);
-            write_toml_file(&target_config, &migrated)?;
-            return Ok(migrated_server_names);
-        }
-
-        let existing_raw = fs::read_to_string(&target_config)?;
-        let mut existing = if existing_raw.trim().is_empty() {
-            TomlValue::Table(Default::default())
-        } else {
-            toml::from_str::<TomlValue>(&existing_raw)
-                .map_err(|err| invalid_data_error(format!("invalid existing config.toml: {err}")))?
-        };
-        let merged_server_names = merge_missing_mcp_servers(&mut existing, &migrated)?;
-        if !merged_server_names.is_empty() {
-            write_toml_file(&target_config, &existing)?;
-        }
-        Ok(merged_server_names)
     }
 
     fn import_subagents(&self, cwd: Option<&Path>) -> io::Result<Vec<String>> {

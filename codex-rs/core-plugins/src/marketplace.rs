@@ -98,8 +98,6 @@ impl MarketplacePluginManifestFallback {
         .ok()?;
         manifest.paths = crate::manifest::PluginManifestPaths {
             skills: Vec::new(),
-            mcp_servers: None,
-            apps: None,
             hooks: None,
         };
         if let Some(interface) = manifest.interface.as_mut() {

@@ -52,7 +52,6 @@ pub struct ToolSuggestPluginDiscoveryInput {
     pub plugins: PluginsConfigInput,
     pub configured_plugin_ids: HashSet<String>,
     pub disabled_plugin_ids: HashSet<String>,
-    pub loaded_plugin_app_connector_ids: HashSet<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,8 +61,6 @@ pub struct ToolSuggestDiscoverablePlugin {
     pub name: String,
     pub description: Option<String>,
     pub has_skills: bool,
-    pub mcp_server_names: Vec<String>,
-    pub app_connector_ids: Vec<String>,
 }
 
 impl PluginsManager {
@@ -126,12 +123,6 @@ impl PluginsManager {
                             name: plugin.display_name,
                             description: plugin.description,
                             has_skills: plugin.has_skills,
-                            mcp_server_names: plugin.mcp_server_names,
-                            app_connector_ids: plugin
-                                .app_connector_ids
-                                .into_iter()
-                                .map(|connector_id| connector_id.0)
-                                .collect(),
                         });
                     }
                     Err(err) => {
@@ -141,16 +132,6 @@ impl PluginsManager {
             }
         }
         if let Some(remote_installed_marketplaces) = remote_installed_marketplaces.as_ref() {
-            let mut installed_app_connector_ids = self
-                .plugins_for_config(&input.plugins)
-                .await
-                .capability_summaries()
-                .iter()
-                .flat_map(|plugin| plugin.app_connector_ids.iter())
-                .map(|connector_id| connector_id.0.clone())
-                .collect::<HashSet<_>>();
-            installed_app_connector_ids
-                .extend(input.loaded_plugin_app_connector_ids.iter().cloned());
             let installed_remote_plugin_ids = remote_installed_marketplaces
                 .iter()
                 .flat_map(|marketplace| marketplace.plugins.iter())
@@ -166,10 +147,6 @@ impl PluginsManager {
                         .configured_plugin_ids
                         .contains(plugin.remote_plugin_id.as_str());
                 let is_fallback_plugin = is_tool_suggest_fallback_plugin(&plugin.config_id);
-                let matches_installed_app = plugin
-                    .app_ids
-                    .iter()
-                    .any(|app_id| installed_app_connector_ids.contains(app_id.as_str()));
                 let is_disabled = input
                     .disabled_plugin_ids
                     .contains(plugin.config_id.as_str())
@@ -180,7 +157,7 @@ impl PluginsManager {
                     || plugin.install_policy == PluginInstallPolicy::NotAvailable
                     || plugin.availability == PluginAvailability::DisabledByAdmin
                     || is_disabled
-                    || (!is_configured_plugin && !is_fallback_plugin && !matches_installed_app)
+                    || (!is_configured_plugin && !is_fallback_plugin)
                 {
                     continue;
                 }
@@ -191,8 +168,6 @@ impl PluginsManager {
                     name: plugin.name,
                     description: plugin.description,
                     has_skills: plugin.has_skills,
-                    mcp_server_names: Vec::new(),
-                    app_connector_ids: plugin.app_ids,
                 });
             }
         }

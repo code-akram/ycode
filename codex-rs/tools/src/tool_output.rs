@@ -161,36 +161,6 @@ impl ToolOutput for JsonToolOutput {
     }
 }
 
-impl ToolOutput for codex_protocol::mcp::CallToolResult {
-    fn log_preview(&self) -> String {
-        let output = self.as_function_call_output_payload();
-        let preview = output.body.to_text().unwrap_or_else(|| output.to_string());
-        telemetry_preview(&preview)
-    }
-
-    fn success_for_logging(&self) -> bool {
-        self.success()
-    }
-
-    fn to_response_item(&self, call_id: &str, _payload: &ToolPayload) -> ResponseInputItem {
-        ResponseInputItem::McpToolCallOutput {
-            call_id: call_id.to_string(),
-            output: self.clone(),
-        }
-    }
-
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
-        let mut result = serde_json::to_value(self).unwrap_or_else(|err| {
-            JsonValue::String(format!("failed to serialize mcp result: {err}"))
-        });
-        // MCP result metadata is private to clients and must not reach Code Mode.
-        if let JsonValue::Object(fields) = &mut result {
-            fields.remove("_meta");
-        }
-        result
-    }
-}
-
 fn response_input_to_code_mode_result(response: ResponseInputItem) -> JsonValue {
     match response {
         ResponseInputItem::Message { content, .. } => content_items_to_code_mode_result(
@@ -221,10 +191,6 @@ fn response_input_to_code_mode_result(response: ResponseInputItem) -> JsonValue 
             }
         },
         ResponseInputItem::ToolSearchOutput { tools, .. } => JsonValue::Array(tools),
-        ResponseInputItem::McpToolCallOutput { output, .. } => serde_json::to_value(output)
-            .unwrap_or_else(|err| {
-                JsonValue::String(format!("failed to serialize mcp result: {err}"))
-            }),
     }
 }
 

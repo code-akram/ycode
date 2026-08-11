@@ -2,26 +2,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use codex_plugin::AppDeclaration;
 use codex_plugin::PluginCapabilitySummary;
 use codex_plugin::PluginId;
 use codex_plugin::PluginIdError;
-use codex_plugin::app_connector_ids_from_declarations;
 use codex_plugin::prompt_safe_plugin_description;
-use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::Product;
 use codex_skills::SkillConfigRules;
 use codex_utils_plugins::PluginIdentity;
 use tokio::sync::Semaphore;
 
-use crate::app_mcp_routing::apply_app_mcp_routing_policy;
 use crate::loader::PluginSkillInventory;
-use crate::loader::load_plugin_apps;
-use crate::loader::load_plugin_mcp_servers;
 use crate::loader::load_plugin_skill_inventory;
 use crate::manager::ConfiguredMarketplacePlugin;
 use crate::manager::remote_plugin_install_required_description;
-use crate::manifest::PluginManifestFormat;
 use crate::manifest::load_plugin_manifest_with_format;
 use crate::marketplace::MarketplaceError;
 use crate::marketplace::MarketplacePluginSource;
@@ -56,8 +49,6 @@ pub(crate) struct ToolSuggestMetadataFragment {
     display_name: String,
     plugin_namespace: Option<String>,
     description: Option<String>,
-    mcp_server_names: Vec<String>,
-    app_declarations: Vec<AppDeclaration>,
     skill_inventory: Option<PluginSkillInventory>,
 }
 
@@ -65,26 +56,8 @@ impl ToolSuggestMetadataFragment {
     pub(crate) fn project(
         &self,
         skill_config_rules: &SkillConfigRules,
-        auth_mode: Option<AuthMode>,
+        _auth_mode: Option<codex_protocol::auth::AuthMode>,
     ) -> PluginCapabilitySummary {
-        let mut app_declarations = self.app_declarations.clone();
-        let mut mcp_servers = self
-            .mcp_server_names
-            .iter()
-            .cloned()
-            .map(|name| (name, ()))
-            .collect::<HashMap<_, _>>();
-        if auth_mode.is_some() {
-            apply_app_mcp_routing_policy(
-                &mut app_declarations,
-                &mut mcp_servers,
-                auth_mode,
-                /*plugin_active*/ true,
-            );
-        }
-        let mut mcp_server_names = mcp_servers.into_keys().collect::<Vec<_>>();
-        mcp_server_names.sort_unstable();
-
         PluginCapabilitySummary {
             config_name: self.config_name.clone(),
             display_name: self.display_name.clone(),
@@ -94,8 +67,6 @@ impl ToolSuggestMetadataFragment {
                 .skill_inventory
                 .as_ref()
                 .is_some_and(|inventory| inventory.has_enabled_skills(skill_config_rules)),
-            mcp_server_names,
-            app_connector_ids: app_connector_ids_from_declarations(&app_declarations),
         }
     }
 }
@@ -213,8 +184,6 @@ async fn load_plugin_metadata(
             description: prompt_safe_plugin_description(Some(
                 &remote_plugin_install_required_description(&plugin.source),
             )),
-            mcp_server_names: Vec::new(),
-            app_declarations: Vec::new(),
             skill_inventory: None,
         }));
     };
@@ -238,26 +207,11 @@ async fn load_plugin_metadata(
         root_scan_slots,
     )
     .await;
-    let mut mcp_server_names =
-        load_plugin_mcp_servers(plugin_root.as_path(), /*auth_mode*/ None)
-            .await
-            .into_keys()
-            .collect::<Vec<_>>();
-    mcp_server_names.sort_unstable();
-    mcp_server_names.dedup();
-    let app_declarations = if loaded_manifest.format == PluginManifestFormat::AgentPlugin {
-        Vec::new()
-    } else {
-        load_plugin_apps(plugin_root.as_path()).await
-    };
-
     Ok(Arc::new(ToolSuggestMetadataFragment {
         config_name: plugin.id.clone(),
         display_name: plugin.name.clone(),
         plugin_namespace: Some(manifest.name.clone()),
         description: prompt_safe_plugin_description(manifest.description.as_deref()),
-        mcp_server_names,
-        app_declarations,
         skill_inventory: Some(skill_inventory),
     }))
 }

@@ -19,23 +19,17 @@ impl ChatWidget {
     fn clear_guardian_review_status(&mut self) {
         self.status_state.pending_guardian_review_status.clear();
         if self.status_state.current_status.is_guardian_review() {
-            let header = self
-                .mcp_startup_status_header()
-                .unwrap_or_else(|| String::from("Working"));
-            self.set_status_header(header);
+            self.set_status_header(String::from("Working"));
         }
     }
 
     /// Synchronize the bottom-pane "task running" indicator with the current lifecycles.
     ///
     /// The bottom pane only has one running flag, but this module treats it as a derived state of
-    /// both the agent turn lifecycle and MCP startup lifecycle.
+    /// the agent turn lifecycle.
     pub(super) fn update_task_running_state(&mut self) {
-        self.bottom_pane.set_task_running(
-            self.turn_lifecycle.agent_turn_running
-                || self.review.is_review_mode
-                || self.mcp_startup_status.is_some(),
-        );
+        self.bottom_pane
+            .set_task_running(self.turn_lifecycle.agent_turn_running || self.review.is_review_mode);
         self.refresh_plan_mode_nudge();
         self.refresh_status_surfaces();
     }
@@ -89,9 +83,7 @@ impl ChatWidget {
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ true);
         self.status_state.terminal_title_status_kind = TerminalTitleStatusKind::Working;
-        if self.mcp_startup_status.is_none() || !self.status_header_is_mcp_startup_owned() {
-            self.set_status_header(String::from("Working"));
-        }
+        self.set_status_header(String::from("Working"));
         self.reasoning_summary_parts.clear();
         self.reasoning_buffer.clear();
         self.reasoning_header = None;
@@ -308,9 +300,6 @@ impl ChatWidget {
     }
 
     /// Finalize any active exec as failed and stop/clear agent-turn UI state.
-    ///
-    /// This does not clear MCP startup tracking, because MCP startup can overlap with turn cleanup
-    /// and should continue to drive the bottom-pane running indicator while it is in progress.
     pub(super) fn finalize_turn(&mut self) {
         self.clear_safety_buffering();
         // Drop preview-only stream tail content on any termination path before

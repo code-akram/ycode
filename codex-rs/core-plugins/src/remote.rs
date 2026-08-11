@@ -1,6 +1,4 @@
-use crate::app_mcp_routing::apply_app_mcp_routing_policy;
 use crate::http_client_selector::HttpClientSelector;
-use crate::loader::plugin_app_declarations_from_value;
 use crate::store::PLUGINS_CACHE_DIR;
 use crate::store::PluginStore;
 use chrono::DateTime;
@@ -21,21 +19,16 @@ use codex_http_client::RouteAwareRequestBuilder;
 use codex_http_client::RouteAwareRequestError;
 use codex_login::CodexAuth;
 use codex_login::default_client::default_headers;
-use codex_plugin::AppConnectorId;
-use codex_plugin::AppDeclaration;
 use codex_plugin::PluginCapabilitySummary;
 use codex_plugin::PluginId;
-use codex_plugin::app_connector_ids_from_declarations;
 use codex_plugin::prompt_safe_plugin_description;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use http::Method;
 use http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -276,32 +269,8 @@ pub struct RemotePluginDetail {
     pub description: Option<String>,
     pub release_version: Option<String>,
     pub bundle_download_url: Option<String>,
-    pub app_manifest: Option<JsonValue>,
     pub skills: Vec<RemotePluginSkill>,
-    pub app_ids: Vec<String>,
-    pub app_templates: Vec<RemoteAppTemplate>,
-    pub mcp_servers: Vec<String>,
     pub scheduled_tasks: Option<Vec<ScheduledTaskSummary>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemoteAppTemplate {
-    pub template_id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub category: Option<String>,
-    pub canonical_connector_id: Option<String>,
-    pub logo_url: Option<String>,
-    pub logo_url_dark: Option<String>,
-    pub materialized_app_ids: Vec<String>,
-    pub reason: Option<RemoteAppTemplateUnavailableReason>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RemoteAppTemplateUnavailableReason {
-    NotConfiguredForWorkspace,
-    NoActiveWorkspace,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -325,7 +294,6 @@ pub struct RemoteDiscoverablePlugin {
     pub name: String,
     pub description: Option<String>,
     pub has_skills: bool,
-    pub app_ids: Vec<String>,
     pub install_policy: PluginInstallPolicy,
     pub availability: PluginAvailability,
 }
@@ -335,7 +303,6 @@ pub struct RecommendedPlugin {
     pub config_id: String,
     pub remote_plugin_id: String,
     pub display_name: String,
-    pub app_connector_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -567,44 +534,11 @@ struct RemotePluginReleaseResponse {
     #[serde(default)]
     bundle_download_url: Option<String>,
     #[serde(default)]
-    app_ids: Vec<String>,
-    #[serde(default)]
-    app_manifest: Option<JsonValue>,
-    #[serde(default, alias = "unavailable_app_templates")]
-    app_templates: Vec<RemoteAppTemplateResponse>,
-    #[serde(default)]
     keywords: Vec<String>,
     interface: RemotePluginReleaseInterfaceResponse,
     #[serde(default)]
     skills: Vec<RemotePluginSkillResponse>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    mcp_servers: Vec<RemotePluginMcpServerResponse>,
     scheduled_tasks: Option<Vec<ScheduledTaskSummary>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-struct RemotePluginMcpServerResponse {
-    key: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-struct RemoteAppTemplateResponse {
-    template_id: String,
-    name: String,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    category: Option<String>,
-    #[serde(default)]
-    canonical_connector_id: Option<String>,
-    #[serde(default)]
-    logo_url: Option<String>,
-    #[serde(default)]
-    logo_url_dark: Option<String>,
-    #[serde(default)]
-    materialized_app_ids: Vec<String>,
-    #[serde(default)]
-    reason: Option<RemoteAppTemplateUnavailableReason>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -732,8 +666,6 @@ struct RecommendedPluginItem {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct RecommendedPluginRelease {
     display_name: String,
-    #[serde(default)]
-    app_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -746,13 +678,10 @@ struct RemotePluginInstalledResponse {
 struct RemotePluginMutationResponse {
     id: String,
     enabled: bool,
-    app_ids_needing_auth: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemotePluginInstallResult {
-    pub app_ids_needing_auth: Option<Vec<String>>,
-}
+pub struct RemotePluginInstallResult;
 
 pub async fn fetch_remote_marketplaces(
     config: &RemotePluginServiceConfig,
@@ -1001,19 +930,11 @@ fn recommended_plugins_mode(response: RecommendedPluginsResponse) -> Recommended
                 continue;
             }
         };
-        let RecommendedPluginRelease {
-            display_name,
-            app_ids,
-        } = plugin.release;
+        let RecommendedPluginRelease { display_name } = plugin.release;
         let display_name = non_empty_string(Some(&display_name))
             .unwrap_or_else(|| plugin.name.clone())
             .chars()
             .take(MAX_RECOMMENDED_PLUGIN_DISPLAY_NAME_LEN)
-            .collect();
-        let mut seen_app_ids = HashSet::new();
-        let app_connector_ids = app_ids
-            .into_iter()
-            .filter(|app_id| !app_id.is_empty() && seen_app_ids.insert(app_id.clone()))
             .collect();
         let config_id = plugin_id.as_key();
         plugins
@@ -1022,7 +943,6 @@ fn recommended_plugins_mode(response: RecommendedPluginsResponse) -> Recommended
                 config_id,
                 remote_plugin_id: plugin.id,
                 display_name,
-                app_connector_ids,
             });
     }
 
@@ -1381,32 +1301,6 @@ async fn build_remote_plugin_detail(
             enabled: !disabled_skill_names.contains(&skill.name),
         })
         .collect();
-    let mut app_declarations = plugin
-        .release
-        .app_manifest
-        .as_ref()
-        .map(plugin_app_declarations_from_value)
-        .unwrap_or_else(|| app_declarations_from_remote_app_ids(&plugin.release.app_ids));
-    let mut mcp_servers = plugin
-        .release
-        .mcp_servers
-        .iter()
-        .map(|server| (server.key.clone(), ()))
-        .collect::<HashMap<_, _>>();
-    apply_app_mcp_routing_policy(
-        &mut app_declarations,
-        &mut mcp_servers,
-        Some(auth.api_auth_mode()),
-        /*plugin_active*/ true,
-    );
-    let app_ids = app_connector_ids_from_declarations(&app_declarations)
-        .into_iter()
-        .map(|app_id| app_id.0)
-        .collect();
-    let mut mcp_servers = mcp_servers.into_keys().collect::<Vec<_>>();
-    mcp_servers.sort_unstable();
-    mcp_servers.dedup();
-
     Ok(RemotePluginDetail {
         marketplace_name,
         marketplace_display_name: scope.marketplace_display_name().to_string(),
@@ -1415,39 +1309,9 @@ async fn build_remote_plugin_detail(
         description: non_empty_string(Some(&plugin.release.description)),
         release_version: plugin.release.version,
         bundle_download_url: plugin.release.bundle_download_url,
-        app_manifest: plugin.release.app_manifest,
         skills,
-        app_ids,
-        app_templates: plugin
-            .release
-            .app_templates
-            .into_iter()
-            .map(|template| RemoteAppTemplate {
-                template_id: template.template_id,
-                name: template.name,
-                description: template.description,
-                category: template.category,
-                canonical_connector_id: template.canonical_connector_id,
-                logo_url: template.logo_url,
-                logo_url_dark: template.logo_url_dark,
-                materialized_app_ids: template.materialized_app_ids,
-                reason: template.reason,
-            })
-            .collect(),
-        mcp_servers,
         scheduled_tasks: plugin.release.scheduled_tasks,
     })
-}
-
-fn app_declarations_from_remote_app_ids(app_ids: &[String]) -> Vec<AppDeclaration> {
-    app_ids
-        .iter()
-        .map(|app_id| AppDeclaration {
-            name: app_id.clone(),
-            connector_id: AppConnectorId(app_id.clone()),
-            category: None,
-        })
-        .collect()
 }
 
 pub async fn install_remote_plugin(
@@ -1461,10 +1325,8 @@ pub async fn install_remote_plugin(
     // marketplace name is not validated before sending the install mutation.
 
     let base_url = config.chatgpt_base_url.trim_end_matches('/');
-    let mut url = Url::parse(&format!("{base_url}/ps/plugins/{plugin_id}/install"))
+    let url = Url::parse(&format!("{base_url}/ps/plugins/{plugin_id}/install"))
         .map_err(RemotePluginCatalogError::InvalidBaseUrl)?;
-    url.query_pairs_mut()
-        .append_pair("includeAppsNeedingAuth", "true");
     let url = url.to_string();
     let request = authenticated_request(config.http_request(Method::POST, &url), auth);
     let response: RemotePluginMutationResponse = send_and_decode(request, &url).await?;
@@ -1482,9 +1344,7 @@ pub async fn install_remote_plugin(
         });
     }
 
-    Ok(RemotePluginInstallResult {
-        app_ids_needing_auth: response.app_ids_needing_auth,
-    })
+    Ok(RemotePluginInstallResult)
 }
 
 pub async fn resolve_remote_plugin_uninstall_target(
@@ -1507,28 +1367,12 @@ pub async fn resolve_remote_plugin_uninstall_target(
             plugin.id
         ))
     })?;
-    let app_declarations = plugin
-        .release
-        .app_manifest
-        .as_ref()
-        .map(plugin_app_declarations_from_value)
-        .unwrap_or_else(|| app_declarations_from_remote_app_ids(&plugin.release.app_ids));
-    let mut mcp_server_names = plugin
-        .release
-        .mcp_servers
-        .iter()
-        .map(|server| server.key.clone())
-        .collect::<Vec<_>>();
-    mcp_server_names.sort_unstable();
-    mcp_server_names.dedup();
     let fallback_capability_summary = PluginCapabilitySummary {
         config_name: plugin_id.as_key(),
         display_name: plugin.release.display_name,
         plugin_namespace: Some(plugin_id.plugin_name.clone()),
         description: prompt_safe_plugin_description(Some(&plugin.release.description)),
         has_skills: !plugin.release.skills.is_empty(),
-        mcp_server_names,
-        app_connector_ids: app_connector_ids_from_declarations(&app_declarations),
     };
     Ok(RemotePluginUninstallTarget {
         plugin_id,
@@ -1688,7 +1532,6 @@ fn remote_discoverable_plugin_from_directory_item(
         name: display_name,
         description,
         has_skills: !plugin.release.skills.is_empty(),
-        app_ids: plugin.release.app_ids.clone(),
         install_policy: plugin.installation_policy,
         availability: plugin.availability,
     })

@@ -163,22 +163,6 @@ fn plugin_capability_labels(plugin: &PluginCapabilitySummary) -> Vec<String> {
     if plugin.has_skills {
         labels.push("skills".to_string());
     }
-    if !plugin.mcp_server_names.is_empty() {
-        let mcp_server_count = plugin.mcp_server_names.len();
-        labels.push(if mcp_server_count == 1 {
-            "1 MCP server".to_string()
-        } else {
-            format!("{mcp_server_count} MCP servers")
-        });
-    }
-    if !plugin.app_connector_ids.is_empty() {
-        let app_count = plugin.app_connector_ids.len();
-        labels.push(if app_count == 1 {
-            "1 app".to_string()
-        } else {
-            format!("{app_count} apps")
-        });
-    }
     labels
 }
 
@@ -195,8 +179,8 @@ mod tests {
     #[test]
     fn plugin_mention_name_uses_display_segments_when_they_match_plugin_name() {
         assert_eq!(
-            plugin_mention_name("mcp-search", "MCP Search"),
-            "MCP-Search"
+            plugin_mention_name("code-search", "Code Search"),
+            "Code-Search"
         );
         assert_eq!(
             plugin_mention_name("google_calendar", "Google Calendar"),

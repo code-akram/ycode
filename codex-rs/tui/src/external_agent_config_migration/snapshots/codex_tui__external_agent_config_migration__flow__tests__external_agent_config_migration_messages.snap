@@ -8,7 +8,6 @@ expression: messages
     Settings: 1
     Memory: 2 — project-a, project-b
     Skills: 4 — triage, release-notes, risk-check, +1 more
-    MCP servers: 2 — docs, issues
     Chat sessions: 3 — Alpha rollout, Beta review, Gamma notes
     Plugins: 2 — formatter, reviewer
 • Import started. You can keep working while it finishes.
@@ -17,7 +16,6 @@ expression: messages
     Settings: 1
     Memory: 2 — project-a, project-b
     Skills: 4 — triage, release-notes, risk-check, +1 more
-    MCP servers: 2 — docs, issues
     Chat sessions: 3 — Alpha rollout, Beta review, Gamma notes
     Plugins: 2 — formatter, reviewer
   1 additional item remains. After it finishes, run /import again to review it.
@@ -27,7 +25,6 @@ expression: messages
     Settings: 1
     Memory: 2 — project-a, project-b
     Skills: 4 — triage, release-notes, risk-check, +1 more
-    MCP servers: 2 — docs, issues
     Chat sessions: 3 — Alpha rollout, Beta review, Gamma notes
     Plugins: 2 — formatter, reviewer
   2 additional items remain. After it finishes, run /import again to review them.

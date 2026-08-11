@@ -29,7 +29,7 @@
       "type": "string"
     },
     "ApprovalsReviewer": {
-      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
+      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
       "enum": [
         "user",
         "auto_review",
@@ -52,9 +52,6 @@
           "properties": {
             "granular": {
               "properties": {
-                "mcp_elicitations": {
-                  "type": "boolean"
-                },
                 "request_permissions": {
                   "default": false,
                   "type": "boolean"
@@ -71,7 +68,6 @@
                 }
               },
               "required": [
-                "mcp_elicitations",
                 "rules",
                 "sandbox_approval"
               ],
@@ -557,74 +553,6 @@
       "type": "string"
     },
     "LegacyAppPathString": {
-      "type": "string"
-    },
-    "McpToolCallAppContext": {
-      "properties": {
-        "actionName": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "appName": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "connectorId": {
-          "type": "string"
-        },
-        "linkId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "resourceUri": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "connectorId"
-      ],
-      "type": "object"
-    },
-    "McpToolCallError": {
-      "properties": {
-        "message": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "message"
-      ],
-      "type": "object"
-    },
-    "McpToolCallResult": {
-      "properties": {
-        "_meta": true,
-        "content": {
-          "items": true,
-          "type": "array"
-        },
-        "structuredContent": true
-      },
-      "required": [
-        "content"
-      ],
-      "type": "object"
-    },
-    "McpToolCallStatus": {
-      "enum": [
-        "inProgress",
-        "completed",
-        "failed"
-      ],
       "type": "string"
     },
     "MemoryCitation": {
@@ -1545,97 +1473,6 @@
             "type"
           ],
           "title": "FileChangeThreadItem",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "appContext": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/McpToolCallAppContext"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "arguments": true,
-            "durationMs": {
-              "description": "The duration of the MCP tool call in milliseconds.",
-              "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
-            },
-            "error": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/McpToolCallError"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "id": {
-              "type": "string"
-            },
-            "mcpAppResourceUri": {
-              "description": "Deprecated: use `appContext.resourceUri` instead.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "pluginId": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "readOnlyHint": {
-              "type": [
-                "boolean",
-                "null"
-              ]
-            },
-            "result": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/McpToolCallResult"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "server": {
-              "type": "string"
-            },
-            "status": {
-              "$ref": "#/definitions/McpToolCallStatus"
-            },
-            "tool": {
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "mcpToolCall"
-              ],
-              "title": "McpToolCallThreadItemType",
-              "type": "string"
-            }
-          },
-          "required": [
-            "arguments",
-            "id",
-            "server",
-            "status",
-            "tool",
-            "type"
-          ],
-          "title": "McpToolCallThreadItem",
           "type": "object"
         },
         {

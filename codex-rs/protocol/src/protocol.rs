@@ -19,7 +19,6 @@ use crate::AgentPath;
 use crate::ResponseItemId;
 use crate::SessionId;
 use crate::ThreadId;
-use crate::approvals::ElicitationRequestEvent;
 use crate::capabilities::SelectedCapabilityRoot;
 use crate::config_types::ApprovalsReviewer;
 use crate::config_types::CollaborationMode;
@@ -33,8 +32,6 @@ use crate::dynamic_tools::DynamicToolCallRequest;
 use crate::dynamic_tools::DynamicToolResponse;
 use crate::dynamic_tools::DynamicToolSpec;
 use crate::items::TurnItem;
-use crate::mcp::CallToolResult;
-use crate::mcp::RequestId;
 use crate::memory_citation::MemoryCitation;
 use crate::models::ActivePermissionProfile;
 use crate::models::AgentMessageInputContent;
@@ -70,7 +67,6 @@ use tracing::error;
 use ts_rs::TS;
 
 pub use crate::approvals::ApplyPatchApprovalRequestEvent;
-pub use crate::approvals::ElicitationAction;
 pub use crate::approvals::ExecApprovalRequestEvent;
 pub use crate::approvals::ExecPolicyAmendment;
 pub use crate::approvals::GuardianAssessmentAction;
@@ -603,20 +599,6 @@ pub enum Op {
         decision: ReviewDecision,
     },
 
-    /// Resolve an MCP elicitation request.
-    ResolveElicitation {
-        /// Name of the MCP server that issued the request.
-        server_name: String,
-        /// Request identifier from the MCP server.
-        request_id: RequestId,
-        /// User's decision for the request.
-        decision: ElicitationAction,
-        /// Structured user input supplied for accepted elicitations.
-        content: Option<Value>,
-        /// Optional client metadata associated with the elicitation response.
-        meta: Option<Value>,
-    },
-
     /// Resolve a request_user_input tool call.
     UserInputAnswer {
         /// Turn id for the in-flight request.
@@ -640,9 +622,6 @@ pub enum Op {
         /// Tool output payload.
         response: DynamicToolResponse,
     },
-
-    /// Request MCP servers to reinitialize and refresh cached tool lists.
-    RefreshMcpServers,
 
     /// Reload user config layer overrides for the active session.
     ///
@@ -879,11 +858,9 @@ impl Op {
             Self::InterAgentCommunication { .. } => "inter_agent_communication",
             Self::ExecApproval { .. } => "exec_approval",
             Self::PatchApproval { .. } => "patch_approval",
-            Self::ResolveElicitation { .. } => "resolve_elicitation",
             Self::UserInputAnswer { .. } => "user_input_answer",
             Self::RequestPermissionsResponse { .. } => "request_permissions_response",
             Self::DynamicToolResponse { .. } => "dynamic_tool_response",
-            Self::RefreshMcpServers => "refresh_mcp_servers",
             Self::ReloadUserConfig => "reload_user_config",
             Self::Compact => "compact",
             Self::SetThreadMemoryMode { .. } => "set_thread_memory_mode",
@@ -953,8 +930,6 @@ pub struct GranularApprovalConfig {
     /// Whether to allow prompts triggered by the `request_permissions` tool.
     #[serde(default)]
     pub request_permissions: bool,
-    /// Whether to allow MCP elicitation prompts.
-    pub mcp_elicitations: bool,
 }
 
 impl GranularApprovalConfig {
@@ -972,10 +947,6 @@ impl GranularApprovalConfig {
 
     pub const fn allows_request_permissions(self) -> bool {
         self.request_permissions
-    }
-
-    pub const fn allows_mcp_elicitations(self) -> bool {
-        self.mcp_elicitations
     }
 }
 
@@ -1371,16 +1342,6 @@ pub enum EventMsg {
     /// Updated long-running goal metadata for the thread.
     ThreadGoalUpdated(ThreadGoalUpdatedEvent),
 
-    /// Incremental MCP startup progress updates.
-    McpStartupUpdate(McpStartupUpdateEvent),
-
-    /// Aggregate MCP startup completion summary.
-    McpStartupComplete(McpStartupCompleteEvent),
-
-    McpToolCallBegin(McpToolCallBeginEvent),
-
-    McpToolCallEnd(McpToolCallEndEvent),
-
     WebSearchBegin(WebSearchBeginEvent),
 
     WebSearchEnd(WebSearchEndEvent),
@@ -1412,8 +1373,6 @@ pub enum EventMsg {
     DynamicToolCallRequest(DynamicToolCallRequest),
 
     DynamicToolCallResponse(DynamicToolCallResponseEvent),
-
-    ElicitationRequest(ElicitationRequestEvent),
 
     ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent),
 
@@ -2410,77 +2369,6 @@ pub struct AgentReasoningSectionBreakEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
-pub struct McpInvocation {
-    /// Name of the MCP server as defined in the config.
-    pub server: String,
-    /// Name of the tool as given by the MCP server.
-    pub tool: String,
-    /// Arguments to the tool call.
-    pub arguments: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
-pub struct McpToolCallBeginEvent {
-    /// Identifier so this can be paired with the McpToolCallEnd event.
-    pub call_id: String,
-    pub invocation: McpInvocation,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub connector_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub mcp_app_resource_uri: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub link_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub app_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub action_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub plugin_id: Option<String>,
-    /// Whether the selected tool is annotated as read-only, not its execution outcome.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub read_only_hint: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
-pub struct McpToolCallEndEvent {
-    /// Identifier for the corresponding McpToolCallBegin that finished.
-    pub call_id: String,
-    pub invocation: McpInvocation,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub connector_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub mcp_app_resource_uri: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub link_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub app_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub action_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub plugin_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub read_only_hint: Option<bool>,
-    #[ts(type = "string")]
-    pub duration: Duration,
-    /// Result of the tool call. Note this could be an error.
-    pub result: Result<CallToolResult, String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq)]
 pub struct DynamicToolCallResponseEvent {
     /// Identifier for the corresponding DynamicToolCallRequest.
     pub call_id: String,
@@ -2504,15 +2392,6 @@ pub struct DynamicToolCallResponseEvent {
     /// The duration of the dynamic tool call.
     #[ts(type = "string")]
     pub duration: Duration,
-}
-
-impl McpToolCallEndEvent {
-    pub fn is_success(&self) -> bool {
-        match &self.result {
-            Ok(result) => !result.is_error.unwrap_or(false),
-            Err(_) => false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
@@ -2770,6 +2649,7 @@ pub enum SessionSource {
     #[default]
     VSCode,
     Exec,
+    /// App-server sessions; the historical wire value is `mcp`.
     Mcp,
     Custom(String),
     Internal(InternalSessionSource),
@@ -3745,73 +3625,6 @@ pub struct TurnDiffEvent {
     pub unified_diff: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct McpStartupUpdateEvent {
-    /// Server name being started.
-    pub server: String,
-    /// Current startup status.
-    pub status: McpStartupStatus,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case", tag = "state")]
-#[ts(rename_all = "snake_case", tag = "state")]
-pub enum McpStartupStatus {
-    Starting,
-    Ready,
-    Failed {
-        error: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[ts(optional = nullable)]
-        reason: Option<McpStartupFailureReason>,
-    },
-    Cancelled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
-pub enum McpStartupFailureReason {
-    ReauthenticationRequired,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, Default)]
-pub struct McpStartupCompleteEvent {
-    pub ready: Vec<String>,
-    pub failed: Vec<McpStartupFailure>,
-    pub cancelled: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct McpStartupFailure {
-    pub server: String,
-    pub error: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(rename_all = "snake_case")]
-pub enum McpAuthStatus {
-    Unknown,
-    Unsupported,
-    NotLoggedIn,
-    BearerToken,
-    OAuth,
-}
-
-impl fmt::Display for McpAuthStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let text = match self {
-            McpAuthStatus::Unknown => "Unknown",
-            McpAuthStatus::Unsupported => "Unsupported",
-            McpAuthStatus::NotLoggedIn => "Not logged in",
-            McpAuthStatus::BearerToken => "Bearer token",
-            McpAuthStatus::OAuth => "OAuth",
-        };
-        f.write_str(text)
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct RealtimeConversationListVoicesResponseEvent {
     pub voices: RealtimeVoicesList,
@@ -4479,11 +4292,8 @@ mod tests {
     use crate::items::ExitedReviewModeItem;
     use crate::items::FileChangeItem;
     use crate::items::ImageGenerationItem;
-    use crate::items::McpToolCallItem;
-    use crate::items::McpToolCallStatus;
     use crate::items::UserMessageItem;
     use crate::items::WebSearchItem;
-    use crate::mcp::CallToolResult;
     use crate::permissions::FileSystemAccessMode;
     use crate::permissions::FileSystemPath;
     use crate::permissions::FileSystemSandboxEntry;
@@ -4848,30 +4658,6 @@ mod tests {
     }
 
     #[test]
-    fn granular_approval_config_mcp_elicitation_flag_is_field_driven() {
-        assert!(
-            GranularApprovalConfig {
-                sandbox_approval: false,
-                rules: false,
-                skill_approval: false,
-                request_permissions: false,
-                mcp_elicitations: true,
-            }
-            .allows_mcp_elicitations()
-        );
-        assert!(
-            !GranularApprovalConfig {
-                sandbox_approval: false,
-                rules: false,
-                skill_approval: false,
-                request_permissions: false,
-                mcp_elicitations: false,
-            }
-            .allows_mcp_elicitations()
-        );
-    }
-
-    #[test]
     fn granular_approval_config_skill_approval_flag_is_field_driven() {
         assert!(
             GranularApprovalConfig {
@@ -4879,7 +4665,6 @@ mod tests {
                 rules: false,
                 skill_approval: true,
                 request_permissions: false,
-                mcp_elicitations: false,
             }
             .allows_skill_approval()
         );
@@ -4889,7 +4674,6 @@ mod tests {
                 rules: false,
                 skill_approval: false,
                 request_permissions: false,
-                mcp_elicitations: false,
             }
             .allows_skill_approval()
         );
@@ -4903,7 +4687,6 @@ mod tests {
                 rules: false,
                 skill_approval: false,
                 request_permissions: true,
-                mcp_elicitations: false,
             }
             .allows_request_permissions()
         );
@@ -4913,7 +4696,6 @@ mod tests {
                 rules: false,
                 skill_approval: false,
                 request_permissions: false,
-                mcp_elicitations: false,
             }
             .allows_request_permissions()
         );
@@ -4924,7 +4706,6 @@ mod tests {
         let decoded = serde_json::from_value::<GranularApprovalConfig>(serde_json::json!({
             "sandbox_approval": true,
             "rules": false,
-            "mcp_elicitations": true,
         }))
         .expect("granular approval config should deserialize");
 
@@ -4935,7 +4716,6 @@ mod tests {
                 rules: false,
                 skill_approval: false,
                 request_permissions: false,
-                mcp_elicitations: true,
             }
         );
     }
@@ -5314,53 +5094,6 @@ mod tests {
     }
 
     #[test]
-    fn item_started_event_from_mcp_tool_call_emits_begin_event() {
-        let event = ItemStartedEvent {
-            thread_id: ThreadId::new(),
-            turn_id: "turn-1".into(),
-            started_at_ms: 0,
-            item: TurnItem::McpToolCall(McpToolCallItem {
-                id: "mcp-1".into(),
-                server: "server".into(),
-                tool: "tool".into(),
-                arguments: json!({"arg": "value"}),
-                connector_id: Some("connector".into()),
-                mcp_app_resource_uri: Some("app://connector".into()),
-                link_id: Some("link_123".into()),
-                app_name: Some("Calendar".into()),
-                action_name: Some("create_event".into()),
-                plugin_id: Some("sample@test".into()),
-                read_only_hint: Some(false),
-                status: McpToolCallStatus::InProgress,
-                result: None,
-                error: None,
-                duration: None,
-            }),
-        };
-
-        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
-        assert_eq!(legacy_events.len(), 1);
-        match &legacy_events[0] {
-            EventMsg::McpToolCallBegin(event) => {
-                assert_eq!(event.call_id, "mcp-1");
-                assert_eq!(event.invocation.server, "server");
-                assert_eq!(event.invocation.tool, "tool");
-                assert_eq!(event.connector_id.as_deref(), Some("connector"));
-                assert_eq!(
-                    event.mcp_app_resource_uri.as_deref(),
-                    Some("app://connector")
-                );
-                assert_eq!(event.link_id.as_deref(), Some("link_123"));
-                assert_eq!(event.app_name.as_deref(), Some("Calendar"));
-                assert_eq!(event.action_name.as_deref(), Some("create_event"));
-                assert_eq!(event.plugin_id.as_deref(), Some("sample@test"));
-                assert_eq!(event.read_only_hint, Some(false));
-            }
-            _ => panic!("expected McpToolCallBegin event"),
-        }
-    }
-
-    #[test]
     fn item_completed_event_from_image_generation_emits_end_event() {
         let event = ItemCompletedEvent {
             thread_id: ThreadId::new(),
@@ -5429,60 +5162,6 @@ mod tests {
                 assert!(event.changes.contains_key(&PathBuf::from("new.txt")));
             }
             _ => panic!("expected PatchApplyEnd event"),
-        }
-    }
-
-    #[test]
-    fn item_completed_event_from_mcp_tool_call_emits_end_event() {
-        let event = ItemCompletedEvent {
-            thread_id: ThreadId::new(),
-            turn_id: "turn-1".into(),
-            started_at_ms: Some(0),
-            completed_at_ms: 0,
-            item: TurnItem::McpToolCall(McpToolCallItem {
-                id: "mcp-1".into(),
-                server: "server".into(),
-                tool: "tool".into(),
-                arguments: json!({"arg": "value"}),
-                connector_id: Some("connector".into()),
-                mcp_app_resource_uri: Some("app://connector".into()),
-                link_id: Some("link_123".into()),
-                app_name: Some("Calendar".into()),
-                action_name: Some("create_event".into()),
-                plugin_id: Some("sample@test".into()),
-                read_only_hint: None,
-                status: McpToolCallStatus::Completed,
-                result: Some(CallToolResult {
-                    content: vec![json!({"type": "text", "text": "ok"})],
-                    structured_content: None,
-                    is_error: Some(false),
-                    meta: None,
-                }),
-                error: None,
-                duration: Some(Duration::from_millis(42)),
-            }),
-        };
-
-        let legacy_events = event.as_legacy_events(/*show_raw_agent_reasoning*/ false);
-        assert_eq!(legacy_events.len(), 1);
-        match &legacy_events[0] {
-            EventMsg::McpToolCallEnd(event) => {
-                assert_eq!(event.call_id, "mcp-1");
-                assert_eq!(event.invocation.server, "server");
-                assert_eq!(event.invocation.tool, "tool");
-                assert_eq!(event.connector_id.as_deref(), Some("connector"));
-                assert_eq!(
-                    event.mcp_app_resource_uri.as_deref(),
-                    Some("app://connector")
-                );
-                assert_eq!(event.link_id.as_deref(), Some("link_123"));
-                assert_eq!(event.app_name.as_deref(), Some("Calendar"));
-                assert_eq!(event.action_name.as_deref(), Some("create_event"));
-                assert_eq!(event.plugin_id.as_deref(), Some("sample@test"));
-                assert_eq!(event.duration, Duration::from_millis(42));
-                assert!(event.is_success());
-            }
-            _ => panic!("expected McpToolCallEnd event"),
         }
     }
 
@@ -6252,54 +5931,6 @@ mod tests {
 
         let deserialized: ExecCommandOutputDeltaEvent = serde_json::from_str(&serialized)?;
         assert_eq!(deserialized, event);
-        Ok(())
-    }
-
-    #[test]
-    fn serialize_mcp_startup_update_event() -> Result<()> {
-        let event = Event {
-            id: "init".to_string(),
-            msg: EventMsg::McpStartupUpdate(McpStartupUpdateEvent {
-                server: "srv".to_string(),
-                status: McpStartupStatus::Failed {
-                    error: "boom".to_string(),
-                    reason: Some(McpStartupFailureReason::ReauthenticationRequired),
-                },
-            }),
-        };
-
-        let value = serde_json::to_value(&event)?;
-        assert_eq!(value["msg"]["type"], "mcp_startup_update");
-        assert_eq!(value["msg"]["server"], "srv");
-        assert_eq!(value["msg"]["status"]["state"], "failed");
-        assert_eq!(value["msg"]["status"]["error"], "boom");
-        assert_eq!(
-            value["msg"]["status"]["reason"],
-            "reauthentication_required"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn serialize_mcp_startup_complete_event() -> Result<()> {
-        let event = Event {
-            id: "init".to_string(),
-            msg: EventMsg::McpStartupComplete(McpStartupCompleteEvent {
-                ready: vec!["a".to_string()],
-                failed: vec![McpStartupFailure {
-                    server: "b".to_string(),
-                    error: "bad".to_string(),
-                }],
-                cancelled: vec!["c".to_string()],
-            }),
-        };
-
-        let value = serde_json::to_value(&event)?;
-        assert_eq!(value["msg"]["type"], "mcp_startup_complete");
-        assert_eq!(value["msg"]["ready"][0], "a");
-        assert_eq!(value["msg"]["failed"][0]["server"], "b");
-        assert_eq!(value["msg"]["failed"][0]["error"], "bad");
-        assert_eq!(value["msg"]["cancelled"][0], "c");
         Ok(())
     }
 

@@ -50,12 +50,10 @@ mod desktop_app;
 mod doctor;
 mod exec_server_telemetry;
 mod marketplace_cmd;
-mod mcp_cmd;
 mod plugin_cmd;
 mod remote_control_cmd;
 mod state_db_recovery;
 
-use crate::mcp_cmd::McpCli;
 use crate::plugin_cmd::PluginCli;
 use crate::plugin_cmd::PluginSubcommand;
 use crate::remote_control_cmd::RemoteControlCommand;
@@ -135,14 +133,8 @@ enum Subcommand {
     /// Remove stored authentication credentials.
     Logout(LogoutCommand),
 
-    /// Manage external MCP servers for Codex.
-    Mcp(McpCli),
-
     /// Manage Codex plugins.
     Plugin(PluginCli),
-
-    /// Start Codex as an MCP server (stdio).
-    McpServer(McpServerCommand),
 
     /// [experimental] Run the app server or related tooling.
     AppServer(AppServerCommand),
@@ -199,10 +191,6 @@ enum Subcommand {
     /// Internal: run the responses API proxy.
     #[clap(hide = true)]
     ResponsesApiProxy(ResponsesApiProxyArgs),
-
-    /// Internal: relay stdio to a Unix domain socket.
-    #[clap(hide = true, name = "stdio-to-uds")]
-    StdioToUds(StdioToUdsCommand),
 
     /// [EXPERIMENTAL] Run the standalone exec-server service.
     ExecServer(ExecServerCommand),
@@ -288,13 +276,6 @@ struct ReviewCommand {
 
     #[clap(flatten)]
     args: ReviewArgs,
-}
-
-#[derive(Debug, Parser)]
-struct McpServerCommand {
-    /// Error out when config.toml contains fields that are not recognized by this version of Codex.
-    #[arg(long = "strict-config", default_value_t = false)]
-    strict_config: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -609,9 +590,6 @@ enum AppServerSubcommand {
     /// Manage the local app-server daemon.
     Daemon(AppServerDaemonCommand),
 
-    /// Proxy stdio bytes to the running app-server control socket.
-    Proxy(AppServerProxyCommand),
-
     /// [experimental] Generate TypeScript bindings for the app server protocol.
     GenerateTs(GenerateTsCommand),
 
@@ -658,13 +636,6 @@ enum AppServerDaemonSubcommand {
 }
 
 #[derive(Debug, Args)]
-struct AppServerProxyCommand {
-    /// Path to the app-server Unix domain socket to connect to.
-    #[arg(long = "sock", value_name = "SOCKET_PATH", value_parser = parse_socket_path)]
-    socket_path: Option<AbsolutePathBuf>,
-}
-
-#[derive(Debug, Args)]
 struct AppServerBootstrapCommand {
     /// Launch the managed app-server with remote control enabled.
     #[arg(long = "remote-control")]
@@ -702,18 +673,6 @@ struct GenerateInternalJsonSchemaCommand {
     /// Output directory where internal JSON Schema artifacts will be written
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
-}
-
-#[derive(Debug, Parser)]
-struct StdioToUdsCommand {
-    /// Path to the Unix domain socket to connect to.
-    #[arg(value_name = "SOCKET_PATH", value_parser = parse_socket_path)]
-    socket_path: AbsolutePathBuf,
-}
-
-fn parse_socket_path(raw: &str) -> Result<AbsolutePathBuf, String> {
-    AbsolutePathBuf::relative_to_current_dir(raw)
-        .map_err(|err| format!("failed to resolve socket path `{raw}`: {err}"))
 }
 
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
@@ -1031,31 +990,6 @@ async fn cli_main(
             );
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
         }
-        Some(Subcommand::McpServer(McpServerCommand { strict_config })) => {
-            reject_remote_mode_for_subcommand(
-                root_remote.as_deref(),
-                root_remote_auth_token_env.as_deref(),
-                "mcp-server",
-            )?;
-            codex_mcp_server::run_main(
-                arg0_paths.clone(),
-                root_config_overrides,
-                strict_config || root_strict_config,
-            )
-            .await?;
-        }
-        Some(Subcommand::Mcp(mut mcp_cli)) => {
-            reject_remote_mode_for_subcommand(
-                root_remote.as_deref(),
-                root_remote_auth_token_env.as_deref(),
-                "mcp",
-            )?;
-            // Propagate any root-level config overrides (e.g. `-c key=value`).
-            prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
-            let loader_overrides =
-                loader_overrides_for_profile(interactive.config_profile_v2.as_ref())?;
-            mcp_cli.run(loader_overrides).await?;
-        }
         Some(Subcommand::Plugin(plugin_cli)) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -1192,16 +1126,6 @@ async fn cli_main(
                         codex_app_server_daemon::run_pid_update_loop(http_client_factory).await?;
                     }
                 },
-                Some(AppServerSubcommand::Proxy(proxy_cli)) => {
-                    let socket_path = match proxy_cli.socket_path {
-                        Some(socket_path) => socket_path,
-                        None => {
-                            let codex_home = find_codex_home()?;
-                            codex_app_server::app_server_control_socket_path(&codex_home)?
-                        }
-                    };
-                    codex_stdio_to_uds::run(socket_path.as_path()).await?;
-                }
                 Some(AppServerSubcommand::GenerateTs(gen_cli)) => {
                     let options = codex_app_server_protocol::GenerateTsOptions {
                         experimental_api: gen_cli.experimental,
@@ -1557,15 +1481,6 @@ async fn cli_main(
             tokio::task::spawn_blocking(move || codex_responses_api_proxy::run_main(args))
                 .await??;
         }
-        Some(Subcommand::StdioToUds(cmd)) => {
-            reject_remote_mode_for_subcommand(
-                root_remote.as_deref(),
-                root_remote_auth_token_env.as_deref(),
-                "stdio-to-uds",
-            )?;
-            let socket_path = cmd.socket_path;
-            codex_stdio_to_uds::run(socket_path.as_path()).await?;
-        }
         Some(Subcommand::ExecServer(cmd)) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -1654,13 +1569,12 @@ fn profile_v2_for_subcommand<'a>(
         | Subcommand::Delete(_)
         | Subcommand::Unarchive(_)
         | Subcommand::Fork(_)
-        | Subcommand::Mcp(_)
         | Subcommand::Sandbox(_)
         | Subcommand::Debug(DebugCommand {
             subcommand: DebugSubcommand::PromptInput(_),
         }) => Ok(Some(profile_v2)),
         _ => anyhow::bail!(
-            "--profile only applies to runtime commands and `codex mcp`: `codex`, `codex exec`, `codex review`, `codex resume`, `codex archive`, `codex delete`, `codex unarchive`, `codex fork`, `codex mcp`, `codex sandbox`, and `codex debug prompt-input`."
+            "--profile only applies to runtime commands: `codex`, `codex exec`, `codex review`, `codex resume`, `codex archive`, `codex delete`, `codex unarchive`, `codex fork`, `codex sandbox`, and `codex debug prompt-input`."
         ),
     }
 }
@@ -2174,7 +2088,6 @@ fn unsupported_subcommand_name_for_strict_config(
         None
         | Some(Subcommand::Exec(_))
         | Some(Subcommand::Review(_))
-        | Some(Subcommand::McpServer(_))
         | Some(Subcommand::ExecServer(_))
         | Some(Subcommand::Resume(_))
         | Some(Subcommand::Archive(_))
@@ -2187,7 +2100,6 @@ fn unsupported_subcommand_name_for_strict_config(
             Some(app_server_subcommand_name(app_server.subcommand.as_ref()))
         }
         Some(Subcommand::RemoteControl(remote_control)) => Some(remote_control.subcommand_name()),
-        Some(Subcommand::Mcp(_)) => Some("mcp"),
         Some(Subcommand::Plugin(_)) => Some("plugin"),
         #[cfg(target_os = "macos")]
         Some(Subcommand::App(_)) => Some("app"),
@@ -2201,7 +2113,6 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::Execpolicy(_)) => Some("execpolicy"),
         Some(Subcommand::Apply(_)) => Some("apply"),
         Some(Subcommand::ResponsesApiProxy(_)) => Some("responses-api-proxy"),
-        Some(Subcommand::StdioToUds(_)) => Some("stdio-to-uds"),
         Some(Subcommand::Features(_)) => Some("features"),
     }
 }
@@ -2255,7 +2166,6 @@ fn app_server_subcommand_name(subcommand: Option<&AppServerSubcommand>) -> &'sta
             AppServerDaemonSubcommand::Version => "app-server daemon version",
             AppServerDaemonSubcommand::PidUpdateLoop => "app-server daemon pid-update-loop",
         },
-        Some(AppServerSubcommand::Proxy(_)) => "app-server proxy",
         Some(AppServerSubcommand::GenerateTs(_)) => "app-server generate-ts",
         Some(AppServerSubcommand::GenerateJsonSchema(_)) => "app-server generate-json-schema",
         Some(AppServerSubcommand::GenerateInternalJsonSchema(_)) => {
@@ -2825,12 +2735,6 @@ mod tests {
         assert_eq!(
             profile_v2_for_args(&["codex", "--profile", "work", "debug", "prompt-input"])
                 .expect("debug prompt-input supports profile-v2")
-                .as_deref(),
-            Some("work")
-        );
-        assert_eq!(
-            profile_v2_for_args(&["codex", "--profile", "work", "mcp", "list"])
-                .expect("mcp supports profile-v2")
                 .as_deref(),
             Some("work")
         );
@@ -3766,15 +3670,6 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(["codex", "--strict-config"]).expect("parse");
         assert!(cli.interactive.strict_config);
 
-        let cli = MultitoolCli::try_parse_from(["codex", "mcp-server", "--strict-config"])
-            .expect("parse");
-        assert_matches!(
-            cli.subcommand,
-            Some(Subcommand::McpServer(McpServerCommand {
-                strict_config: true,
-            }))
-        );
-
         let cli =
             MultitoolCli::try_parse_from(["codex", "review", "--strict-config", "--uncommitted"])
                 .expect("parse");
@@ -3808,19 +3703,6 @@ mod tests {
 
     #[test]
     fn root_strict_config_is_rejected_for_unsupported_subcommands() {
-        let cli = MultitoolCli::try_parse_from(["codex", "--strict-config", "mcp", "list"])
-            .expect("parse");
-        let err = reject_root_strict_config_for_subcommand(
-            cli.interactive.strict_config,
-            &cli.subcommand,
-        )
-        .expect_err("mcp should not support root --strict-config");
-
-        assert_eq!(
-            err.to_string(),
-            "`--strict-config` is not supported for `codex mcp`"
-        );
-
         let cli = MultitoolCli::try_parse_from(["codex", "--strict-config", "remote-control"])
             .expect("parse");
         let err = reject_root_strict_config_for_subcommand(
@@ -3837,17 +3719,26 @@ mod tests {
 
     #[test]
     fn app_server_subcommands_reject_strict_config() {
-        let app_server =
-            app_server_from_args(["codex", "app-server", "--strict-config", "proxy"].as_ref());
+        let app_server = app_server_from_args(
+            [
+                "codex",
+                "app-server",
+                "--strict-config",
+                "generate-ts",
+                "--out",
+                "/tmp/schema",
+            ]
+            .as_ref(),
+        );
         let err = reject_strict_config_for_app_server_subcommand(
             app_server.strict_config,
             app_server.subcommand.as_ref(),
         )
-        .expect_err("app-server proxy should not support --strict-config");
+        .expect_err("app-server generate-ts should not support --strict-config");
 
         assert_eq!(
             err.to_string(),
-            "`--strict-config` is not supported for `codex app-server proxy`"
+            "`--strict-config` is not supported for `codex app-server generate-ts`"
         );
     }
 
@@ -4125,17 +4016,6 @@ mod tests {
     }
 
     #[test]
-    fn app_server_proxy_subcommand_parses() {
-        let app_server = app_server_from_args(["codex", "app-server", "proxy"].as_ref());
-        assert!(matches!(
-            app_server.subcommand,
-            Some(AppServerSubcommand::Proxy(AppServerProxyCommand {
-                socket_path: None
-            }))
-        ));
-    }
-
-    #[test]
     fn app_server_daemon_subcommands_parse() {
         assert!(matches!(
             app_server_from_args(
@@ -4197,34 +4077,6 @@ mod tests {
                 subcommand: AppServerDaemonSubcommand::Version
             }))
         ));
-    }
-
-    #[test]
-    fn app_server_proxy_sock_path_parses() {
-        let app_server =
-            app_server_from_args(["codex", "app-server", "proxy", "--sock", "codex.sock"].as_ref());
-        let Some(AppServerSubcommand::Proxy(proxy)) = app_server.subcommand else {
-            panic!("expected proxy subcommand");
-        };
-        assert_eq!(
-            proxy.socket_path,
-            Some(
-                AbsolutePathBuf::relative_to_current_dir("codex.sock")
-                    .expect("relative path should resolve")
-            )
-        );
-    }
-
-    #[test]
-    fn reject_remote_auth_token_env_for_app_server_proxy() {
-        let subcommand = AppServerSubcommand::Proxy(AppServerProxyCommand { socket_path: None });
-        let err = reject_remote_mode_for_app_server_subcommand(
-            /*remote*/ None,
-            Some("CODEX_REMOTE_AUTH_TOKEN"),
-            Some(&subcommand),
-        )
-        .expect_err("app-server proxy should reject --remote-auth-token-env");
-        assert!(err.to_string().contains("app-server proxy"));
     }
 
     #[test]

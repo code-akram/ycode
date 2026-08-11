@@ -15,8 +15,6 @@ use codex_app_server_protocol::ExternalAgentConfigImportHistoryRecordResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportProgressNotification;
 use codex_app_server_protocol::ExternalAgentConfigImportResponse;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
-use codex_app_server_protocol::ExternalAgentImportedConnectorCandidate;
-use codex_app_server_protocol::ExternalAgentImportedConnectorSource;
 use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::RequestId;
@@ -47,21 +45,6 @@ const SECONDARY_MIGRATION_SOURCE: &str = concat!("cur", "sor");
 
 fn external_agent_home(codex_home: &Path) -> PathBuf {
     codex_home.join(concat!(".", "cla", "ude"))
-}
-
-fn connector_metadata_root(home: &Path) -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        home.join("Library/Application Support/Claude")
-    }
-    #[cfg(target_os = "windows")]
-    {
-        home.join("AppData/Roaming/Claude")
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        home.join(".config/Claude")
-    }
 }
 
 fn secondary_external_agent_home(codex_home: &Path) -> PathBuf {
@@ -575,7 +558,6 @@ async fn external_agent_config_import_sends_completion_notification_for_sync_onl
         .await?;
     let response: ExternalAgentConfigImportHistoriesReadResponse =
         timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await??;
-    assert_eq!(response.connectors, Vec::new());
     let entry = response
         .data
         .iter()
@@ -1525,24 +1507,10 @@ async fn external_agent_config_import_creates_session_rollouts() -> Result<()> {
         chrono::DateTime::parse_from_rfc3339(source_updated_at_text)?.timestamp();
     let session_dir = external_agent_home(codex_home.path()).join("projects/repo");
     let session_path = session_dir.join("session.jsonl");
-    let manifest_dir = connector_metadata_root(codex_home.path())
-        .join("claude-code-sessions/account/organization");
     let control_request = "<ide_selection>src/auth.rs:1-5</ide_selection>";
     let first_request = "Fix auth flow";
     std::fs::create_dir_all(&project_root)?;
     std::fs::create_dir_all(&session_dir)?;
-    std::fs::create_dir_all(&manifest_dir)?;
-    std::fs::write(
-        manifest_dir.join("session.json"),
-        serde_json::json!({
-            "cliSessionId": "session",
-            "remoteMcpServersConfig": [
-                { "name": "Gmail", "uuid": "gmail-server" },
-                { "name": "Slack", "uuid": "slack-server" },
-            ],
-        })
-        .to_string(),
-    )?;
     std::fs::write(
         &session_path,
         [
@@ -1564,7 +1532,6 @@ async fn external_agent_config_import_creates_session_rollouts() -> Result<()> {
                 "type": "assistant",
                 "cwd": &project_root,
                 "timestamp": source_updated_at_text,
-                "attributionMcpServer": "gmail",
                 "message": { "content": "first answer" },
             })
             .to_string(),
@@ -1647,14 +1614,6 @@ async fn external_agent_config_import_creates_session_rollouts() -> Result<()> {
         .await?;
     let response: ExternalAgentConfigImportHistoriesReadResponse =
         timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await??;
-    assert_eq!(
-        response.connectors,
-        vec![ExternalAgentImportedConnectorCandidate {
-            name: "Gmail".to_string(),
-            session_count: 1,
-            source: ExternalAgentImportedConnectorSource::RemoteMcpServersConfig,
-        }]
-    );
     let imported_session = response
         .data
         .iter()
@@ -1783,97 +1742,6 @@ async fn external_agent_config_import_creates_session_rollouts() -> Result<()> {
 
     Ok(())
 }
-
-#[tokio::test]
-async fn external_agent_config_import_does_not_initialize_required_mcp() -> Result<()> {
-    let server = create_mock_responses_server_repeating_assistant("unused").await;
-    let codex_home = TempDir::new()?;
-    MockResponsesConfig::new(&server.uri()).write(codex_home.path())?;
-    let mut config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
-    config.push_str(
-        r#"
-[mcp_servers.required_broken]
-command = "this-command-does-not-exist"
-required = true
-"#,
-    );
-    std::fs::write(codex_home.path().join("config.toml"), config)?;
-    let project_root = codex_home.path().join("repo");
-    let recent_timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let session_dir = external_agent_home(codex_home.path()).join("projects/repo");
-    let session_path = session_dir.join("session.jsonl");
-    std::fs::create_dir_all(&project_root)?;
-    std::fs::create_dir_all(&session_dir)?;
-    std::fs::write(
-        &session_path,
-        serde_json::json!({
-            "type": "user",
-            "cwd": &project_root,
-            "timestamp": &recent_timestamp,
-            "message": { "content": "first request" },
-        })
-        .to_string(),
-    )?;
-
-    let home_dir = codex_home.path().display().to_string();
-    let mut mcp = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .with_env_overrides(&[("HOME", Some(home_dir.as_str()))])
-        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
-        .await?;
-
-    let request_id = mcp
-        .send_raw_request(
-            "externalAgentConfig/import",
-            Some(serde_json::json!({
-                "migrationItems": [{
-                    "itemType": "SESSIONS",
-                    "description": "Migrate recent sessions",
-                    "cwd": null,
-                    "details": {
-                        "sessions": [{
-                            "path": session_path,
-                            "cwd": project_root,
-                            "title": "first request"
-                        }]
-                    }
-                }]
-            })),
-        )
-        .await?;
-    let _: ExternalAgentConfigImportResponse =
-        timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await??;
-    timeout(
-        DEFAULT_TIMEOUT,
-        mcp.read_stream_until_notification_message("externalAgentConfig/import/completed"),
-    )
-    .await??;
-
-    let request_id = mcp
-        .send_thread_list_request(ThreadListParams {
-            cursor: None,
-            limit: None,
-            sort_key: None,
-            sort_direction: None,
-            model_providers: None,
-            source_kinds: None,
-            archived: None,
-            section_id: None,
-            cwd: None,
-            use_state_db_only: false,
-            search_term: None,
-            parent_thread_id: None,
-            ancestor_thread_id: None,
-        })
-        .await?;
-    let response: ThreadListResponse =
-        timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await??;
-    assert_eq!(response.data.len(), 1);
-
-    Ok(())
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn external_agent_config_import_accepts_detected_session_payload_after_restart() -> Result<()>
 {

@@ -20,8 +20,6 @@ pub mod error;
 pub mod exec_output;
 pub mod items;
 mod legacy_events;
-pub mod mcp;
-pub mod mcp_approval_meta;
 pub mod memory_citation;
 pub mod models;
 pub mod network_policy;

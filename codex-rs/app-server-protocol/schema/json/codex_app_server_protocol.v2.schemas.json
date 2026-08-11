@@ -397,48 +397,6 @@
       },
       "type": "object"
     },
-    "AppBranding": {
-      "description": "EXPERIMENTAL - app metadata returned by app-list APIs.",
-      "properties": {
-        "category": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "developer": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "isDiscoverableApp": {
-          "type": "boolean"
-        },
-        "privacyPolicy": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "termsOfService": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "website": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "isDiscoverableApp"
-      ],
-      "type": "object"
-    },
     "AppConfig": {
       "properties": {
         "approvals_reviewer": {
@@ -496,353 +454,6 @@
       },
       "type": "object"
     },
-    "AppInfo": {
-      "description": "EXPERIMENTAL - app metadata returned by app-list APIs.",
-      "properties": {
-        "appMetadata": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AppMetadata"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "branding": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AppBranding"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "distributionChannel": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "iconAssets": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "iconDarkAssets": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "installUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "isAccessible": {
-          "default": false,
-          "type": "boolean"
-        },
-        "isEnabled": {
-          "default": true,
-          "description": "Whether this app is enabled in config.toml. Example: ```toml [apps.bad_app] enabled = false ```",
-          "type": "boolean"
-        },
-        "labels": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "logoUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "logoUrlDark": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "pluginDisplayNames": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "id",
-        "name"
-      ],
-      "type": "object"
-    },
-    "AppListUpdatedNotification": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - notification emitted when the app list changes.",
-      "properties": {
-        "data": {
-          "items": {
-            "$ref": "#/definitions/AppInfo"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "data"
-      ],
-      "title": "AppListUpdatedNotification",
-      "type": "object"
-    },
-    "AppMetadata": {
-      "properties": {
-        "categories": {
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "developer": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "firstPartyRequiresInstall": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "review": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AppReview"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "screenshots": {
-          "items": {
-            "$ref": "#/definitions/AppScreenshot"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "seoDescription": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "showInComposerWhenUnlinked": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "subCategories": {
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "version": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "versionId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "versionNotes": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "AppReview": {
-      "properties": {
-        "status": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "status"
-      ],
-      "type": "object"
-    },
-    "AppScreenshot": {
-      "properties": {
-        "fileId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "url": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "userPrompt": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "userPrompt"
-      ],
-      "type": "object"
-    },
-    "AppSummary": {
-      "description": "EXPERIMENTAL - app metadata summary for plugin responses.",
-      "properties": {
-        "category": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "installUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "name"
-      ],
-      "type": "object"
-    },
-    "AppTemplateSummary": {
-      "properties": {
-        "canonicalConnectorId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "category": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "logoUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "logoUrlDark": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "materializedAppIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "name": {
-          "type": "string"
-        },
-        "reason": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AppTemplateUnavailableReason"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "templateId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "materializedAppIds",
-        "name",
-        "templateId"
-      ],
-      "type": "object"
-    },
-    "AppTemplateUnavailableReason": {
-      "enum": [
-        "NOT_CONFIGURED_FOR_WORKSPACE",
-        "NO_ACTIVE_WORKSPACE"
-      ],
-      "type": "string"
-    },
     "AppToolApproval": {
       "enum": [
         "auto",
@@ -873,47 +484,11 @@
       },
       "type": "object"
     },
-    "AppToolSummary": {
-      "description": "EXPERIMENTAL - metadata returned by app/read.",
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "disabledReason": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "isEnabled": {
-          "default": true,
-          "type": "boolean"
-        },
-        "isReadOnly": {
-          "default": false,
-          "type": "boolean"
-        },
-        "name": {
-          "type": "string"
-        },
-        "title": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "description",
-        "name"
-      ],
-      "type": "object"
-    },
     "AppToolsConfig": {
       "type": "object"
     },
     "ApprovalsReviewer": {
-      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, MCP approval prompts, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
+      "description": "Configures who approval requests are routed to for review. Examples include sandbox escapes, blocked network access, and ARC escalations. Defaults to `user`. `auto_review` uses a carefully prompted subagent to gather relevant context and apply a risk-based decision framework before approving or denying the request. The legacy value `guardian_subagent` is accepted for compatibility.",
       "enum": [
         "user",
         "auto_review",
@@ -974,147 +549,6 @@
       },
       "type": "object"
     },
-    "AppsInstalledParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "Read the committed installed connector runtime snapshot.",
-      "properties": {
-        "forceRefresh": {
-          "description": "When true and Apps are permitted, refresh and publish the hosted connector runtime tool snapshot first.",
-          "type": "boolean"
-        },
-        "threadId": {
-          "description": "Optional loaded thread id used to evaluate effective app configuration.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "title": "AppsInstalledParams",
-      "type": "object"
-    },
-    "AppsInstalledResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "The installed connectors in one committed runtime snapshot.",
-      "properties": {
-        "apps": {
-          "items": {
-            "$ref": "#/definitions/InstalledApp"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "apps"
-      ],
-      "title": "AppsInstalledResponse",
-      "type": "object"
-    },
-    "AppsListParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - list available apps/connectors.",
-      "properties": {
-        "cursor": {
-          "description": "Opaque pagination cursor returned by a previous call.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "forceRefetch": {
-          "description": "When true, bypass app caches and fetch the latest data from sources.",
-          "type": "boolean"
-        },
-        "limit": {
-          "description": "Optional page size; defaults to a reasonable server-side value.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "threadId": {
-          "description": "Optional thread id used to evaluate app feature gating from that thread's config.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "title": "AppsListParams",
-      "type": "object"
-    },
-    "AppsListResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - app list response.",
-      "properties": {
-        "data": {
-          "items": {
-            "$ref": "#/definitions/AppInfo"
-          },
-          "type": "array"
-        },
-        "nextCursor": {
-          "description": "Opaque cursor to pass to the next call to continue after the last item. If None, there are no more items to return.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "data"
-      ],
-      "title": "AppsListResponse",
-      "type": "object"
-    },
-    "AppsReadParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - read metadata for specific apps/connectors.",
-      "properties": {
-        "appIds": {
-          "description": "App ids to read. The server accepts at most 100 ids and deduplicates repeated ids while preserving their first-request order.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "includeTools": {
-          "description": "When true, include display-only public tool summaries in the returned metadata.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "appIds"
-      ],
-      "title": "AppsReadParams",
-      "type": "object"
-    },
-    "AppsReadResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - app/read response.",
-      "properties": {
-        "apps": {
-          "items": {
-            "$ref": "#/definitions/ConnectorMetadata"
-          },
-          "type": "array"
-        },
-        "missingAppIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "apps",
-        "missingAppIds"
-      ],
-      "title": "AppsReadResponse",
-      "type": "object"
-    },
     "AskForApproval": {
       "oneOf": [
         {
@@ -1130,9 +564,6 @@
           "properties": {
             "granular": {
               "properties": {
-                "mcp_elicitations": {
-                  "type": "boolean"
-                },
                 "request_permissions": {
                   "default": false,
                   "type": "boolean"
@@ -1149,7 +580,6 @@
                 }
               },
               "required": [
-                "mcp_elicitations",
                 "rules",
                 "sandbox_approval"
               ],
@@ -2356,78 +1786,6 @@
             },
             "method": {
               "enum": [
-                "app/read"
-              ],
-              "title": "App/readRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/AppsReadParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "App/readRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "app/list"
-              ],
-              "title": "App/listRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/AppsListParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "App/listRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "app/installed"
-              ],
-              "title": "App/installedRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/AppsInstalledParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "App/installedRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
                 "fs/readFile"
               ],
               "title": "Fs/readFileRequestMethod",
@@ -2923,125 +2281,6 @@
             "params"
           ],
           "title": "ExperimentalFeature/enablement/setRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "mcpServer/oauth/login"
-              ],
-              "title": "McpServer/oauth/loginRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/McpServerOauthLoginParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "McpServer/oauth/loginRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "config/mcpServer/reload"
-              ],
-              "title": "Config/mcpServer/reloadRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "type": "null"
-            }
-          },
-          "required": [
-            "id",
-            "method"
-          ],
-          "title": "Config/mcpServer/reloadRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "mcpServerStatus/list"
-              ],
-              "title": "McpServerStatus/listRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/ListMcpServerStatusParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "McpServerStatus/listRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "mcpServer/resource/read"
-              ],
-              "title": "McpServer/resource/readRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/McpResourceReadParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "McpServer/resource/readRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "mcpServer/tool/call"
-              ],
-              "title": "McpServer/tool/callRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/McpServerToolCallParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "McpServer/tool/callRequest",
           "type": "object"
         },
         {
@@ -5226,68 +4465,6 @@
       ],
       "type": "object"
     },
-    "ConnectorMetadata": {
-      "description": "EXPERIMENTAL - metadata returned by app/read.",
-      "properties": {
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "distributionChannel": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "iconUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "iconUrlDark": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "installUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "pluginDisplayNames": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "toolSummaries": {
-          "items": {
-            "$ref": "#/definitions/AppToolSummary"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "id",
-        "name"
-      ],
-      "type": "object"
-    },
     "ConsumeAccountRateLimitResetCreditOutcome": {
       "oneOf": [
         {
@@ -5967,13 +5144,6 @@
     "ExternalAgentConfigDetectResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
-        "connectors": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/ExternalAgentDetectedConnectorCandidate"
-          },
-          "type": "array"
-        },
         "items": {
           "items": {
             "$ref": "#/definitions/ExternalAgentConfigMigrationItem"
@@ -6010,12 +5180,6 @@
     "ExternalAgentConfigImportHistoriesReadResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
-        "connectors": {
-          "items": {
-            "$ref": "#/definitions/ExternalAgentImportedConnectorCandidate"
-          },
-          "type": "array"
-        },
         "data": {
           "items": {
             "$ref": "#/definitions/ExternalAgentConfigImportHistory"
@@ -6024,7 +5188,6 @@
         }
       },
       "required": [
-        "connectors",
         "data"
       ],
       "title": "ExternalAgentConfigImportHistoriesReadResponse",
@@ -6376,67 +5539,11 @@
         "CONFIG",
         "SKILLS",
         "PLUGINS",
-        "MCP_SERVER_CONFIG",
         "SUBAGENTS",
         "HOOKS",
         "COMMANDS",
         "MEMORY",
         "SESSIONS"
-      ],
-      "type": "string"
-    },
-    "ExternalAgentDetectedConnectorCandidate": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "sessionCount": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "source": {
-          "$ref": "#/definitions/ExternalAgentDetectedConnectorSource"
-        }
-      },
-      "required": [
-        "name",
-        "sessionCount",
-        "source"
-      ],
-      "type": "object"
-    },
-    "ExternalAgentDetectedConnectorSource": {
-      "enum": [
-        "remoteMcpServersConfig",
-        "sessionToolUse"
-      ],
-      "type": "string"
-    },
-    "ExternalAgentImportedConnectorCandidate": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "sessionCount": {
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "source": {
-          "$ref": "#/definitions/ExternalAgentImportedConnectorSource"
-        }
-      },
-      "required": [
-        "name",
-        "sessionCount",
-        "source"
-      ],
-      "type": "object"
-    },
-    "ExternalAgentImportedConnectorSource": {
-      "enum": [
-        "remoteMcpServersConfig"
       ],
       "type": "string"
     },
@@ -7708,48 +6815,6 @@
         },
         {
           "properties": {
-            "connectorId": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "connectorName": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "server": {
-              "type": "string"
-            },
-            "toolName": {
-              "type": "string"
-            },
-            "toolTitle": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "type": {
-              "enum": [
-                "mcpToolCall"
-              ],
-              "title": "McpToolCallGuardianApprovalReviewActionType",
-              "type": "string"
-            }
-          },
-          "required": [
-            "server",
-            "toolName",
-            "type"
-          ],
-          "title": "McpToolCallGuardianApprovalReviewAction",
-          "type": "object"
-        },
-        {
-          "properties": {
             "permissions": {
               "$ref": "#/definitions/RequestPermissionProfile"
             },
@@ -8264,18 +7329,6 @@
           "description": "Opt into receiving experimental API methods and fields.",
           "type": "boolean"
         },
-        "extensions": {
-          "additionalProperties": true,
-          "description": "MCP extension settings declared by the app-server client.",
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "mcpServerOpenaiFormElicitation": {
-          "description": "Legacy opt-in for the `openai/form` MCP extension.\n\nNew clients should declare `openai/form` in [`Self::extensions`].",
-          "type": "boolean"
-        },
         "optOutNotificationMethods": {
           "description": "Exact notification method names that should be suppressed for this connection (for example `thread/started`).",
           "items": {
@@ -8342,35 +7395,6 @@
           "type": "string"
         }
       ]
-    },
-    "InstalledApp": {
-      "description": "Installed connector runtime state.",
-      "properties": {
-        "callable": {
-          "description": "Whether the connector is enabled and has a non-synthetic, model-visible tool allowed by effective MCP and app/tool policy in the committed runtime snapshot.",
-          "type": "boolean"
-        },
-        "enabled": {
-          "description": "Effective enabled state after applying global, workspace, local, and managed configuration at read time.",
-          "type": "boolean"
-        },
-        "id": {
-          "type": "string"
-        },
-        "runtimeName": {
-          "description": "Best-effort name carried by the runtime tool catalog. Canonical app metadata remains owned by `app/read`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "callable",
-        "enabled",
-        "id"
-      ],
-      "type": "object"
     },
     "InternalChatMessageMetadataPassthrough": {
       "description": "Internal Responses API passthrough metadata copied into underlying chat messages.\n\nResponses API strongly types this payload. Do not modify it without first getting API approval and making the corresponding Responses API change.",
@@ -8538,69 +7562,6 @@
     },
     "LegacyAppPathString": {
       "type": "string"
-    },
-    "ListMcpServerStatusParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "cursor": {
-          "description": "Opaque pagination cursor returned by a previous call.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "detail": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/McpServerStatusDetail"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Controls how much MCP inventory data to fetch for each server. Defaults to `Full` when omitted."
-        },
-        "limit": {
-          "description": "Optional page size; defaults to a server-defined value.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "title": "ListMcpServerStatusParams",
-      "type": "object"
-    },
-    "ListMcpServerStatusResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "data": {
-          "items": {
-            "$ref": "#/definitions/McpServerStatus"
-          },
-          "type": "array"
-        },
-        "nextCursor": {
-          "description": "Opaque cursor to pass to the next call to continue after the last item. If None, there are no more items to return.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "data"
-      ],
-      "title": "ListMcpServerStatusResponse",
-      "type": "object"
     },
     "LocalShellAction": {
       "oneOf": [
@@ -9186,434 +8147,6 @@
       "title": "MarketplaceUpgradeResponse",
       "type": "object"
     },
-    "McpAuthStatus": {
-      "enum": [
-        "unknown",
-        "unsupported",
-        "notLoggedIn",
-        "bearerToken",
-        "oAuth"
-      ],
-      "type": "string"
-    },
-    "McpResourceReadParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "server": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "server",
-        "uri"
-      ],
-      "title": "McpResourceReadParams",
-      "type": "object"
-    },
-    "McpResourceReadResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "contents": {
-          "items": {
-            "$ref": "#/definitions/ResourceContent"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "contents"
-      ],
-      "title": "McpResourceReadResponse",
-      "type": "object"
-    },
-    "McpServerInfo": {
-      "description": "Presentation metadata advertised by an initialized MCP server.",
-      "properties": {
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "icons": {
-          "items": true,
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "title": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "version": {
-          "type": "string"
-        },
-        "websiteUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name",
-        "version"
-      ],
-      "type": "object"
-    },
-    "McpServerMigration": {
-      "properties": {
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
-    "McpServerOauthLoginCompletedNotification": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "error": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "success": {
-          "type": "boolean"
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name",
-        "success"
-      ],
-      "title": "McpServerOauthLoginCompletedNotification",
-      "type": "object"
-    },
-    "McpServerOauthLoginParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "scopes": {
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "timeoutSecs": {
-          "format": "int64",
-          "type": [
-            "integer",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "title": "McpServerOauthLoginParams",
-      "type": "object"
-    },
-    "McpServerOauthLoginResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "authorizationUrl": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "authorizationUrl"
-      ],
-      "title": "McpServerOauthLoginResponse",
-      "type": "object"
-    },
-    "McpServerRefreshResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "McpServerRefreshResponse",
-      "type": "object"
-    },
-    "McpServerStartupFailureReason": {
-      "enum": [
-        "reauthenticationRequired"
-      ],
-      "type": "string"
-    },
-    "McpServerStartupState": {
-      "enum": [
-        "starting",
-        "ready",
-        "failed",
-        "cancelled"
-      ],
-      "type": "string"
-    },
-    "McpServerStatus": {
-      "properties": {
-        "authStatus": {
-          "$ref": "#/definitions/McpAuthStatus"
-        },
-        "name": {
-          "type": "string"
-        },
-        "resourceTemplates": {
-          "items": {
-            "$ref": "#/definitions/ResourceTemplate"
-          },
-          "type": "array"
-        },
-        "resources": {
-          "items": {
-            "$ref": "#/definitions/Resource"
-          },
-          "type": "array"
-        },
-        "serverInfo": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/McpServerInfo"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "tools": {
-          "additionalProperties": {
-            "$ref": "#/definitions/Tool"
-          },
-          "type": "object"
-        }
-      },
-      "required": [
-        "authStatus",
-        "name",
-        "resourceTemplates",
-        "resources",
-        "tools"
-      ],
-      "type": "object"
-    },
-    "McpServerStatusDetail": {
-      "enum": [
-        "full",
-        "toolsAndAuthOnly"
-      ],
-      "type": "string"
-    },
-    "McpServerStatusUpdatedNotification": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "error": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "failureReason": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/McpServerStartupFailureReason"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/definitions/McpServerStartupState"
-        },
-        "threadId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "name",
-        "status"
-      ],
-      "title": "McpServerStatusUpdatedNotification",
-      "type": "object"
-    },
-    "McpServerToolCallParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "_meta": true,
-        "arguments": true,
-        "server": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        },
-        "tool": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "server",
-        "threadId",
-        "tool"
-      ],
-      "title": "McpServerToolCallParams",
-      "type": "object"
-    },
-    "McpServerToolCallResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "_meta": true,
-        "content": {
-          "items": true,
-          "type": "array"
-        },
-        "isError": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "structuredContent": true
-      },
-      "required": [
-        "content"
-      ],
-      "title": "McpServerToolCallResponse",
-      "type": "object"
-    },
-    "McpToolCallAppContext": {
-      "properties": {
-        "actionName": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "appName": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "connectorId": {
-          "type": "string"
-        },
-        "linkId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "resourceUri": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "connectorId"
-      ],
-      "type": "object"
-    },
-    "McpToolCallError": {
-      "properties": {
-        "message": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "message"
-      ],
-      "type": "object"
-    },
-    "McpToolCallProgressNotification": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "itemId": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        },
-        "threadId": {
-          "type": "string"
-        },
-        "turnId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "itemId",
-        "message",
-        "threadId",
-        "turnId"
-      ],
-      "title": "McpToolCallProgressNotification",
-      "type": "object"
-    },
-    "McpToolCallResult": {
-      "properties": {
-        "_meta": true,
-        "content": {
-          "items": true,
-          "type": "array"
-        },
-        "structuredContent": true
-      },
-      "required": [
-        "content"
-      ],
-      "type": "object"
-    },
-    "McpToolCallStatus": {
-      "enum": [
-        "inProgress",
-        "completed",
-        "failed"
-      ],
-      "type": "string"
-    },
     "MemoryCitation": {
       "properties": {
         "entries": {
@@ -9701,13 +8234,6 @@
           "default": [],
           "items": {
             "$ref": "#/definitions/HookMigration"
-          },
-          "type": "array"
-        },
-        "mcpServers": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/McpServerMigration"
           },
           "type": "array"
         },
@@ -10572,18 +9098,6 @@
     },
     "PluginDetail": {
       "properties": {
-        "appTemplates": {
-          "items": {
-            "$ref": "#/definitions/AppTemplateSummary"
-          },
-          "type": "array"
-        },
-        "apps": {
-          "items": {
-            "$ref": "#/definitions/AppSummary"
-          },
-          "type": "array"
-        },
         "description": {
           "type": [
             "string",
@@ -10608,12 +9122,6 @@
               "type": "null"
             }
           ]
-        },
-        "mcpServers": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "scheduledTasks": {
           "items": {
@@ -10641,11 +9149,8 @@
         }
       },
       "required": [
-        "appTemplates",
-        "apps",
         "hooks",
         "marketplaceName",
-        "mcpServers",
         "skills",
         "summary"
       ],
@@ -10722,18 +9227,11 @@
     "PluginInstallResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
-        "appsNeedingAuth": {
-          "items": {
-            "$ref": "#/definitions/AppSummary"
-          },
-          "type": "array"
-        },
         "authPolicy": {
           "$ref": "#/definitions/PluginAuthPolicy"
         }
       },
       "required": [
-        "appsNeedingAuth",
         "authPolicy"
       ],
       "title": "PluginInstallResponse",
@@ -12543,142 +11041,6 @@
         "us"
       ],
       "type": "string"
-    },
-    "Resource": {
-      "description": "A known resource that the server is capable of reading.",
-      "properties": {
-        "_meta": true,
-        "annotations": true,
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "icons": {
-          "items": true,
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "mimeType": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "size": {
-          "format": "int64",
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "title": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "uri": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "uri"
-      ],
-      "type": "object"
-    },
-    "ResourceContent": {
-      "anyOf": [
-        {
-          "properties": {
-            "_meta": true,
-            "mimeType": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "text": {
-              "type": "string"
-            },
-            "uri": {
-              "description": "The URI of this resource.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "text",
-            "uri"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "_meta": true,
-            "blob": {
-              "type": "string"
-            },
-            "mimeType": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "uri": {
-              "description": "The URI of this resource.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "blob",
-            "uri"
-          ],
-          "type": "object"
-        }
-      ],
-      "description": "Contents returned when reading a resource from an MCP server."
-    },
-    "ResourceTemplate": {
-      "description": "A template description for resources available on the server.",
-      "properties": {
-        "annotations": true,
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "mimeType": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "title": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "uriTemplate": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "uriTemplate"
-      ],
-      "type": "object"
     },
     "ResponseItem": {
       "oneOf": [
@@ -14665,66 +13027,6 @@
           "properties": {
             "method": {
               "enum": [
-                "item/mcpToolCall/progress"
-              ],
-              "title": "Item/mcpToolCall/progressNotificationMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/McpToolCallProgressNotification"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "title": "Item/mcpToolCall/progressNotification",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "method": {
-              "enum": [
-                "mcpServer/oauthLogin/completed"
-              ],
-              "title": "McpServer/oauthLogin/completedNotificationMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/McpServerOauthLoginCompletedNotification"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "title": "McpServer/oauthLogin/completedNotification",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "method": {
-              "enum": [
-                "mcpServer/startupStatus/updated"
-              ],
-              "title": "McpServer/startupStatus/updatedNotificationMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/McpServerStatusUpdatedNotification"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "title": "McpServer/startupStatus/updatedNotification",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "method": {
-              "enum": [
                 "account/updated"
               ],
               "title": "Account/updatedNotificationMethod",
@@ -14759,26 +13061,6 @@
             "params"
           ],
           "title": "Account/rateLimits/updatedNotification",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "method": {
-              "enum": [
-                "app/list/updated"
-              ],
-              "title": "App/list/updatedNotificationMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/AppListUpdatedNotification"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "title": "App/list/updatedNotification",
           "type": "object"
         },
         {
@@ -17049,97 +15331,6 @@
         },
         {
           "properties": {
-            "appContext": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/McpToolCallAppContext"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "arguments": true,
-            "durationMs": {
-              "description": "The duration of the MCP tool call in milliseconds.",
-              "format": "int64",
-              "type": [
-                "integer",
-                "null"
-              ]
-            },
-            "error": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/McpToolCallError"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "id": {
-              "type": "string"
-            },
-            "mcpAppResourceUri": {
-              "description": "Deprecated: use `appContext.resourceUri` instead.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "pluginId": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "readOnlyHint": {
-              "type": [
-                "boolean",
-                "null"
-              ]
-            },
-            "result": {
-              "anyOf": [
-                {
-                  "$ref": "#/definitions/McpToolCallResult"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "server": {
-              "type": "string"
-            },
-            "status": {
-              "$ref": "#/definitions/McpToolCallStatus"
-            },
-            "tool": {
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "mcpToolCall"
-              ],
-              "title": "McpToolCallThreadItemType",
-              "type": "string"
-            }
-          },
-          "required": [
-            "arguments",
-            "id",
-            "server",
-            "status",
-            "tool",
-            "type"
-          ],
-          "title": "McpToolCallThreadItem",
-          "type": "object"
-        },
-        {
-          "properties": {
             "arguments": true,
             "contentItems": {
               "items": {
@@ -19191,42 +17382,6 @@
         "outputTokens",
         "reasoningOutputTokens",
         "totalTokens"
-      ],
-      "type": "object"
-    },
-    "Tool": {
-      "description": "Definition for a tool the client can call.",
-      "properties": {
-        "_meta": true,
-        "annotations": true,
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "icons": {
-          "items": true,
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "inputSchema": true,
-        "name": {
-          "type": "string"
-        },
-        "outputSchema": true,
-        "title": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "inputSchema",
-        "name"
       ],
       "type": "object"
     },

@@ -278,23 +278,9 @@ async fn loads_skill_dependencies_metadata_from_yaml() {
   "dependencies": {
     "tools": [
       {
-        "type": "mcp",
-        "value": "github",
-        "description": "GitHub MCP server",
-        "transport": "streamable_http",
-        "url": "https://example.com/mcp"
-      },
-      {
         "type": "cli",
         "value": "gh",
         "description": "GitHub CLI"
-      },
-      {
-        "type": "mcp",
-        "value": "local-gh",
-        "description": "Local GH MCP server",
-        "transport": "stdio",
-        "command": "gh-mcp"
       }
     ]
   }
@@ -317,32 +303,14 @@ async fn loads_skill_dependencies_metadata_from_yaml() {
             short_description: None,
             interface: None,
             dependencies: Some(SkillDependencies {
-                tools: vec![
-                    SkillToolDependency {
-                        r#type: "mcp".to_string(),
-                        value: "github".to_string(),
-                        description: Some("GitHub MCP server".to_string()),
-                        transport: Some("streamable_http".to_string()),
-                        command: None,
-                        url: Some("https://example.com/mcp".to_string()),
-                    },
-                    SkillToolDependency {
-                        r#type: "cli".to_string(),
-                        value: "gh".to_string(),
-                        description: Some("GitHub CLI".to_string()),
-                        transport: None,
-                        command: None,
-                        url: None,
-                    },
-                    SkillToolDependency {
-                        r#type: "mcp".to_string(),
-                        value: "local-gh".to_string(),
-                        description: Some("Local GH MCP server".to_string()),
-                        transport: Some("stdio".to_string()),
-                        command: Some("gh-mcp".to_string()),
-                        url: None,
-                    },
-                ],
+                tools: vec![SkillToolDependency {
+                    r#type: "cli".to_string(),
+                    value: "gh".to_string(),
+                    description: Some("GitHub CLI".to_string()),
+                    transport: None,
+                    command: None,
+                    url: None,
+                }],
             }),
             policy: None,
             path_to_skills_md: normalized(&skill_path),

@@ -32,7 +32,6 @@ members = [
     "cloud-tasks-mock-client",
     "cli",
     "collaboration-mode-templates",
-    "connectors",
     "config",
     "context-fragments",
     "shell-command",
@@ -52,7 +51,6 @@ members = [
     "exec-server/tests/support",
     "execpolicy",
     "ext/agent",
-    "ext/connectors",
     "ext/extension-api",
     "ext/goal",
     "ext/git-attribution",
@@ -60,7 +58,6 @@ members = [
     "ext/image-generation",
     "ext/items",
     "ext/memories",
-    "ext/mcp",
     "ext/skills",
     "ext/web-search",
     "external-agent-migration",
@@ -70,8 +67,6 @@ members = [
     "linux-sandbox",
     "lmstudio",
     "login",
-    "codex-mcp",
-    "mcp-server",
     "memories/read",
     "memories/write",
     "model-provider-info",
@@ -83,11 +78,9 @@ members = [
     "prompts",
     "rollout",
     "rollout-trace",
-    "rmcp-client",
     "responses-api-proxy",
     "response-debug-context",
     "sandboxing",
-    "stdio-to-uds",
     "otel",
     "tui",
     "tools",
@@ -175,9 +168,7 @@ codex-home = { path = "codex-home" }
 codex-http-client = { path = "http-client" }
 codex-websocket-client = { path = "websocket-client" }
 codex-config = { path = "config" }
-codex-connectors = { path = "connectors" }
 codex-agent-extension = { path = "ext/agent" }
-codex-connectors-extension = { path = "ext/connectors" }
 codex-context-fragments = { path = "context-fragments" }
 codex-core = { path = "core" }
 codex-core-api = { path = "core-api" }
@@ -213,9 +204,6 @@ codex-memories-extension = { path = "ext/memories" }
 codex-web-search-extension = { path = "ext/web-search" }
 codex-memories-read = { path = "memories/read" }
 codex-memories-write = { path = "memories/write" }
-codex-mcp = { path = "codex-mcp" }
-codex-mcp-extension = { path = "ext/mcp" }
-codex-mcp-server = { path = "mcp-server" }
 codex-model-provider-info = { path = "model-provider-info" }
 codex-models-manager = { path = "models-manager" }
 codex-network-proxy = { path = "network-proxy" }
@@ -228,7 +216,6 @@ codex-protocol = { path = "protocol" }
 codex-prompts = { path = "prompts" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-response-debug-context = { path = "response-debug-context" }
-codex-rmcp-client = { path = "rmcp-client" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
 codex-sandboxing = { path = "sandboxing" }
@@ -238,7 +225,6 @@ codex-shell-escalation = { path = "shell-escalation" }
 codex-skills-extension = { path = "ext/skills" }
 codex-skills = { path = "skills" }
 codex-state = { path = "state" }
-codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-test-binary-support = { path = "test-binary-support" }
 codex-thread-store = { path = "thread-store" }
@@ -270,7 +256,6 @@ codex-utils-string = { path = "utils/string" }
 codex-utils-template = { path = "utils/template" }
 codex-v8-poc = { path = "v8-poc" }
 core_test_support = { path = "core/tests/common" }
-mcp_test_support = { path = "mcp-server/tests/common" }
 
 # External
 age = "0.11.1"
@@ -387,7 +372,6 @@ rcgen = { version = "0.14.7", default-features = false, features = [
 regex = "1.12.3"
 regex-lite = "0.1.8"
 reqwest = { version = "0.12", features = ["cookies"] }
-rmcp = { version = "=3.0.0", default-features = false }
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rustls = { version = "0.23", default-features = false, features = [
     "aws_lc_rs",
@@ -577,7 +561,6 @@ tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungsteni
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "4fffad30fe373adbdcffab9545e9e9bf4f2fc19f" }
 
 # Uncomment to debug local changes.
-# rmcp = { path = "../../rust-sdk/crates/rmcp" }
 
 [patch."ssh://git@github.com/openai-oss-forks/tungstenite-rs.git"]
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "4fffad30fe373adbdcffab9545e9e9bf4f2fc19f" }

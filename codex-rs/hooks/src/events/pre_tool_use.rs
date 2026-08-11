@@ -172,8 +172,8 @@ fn latest_updated_input(
 ///
 /// Handler selection may include internal matcher aliases, but hook stdin keeps
 /// the canonical `tool_name` so audit logs and downstream policy decisions stay
-/// stable. Shell-like tools pass `{ "command": ... }` as `tool_input`; MCP
-/// tools pass their resolved JSON arguments.
+/// stable. Shell-like tools pass `{ "command": ... }` as `tool_input`;
+/// structured tools pass their resolved JSON arguments.
 fn command_input_json(request: &PreToolUseRequest) -> Result<String, serde_json::Error> {
     let subagent = SubagentCommandInputFields::from(request.subagent.as_ref());
     serde_json::to_string(&PreToolUseCommandInput {

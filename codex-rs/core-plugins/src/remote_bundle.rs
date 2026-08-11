@@ -41,7 +41,6 @@ pub struct ValidatedRemotePluginBundle {
     pub plugin_id: PluginId,
     pub plugin_version: String,
     remote_plugin_id: String,
-    app_manifest: Option<JsonValue>,
     bundle_download_url: String,
 }
 
@@ -166,7 +165,6 @@ pub fn validate_remote_plugin_bundle(
     plugin_name: &str,
     release_version: Option<&str>,
     bundle_download_url: Option<&str>,
-    app_manifest: Option<JsonValue>,
 ) -> Result<ValidatedRemotePluginBundle, RemotePluginBundleInstallError> {
     let plugin_id = PluginId::new(plugin_name.to_string(), remote_marketplace_name.to_string())
         .map_err(|source| RemotePluginBundleInstallError::InvalidPluginId {
@@ -218,7 +216,6 @@ pub fn validate_remote_plugin_bundle(
         plugin_id,
         plugin_version,
         remote_plugin_id: remote_plugin_id.to_string(),
-        app_manifest,
         bundle_download_url,
     })
 }
@@ -509,9 +506,6 @@ fn prepare_extracted_remote_plugin_root(
     }
 
     overwrite_plugin_manifest_version(plugin_root, &bundle.plugin_version)?;
-    if let Some(app_manifest) = &bundle.app_manifest {
-        overwrite_plugin_app_manifest(plugin_root, app_manifest)?;
-    }
     Ok(())
 }
 
@@ -550,20 +544,6 @@ fn overwrite_plugin_manifest_version(
         &manifest_path,
         &manifest,
         "failed to write remote plugin manifest",
-    )
-}
-
-fn overwrite_plugin_app_manifest(
-    plugin_root: &Path,
-    app_manifest: &JsonValue,
-) -> Result<(), RemotePluginBundleInstallError> {
-    let app_manifest_path = crate::manifest::load_plugin_manifest(plugin_root)
-        .and_then(|manifest| manifest.paths.apps.map(|path| path.to_path_buf()))
-        .unwrap_or_else(|| plugin_root.join(".app.json"));
-    write_json_file(
-        &app_manifest_path,
-        app_manifest,
-        "failed to write remote plugin app manifest",
     )
 }
 
@@ -676,7 +656,6 @@ mod tests {
             "linear",
             Some("1.2.3"),
             Some("https://example.com/linear.tar.gz"),
-            /*app_manifest*/ None,
         )
         .expect("valid install plan");
 
@@ -697,7 +676,6 @@ mod tests {
             "linear",
             /*release_version*/ None,
             Some("https://example.com/linear.tar.gz"),
-            /*app_manifest*/ None,
         )
         .expect_err("missing release version should be rejected");
 
@@ -715,7 +693,6 @@ mod tests {
             "linear",
             Some("../1.2.3"),
             Some("https://example.com/linear.tar.gz"),
-            /*app_manifest*/ None,
         )
         .expect_err("invalid release version should be rejected");
 
@@ -733,7 +710,6 @@ mod tests {
             "linear",
             Some("1.2.3"),
             /*bundle_download_url*/ None,
-            /*app_manifest*/ None,
         )
         .expect_err("missing bundle download URL should be rejected");
 
@@ -751,7 +727,6 @@ mod tests {
             "linear",
             Some("1.2.3"),
             Some("http://example.com/linear.tar.gz"),
-            /*app_manifest*/ None,
         )
         .expect_err("plain HTTP URLs should be rejected before cloud install");
 
@@ -874,78 +849,6 @@ mod tests {
     }
 
     #[test]
-    fn install_preserves_non_global_bundle_manifest_metadata() {
-        let codex_home = tempdir().expect("tempdir");
-        let bundle = validate_remote_plugin_bundle(
-            REMOTE_PLUGIN_ID,
-            "workspace-shared-with-me",
-            "linear",
-            Some("backend-version"),
-            Some("https://example.com/linear.tar.gz"),
-            Some(serde_json::json!({
-                "apps": {
-                    "remote": {
-                        "id": "remote-app"
-                    }
-                }
-            })),
-        )
-        .expect("valid install plan");
-
-        let result = install_remote_plugin_bundle(
-            codex_home.path().to_path_buf(),
-            bundle,
-            tar_gz_bytes(&[
-                (
-                    ".codex-plugin/plugin.json",
-                    br#"{"name":"linear","version":"bundle-version"}"#,
-                    /*mode*/ 0o644,
-                ),
-                (
-                    ".app.json",
-                    br#"{"apps":{"bundled":{"id":"bundled-app"}}}"#,
-                    /*mode*/ 0o644,
-                ),
-            ]),
-        )
-        .expect("install bundle");
-
-        assert_eq!(result.plugin_version, "backend-version");
-        let installed_manifest: JsonValue = serde_json::from_str(
-            &std::fs::read_to_string(
-                result
-                    .installed_path
-                    .join(".codex-plugin/plugin.json")
-                    .as_path(),
-            )
-            .expect("read installed plugin manifest"),
-        )
-        .expect("parse installed plugin manifest");
-        assert_eq!(
-            installed_manifest,
-            serde_json::json!({
-                "name": "linear",
-                "version": "bundle-version",
-            })
-        );
-        let installed_app_manifest: JsonValue = serde_json::from_str(
-            &std::fs::read_to_string(result.installed_path.join(".app.json").as_path())
-                .expect("read installed app manifest"),
-        )
-        .expect("parse installed app manifest");
-        assert_eq!(
-            installed_app_manifest,
-            serde_json::json!({
-                "apps": {
-                    "bundled": {
-                        "id": "bundled-app",
-                    },
-                },
-            })
-        );
-    }
-
-    #[test]
     fn find_extracted_plugin_root_uses_local_manifest_discovery() {
         let extraction_root = tempdir().expect("tempdir");
         std::fs::create_dir_all(extraction_root.path().join(".codex-plugin"))
@@ -1063,7 +966,6 @@ mod tests {
             "linear",
             Some("1.2.3"),
             Some("https://example.com/linear.tar.gz"),
-            /*app_manifest*/ None,
         )
         .expect("valid install plan")
     }

@@ -21,8 +21,6 @@ use codex_app_server_protocol::GetAccountTokenUsageResponse;
 use codex_app_server_protocol::MarketplaceAddResponse;
 use codex_app_server_protocol::MarketplaceRemoveResponse;
 use codex_app_server_protocol::MarketplaceUpgradeResponse;
-use codex_app_server_protocol::McpServerStatus;
-use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::PluginInstallResponse;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::PluginMarketplaceEntry;
@@ -33,7 +31,6 @@ use codex_app_server_protocol::SkillsListResponse;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadItemsListResponse;
-use codex_connectors::AppInfo;
 use codex_file_search::FileMatch;
 use codex_message_history::HistoryBatchCursor;
 use codex_protocol::ThreadId;
@@ -107,11 +104,6 @@ pub(crate) enum HistoryLookupResponse {
 pub(crate) enum ConsolidationScrollbackReflow {
     IfResizeReflowRan,
     Required,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct ConnectorsSnapshot {
-    pub(crate) connectors: Vec<AppInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -451,25 +443,8 @@ pub(crate) enum AppEvent {
         result: Result<AddCreditsNudgeEmailStatus, String>,
     },
 
-    /// Result of prefetching connectors.
-    ConnectorsLoaded {
-        result: Result<ConnectorsSnapshot, String>,
-        is_final: bool,
-    },
-
     /// Result of computing a `/diff` command.
     DiffResult(String),
-
-    /// Open the app link view in the bottom pane.
-    OpenAppLink {
-        app_id: String,
-        title: String,
-        description: Option<String>,
-        instructions: String,
-        url: String,
-        is_installed: bool,
-        is_enabled: bool,
-    },
 
     /// Open the provided URL in the user's browser.
     OpenUrlInBrowser {
@@ -511,16 +486,6 @@ pub(crate) enum AppEvent {
     ConfiguredPetLoaded {
         pet_id: String,
         result: Result<Option<crate::pets::AmbientPet>, String>,
-    },
-
-    /// Refresh app connector state and mention bindings.
-    RefreshConnectors {
-        force_refetch: bool,
-    },
-
-    /// Fetch app connector state from the app server after the widget accepts a refresh request.
-    FetchConnectorsList {
-        force_refetch: bool,
     },
 
     /// Fetch plugin marketplace state for the provided working directory.
@@ -704,27 +669,6 @@ pub(crate) enum AppEvent {
         plugins: Option<Vec<PluginCapabilitySummary>>,
     },
 
-    /// Advance the post-install plugin app-auth flow.
-    PluginInstallAuthAdvance {
-        refresh_connectors: bool,
-    },
-
-    /// Abandon the post-install plugin app-auth flow.
-    PluginInstallAuthAbandon,
-
-    /// Fetch MCP inventory via app-server RPCs and render it into history.
-    FetchMcpInventory {
-        detail: McpServerStatusDetail,
-        thread_id: Option<ThreadId>,
-    },
-
-    /// Result of fetching MCP inventory via app-server RPCs.
-    McpInventoryLoaded {
-        result: Result<Vec<McpServerStatus>, String>,
-        detail: McpServerStatusDetail,
-        thread_id: Option<ThreadId>,
-    },
-
     /// Result of the startup skills refresh that runs after the first frame is scheduled.
     ///
     /// This event is startup-only. Interactive skills refreshes are handled synchronously through the app
@@ -900,12 +844,6 @@ pub(crate) enum AppEvent {
     /// Enable or disable a skill by path.
     SetSkillEnabled {
         path: AbsolutePathBuf,
-        enabled: bool,
-    },
-
-    /// Enable or disable an app by connector ID.
-    SetAppEnabled {
-        id: String,
         enabled: bool,
     },
 

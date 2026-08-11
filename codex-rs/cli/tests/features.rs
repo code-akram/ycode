@@ -12,14 +12,16 @@ fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
 }
 
 #[test]
-fn strict_config_rejects_unknown_config_override() -> Result<()> {
+fn strict_config_is_not_supported_for_features_command() -> Result<()> {
     let codex_home = TempDir::new()?;
 
     let mut cmd = codex_command(codex_home.path())?;
-    cmd.args(["--strict-config", "-c", "foo=bar", "mcp-server"])
+    cmd.args(["--strict-config", "-c", "foo=bar", "features", "list"])
         .assert()
         .failure()
-        .stderr(contains("unknown configuration field"));
+        .stderr(contains(
+            "`--strict-config` is not supported for `codex features`",
+        ));
 
     Ok(())
 }

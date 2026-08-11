@@ -220,16 +220,6 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
                 .dim()
                 .into(),
         ],
-        ThreadItem::McpToolCall {
-            server,
-            tool,
-            status,
-            ..
-        } => vec![
-            format!("mcp tool: {server}/{tool} · {status:?}")
-                .dim()
-                .into(),
-        ],
         ThreadItem::DynamicToolCall {
             namespace,
             tool,

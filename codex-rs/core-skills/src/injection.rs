@@ -12,7 +12,6 @@ use codex_otel::SessionTelemetry;
 use codex_otel::sanitize_metric_tag_value;
 pub use codex_skills::ToolMentionKind;
 pub use codex_skills::ToolMentions;
-pub use codex_skills::app_id_from_path;
 pub use codex_skills::extract_tool_mentions;
 pub use codex_skills::extract_tool_mentions_with_sigil;
 pub use codex_skills::normalize_skill_path;

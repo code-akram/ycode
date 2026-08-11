@@ -3,15 +3,6 @@
 // Note this file should generally be restricted to simple struct/enum
 // definitions that do not contain business logic.
 
-pub use crate::mcp_types::AppToolApproval;
-pub use crate::mcp_types::McpServerAuth;
-pub use crate::mcp_types::McpServerConfig;
-pub use crate::mcp_types::McpServerDisabledReason;
-pub use crate::mcp_types::McpServerEnvVar;
-pub use crate::mcp_types::McpServerOAuthConfig;
-pub use crate::mcp_types::McpServerToolConfig;
-pub use crate::mcp_types::McpServerTransportConfig;
-pub use crate::mcp_types::RawMcpServerConfig;
 pub use crate::shell_environment_policy::ShellEnvironmentPolicyToml;
 pub use codex_protocol::config_types::AltScreenMode;
 pub use codex_protocol::config_types::ApprovalsReviewer;
@@ -56,6 +47,17 @@ const MAX_MEMORIES_MAX_ROLLOUTS_PER_STARTUP: usize = 128;
 
 const fn default_enabled() -> bool {
     true
+}
+
+/// Approval behavior for app tools retained until the app surface is removed.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AppToolApproval {
+    #[default]
+    Auto,
+    Prompt,
+    Writes,
+    Approve,
 }
 
 /// Preferred layout for the resume/fork session picker.
@@ -114,23 +116,6 @@ pub enum AuthCredentialsStoreMode {
     Auto,
     /// Store credentials in memory only for the current process.
     Ephemeral,
-}
-
-/// Determine where Codex should store and read MCP credentials.
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum OAuthCredentialsStoreMode {
-    /// Prefer `Keyring` and use `File` when keyring storage is unavailable.
-    /// Once an MCP client loads credentials from one store, that client keeps the resolved store
-    /// for its lifetime so refreshes cannot switch to a possibly stale credential source.
-    /// Credentials stored in the keyring will only be readable by Codex unless the user explicitly grants access via OS-level keyring access.
-    #[default]
-    Auto,
-    /// CODEX_HOME/.credentials.json
-    /// This file will be readable to Codex and other applications running as the same user.
-    File,
-    /// Keyring when available, otherwise fail.
-    Keyring,
 }
 
 /// Determine how auth credentials should use keyring-backed storage.
@@ -289,7 +274,6 @@ pub struct ToolSuggestConfig {
 #[schemars(deny_unknown_fields)]
 pub struct MemoriesToml {
     /// When `true`, external context sources mark the thread `memory_mode` as `"polluted"`.
-    #[serde(alias = "no_memories_if_mcp_or_web_search")]
     pub disable_on_external_context: Option<bool>,
     /// When `false`, newly created threads are stored with `memory_mode = "disabled"` in the state DB.
     pub generate_memories: Option<bool>,
@@ -844,50 +828,6 @@ pub use crate::skills_config::SkillsConfig;
 pub struct PluginConfig {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-
-    /// Per-MCP-server policy overlays for MCP servers contributed by this plugin.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub mcp_servers: HashMap<String, PluginMcpServerConfig>,
-}
-
-/// Policy settings for a plugin-provided MCP server.
-///
-/// This intentionally excludes transport settings: plugin manifests own how the
-/// MCP server is launched, while user config owns enablement and tool policy.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct PluginMcpServerConfig {
-    /// When `false`, Codex skips initializing this plugin MCP server.
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
-
-    /// Approval mode for tools in this server unless a tool override exists.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_tools_approval_mode: Option<AppToolApproval>,
-
-    /// Explicit allow-list of tools exposed from this server.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled_tools: Option<Vec<String>>,
-
-    /// Explicit deny-list of tools. These tools are removed after applying `enabled_tools`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disabled_tools: Option<Vec<String>>,
-
-    /// Per-tool approval settings keyed by tool name.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub tools: HashMap<String, McpServerToolConfig>,
-}
-
-impl Default for PluginMcpServerConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            default_tools_approval_mode: None,
-            enabled_tools: None,
-            disabled_tools: None,
-            tools: HashMap::new(),
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]

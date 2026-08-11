@@ -329,60 +329,57 @@ fn request_reuses_prior_tool_search_call_with_internal_metadata() -> anyhow::Res
 
 #[test]
 fn request_reuses_prior_tool_outputs_with_internal_metadata() -> anyhow::Result<()> {
-    for item_type in ["tool_search_output", "mcp_tool_call_output"] {
-        let temp = TempDir::new()?;
-        let writer = create_started_writer(&temp)?;
-        start_turn(&writer, "turn-1")?;
+    let temp = TempDir::new()?;
+    let writer = create_started_writer(&temp)?;
+    start_turn(&writer, "turn-1")?;
 
-        let output = json!({
-            "type": item_type,
-            "status": "completed",
-            "call_id": "call-search",
-            "execution": "client",
-            "tools": [{
-                "name": "search",
-                "internal_chat_message_metadata_passthrough": "model-visible"
-            }]
-        });
-        let first_request = writer.write_json_payload(
-            RawPayloadKind::InferenceRequest,
-            &json!({
-                "input": [message("user", "search"), output.clone()]
-            }),
-        )?;
-        let first_request_payload_id = first_request.raw_payload_id.clone();
-        append_inference_start(&writer, "inference-1", "turn-1", first_request)?;
-        start_turn(&writer, "turn-2")?;
+    let output = json!({
+        "type": "tool_search_output",
+        "status": "completed",
+        "call_id": "call-search",
+        "execution": "client",
+        "tools": [{
+            "name": "search",
+            "internal_chat_message_metadata_passthrough": "model-visible"
+        }]
+    });
+    let first_request = writer.write_json_payload(
+        RawPayloadKind::InferenceRequest,
+        &json!({
+            "input": [message("user", "search"), output.clone()]
+        }),
+    )?;
+    let first_request_payload_id = first_request.raw_payload_id.clone();
+    append_inference_start(&writer, "inference-1", "turn-1", first_request)?;
+    start_turn(&writer, "turn-2")?;
 
-        let mut replayed_output = output.clone();
-        replayed_output["internal_chat_message_metadata_passthrough"] = json!({
-            "turn_id": "turn-1"
-        });
-        let next_request = writer.write_json_payload(
-            RawPayloadKind::InferenceRequest,
-            &json!({
-                "input": [message("user", "search"), replayed_output]
-            }),
-        )?;
-        append_inference_start(&writer, "inference-2", "turn-2", next_request)?;
+    let mut replayed_output = output.clone();
+    replayed_output["internal_chat_message_metadata_passthrough"] = json!({
+        "turn_id": "turn-1"
+    });
+    let next_request = writer.write_json_payload(
+        RawPayloadKind::InferenceRequest,
+        &json!({
+            "input": [message("user", "search"), replayed_output]
+        }),
+    )?;
+    append_inference_start(&writer, "inference-2", "turn-2", next_request)?;
 
-        let rollout = replay_bundle(temp.path())?;
-        let first = &rollout.inference_calls["inference-1"];
-        let second = &rollout.inference_calls["inference-2"];
+    let rollout = replay_bundle(temp.path())?;
+    let first = &rollout.inference_calls["inference-1"];
+    let second = &rollout.inference_calls["inference-2"];
 
-        assert_eq!(second.request_item_ids, first.request_item_ids);
-        assert_eq!(
-            rollout.conversation_items[&first.request_item_ids[1]].body,
-            ConversationBody {
-                parts: vec![ConversationPart::Json {
-                    summary: serde_json::to_string(&output)?,
-                    raw_payload_id: first_request_payload_id,
-                }],
-            },
-        );
-        assert_eq!(rollout.conversation_items.len(), 2);
-    }
-
+    assert_eq!(second.request_item_ids, first.request_item_ids);
+    assert_eq!(
+        rollout.conversation_items[&first.request_item_ids[1]].body,
+        ConversationBody {
+            parts: vec![ConversationPart::Json {
+                summary: serde_json::to_string(&output)?,
+                raw_payload_id: first_request_payload_id,
+            }],
+        },
+    );
+    assert_eq!(rollout.conversation_items.len(), 2);
     Ok(())
 }
 

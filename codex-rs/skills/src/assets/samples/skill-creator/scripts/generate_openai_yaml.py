@@ -13,7 +13,6 @@ from pathlib import Path
 
 ACRONYMS = {
     "GH",
-    "MCP",
     "API",
     "CI",
     "CLI",

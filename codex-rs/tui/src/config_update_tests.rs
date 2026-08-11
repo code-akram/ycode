@@ -4,14 +4,6 @@ use pretty_assertions::assert_eq;
 use std::path::Path;
 
 #[test]
-fn app_scoped_key_path_quotes_dotted_app_ids() {
-    assert_eq!(
-        app_scoped_key_path("plugin.linear", "enabled"),
-        "apps.\"plugin.linear\".enabled"
-    );
-}
-
-#[test]
 fn trusted_project_edit_targets_project_trust_level() {
     assert_eq!(
         trusted_project_edit(Path::new("/workspace/team.project")),

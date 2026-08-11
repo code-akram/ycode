@@ -14,7 +14,6 @@ use crate::items::EnteredReviewModeItem;
 use crate::items::ExitedReviewModeItem;
 use crate::items::FileChangeItem;
 use crate::items::ImageGenerationItem;
-use crate::items::McpToolCallItem;
 use crate::items::ReasoningItem;
 use crate::items::SubAgentActivityItem;
 use crate::items::TurnItem;
@@ -48,9 +47,6 @@ use crate::protocol::ImageGenerationBeginEvent;
 use crate::protocol::ImageGenerationEndEvent;
 use crate::protocol::ItemCompletedEvent;
 use crate::protocol::ItemStartedEvent;
-use crate::protocol::McpInvocation;
-use crate::protocol::McpToolCallBeginEvent;
-use crate::protocol::McpToolCallEndEvent;
 use crate::protocol::PatchApplyBeginEvent;
 use crate::protocol::PatchApplyEndEvent;
 use crate::protocol::PatchApplyStatus;
@@ -459,52 +455,6 @@ impl FileChangeItem {
     }
 }
 
-impl McpToolCallItem {
-    pub fn as_legacy_begin_event(&self) -> EventMsg {
-        EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
-            call_id: self.id.clone(),
-            invocation: McpInvocation {
-                server: self.server.clone(),
-                tool: self.tool.clone(),
-                arguments: (!self.arguments.is_null()).then(|| self.arguments.clone()),
-            },
-            connector_id: self.connector_id.clone(),
-            mcp_app_resource_uri: self.mcp_app_resource_uri.clone(),
-            link_id: self.link_id.clone(),
-            app_name: self.app_name.clone(),
-            action_name: self.action_name.clone(),
-            plugin_id: self.plugin_id.clone(),
-            read_only_hint: self.read_only_hint,
-        })
-    }
-
-    pub fn as_legacy_end_event(&self) -> Option<EventMsg> {
-        let result = match (&self.result, &self.error) {
-            (Some(result), _) => Ok(result.clone()),
-            (None, Some(error)) => Err(error.message.clone()),
-            (None, None) => return None,
-        };
-
-        Some(EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-            call_id: self.id.clone(),
-            invocation: McpInvocation {
-                server: self.server.clone(),
-                tool: self.tool.clone(),
-                arguments: (!self.arguments.is_null()).then(|| self.arguments.clone()),
-            },
-            mcp_app_resource_uri: self.mcp_app_resource_uri.clone(),
-            connector_id: self.connector_id.clone(),
-            link_id: self.link_id.clone(),
-            app_name: self.app_name.clone(),
-            action_name: self.action_name.clone(),
-            plugin_id: self.plugin_id.clone(),
-            read_only_hint: self.read_only_hint,
-            duration: self.duration?,
-            result,
-        }))
-    }
-}
-
 impl TurnItem {
     pub fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
         match self {
@@ -530,7 +480,6 @@ impl TurnItem {
                 .as_legacy_end_event(String::new())
                 .into_iter()
                 .collect(),
-            TurnItem::McpToolCall(item) => item.as_legacy_end_event().into_iter().collect(),
             TurnItem::Reasoning(item) => item.as_legacy_events(show_raw_agent_reasoning),
             TurnItem::ContextCompaction(item) => vec![item.as_legacy_event()],
         }
@@ -550,7 +499,6 @@ impl HasLegacyEvent for ItemStartedEvent {
                 })]
             }
             TurnItem::FileChange(item) => vec![item.as_legacy_begin_event(self.turn_id.clone())],
-            TurnItem::McpToolCall(item) => vec![item.as_legacy_begin_event()],
             TurnItem::CommandExecution(item) => {
                 vec![item.as_legacy_begin_event(self.turn_id.clone(), self.started_at_ms)]
             }

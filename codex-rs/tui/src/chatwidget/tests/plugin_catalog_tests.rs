@@ -265,7 +265,7 @@ async fn plugin_detail_not_installable_plugin_disables_install_action() {
     chat.on_plugin_detail_loaded(
         cwd.to_path_buf(),
         Ok(PluginReadResponse {
-            plugin: plugins_test_detail(summary, Some("Internal only."), &[], &[], &[], &[]),
+            plugin: plugins_test_detail(summary, Some("Internal only."), &[], &[]),
         }),
     );
 

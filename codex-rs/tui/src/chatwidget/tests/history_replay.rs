@@ -194,20 +194,20 @@ async fn replayed_user_messages_seed_composer_history() {
     );
     replay_mention(
         "user-2",
-        "use $google-calendar",
-        "Google Calendar",
-        "app://google_calendar",
+        "use $local-skill",
+        "local-skill",
+        "/tmp/local-skill/SKILL.md",
     );
     drain_insert_history(&mut rx);
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-    assert_eq!(chat.bottom_pane.composer_text(), "use $google-calendar");
+    assert_eq!(chat.bottom_pane.composer_text(), "use $local-skill");
     assert_eq!(
         chat.bottom_pane.take_mention_bindings(),
         vec![MentionBinding {
             sigil: '$',
-            mention: "google-calendar".to_string(),
-            path: "app://google_calendar".to_string(),
+            mention: "local-skill".to_string(),
+            path: "/tmp/local-skill/SKILL.md".to_string(),
         }]
     );
 
@@ -239,7 +239,7 @@ async fn replayed_user_messages_seed_composer_history() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
     chat.handle_history_entry_response(response(
         next_lookup_offset(),
-        "use [$google-calendar](app://google_calendar)",
+        "use [$local-skill](/tmp/local-skill/SKILL.md)",
     ));
 
     assert_eq!(next_lookup_offset(), 1);
@@ -1154,96 +1154,6 @@ async fn replayed_reasoning_item_shows_raw_reasoning_when_enabled() {
         other => panic!("expected InsertHistoryCell, got {other:?}"),
     };
     assert!(rendered.contains("Raw reasoning"));
-}
-
-#[tokio::test]
-async fn replayed_in_progress_mcp_tool_call_stays_active() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let _ = drain_insert_history(&mut rx);
-
-    chat.replay_thread_item(
-        AppServerThreadItem::McpToolCall {
-            id: "mcp-1".to_string(),
-            server: "copilot-bridge".to_string(),
-            tool: "copilot".to_string(),
-            status: codex_app_server_protocol::McpToolCallStatus::InProgress,
-            arguments: json!({"action": "wait"}),
-            app_context: None,
-            mcp_app_resource_uri: None,
-            plugin_id: None,
-            read_only_hint: None,
-            result: None,
-            error: None,
-            duration_ms: None,
-        },
-        "turn-1".to_string(),
-        ReplayKind::ThreadSnapshot,
-    );
-
-    assert!(drain_insert_history(&mut rx).is_empty());
-    let active = active_blob(&chat);
-    assert!(active.contains("Calling"));
-    assert!(!active.contains("MCP tool call completed without a result"));
-}
-
-#[tokio::test]
-async fn deferred_mcp_lifecycle_events_keep_fifo_after_stream_finishes() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let cwd = chat.config.cwd.to_path_buf();
-    chat.stream_controller = Some(crate::streaming::controller::StreamController::new(
-        /*width*/ Some(80),
-        cwd.as_path(),
-        chat.history_render_mode(),
-    ));
-
-    chat.on_mcp_tool_call_started(AppServerThreadItem::McpToolCall {
-        id: "mcp-deferred".to_string(),
-        server: "copilot-bridge".to_string(),
-        tool: "copilot".to_string(),
-        status: codex_app_server_protocol::McpToolCallStatus::InProgress,
-        arguments: json!({"action": "wait"}),
-        app_context: None,
-        mcp_app_resource_uri: None,
-        plugin_id: None,
-        read_only_hint: None,
-        result: None,
-        error: None,
-        duration_ms: None,
-    });
-    assert!(!chat.interrupts.is_empty());
-
-    chat.stream_controller = None;
-    chat.on_mcp_tool_call_completed(AppServerThreadItem::McpToolCall {
-        id: "mcp-deferred".to_string(),
-        server: "copilot-bridge".to_string(),
-        tool: "copilot".to_string(),
-        status: codex_app_server_protocol::McpToolCallStatus::Completed,
-        arguments: json!({"action": "wait"}),
-        app_context: None,
-        mcp_app_resource_uri: None,
-        plugin_id: None,
-        read_only_hint: None,
-        result: Some(Box::new(codex_app_server_protocol::McpToolCallResult {
-            content: vec![json!({"type": "text", "text": "deferred result"})],
-            structured_content: None,
-            meta: None,
-        })),
-        error: None,
-        duration_ms: Some(5),
-    });
-
-    assert!(!chat.interrupts.is_empty());
-    assert!(drain_insert_history(&mut rx).is_empty());
-
-    chat.flush_interrupt_queue();
-
-    assert!(chat.interrupts.is_empty());
-    assert!(chat.transcript.active_cell.is_none());
-    let rendered = drain_insert_history(&mut rx)
-        .into_iter()
-        .map(|lines| lines_to_single_string(&lines))
-        .collect::<String>();
-    assert!(rendered.contains("deferred result"), "{rendered}");
 }
 
 #[tokio::test]

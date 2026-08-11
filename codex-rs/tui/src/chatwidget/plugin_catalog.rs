@@ -1141,18 +1141,6 @@ impl ChatWidget {
             is_disabled: true,
             ..Default::default()
         });
-        items.push(SelectionItem {
-            name: "Apps".to_string(),
-            description: Some(plugin_app_summary(plugin)),
-            is_disabled: true,
-            ..Default::default()
-        });
-        items.push(SelectionItem {
-            name: "MCP Servers".to_string(),
-            description: Some(plugin_mcp_summary(plugin)),
-            is_disabled: true,
-            ..Default::default()
-        });
 
         SelectionViewParams {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
@@ -2019,19 +2007,6 @@ fn plugin_skill_summary(plugin: &PluginDetail) -> String {
     }
 }
 
-fn plugin_app_summary(plugin: &PluginDetail) -> String {
-    if plugin.apps.is_empty() {
-        "No plugin apps.".to_string()
-    } else {
-        plugin
-            .apps
-            .iter()
-            .map(|app| app.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-}
-
 fn plugin_hook_summary(plugin: &PluginDetail) -> String {
     if plugin.hooks.is_empty() {
         "No plugin hooks.".to_string()
@@ -2052,13 +2027,5 @@ fn plugin_hook_summary(plugin: &PluginDetail) -> String {
             .map(|(event_name, handler_count)| format!("{event_name:?} ({handler_count})"))
             .collect::<Vec<_>>()
             .join(", ")
-    }
-}
-
-fn plugin_mcp_summary(plugin: &PluginDetail) -> String {
-    if plugin.mcp_servers.is_empty() {
-        "No plugin MCP servers.".to_string()
-    } else {
-        plugin.mcp_servers.join(", ")
     }
 }
