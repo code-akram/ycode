@@ -775,7 +775,7 @@ mod tests {
     #[test]
     fn redacted_text_mode_normalizes_turn_metadata_dynamic_json_strings() {
         let rendered = format_snapshot_json_string(
-            r#"{"turn_id":"019eaded-ba5c-7d40-8a81-a4dcebc4679e","sandbox":"seccomp","turn_started_at_unix_ms":1781035793002}"#,
+            r#"{"turn_id":"019eaded-ba5c-7d40-8a81-a4dcebc4679e","sandbox":"seatbelt","turn_started_at_unix_ms":1781035793002}"#,
             &ContextSnapshotOptions::default(),
         );
 

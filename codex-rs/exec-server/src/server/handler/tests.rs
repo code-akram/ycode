@@ -76,11 +76,8 @@ fn windows_command_processor() -> String {
 }
 
 fn test_runtime_paths() -> ExecServerRuntimePaths {
-    ExecServerRuntimePaths::new(
-        std::env::current_exe().expect("current exe"),
-        /*codex_linux_sandbox_exe*/ None,
-    )
-    .expect("runtime paths")
+    ExecServerRuntimePaths::new(std::env::current_exe().expect("current exe"))
+        .expect("runtime paths")
 }
 
 fn test_http_client_factory() -> HttpClientFactory {

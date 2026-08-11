@@ -2,18 +2,14 @@
   cmake,
   llvmPackages,
   openssl,
-  libcap ? null,
   rustPlatform,
   pkg-config,
   lib,
-  stdenv,
   version ? "0.0.0",
   ...
 }:
 rustPlatform.buildRustPackage (_: {
-  env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" (
-    [ openssl ] ++ lib.optionals stdenv.isLinux [ libcap ]
-  );
+  env.PKG_CONFIG_PATH = lib.makeSearchPathOutput "dev" "lib/pkgconfig" [ openssl ];
   pname = "codex-rs";
   inherit version;
   cargoLock.lockFile = ./Cargo.lock;
@@ -33,8 +29,6 @@ rustPlatform.buildRustPackage (_: {
     llvmPackages.libclang.lib
     openssl
     pkg-config
-  ] ++ lib.optionals stdenv.isLinux [
-    libcap
   ];
 
   cargoLock.outputHashes = {

@@ -131,9 +131,6 @@ pub enum Feature {
     WebSearchCached,
     /// Expose the extension-backed standalone web search tool.
     StandaloneWebSearch,
-    /// Use the legacy Landlock Linux sandbox fallback instead of the default
-    /// bubblewrap pipeline.
-    UseLegacyLandlock,
     /// Experimental shell snapshotting.
     ShellSnapshot,
     /// Allow turns to start while selected executors are still starting.
@@ -263,9 +260,6 @@ pub enum Feature {
     JsReplToolsOnly,
     /// Legacy search-tool feature flag kept for backward compatibility.
     SearchTool,
-    /// Removed legacy Linux bubblewrap opt-in flag retained as a no-op so old
-    /// wrappers and config can still parse it.
-    UseLinuxSandboxBwrap,
     /// Allow the model to request approval and propose exec rules.
     RequestRule,
     /// Enable Windows sandbox (restricted token) on Windows.
@@ -379,10 +373,6 @@ impl Features {
         self.enabled.contains(&f)
     }
 
-    pub fn use_legacy_landlock(&self) -> bool {
-        self.enabled(Feature::UseLegacyLandlock)
-    }
-
     pub fn enable(&mut self, f: Feature) -> &mut Self {
         self.enabled.insert(f);
         self
@@ -483,12 +473,6 @@ impl Features {
                 "terminal_resize_reflow" => {
                     continue;
                 }
-                "use_legacy_landlock" => {
-                    self.record_legacy_usage_force(
-                        "features.use_legacy_landlock",
-                        Feature::UseLegacyLandlock,
-                    );
-                }
                 _ => {}
             }
             if k == "imagegenext" && m.contains_key(Feature::ImageGeneration.key()) {
@@ -565,19 +549,6 @@ fn legacy_usage_notice(alias: &str, feature: Feature) -> (String, Option<String>
             let summary =
                 format!("`{label}` is deprecated because web search is enabled by default.");
             (summary, Some(web_search_details().to_string()))
-        }
-        Feature::UseLegacyLandlock => {
-            let label = match alias {
-                "features.use_legacy_landlock" | "use_legacy_landlock" => {
-                    "[features].use_legacy_landlock"
-                }
-                _ => alias,
-            };
-            let summary = format!("`{label}` is deprecated and will be removed soon.");
-            let details =
-                "Remove this setting to stop opting into the legacy Linux sandbox behavior."
-                    .to_string();
-            (summary, Some(details))
         }
         _ => {
             let label = if alias.contains('.') || alias.starts_with('[') {
@@ -989,18 +960,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::UseLinuxSandboxBwrap,
-        key: "use_linux_sandbox_bwrap",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::UseLegacyLandlock,
-        key: "use_legacy_landlock",
-        stage: Stage::Deprecated,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::RequestRule,
         key: "request_rule",
         stage: Stage::Removed,
@@ -1313,18 +1272,10 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::PreventIdleSleep,
         key: "prevent_idle_sleep",
-        stage: if cfg!(any(
-            target_os = "macos",
-            target_os = "linux",
-            target_os = "windows"
-        )) {
-            Stage::Experimental {
-                name: "Prevent sleep while running",
-                menu_description: "Keep your computer awake while Codex is running a thread.",
-                announcement: "NEW: Prevent sleep while running is now available in /experimental.",
-            }
-        } else {
-            Stage::UnderDevelopment
+        stage: Stage::Experimental {
+            name: "Prevent sleep while running",
+            menu_description: "Keep your computer awake while Codex is running a thread.",
+            announcement: "NEW: Prevent sleep while running is now available in /experimental.",
         },
         default_enabled: false,
     },

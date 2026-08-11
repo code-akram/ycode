@@ -74,7 +74,7 @@ cargo test
 ```
 
 GitHub releases also publish a DotSlash file named
-`argument-comment-lint` for macOS arm64, Linux arm64, Linux x64, and Windows
+`argument-comment-lint` for Apple Silicon macOS
 x64. The published package contains a small runner executable, a bundled
 `cargo-dylint`, and the prebuilt lint library.
 

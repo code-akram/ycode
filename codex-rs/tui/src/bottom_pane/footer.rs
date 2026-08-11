@@ -71,7 +71,6 @@ pub(crate) struct FooterProps {
     pub(crate) is_task_running: bool,
     pub(crate) queue_submissions: bool,
     pub(crate) collaboration_modes_enabled: bool,
-    pub(crate) is_wsl: bool,
     /// Which key the user must press again to quit.
     ///
     /// This is rendered when `mode` is `FooterMode::QuitShortcutReminder`.
@@ -736,7 +735,6 @@ fn footer_from_props_lines(
                 esc_backtrack_hint: props.esc_backtrack_hint,
                 is_task_running: props.is_task_running,
                 queue_submissions: props.queue_submissions,
-                is_wsl: props.is_wsl,
                 collaboration_modes_enabled: props.collaboration_modes_enabled,
                 key_hints,
             };
@@ -860,7 +858,6 @@ struct ShortcutsState {
     esc_backtrack_hint: bool,
     is_task_running: bool,
     queue_submissions: bool,
-    is_wsl: bool,
     collaboration_modes_enabled: bool,
     key_hints: FooterKeyHints,
 }
@@ -1045,7 +1042,6 @@ enum DisplayCondition {
     Always,
     WhenShiftEnterHint,
     WhenNotShiftEnterHint,
-    WhenUnderWSL,
     WhenCollaborationModesEnabled,
 }
 
@@ -1055,7 +1051,6 @@ impl DisplayCondition {
             DisplayCondition::Always => true,
             DisplayCondition::WhenShiftEnterHint => state.use_shift_enter_hint,
             DisplayCondition::WhenNotShiftEnterHint => !state.use_shift_enter_hint,
-            DisplayCondition::WhenUnderWSL => state.is_wsl,
             DisplayCondition::WhenCollaborationModesEnabled => state.collaboration_modes_enabled,
         }
     }
@@ -1179,18 +1174,10 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
     },
     ShortcutDescriptor {
         id: ShortcutId::PasteImage,
-        // Show Ctrl+Alt+V when running under WSL (terminals often intercept plain
-        // Ctrl+V); otherwise fall back to Ctrl+V.
-        bindings: &[
-            ShortcutBinding {
-                key: key_hint::ctrl_alt(KeyCode::Char('v')),
-                condition: DisplayCondition::WhenUnderWSL,
-            },
-            ShortcutBinding {
-                key: key_hint::ctrl(KeyCode::Char('v')),
-                condition: DisplayCondition::Always,
-            },
-        ],
+        bindings: &[ShortcutBinding {
+            key: key_hint::ctrl(KeyCode::Char('v')),
+            condition: DisplayCondition::Always,
+        }],
         prefix: "",
         label: " to paste images",
     },
@@ -1556,7 +1543,6 @@ mod tests {
                 is_task_running: false,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1574,7 +1560,6 @@ mod tests {
                 is_task_running: false,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1595,7 +1580,6 @@ mod tests {
                 is_task_running: false,
                 queue_submissions: false,
                 collaboration_modes_enabled: true,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1613,7 +1597,6 @@ mod tests {
                 is_task_running: true,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1631,7 +1614,6 @@ mod tests {
                 is_task_running: false,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1649,7 +1631,6 @@ mod tests {
                 is_task_running: true,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1667,7 +1648,6 @@ mod tests {
                 is_task_running: false,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1685,7 +1665,6 @@ mod tests {
                 is_task_running: false,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1703,7 +1682,6 @@ mod tests {
                 is_task_running: true,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1723,7 +1701,6 @@ mod tests {
                 is_task_running: false,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1743,7 +1720,6 @@ mod tests {
                 is_task_running: true,
                 queue_submissions: false,
                 collaboration_modes_enabled: false,
-                is_wsl: false,
                 quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
                 status_line_value: None,
                 status_line_enabled: false,
@@ -1759,7 +1735,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: None,
             status_line_enabled: false,
@@ -1788,7 +1763,6 @@ mod tests {
             is_task_running: true,
             queue_submissions: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: None,
             status_line_enabled: false,
@@ -1810,7 +1784,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: Some(Line::from("Status line content".to_string())),
             status_line_enabled: true,
@@ -1827,7 +1800,6 @@ mod tests {
             is_task_running: true,
             queue_submissions: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: Some(Line::from("Status line content".to_string())),
             status_line_enabled: true,
@@ -1844,7 +1816,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: Some(Line::from("Status line content".to_string())),
             status_line_enabled: true,
@@ -1861,7 +1832,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: None, // command timed out / empty
             status_line_enabled: true,
@@ -1892,7 +1862,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: None,
             status_line_enabled: false,
@@ -1915,7 +1884,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: None,
             status_line_enabled: true,
@@ -1939,7 +1907,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: Some(Line::from(
                 "Status line content that should truncate before the mode indicator".to_string(),
@@ -1964,7 +1931,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: None,
             status_line_enabled: false,
@@ -1981,7 +1947,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: false,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: Some(Line::from("Status line content".to_string())),
             status_line_enabled: true,
@@ -2001,7 +1966,6 @@ mod tests {
             is_task_running: false,
             queue_submissions: false,
             collaboration_modes_enabled: true,
-            is_wsl: false,
             quit_shortcut_key: key_hint::ctrl(KeyCode::Char('c')),
             status_line_value: Some(Line::from(
                 "Status line content that is definitely too long to fit alongside the mode label"
@@ -2034,28 +1998,13 @@ mod tests {
     }
 
     #[test]
-    fn paste_image_shortcut_prefers_ctrl_alt_v_under_wsl() {
+    fn paste_image_shortcut_uses_ctrl_v() {
         let descriptor = SHORTCUTS
             .iter()
             .find(|descriptor| descriptor.id == ShortcutId::PasteImage)
             .expect("paste image shortcut");
 
-        let is_wsl = {
-            #[cfg(target_os = "linux")]
-            {
-                crate::clipboard_paste::is_probably_wsl()
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                false
-            }
-        };
-
-        let expected_key = if is_wsl {
-            key_hint::ctrl_alt(KeyCode::Char('v'))
-        } else {
-            key_hint::ctrl(KeyCode::Char('v'))
-        };
+        let expected_key = key_hint::ctrl(KeyCode::Char('v'));
 
         let actual_key = descriptor
             .binding_for(ShortcutsState {
@@ -2063,7 +2012,6 @@ mod tests {
                 esc_backtrack_hint: false,
                 is_task_running: false,
                 queue_submissions: false,
-                is_wsl,
                 collaboration_modes_enabled: false,
                 key_hints: FooterKeyHints::default_bindings(),
             })

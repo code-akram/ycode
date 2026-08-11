@@ -26,13 +26,6 @@ async fn spawn_command_under_sandbox(
     use codex_protocol::config_types::WindowsSandboxLevel;
     use std::process::Stdio;
 
-    #[cfg(target_os = "linux")]
-    let codex_linux_sandbox_exe = Some(
-        core_test_support::find_codex_linux_sandbox_exe()
-            .map_err(|err| io::Error::new(io::ErrorKind::NotFound, err))?,
-    );
-    #[cfg(target_os = "macos")]
-    let codex_linux_sandbox_exe = None;
     let exec_request = build_exec_request(
         ExecParams {
             command,
@@ -51,8 +44,6 @@ async fn spawn_command_under_sandbox(
         permission_profile,
         sandbox_cwd,
         std::slice::from_ref(sandbox_cwd),
-        &codex_linux_sandbox_exe,
-        /*use_legacy_landlock*/ false,
     )
     .map_err(|err| io::Error::other(err.to_string()))?;
 
@@ -91,84 +82,11 @@ async fn spawn_command_under_sandbox(
     child.kill_on_drop(true).spawn()
 }
 
-#[cfg(target_os = "linux")]
-/// Determines whether Linux sandbox tests can run on this host.
-///
-/// These tests require an enforceable filesystem sandbox. We run a tiny command
-/// under the production Landlock path and skip when enforcement is unavailable
-/// (for example on kernels or container profiles where Landlock is not
-/// enforced).
-async fn linux_sandbox_test_env() -> Option<HashMap<String, String>> {
-    let command_cwd = AbsolutePathBuf::current_dir().ok()?;
-    let sandbox_cwd = command_cwd.clone();
-    let permission_profile = PermissionProfile::read_only();
-
-    if can_apply_linux_sandbox_policy(
-        &permission_profile,
-        &command_cwd,
-        &sandbox_cwd,
-        HashMap::new(),
-    )
-    .await
-    {
-        return Some(HashMap::new());
-    }
-
-    eprintln!("Skipping test: Landlock is not enforceable on this host.");
-    None
-}
-
-#[cfg(target_os = "linux")]
-/// Returns whether a minimal command can run successfully with the requested
-/// Linux sandbox policy applied.
-///
-/// This is used as a capability probe so sandbox behavior tests only run when
-/// Landlock enforcement is actually active.
-async fn can_apply_linux_sandbox_policy(
-    permission_profile: &PermissionProfile,
-    command_cwd: &AbsolutePathBuf,
-    sandbox_cwd: &AbsolutePathBuf,
-    env: HashMap<String, String>,
-) -> bool {
-    let spawn_result = spawn_command_under_sandbox(
-        vec!["/usr/bin/true".to_string()],
-        command_cwd.clone(),
-        permission_profile,
-        sandbox_cwd,
-        StdioPolicy::RedirectForShellTool,
-        env,
-    )
-    .await;
-    let Ok(mut child) = spawn_result else {
-        return false;
-    };
-    child
-        .wait()
-        .await
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
 #[tokio::test]
 async fn python_multiprocessing_lock_works_under_sandbox() {
     core_test_support::skip_if_sandbox!();
-    #[cfg(target_os = "linux")]
-    let sandbox_env = match linux_sandbox_test_env().await {
-        Some(env) => env,
-        // Skip on Linux hosts where Landlock cannot actually be enforced.
-        None => return,
-    };
-    #[cfg(not(target_os = "linux"))]
     let sandbox_env = HashMap::new();
-    #[cfg(target_os = "macos")]
     let writable_roots = Vec::<AbsolutePathBuf>::new();
-
-    // From https://man7.org/linux/man-pages/man7/sem_overview.7.html
-    //
-    // > On Linux, named semaphores are created in a virtual filesystem,
-    // > normally mounted under /dev/shm.
-    #[cfg(target_os = "linux")]
-    let writable_roots: Vec<AbsolutePathBuf> = vec!["/dev/shm".try_into().unwrap()];
 
     let permission_profile = PermissionProfile::workspace_write_with(
         &writable_roots,
@@ -215,12 +133,6 @@ if __name__ == '__main__':
 #[tokio::test]
 async fn python_getpwuid_works_under_sandbox() {
     core_test_support::skip_if_sandbox!();
-    #[cfg(target_os = "linux")]
-    let sandbox_env = match linux_sandbox_test_env().await {
-        Some(env) => env,
-        None => return,
-    };
-    #[cfg(not(target_os = "linux"))]
     let sandbox_env = HashMap::new();
 
     if std::process::Command::new("python3")
@@ -261,12 +173,6 @@ async fn python_getpwuid_works_under_sandbox() {
 #[tokio::test]
 async fn sandbox_distinguishes_command_and_policy_cwds() {
     core_test_support::skip_if_sandbox!();
-    #[cfg(target_os = "linux")]
-    let sandbox_env = match linux_sandbox_test_env().await {
-        Some(env) => env,
-        None => return,
-    };
-    #[cfg(not(target_os = "linux"))]
     let sandbox_env = HashMap::new();
     let temp = tempfile::tempdir().expect("should be able to create temp dir");
     let sandbox_root = temp.path().join("sandbox");
@@ -352,12 +258,6 @@ async fn sandbox_distinguishes_command_and_policy_cwds() {
 #[tokio::test]
 async fn sandbox_blocks_first_time_dot_codex_creation() {
     core_test_support::skip_if_sandbox!();
-    #[cfg(target_os = "linux")]
-    let sandbox_env = match linux_sandbox_test_env().await {
-        Some(env) => env,
-        None => return,
-    };
-    #[cfg(not(target_os = "linux"))]
     let sandbox_env = HashMap::new();
 
     let temp = tempfile::tempdir().expect("should be able to create temp dir");

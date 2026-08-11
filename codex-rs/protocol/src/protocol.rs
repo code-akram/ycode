@@ -1193,10 +1193,6 @@ impl SandboxPolicy {
                 // is per-user, so writes to TMPDIR should not be readable by
                 // other users on the system.
                 //
-                // By comparison, TMPDIR is not guaranteed to be defined on
-                // Linux or Windows, but supporting it here gives users a way to
-                // provide the model with their own temporary directory without
-                // having to hardcode it in the config.
                 if !exclude_tmpdir_env_var
                     && let Some(tmpdir) = std::env::var_os("TMPDIR")
                     && !tmpdir.is_empty()

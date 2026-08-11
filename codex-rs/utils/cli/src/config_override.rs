@@ -85,11 +85,7 @@ impl CliConfigOverrides {
 }
 
 fn canonicalize_override_key(key: &str) -> String {
-    if key == "use_legacy_landlock" {
-        "features.use_legacy_landlock".to_string()
-    } else {
-        key.to_string()
-    }
+    key.to_string()
 }
 
 fn parse_toml_value(raw: &str) -> Result<Value, toml::de::Error> {
@@ -130,16 +126,6 @@ mod tests {
         let v = parse_toml_value("[1, 2, 3]").expect("parse");
         let arr = v.as_array().expect("array");
         assert_eq!(arr.len(), 3);
-    }
-
-    #[test]
-    fn canonicalizes_use_legacy_landlock_alias() {
-        let overrides = CliConfigOverrides {
-            raw_overrides: vec!["use_legacy_landlock=true".to_string()],
-        };
-        let parsed = overrides.parse_overrides().expect("parse_overrides");
-        assert_eq!(parsed[0].0.as_str(), "features.use_legacy_landlock");
-        assert_eq!(parsed[0].1.as_bool(), Some(true));
     }
 
     #[test]

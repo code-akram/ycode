@@ -7,8 +7,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 #[cfg(unix)]
 use std::process::Command;
-#[cfg(target_os = "linux")]
-use std::process::Command as StdCommand;
 
 use tempfile::tempdir;
 
@@ -404,83 +402,10 @@ async fn snapshot_shell_does_not_inherit_stdin() -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
-#[tokio::test]
-async fn timed_out_snapshot_shell_is_terminated() -> Result<()> {
-    use std::process::Stdio;
-    use tokio::time::Duration as TokioDuration;
-    use tokio::time::Instant;
-    use tokio::time::sleep;
-
-    let dir = tempdir()?;
-    let pid_path = dir.path().join("pid");
-    let script = format!("echo $$ > \"{}\"; sleep 30", pid_path.display());
-
-    let shell = Shell {
-        shell_type: ShellType::Sh,
-        shell_path: PathBuf::from("/bin/sh"),
-    };
-
-    let err = run_script_with_timeout(
-        &shell,
-        &script,
-        Duration::from_secs(1),
-        /*use_login_shell*/ true,
-        &dir.path().abs(),
-    )
-    .await
-    .expect_err("snapshot shell should time out");
-    assert!(
-        err.to_string().contains("timed out"),
-        "expected timeout error, got {err:?}"
-    );
-
-    let pid = fs::read_to_string(&pid_path)
-        .await
-        .expect("snapshot shell writes its pid before timing out")
-        .trim()
-        .parse::<i32>()?;
-
-    let deadline = Instant::now() + TokioDuration::from_secs(1);
-    loop {
-        let kill_status = StdCommand::new("kill")
-            .arg("-0")
-            .arg(pid.to_string())
-            .stderr(Stdio::null())
-            .stdout(Stdio::null())
-            .status()?;
-        if !kill_status.success() {
-            break;
-        }
-        if Instant::now() >= deadline {
-            panic!("timed out snapshot shell is still alive after grace period");
-        }
-        sleep(TokioDuration::from_millis(50)).await;
-    }
-
-    Ok(())
-}
-
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn macos_zsh_snapshot_includes_sections() -> Result<()> {
     let snapshot = get_snapshot(ShellType::Zsh).await?;
-    assert_posix_snapshot_sections(&snapshot);
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-#[tokio::test]
-async fn linux_bash_snapshot_includes_sections() -> Result<()> {
-    let snapshot = get_snapshot(ShellType::Bash).await?;
-    assert_posix_snapshot_sections(&snapshot);
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-#[tokio::test]
-async fn linux_sh_snapshot_includes_sections() -> Result<()> {
-    let snapshot = get_snapshot(ShellType::Sh).await?;
     assert_posix_snapshot_sections(&snapshot);
     Ok(())
 }

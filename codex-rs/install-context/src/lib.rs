@@ -48,7 +48,7 @@ pub enum InstallMethod {
     Standalone {
         /// The managed standalone release directory. Legacy installs use paths
         /// such as
-        /// `~/.codex/packages/standalone/releases/0.111.0-x86_64-unknown-linux-musl`.
+        /// `~/.codex/packages/standalone/releases/0.111.0-aarch64-apple-darwin`.
         /// Package-layout installs use the package root that contains `bin/`,
         /// `codex-resources/`, and `codex-path/`.
         release_dir: AbsolutePathBuf,
@@ -413,7 +413,7 @@ mod tests {
         let codex_home = tempfile::tempdir()?;
         let release_dir = codex_home
             .path()
-            .join("packages/standalone/releases/1.2.3-x86_64-unknown-linux-musl");
+            .join("packages/standalone/releases/1.2.3-aarch64-apple-darwin");
         let resources_dir = release_dir.join(RESOURCES_DIRNAME);
         fs::create_dir_all(&resources_dir)?;
         let exe_path = release_dir.join(if cfg!(windows) { "codex.exe" } else { "codex" });
@@ -471,7 +471,7 @@ mod tests {
         let codex_home = tempfile::tempdir()?;
         let release_dir = codex_home
             .path()
-            .join("packages/standalone/releases/1.2.3-x86_64-unknown-linux-musl");
+            .join("packages/standalone/releases/1.2.3-aarch64-apple-darwin");
         fs::create_dir_all(&release_dir)?;
         let exe_path = release_dir.join(if cfg!(windows) { "codex.exe" } else { "codex" });
         fs::write(&exe_path, "")?;
@@ -605,7 +605,7 @@ mod tests {
         let codex_home = tempfile::tempdir()?;
         let package_dir = codex_home
             .path()
-            .join("packages/standalone/releases/1.2.3-x86_64-unknown-linux-musl");
+            .join("packages/standalone/releases/1.2.3-aarch64-apple-darwin");
         let bin_dir = package_dir.join(BIN_DIRNAME);
         let resources_dir = package_dir.join(RESOURCES_DIRNAME);
         let path_dir = package_dir.join(PATH_DIRNAME);

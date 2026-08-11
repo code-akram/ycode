@@ -31,16 +31,6 @@ use crate::rpc::internal_error;
 use crate::rpc::invalid_request;
 
 const FS_HELPER_ENV_ALLOWLIST: &[&str] = &["PATH", "TMPDIR", "TMP", "TEMP"];
-#[cfg(debug_assertions)]
-const FS_HELPER_BAZEL_BWRAP_ENV_ALLOWLIST: &[&str] = &[
-    "CARGO_BIN_EXE_bwrap",
-    "RUNFILES_DIR",
-    "RUNFILES_MANIFEST_FILE",
-    "RUNFILES_MANIFEST_ONLY",
-    "TEST_SRCDIR",
-    "TEST_WORKSPACE",
-];
-
 #[derive(Debug, PartialEq, Eq)]
 struct SandboxCwd {
     uri: PathUri,
@@ -80,11 +70,7 @@ impl FileSystemSandboxRunner {
         let native_permissions =
             native_permissions.materialize_project_roots_with_workspace_roots(workspace_roots);
         let mut file_system_policy = native_permissions.file_system_sandbox_policy();
-        let helper_read_roots = if sandbox.use_legacy_landlock {
-            Vec::new()
-        } else {
-            helper_read_roots(&self.runtime_paths)
-        };
+        let helper_read_roots = helper_read_roots(&self.runtime_paths);
         add_helper_runtime_permissions(
             &mut file_system_policy,
             &helper_read_roots,
@@ -137,8 +123,6 @@ impl FileSystemSandboxRunner {
                     environment_id: None,
                     network: None,
                     sandbox_policy_cwd: &cwd.uri,
-                    codex_linux_sandbox_exe: self.runtime_paths.codex_linux_sandbox_exe.as_deref(),
-                    use_legacy_landlock: sandbox_context.use_legacy_landlock,
                     windows_sandbox_level: sandbox_context.windows_sandbox_level,
                     windows_sandbox_private_desktop: sandbox_context
                         .windows_sandbox_private_desktop,
@@ -183,9 +167,7 @@ fn native_workspace_root(root: &PathUri) -> Result<AbsolutePathBuf, JSONRPCError
 
 fn helper_read_roots(runtime_paths: &ExecServerRuntimePaths) -> Vec<AbsolutePathBuf> {
     let mut roots = Vec::new();
-    for path in std::iter::once(runtime_paths.codex_self_exe.as_path())
-        .chain(runtime_paths.codex_linux_sandbox_exe.as_deref())
-    {
+    for path in std::iter::once(runtime_paths.codex_self_exe.as_path()) {
         if let Some(parent) = path.parent()
             && let Ok(root) = AbsolutePathBuf::from_absolute_path(parent)
             && !roots.contains(&root)
@@ -279,18 +261,7 @@ fn helper_env_key_is_allowed(key: &str) -> bool {
     FS_HELPER_ENV_ALLOWLIST.contains(&key)
         // CoreFoundation consults this before falling back to user lookup during helper startup.
         || (cfg!(target_os = "macos") && key == "__CF_USER_TEXT_ENCODING")
-        || bazel_bwrap_env_key_is_allowed(key)
         || (cfg!(windows) && key.eq_ignore_ascii_case("PATH"))
-}
-
-#[cfg(debug_assertions)]
-fn bazel_bwrap_env_key_is_allowed(key: &str) -> bool {
-    option_env!("BAZEL_PACKAGE").is_some() && FS_HELPER_BAZEL_BWRAP_ENV_ALLOWLIST.contains(&key)
-}
-
-#[cfg(not(debug_assertions))]
-fn bazel_bwrap_env_key_is_allowed(_key: &str) -> bool {
-    false
 }
 
 async fn run_command(
@@ -418,9 +389,7 @@ mod tests {
     #[test]
     fn helper_permissions_preserve_existing_writes() {
         let codex_self_exe = std::env::current_exe().expect("current exe");
-        let runtime_paths =
-            ExecServerRuntimePaths::new(codex_self_exe, /*codex_linux_sandbox_exe*/ None)
-                .expect("runtime paths");
+        let runtime_paths = ExecServerRuntimePaths::new(codex_self_exe).expect("runtime paths");
         let cwd = AbsolutePathBuf::from_absolute_path(std::env::temp_dir().as_path())
             .expect("absolute cwd");
         let writable = cwd.join("writable");
@@ -462,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn helper_env_preserves_path_for_system_bwrap_discovery_without_leaking_secrets() {
+    fn helper_env_preserves_runtime_paths_without_leaking_secrets() {
         let env = helper_env_from_vars(
             [
                 ("PATH", "/usr/bin:/bin"),
@@ -507,24 +476,6 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn helper_env_preserves_windows_path_key_for_system_bwrap_discovery() {
-        let env = helper_env_from_vars(
-            [
-                ("Path", r"C:\Windows\System32"),
-                ("PATH_INJECTION", "bad"),
-                ("OPENAI_API_KEY", "secret"),
-            ]
-            .map(|(key, value)| (OsString::from(key), OsString::from(value))),
-        );
-
-        assert_eq!(
-            env,
-            HashMap::from([("Path".to_string(), r"C:\Windows\System32".to_string())])
-        );
-    }
-
     #[test]
     fn sandbox_exec_request_carries_helper_env() {
         let Some((path_key, path)) = std::env::vars_os().find(|(key, _)| {
@@ -536,9 +487,7 @@ mod tests {
         let path_key = path_key.to_string_lossy().into_owned();
         let path = path.to_string_lossy().into_owned();
         let codex_self_exe = std::env::current_exe().expect("current exe");
-        let runtime_paths =
-            ExecServerRuntimePaths::new(codex_self_exe.clone(), Some(codex_self_exe))
-                .expect("runtime paths");
+        let runtime_paths = ExecServerRuntimePaths::new(codex_self_exe).expect("runtime paths");
         let runner = FileSystemSandboxRunner::new(runtime_paths);
         let native_cwd = AbsolutePathBuf::current_dir().expect("cwd");
         let cwd = PathUri::from_abs_path(&native_cwd);
@@ -631,9 +580,7 @@ mod tests {
     #[test]
     fn helper_permissions_include_helper_read_root_without_additional_permissions() {
         let codex_self_exe = std::env::current_exe().expect("current exe");
-        let runtime_paths =
-            ExecServerRuntimePaths::new(codex_self_exe, /*codex_linux_sandbox_exe*/ None)
-                .expect("runtime paths");
+        let runtime_paths = ExecServerRuntimePaths::new(codex_self_exe).expect("runtime paths");
         let cwd = AbsolutePathBuf::from_absolute_path(std::env::temp_dir().as_path())
             .expect("absolute cwd");
         let mut policy = restricted_policy(Vec::new());
@@ -652,32 +599,6 @@ mod tests {
         );
 
         assert!(policy.can_read_path_with_cwd(readable.as_path(), cwd.as_path()));
-    }
-
-    #[test]
-    fn helper_permissions_include_linux_sandbox_alias_parent() {
-        let root = tempfile::tempdir().expect("temp dir");
-        let codex_self_exe = root.path().join("bin").join("codex");
-        let codex_linux_sandbox_exe = root.path().join("aliases").join("codex-linux-sandbox");
-        let runtime_paths =
-            ExecServerRuntimePaths::new(codex_self_exe, Some(codex_linux_sandbox_exe))
-                .expect("runtime paths");
-        let cwd = AbsolutePathBuf::from_absolute_path(std::env::temp_dir().as_path())
-            .expect("absolute cwd");
-        let mut policy = restricted_policy(Vec::new());
-        let codex_parent = AbsolutePathBuf::from_absolute_path(root.path().join("bin"))
-            .expect("absolute codex parent");
-        let alias_parent = AbsolutePathBuf::from_absolute_path(root.path().join("aliases"))
-            .expect("absolute alias parent");
-
-        add_helper_runtime_permissions(
-            &mut policy,
-            &helper_read_roots(&runtime_paths),
-            cwd.as_path(),
-        );
-
-        assert!(policy.can_read_path_with_cwd(codex_parent.as_path(), cwd.as_path()));
-        assert!(policy.can_read_path_with_cwd(alias_parent.as_path(), cwd.as_path()));
     }
 
     fn restricted_policy(entries: Vec<FileSystemSandboxEntry>) -> FileSystemSandboxPolicy {

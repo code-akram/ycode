@@ -32,8 +32,6 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
-#[cfg(target_os = "linux")]
-use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use core_test_support::PathBufExt;
@@ -255,41 +253,6 @@ fn apply_patch_responses(
             ev_completed("resp-2"),
         ]),
     ]
-}
-
-#[cfg(target_os = "linux")]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn apply_patch_cli_uses_codex_self_exe_with_linux_sandbox_helper_alias() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = apply_patch_harness().await?;
-    let codex_linux_sandbox_exe = harness
-        .test()
-        .config
-        .codex_linux_sandbox_exe
-        .as_ref()
-        .expect("linux test config should include codex-linux-sandbox helper");
-    assert_eq!(
-        codex_linux_sandbox_exe
-            .file_name()
-            .and_then(|name| name.to_str()),
-        Some(CODEX_LINUX_SANDBOX_ARG0),
-    );
-
-    let patch = "*** Begin Patch\n*** Add File: helper-alias.txt\n+hello\n*** End Patch";
-    let call_id = "apply-helper-alias";
-    mount_apply_patch(&harness, call_id, patch, "done").await;
-
-    harness.submit("please apply helper alias patch").await?;
-
-    let out = harness.apply_patch_output(call_id).await;
-    assert_regex_match(
-        r"(?s)^Exit code: 0.*Success\. Updated the following files:\nA helper-alias\.txt\n?$",
-        &out,
-    );
-    assert_eq!(harness.read_file_text("helper-alias.txt").await?, "hello\n");
-
-    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

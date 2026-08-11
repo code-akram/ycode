@@ -79,26 +79,12 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
         cmd.env(CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR, "1");
     }
 
-    // If this Codex process dies (including being killed via SIGKILL), we want
-    // any child processes that were spawned as part of a `"shell"` tool call
-    // to also be terminated.
-
     #[cfg(unix)]
     unsafe {
         let detach_from_tty = matches!(stdio_policy, StdioPolicy::RedirectForShellTool);
-        #[cfg(target_os = "linux")]
-        let parent_pid = libc::getpid();
         cmd.pre_exec(move || {
             if detach_from_tty {
                 codex_utils_pty::process_group::detach_from_tty()?;
-            }
-
-            // This relies on prctl(2), so it only works on Linux.
-            #[cfg(target_os = "linux")]
-            {
-                // This prctl call effectively requests, "deliver SIGTERM when my
-                // current parent dies."
-                codex_utils_pty::process_group::set_parent_death_signal(parent_pid)?;
             }
             Ok(())
         });

@@ -467,68 +467,6 @@ fn compile_permission_profile_workspace_roots_resolves_enabled_entries() -> std:
 }
 
 #[test]
-fn read_write_glob_warnings_skip_supported_deny_read_globs_and_trailing_subpaths() {
-    let filesystem = FilesystemPermissionsToml {
-        glob_scan_max_depth: None,
-        entries: BTreeMap::from([
-            (
-                "/tmp/**/*.log".to_string(),
-                FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
-            ),
-            (
-                "/tmp/cache/**".to_string(),
-                FilesystemPermissionToml::Access(FileSystemAccessMode::Write),
-            ),
-            (
-                ":workspace_roots".to_string(),
-                FilesystemPermissionToml::Scoped(BTreeMap::from([
-                    ("**/*.env".to_string(), FileSystemAccessMode::Deny),
-                    ("docs/**".to_string(), FileSystemAccessMode::Read),
-                    ("src/**/*.rs".to_string(), FileSystemAccessMode::Write),
-                ])),
-            ),
-        ]),
-    };
-
-    assert_eq!(
-        unsupported_read_write_glob_paths(&filesystem),
-        vec![
-            "/tmp/**/*.log".to_string(),
-            ":workspace_roots/src/**/*.rs".to_string()
-        ],
-        "`deny` glob patterns are supported as deny-read rules; only `read`/`write` globs should warn"
-    );
-}
-
-#[test]
-fn unreadable_globstar_warning_is_suppressed_when_scan_depth_is_configured() {
-    let filesystem = FilesystemPermissionsToml {
-        glob_scan_max_depth: None,
-        entries: BTreeMap::from([(
-            ":workspace_roots".to_string(),
-            FilesystemPermissionToml::Scoped(BTreeMap::from([
-                ("**/*.env".to_string(), FileSystemAccessMode::Deny),
-                ("*.pem".to_string(), FileSystemAccessMode::Deny),
-            ])),
-        )]),
-    };
-
-    assert_eq!(
-        unbounded_unreadable_globstar_paths(&filesystem),
-        vec![":workspace_roots/**/*.env".to_string()]
-    );
-
-    let configured_filesystem = FilesystemPermissionsToml {
-        glob_scan_max_depth: Some(2),
-        ..filesystem
-    };
-    assert_eq!(
-        unbounded_unreadable_globstar_paths(&configured_filesystem),
-        Vec::<String>::new()
-    );
-}
-
-#[test]
 fn glob_scan_max_depth_must_be_positive() {
     let err = validate_glob_scan_max_depth(Some(0))
         .expect_err("zero depth would silently skip deny-read glob expansion");

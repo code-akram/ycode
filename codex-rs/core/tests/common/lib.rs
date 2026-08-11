@@ -226,36 +226,8 @@ allow_local_binding = true
     )
 }
 
-#[cfg(target_os = "linux")]
-fn default_test_overrides() -> ConfigOverrides {
-    ConfigOverrides {
-        codex_linux_sandbox_exe: Some(
-            find_codex_linux_sandbox_exe().expect("should find binary for codex-linux-sandbox"),
-        ),
-        ..ConfigOverrides::default()
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
 fn default_test_overrides() -> ConfigOverrides {
     ConfigOverrides::default()
-}
-
-#[cfg(target_os = "linux")]
-pub fn find_codex_linux_sandbox_exe() -> Result<PathBuf, CargoBinError> {
-    if let Some(path) = TEST_ARG0_PATH_ENTRY
-        .get()
-        .and_then(Option::as_ref)
-        .and_then(|path_entry| path_entry.paths().codex_linux_sandbox_exe.clone())
-    {
-        return Ok(path);
-    }
-
-    if let Ok(path) = std::env::current_exe() {
-        return Ok(path);
-    }
-
-    codex_utils_cargo_bin::cargo_bin("codex-linux-sandbox")
 }
 
 pub async fn wait_for_event<F>(
@@ -633,42 +605,6 @@ macro_rules! skip_if_target_windows {
             "a Windows target environment",
             $reason,
         );
-    }};
-}
-
-#[macro_export]
-macro_rules! codex_linux_sandbox_exe_or_skip {
-    () => {{
-        #[cfg(target_os = "linux")]
-        {
-            match $crate::find_codex_linux_sandbox_exe() {
-                Ok(path) => Some(path),
-                Err(err) => {
-                    eprintln!("codex-linux-sandbox binary not available, skipping test: {err}");
-                    return;
-                }
-            }
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            None
-        }
-    }};
-    ($return_value:expr $(,)?) => {{
-        #[cfg(target_os = "linux")]
-        {
-            match $crate::find_codex_linux_sandbox_exe() {
-                Ok(path) => Some(path),
-                Err(err) => {
-                    eprintln!("codex-linux-sandbox binary not available, skipping test: {err}");
-                    return $return_value;
-                }
-            }
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            None
-        }
     }};
 }
 

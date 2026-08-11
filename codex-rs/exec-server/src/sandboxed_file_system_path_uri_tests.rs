@@ -9,11 +9,8 @@ use super::*;
 
 #[tokio::test]
 async fn sandboxed_file_system_rejects_non_native_uri_as_invalid_input() {
-    let runtime_paths = ExecServerRuntimePaths::new(
-        std::env::current_exe().expect("current exe"),
-        /*codex_linux_sandbox_exe*/ None,
-    )
-    .expect("runtime paths");
+    let runtime_paths = ExecServerRuntimePaths::new(std::env::current_exe().expect("current exe"))
+        .expect("runtime paths");
     let file_system = SandboxedFileSystem::new(runtime_paths);
     let sandbox = FileSystemSandboxContext::from_permission_profile(
         PermissionProfile::from_runtime_permissions(

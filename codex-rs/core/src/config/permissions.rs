@@ -359,24 +359,6 @@ pub(crate) fn compile_permission_profile(
                 missing_filesystem_entries_warning(profile_name),
             );
         } else {
-            if cfg!(not(target_os = "macos")) {
-                for pattern in unsupported_read_write_glob_paths(filesystem) {
-                    push_warning(
-                        startup_warnings,
-                        format!(
-                            "Filesystem glob `{pattern}` uses `read` or `write` access, which is not fully supported by this platform's sandboxing. Use an exact path or trailing `/**` subtree rule instead. `deny` globs are supported."
-                        ),
-                    );
-                }
-                for pattern in unbounded_unreadable_globstar_paths(filesystem) {
-                    push_warning(
-                        startup_warnings,
-                        format!(
-                            "Filesystem deny-read glob `{pattern}` uses `**`. Non-macOS sandboxing does not support unbounded `**` natively; set `glob_scan_max_depth` in this filesystem profile to cap Linux glob expansion and silence this warning, or enumerate explicit depths such as `*.env`, `*/*.env`, and `*/*/*.env`."
-                        ),
-                    );
-                }
-            }
             for (path, permission) in &filesystem.entries {
                 file_system_sandbox_policy
                     .entries
@@ -689,57 +671,6 @@ fn compile_read_write_glob_path(path: &str, access: FileSystemAccessMode) -> io:
             "filesystem glob path `{path}` only supports `deny` access; use an exact path or trailing `/**` for `{access}` subtree access"
         ),
     ))
-}
-
-fn unsupported_read_write_glob_paths(filesystem: &FilesystemPermissionsToml) -> Vec<String> {
-    let mut patterns = Vec::new();
-    for (path, permission) in &filesystem.entries {
-        match permission {
-            FilesystemPermissionToml::Access(access) => {
-                if *access != FileSystemAccessMode::Deny
-                    && contains_glob_chars(remove_trailing_glob_suffix(path))
-                {
-                    patterns.push(path.clone());
-                }
-            }
-            FilesystemPermissionToml::Scoped(scoped_entries) => {
-                for (subpath, access) in scoped_entries {
-                    if *access != FileSystemAccessMode::Deny
-                        && contains_glob_chars(remove_trailing_glob_suffix(subpath))
-                    {
-                        patterns.push(format!("{path}/{subpath}"));
-                    }
-                }
-            }
-        }
-    }
-    patterns
-}
-
-fn unbounded_unreadable_globstar_paths(filesystem: &FilesystemPermissionsToml) -> Vec<String> {
-    if filesystem.glob_scan_max_depth.is_some() {
-        return Vec::new();
-    }
-
-    let mut patterns = Vec::new();
-    for (path, permission) in &filesystem.entries {
-        match permission {
-            FilesystemPermissionToml::Access(FileSystemAccessMode::Deny) => {
-                if path.contains("**") {
-                    patterns.push(path.clone());
-                }
-            }
-            FilesystemPermissionToml::Access(_) => {}
-            FilesystemPermissionToml::Scoped(scoped_entries) => {
-                for (subpath, access) in scoped_entries {
-                    if *access == FileSystemAccessMode::Deny && subpath.contains("**") {
-                        patterns.push(format!("{path}/{subpath}"));
-                    }
-                }
-            }
-        }
-    }
-    patterns
 }
 
 fn validate_glob_scan_max_depth(max_depth: Option<usize>) -> io::Result<Option<usize>> {

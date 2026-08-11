@@ -1,22 +1,7 @@
-//! Cross-platform helper for preventing idle sleep while a turn is running.
-//!
-//! Platform-specific behavior:
-//! - macOS: Uses native IOKit power assertions instead of spawning `caffeinate`.
-//! - Linux: Spawns `systemd-inhibit` or `gnome-session-inhibit` while active.
-//! - Other platforms: No-op backend.
+//! macOS IOKit helper for preventing idle sleep while a turn is running.
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-mod dummy;
-#[cfg(target_os = "linux")]
-mod linux_inhibitor;
-#[cfg(target_os = "macos")]
 mod macos;
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-use dummy as imp;
-#[cfg(target_os = "linux")]
-use linux_inhibitor as imp;
-#[cfg(target_os = "macos")]
 use macos as imp;
 
 /// Keeps the machine awake while a turn is in progress when enabled.

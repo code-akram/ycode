@@ -1034,7 +1034,7 @@ fn normalize_tmp_prefix_before_marker(text: &mut String, marker: &str) {
 }
 
 #[test]
-fn normalize_string_rewrites_linux_temp_skill_paths() {
+fn normalize_string_rewrites_posix_temp_skill_paths() {
     let text = normalize_string(
         "file: /tmp/.tmp5YYdK3/skills/.system/imagegen/SKILL.md and \
          /private/tmp/.tmpw3wqF9/skills/custom/SKILL.md",

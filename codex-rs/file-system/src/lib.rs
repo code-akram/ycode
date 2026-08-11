@@ -294,8 +294,6 @@ pub struct FileSystemSandboxContext {
     pub windows_sandbox_private_desktop: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub windows_sandbox_proxy_settings_mode: Option<WindowsSandboxProxySettingsMode>,
-    #[serde(default)]
-    pub use_legacy_landlock: bool,
 }
 
 impl FileSystemSandboxContext {
@@ -336,7 +334,6 @@ impl FileSystemSandboxContext {
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
             windows_sandbox_private_desktop: false,
             windows_sandbox_proxy_settings_mode: None,
-            use_legacy_landlock: false,
         }
     }
 

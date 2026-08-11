@@ -24,78 +24,6 @@ fn make_exec_output(
 }
 
 #[test]
-fn classifies_legacy_denial_keywords() {
-    for keyword in [
-        "operation not permitted",
-        "permission denied",
-        "read-only file system",
-        "seccomp",
-        "sandbox",
-        "landlock",
-        "failed to write file",
-    ] {
-        let output = make_exec_output(/*exit_code*/ 1, "", keyword, "");
-
-        assert!(
-            classify_filesystem_sandbox_violation(SandboxType::LinuxSeccomp, &output).is_some(),
-            "{keyword}"
-        );
-    }
-}
-
-#[test]
-fn normalizes_backend_keywords_as_policy_denied() {
-    for keyword in ["seccomp", "sandbox", "landlock"] {
-        let output = make_exec_output(/*exit_code*/ 1, "", keyword, "");
-
-        assert_eq!(
-            classify_filesystem_sandbox_violation(SandboxType::LinuxSeccomp, &output),
-            Some(FileSystemSandboxViolation {
-                backend: SandboxViolationBackend::LinuxSandbox,
-                reason: FileSystemSandboxViolationReason::PolicyDenied,
-                path: None,
-                output_snippet: keyword.to_string(),
-            })
-        );
-    }
-}
-
-#[test]
-fn preserves_legacy_denial_ordering() {
-    let quick_reject_without_keyword =
-        make_exec_output(/*exit_code*/ 127, "", "command not found", "");
-    let quick_reject_with_keyword =
-        make_exec_output(/*exit_code*/ 127, "", "Permission denied", "");
-    let zero_exit_with_keyword =
-        make_exec_output(/*exit_code*/ 0, "", "Operation not permitted", "");
-    let non_sandbox_with_keyword =
-        make_exec_output(/*exit_code*/ 1, "", "Operation not permitted", "");
-
-    assert!(
-        classify_filesystem_sandbox_violation(
-            SandboxType::LinuxSeccomp,
-            &quick_reject_without_keyword
-        )
-        .is_none()
-    );
-    assert!(
-        classify_filesystem_sandbox_violation(
-            SandboxType::LinuxSeccomp,
-            &quick_reject_with_keyword
-        )
-        .is_some()
-    );
-    assert!(
-        classify_filesystem_sandbox_violation(SandboxType::LinuxSeccomp, &zero_exit_with_keyword)
-            .is_none()
-    );
-    assert!(
-        classify_filesystem_sandbox_violation(SandboxType::None, &non_sandbox_with_keyword)
-            .is_none()
-    );
-}
-
-#[test]
 fn classifies_filesystem_violation_with_path() {
     let output = make_exec_output(
         /*exit_code*/ 1,
@@ -172,27 +100,6 @@ fn keeps_output_snippet_on_the_stream_that_matched() {
             reason: FileSystemSandboxViolationReason::PermissionDenied,
             path: Some("/private/tmp/denied".to_string()),
             output_snippet: "bash: /private/tmp/denied: Permission denied".to_string(),
-        })
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn classifies_linux_sigsys_exit() {
-    let output = make_exec_output(
-        /*exit_code*/ EXIT_CODE_SIGNAL_BASE + libc::SIGSYS,
-        "",
-        "",
-        "",
-    );
-
-    assert_eq!(
-        classify_filesystem_sandbox_violation(SandboxType::LinuxSeccomp, &output),
-        Some(FileSystemSandboxViolation {
-            backend: SandboxViolationBackend::LinuxSandbox,
-            reason: FileSystemSandboxViolationReason::SignalSyscall,
-            path: None,
-            output_snippet: String::new(),
         })
     );
 }

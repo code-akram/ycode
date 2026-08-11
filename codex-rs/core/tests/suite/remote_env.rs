@@ -983,10 +983,7 @@ async fn ready_before_selection_exposes_remote_tools_and_capability_context_afte
         .mount(&registry)
         .await;
 
-    let runtime_paths = ExecServerRuntimePaths::new(
-        std::env::current_exe()?,
-        /*codex_linux_sandbox_exe*/ None,
-    )?;
+    let runtime_paths = ExecServerRuntimePaths::new(std::env::current_exe()?)?;
     let remote_config = RemoteEnvironmentConfig::new(
         registry.uri(),
         REMOTE_ENVIRONMENT_ID.to_string(),

@@ -394,10 +394,10 @@ fn assert_posix_snapshot_sections(snapshot: &str) {
     );
 }
 
-#[cfg_attr(not(target_os = "linux"), ignore)]
+#[cfg(target_os = "macos")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn linux_unified_exec_uses_shell_snapshot() -> Result<()> {
-    let command = "echo snapshot-linux";
+async fn macos_unified_exec_uses_shell_snapshot() -> Result<()> {
+    let command = "echo snapshot-macos";
     let run = run_snapshot_command(command).await?;
     let stdout = normalize_newlines(&run.end.stdout);
 
@@ -408,17 +408,17 @@ async fn linux_unified_exec_uses_shell_snapshot() -> Result<()> {
     assert_posix_snapshot_sections(&run.snapshot_content);
     assert_eq!(run.end.exit_code, 0);
     assert!(
-        stdout.contains("snapshot-linux"),
+        stdout.contains("snapshot-macos"),
         "stdout should contain snapshot marker; stdout={stdout:?}"
     );
 
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
+#[cfg(target_os = "macos")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn linux_shell_command_uses_shell_snapshot() -> Result<()> {
-    let command = "echo shell-command-snapshot-linux";
+async fn macos_shell_command_uses_shell_snapshot() -> Result<()> {
+    let command = "echo shell-command-snapshot-macos";
     let run = run_shell_command_snapshot(command).await?;
 
     assert_eq!(run.begin.command.get(1).map(String::as_str), Some("-lc"));
@@ -428,7 +428,7 @@ async fn linux_shell_command_uses_shell_snapshot() -> Result<()> {
     assert_posix_snapshot_sections(&run.snapshot_content);
     assert_eq!(
         normalize_newlines(&run.end.stdout).trim(),
-        "shell-command-snapshot-linux"
+        "shell-command-snapshot-macos"
     );
     assert_eq!(run.end.exit_code, 0);
 
@@ -484,9 +484,9 @@ async fn shell_command_snapshot_preserves_shell_environment_policy_set() -> Resu
     Ok(())
 }
 
-#[cfg_attr(not(target_os = "linux"), ignore)]
+#[cfg(target_os = "macos")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn linux_unified_exec_snapshot_preserves_shell_environment_policy_set() -> Result<()> {
+async fn macos_unified_exec_snapshot_preserves_shell_environment_policy_set() -> Result<()> {
     let builder = test_codex().with_config(|config| {
         config.use_experimental_unified_exec_tool = true;
         config

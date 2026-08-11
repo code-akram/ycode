@@ -82,9 +82,7 @@ use codex_terminal_detection::TerminalName;
     version,
     // If a sub‑command is given, ignore requirements of the default args.
     subcommand_negates_reqs = true,
-    // The executable is sometimes invoked via a platform‑specific name like
-    // `codex-x86_64-unknown-linux-musl`, but the help output should always use
-    // the generic `codex` command name that users run.
+    // Keep help output on the generic `codex` command name that users run.
     bin_name = "codex",
     override_usage = "codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]"
 )]
@@ -348,27 +346,7 @@ impl clap::FromArgMatches for SessionTuiCli {
     }
 }
 
-#[cfg(target_os = "macos")]
 type HostSandboxArgs = codex_cli::SeatbeltCommand;
-#[cfg(target_os = "linux")]
-type HostSandboxArgs = codex_cli::LandlockCommand;
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-type HostSandboxArgs = UnsupportedSandboxArgs;
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-#[derive(Debug, Parser)]
-struct UnsupportedSandboxArgs {
-    /// Layer $CODEX_HOME/<name>.config.toml on top of the base user config.
-    #[arg(long = "profile", short = 'p')]
-    pub config_profile: Option<ProfileV2Name>,
-
-    #[clap(skip)]
-    pub config_overrides: CliConfigOverrides,
-
-    /// Full command args to run under the host sandbox.
-    #[arg(trailing_var_arg = true)]
-    pub command: Vec<String>,
-}
 
 #[derive(Debug, Parser)]
 struct ExecpolicyCommand {
@@ -871,8 +849,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 &mut cloud_cli.config_overrides,
                 root_config_overrides.clone(),
             );
-            codex_cloud_tasks::run_main(cloud_cli, arg0_paths.codex_linux_sandbox_exe.clone())
-                .await?;
+            codex_cloud_tasks::run_main(cloud_cli).await?;
         }
         Some(Subcommand::Sandbox(mut sandbox_cli)) => {
             let config_profile = sandbox_cli
@@ -884,25 +861,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_config_overrides.clone(),
             );
             let loader_overrides = loader_overrides_for_profile(config_profile)?;
-            #[cfg(target_os = "macos")]
-            codex_cli::run_command_under_seatbelt(
-                sandbox_cli,
-                arg0_paths.codex_linux_sandbox_exe.clone(),
-                loader_overrides,
-            )
-            .await?;
-            #[cfg(target_os = "linux")]
-            codex_cli::run_command_under_landlock(
-                sandbox_cli,
-                arg0_paths.codex_linux_sandbox_exe.clone(),
-                loader_overrides,
-            )
-            .await?;
-            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-            {
-                let _ = loader_overrides;
-                anyhow::bail!("`codex sandbox` is not supported on this operating system");
-            }
+            codex_cli::run_command_under_seatbelt(sandbox_cli, loader_overrides).await?;
         }
         Some(Subcommand::Debug(DebugCommand { subcommand })) => match subcommand {
             DebugSubcommand::Models(cmd) => {
@@ -1125,7 +1084,6 @@ async fn run_debug_prompt_input_command(
         sandbox_mode,
         cwd: shared.cwd,
         codex_self_exe: arg0_paths.codex_self_exe,
-        codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe,
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe,
         show_raw_agent_reasoning: shared.oss.then_some(true),
         ephemeral: Some(true),
@@ -2123,7 +2081,6 @@ mod tests {
         );
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_parses_permission_profile() {
         let cli = MultitoolCli::try_parse_from([
@@ -2144,7 +2101,6 @@ mod tests {
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_parses_legacy_permissions_profile_alias() {
         let cli = MultitoolCli::try_parse_from([
@@ -2165,7 +2121,6 @@ mod tests {
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_help_only_shows_singular_permission_profile() {
         let help = help_from_args(&["codex", "sandbox", "--help"]);
@@ -2173,7 +2128,6 @@ mod tests {
         assert!(!help.contains("--permissions-profile"), "{help}");
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_parses_permissions_profile_short_alias() {
         let cli =
@@ -2188,7 +2142,6 @@ mod tests {
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_parses_config_profile() {
         let cli =
@@ -2203,7 +2156,6 @@ mod tests {
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_rejects_explicit_profile_controls_without_profile() {
         let err = MultitoolCli::try_parse_from(["codex", "sandbox", "-C", "/tmp"])
@@ -2656,19 +2608,6 @@ mod tests {
                 "features.web_search_request=true".to_string(),
                 "features.unified_exec=false".to_string(),
             ]
-        );
-    }
-
-    #[test]
-    fn feature_toggles_accept_legacy_linux_sandbox_flag() {
-        let toggles = FeatureToggles {
-            enable: vec!["use_linux_sandbox_bwrap".to_string()],
-            disable: Vec::new(),
-        };
-        let overrides = toggles.to_overrides().expect("valid features");
-        assert_eq!(
-            overrides,
-            vec!["features.use_linux_sandbox_bwrap=true".to_string(),]
         );
     }
 

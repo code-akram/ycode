@@ -579,11 +579,8 @@ mod tests {
     }
 
     fn test_runtime_paths() -> ExecServerRuntimePaths {
-        ExecServerRuntimePaths::new(
-            std::env::current_exe().expect("current exe"),
-            /*codex_linux_sandbox_exe*/ None,
-        )
-        .expect("runtime paths")
+        ExecServerRuntimePaths::new(std::env::current_exe().expect("current exe"))
+            .expect("runtime paths")
     }
 
     async fn read_websocket_json(websocket: &mut WebSocketStream<TcpStream>) -> Value {

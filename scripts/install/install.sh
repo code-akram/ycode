@@ -9,7 +9,7 @@ INSTALL_DIR="${YCODE_INSTALL_DIR:-$HOME/.local/bin}"
 RELEASE="${YCODE_RELEASE:-latest}"
 
 if [ "$(uname -s)" != "Darwin" ] || [ "$(uname -m)" != "arm64" ]; then
-  echo "ycode currently supports only $TARGET." >&2
+  echo "ycode supports only $TARGET (Apple Silicon macOS)." >&2
   exit 1
 fi
 

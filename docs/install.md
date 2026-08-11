@@ -4,7 +4,7 @@
 
 | Requirement                 | Details                                                         |
 | --------------------------- | --------------------------------------------------------------- |
-| Operating systems           | Apple Silicon macOS                                           |
+| Supported target            | `aarch64-apple-darwin` (Apple Silicon macOS)                    |
 | Git (optional, recommended) | 2.23+ for built-in PR helpers                                   |
 | RAM                         | 4-GB minimum (8-GB recommended)                                 |
 

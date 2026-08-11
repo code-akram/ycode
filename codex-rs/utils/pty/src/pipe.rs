@@ -23,9 +23,6 @@ use crate::process::ProcessSignal;
 use crate::process::SpawnedProcess;
 use crate::process::exit_code_from_status;
 
-#[cfg(target_os = "linux")]
-use libc;
-
 struct PipeChildTerminator {
     #[cfg(unix)]
     process_group_id: u32,
@@ -107,16 +104,12 @@ async fn spawn_process_with_stdin_mode(
     if let Some(arg0) = arg0 {
         command.arg0(arg0);
     }
-    #[cfg(target_os = "linux")]
-    let parent_pid = unsafe { libc::getpid() };
     #[cfg(unix)]
     let inherited_fds = inherited_fds.to_vec();
     #[cfg(unix)]
     unsafe {
         command.pre_exec(move || {
             crate::process_group::detach_from_tty()?;
-            #[cfg(target_os = "linux")]
-            crate::process_group::set_parent_death_signal(parent_pid)?;
             crate::pty::close_inherited_fds_except(&inherited_fds);
             Ok(())
         });

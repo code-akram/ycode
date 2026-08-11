@@ -65,8 +65,7 @@ pub struct InitializeResponse {
     /// Platform family for the running app-server target, for example
     /// `"unix"` or `"windows"`.
     pub platform_family: String,
-    /// Operating system for the running app-server target, for example
-    /// `"macos"`, `"linux"`, or `"windows"`.
+    /// Operating system for the running CLI target (`"macos"`).
     pub platform_os: String,
 }
 

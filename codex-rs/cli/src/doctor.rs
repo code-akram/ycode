@@ -121,8 +121,6 @@ const REMOTE_TERMINAL_ENV_VARS: &[&str] = &[
     "SSH_CONNECTION",
     "SSH_CLIENT",
     "MOSH_IP",
-    "WSL_DISTRO_NAME",
-    "WSL_INTEROP",
     "VSCODE_INJECTION",
     "VSCODE_IPC_HOOK_CLI",
     "WAYLAND_DISPLAY",
@@ -530,7 +528,6 @@ fn config_overrides_from_interactive(
             .then(|| interactive.oss_provider.clone())
             .flatten(),
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
-        codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         show_raw_agent_reasoning: interactive.oss.then_some(true),
         additional_writable_roots: interactive.add_dir.clone(),
@@ -1496,25 +1493,17 @@ fn sandbox_check(config: &Config, arg0_paths: &Arg0DispatchPaths) -> DoctorCheck
     ));
     push_path_detail(
         &mut details,
-        "codex-linux-sandbox helper",
-        arg0_paths.codex_linux_sandbox_exe.as_deref(),
-    );
-    push_path_detail(
-        &mut details,
         "execve wrapper helper",
         arg0_paths.main_execve_wrapper_exe.as_deref(),
     );
 
-    let mut status = CheckStatus::Ok;
-    let mut summary = "sandbox configuration is readable".to_string();
-    if let Some(helper) = arg0_paths.codex_linux_sandbox_exe.as_deref()
-        && !helper.exists()
-    {
-        status = CheckStatus::Warning;
-        summary = "Linux sandbox helper path does not exist".to_string();
-    }
-
-    DoctorCheck::new("sandbox.helpers", "sandbox", status, summary).details(details)
+    DoctorCheck::new(
+        "sandbox.helpers",
+        "sandbox",
+        CheckStatus::Ok,
+        "sandbox configuration is readable",
+    )
+    .details(details)
 }
 
 #[derive(Clone, Debug)]
@@ -2998,7 +2987,6 @@ mod tests {
         ]);
         let arg0_paths = Arg0DispatchPaths {
             codex_self_exe: Some(PathBuf::from("/bin/codex")),
-            codex_linux_sandbox_exe: Some(PathBuf::from("/bin/codex-linux-sandbox")),
             main_execve_wrapper_exe: Some(PathBuf::from("/bin/codex-execve-wrapper")),
         };
 
@@ -3015,10 +3003,6 @@ mod tests {
             vec![PathBuf::from("/var/tmp")]
         );
         assert_eq!(overrides.codex_self_exe, arg0_paths.codex_self_exe);
-        assert_eq!(
-            overrides.codex_linux_sandbox_exe,
-            arg0_paths.codex_linux_sandbox_exe
-        );
         assert_eq!(
             overrides.main_execve_wrapper_exe,
             arg0_paths.main_execve_wrapper_exe

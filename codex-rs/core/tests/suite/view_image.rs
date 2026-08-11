@@ -443,8 +443,7 @@ async fn view_image_tool_attaches_local_image() -> anyhow::Result<()> {
             EventMsg::TurnComplete(_) => true,
             _ => false,
         },
-        // Empirically, we have seen this run slow when run under
-        // Bazel on arm Linux.
+        // Image processing can occasionally be slow on loaded systems.
         VIEW_IMAGE_TURN_COMPLETE_TIMEOUT,
     )
     .await;

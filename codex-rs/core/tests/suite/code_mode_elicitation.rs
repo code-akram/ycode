@@ -213,10 +213,6 @@ await tools.apply_patch("*** Begin Patch\n*** Add File: code_mode_patch_approval
     Ok(())
 }
 
-#[cfg_attr(
-    target_os = "linux",
-    ignore = "request_permissions tool integration is not supported on Linux"
-)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn code_mode_holds_yielded_result_during_permission_request() -> Result<()> {
     skip_if_no_network!(Ok(()));

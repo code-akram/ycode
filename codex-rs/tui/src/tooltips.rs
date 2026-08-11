@@ -182,7 +182,6 @@ pub(crate) mod announcement {
     #[derive(Debug, Deserialize, Copy, Clone, PartialEq, Eq)]
     #[serde(rename_all = "lowercase")]
     enum TargetOs {
-        Linux,
         Macos,
         #[serde(other)]
         Unknown,
@@ -190,12 +189,7 @@ pub(crate) mod announcement {
 
     impl TargetOs {
         const fn current() -> Self {
-            if cfg!(target_os = "macos") {
-                Self::Macos
-            } else {
-                // ycode supports macOS and Linux.
-                Self::Linux
-            }
+            Self::Macos
         }
     }
 
@@ -519,10 +513,6 @@ target_plan_types = ["prp"]
     fn announcement_tip_toml_matches_target_os() {
         let toml = r#"
 [[announcements]]
-content = "linux announcement"
-target_oses = ["linux"]
-
-[[announcements]]
 content = "macos announcement"
 target_oses = ["macos"]
 
@@ -531,13 +521,8 @@ content = "windows announcement"
 target_oses = ["windows"]
         "#;
 
-        let expected = if cfg!(target_os = "macos") {
-            "macos announcement"
-        } else {
-            "linux announcement"
-        };
         assert_eq!(
-            Some(expected.to_string()),
+            Some("macos announcement".to_string()),
             parse_announcement_tip_toml(toml, /*plan*/ None)
         );
     }

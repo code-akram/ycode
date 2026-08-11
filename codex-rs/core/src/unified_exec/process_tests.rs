@@ -201,12 +201,12 @@ async fn remote_process_preserves_executor_sandbox_type() {
     let process = remote_process(
         WriteStatus::Accepted,
         /*terminate_error*/ None,
-        codex_sandboxing::SandboxType::LinuxSeccomp,
+        codex_sandboxing::SandboxType::MacosSeatbelt,
     )
     .await;
 
     assert_eq!(
         process.sandbox_type(),
-        codex_sandboxing::SandboxType::LinuxSeccomp
+        codex_sandboxing::SandboxType::MacosSeatbelt
     );
 }

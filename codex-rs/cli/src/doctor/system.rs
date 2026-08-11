@@ -154,8 +154,8 @@ mod tests {
     #[test]
     fn system_check_handles_missing_os_language() {
         let check = system_check_from_inputs(SystemCheckInputs {
-            os: "Linux".to_string(),
-            os_type: "linux".to_string(),
+            os: "macOS".to_string(),
+            os_type: "macos".to_string(),
             os_version: "unknown".to_string(),
             os_language: None,
             locale_env: BTreeMap::new(),
@@ -170,8 +170,8 @@ mod tests {
         assert_eq!(
             check.details,
             vec![
-                "os: Linux",
-                "os type: linux",
+                "os: macOS",
+                "os type: macos",
                 "os version: unknown",
                 "os language: unavailable",
                 "VISUAL: not set",

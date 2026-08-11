@@ -9,11 +9,6 @@
 //! 2. **Local session**: try `arboard` (native clipboard) first, then fall back to
 //!    terminal-mediated copy if the native clipboard is unavailable.
 //!
-//! On Linux, X11 and some Wayland compositors require the process that wrote the
-//! clipboard to keep its handle open. `ClipboardLease` wraps the `arboard::Clipboard`
-//! so callers can store it for the lifetime of the TUI. On other platforms the lease
-//! is always `None`.
-//!
 //! The module is intentionally narrow: text copy only, user-facing error strings,
 //! no reusable clipboard abstraction. Image paste lives in `clipboard_paste`.
 
@@ -23,7 +18,6 @@ use std::io::Write;
 /// Maximum raw bytes we will base64-encode into an OSC 52 sequence.
 /// Large payloads are rejected before encoding to avoid overwhelming the terminal.
 const OSC52_MAX_RAW_BYTES: usize = 100_000;
-#[cfg(target_os = "macos")]
 static STDERR_SUPPRESSION_MUTEX: std::sync::OnceLock<std::sync::Mutex<()>> =
     std::sync::OnceLock::new();
 
@@ -48,33 +42,13 @@ pub(crate) fn copy_to_clipboard(text: &str) -> Result<Option<ClipboardLease>, St
     )
 }
 
-/// Keeps a platform clipboard owner alive when the backend requires one.
-///
-/// On Linux/X11 and some Wayland compositors, clipboard contents are served by the
-/// owning process. Dropping the `arboard::Clipboard` before the user pastes causes
-/// the content to vanish. Store this lease on the widget that triggered the copy so
-/// the handle lives as long as the TUI does. On non-Linux native paths and OSC 52
-/// paths the lease is `None` — those backends do not require process-lifetime
-/// ownership.
-pub(crate) struct ClipboardLease {
-    #[cfg(target_os = "linux")]
-    _clipboard: Option<arboard::Clipboard>,
-}
+/// Marker retained for the clipboard API used by TUI widgets.
+pub(crate) struct ClipboardLease;
 
 impl ClipboardLease {
-    #[cfg(target_os = "linux")]
-    fn native_linux(clipboard: arboard::Clipboard) -> Self {
-        Self {
-            _clipboard: Some(clipboard),
-        }
-    }
-
     #[cfg(test)]
     pub(crate) fn test() -> Self {
-        Self {
-            #[cfg(target_os = "linux")]
-            _clipboard: None,
-        }
+        Self
     }
 }
 
@@ -175,9 +149,7 @@ fn is_tmux_session() -> bool {
 /// triggers `os_log` / `NSLog` output on stderr. Because the TUI owns the
 /// terminal, that stray output corrupts the display. We temporarily redirect
 /// fd 2 to `/dev/null` around the call to keep the screen clean.
-#[cfg(all(not(target_os = "android"), not(target_os = "linux")))]
 fn arboard_copy(text: &str) -> Result<Option<ClipboardLease>, String> {
-    #[cfg(target_os = "macos")]
     let _stderr_lock = STDERR_SUPPRESSION_MUTEX
         .get_or_init(|| std::sync::Mutex::new(()))
         .lock()
@@ -189,27 +161,6 @@ fn arboard_copy(text: &str) -> Result<Option<ClipboardLease>, String> {
         .set_text(text)
         .map_err(|e| format!("failed to set clipboard text: {e}"))?;
     Ok(None)
-}
-
-/// Run arboard with stderr suppressed.
-///
-/// On Linux/X11 and some Wayland setups, clipboard contents are served by the
-/// process that last wrote them. Keep the `Clipboard` alive so the copied text
-/// remains pasteable while the TUI is running.
-#[cfg(target_os = "linux")]
-fn arboard_copy(text: &str) -> Result<Option<ClipboardLease>, String> {
-    let _guard = SuppressStderr::new();
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("clipboard unavailable: {e}"))?;
-    clipboard
-        .set_text(text)
-        .map_err(|e| format!("failed to set clipboard text: {e}"))?;
-    Ok(Some(ClipboardLease::native_linux(clipboard)))
-}
-
-#[cfg(target_os = "android")]
-fn arboard_copy(_text: &str) -> Result<Option<ClipboardLease>, String> {
-    Err("native clipboard unavailable on Android".to_string())
 }
 
 /// Copy text through tmux's native clipboard integration.
@@ -301,12 +252,10 @@ fn tmux_command_output<const N: usize>(args: [&str; N]) -> Result<String, String
 
 /// RAII guard that redirects stderr (fd 2) to `/dev/null` on creation and
 /// restores the original fd on drop.
-#[cfg(target_os = "macos")]
 struct SuppressStderr {
     saved_fd: Option<libc::c_int>,
 }
 
-#[cfg(target_os = "macos")]
 impl SuppressStderr {
     fn new() -> Self {
         unsafe {
@@ -334,7 +283,6 @@ impl SuppressStderr {
     }
 }
 
-#[cfg(target_os = "macos")]
 impl Drop for SuppressStderr {
     fn drop(&mut self) {
         if let Some(saved) = self.saved_fd {
@@ -343,16 +291,6 @@ impl Drop for SuppressStderr {
                 libc::close(saved);
             }
         }
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-struct SuppressStderr;
-
-#[cfg(not(target_os = "macos"))]
-impl SuppressStderr {
-    fn new() -> Self {
-        Self
     }
 }
 

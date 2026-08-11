@@ -19,11 +19,8 @@ fi
 
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) target="aarch64-apple-darwin" ;;
-  Darwin:x86_64) target="x86_64-apple-darwin" ;;
-  Linux:aarch64 | Linux:arm64) target="aarch64-unknown-linux-musl" ;;
-  Linux:x86_64) target="x86_64-unknown-linux-musl" ;;
   *)
-    echo "Unsupported platform: $(uname -s) $(uname -m)" >&2
+    echo "ycode supports only aarch64-apple-darwin (Apple Silicon macOS)." >&2
     exit 1
     ;;
 esac

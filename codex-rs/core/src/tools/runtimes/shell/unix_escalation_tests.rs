@@ -371,8 +371,6 @@ async fn unsandboxed_intercepted_exec_strips_managed_network_env() -> anyhow::Re
         arg0: None,
         sandbox_policy_cwd: workdir.clone(),
         windows_sandbox_workspace_roots: vec![workdir.clone()],
-        codex_linux_sandbox_exe: None,
-        use_legacy_landlock: false,
     };
     let mut env = HashMap::new();
     env.insert(PROXY_ACTIVE_ENV_KEY.to_string(), "1".to_string());

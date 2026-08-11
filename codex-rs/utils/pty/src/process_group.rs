@@ -9,40 +9,11 @@
 //! - `kill_process_group_by_pid` targets the whole group (children/grandchildren)
 //! - `kill_process_group` targets a known process group ID directly
 //!   instead of a single PID.
-//! - `set_parent_death_signal` (Linux only) arranges for the child to receive a
-//!   `SIGTERM` when the parent exits, and re-checks the parent PID to avoid
-//!   races during fork/exec.
-//!
-//! On non-Unix platforms these helpers are no-ops.
+//! These helpers use the macOS POSIX process APIs.
 
 use std::io;
 
 use tokio::process::Child;
-
-#[cfg(target_os = "linux")]
-/// Ensure the child receives SIGTERM when the original parent dies.
-///
-/// This should run in `pre_exec` and uses `parent_pid` captured before spawn to
-/// avoid a race where the parent exits between fork and exec.
-pub fn set_parent_death_signal(parent_pid: libc::pid_t) -> io::Result<()> {
-    if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) } == -1 {
-        return Err(io::Error::last_os_error());
-    }
-
-    if unsafe { libc::getppid() } != parent_pid {
-        unsafe {
-            libc::raise(libc::SIGTERM);
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(not(target_os = "linux"))]
-/// No-op on non-Linux platforms.
-pub fn set_parent_death_signal(_parent_pid: i32) -> io::Result<()> {
-    Ok(())
-}
 
 #[cfg(unix)]
 /// Detach from the controlling TTY by starting a new session.

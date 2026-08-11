@@ -5725,7 +5725,6 @@ async fn in_app_resume_uses_configured_or_explicit_cwd() -> Result<()> {
                     Some("ws://127.0.0.1:8765".to_string()),
                     Some(codex_exec_server::ExecServerRuntimePaths::new(
                         std::env::current_exe()?,
-                        /*codex_linux_sandbox_exe*/ None,
                     )?),
                 )
                 .await,

@@ -184,7 +184,6 @@ fn desktop_thread_open_error_message(err: &str) -> String {
     )
 }
 
-#[cfg(target_os = "macos")]
 fn open_desktop_thread_url(url: &str) -> Result<(), String> {
     let status = std::process::Command::new("open")
         .arg(url)
@@ -196,11 +195,6 @@ fn open_desktop_thread_url(url: &str) -> Result<(), String> {
     } else {
         Err(format!("`open {url}` exited with {status}"))
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn open_desktop_thread_url(_url: &str) -> Result<(), String> {
-    Err("The Desktop app is only available on macOS".to_string())
 }
 
 #[cfg(test)]

@@ -31,7 +31,7 @@ fn make_exec_output(
 fn sandbox_detection_requires_keywords() {
     let output = make_exec_output(/*exit_code*/ 1, "", "", "");
     assert!(!is_likely_sandbox_denied(
-        SandboxType::LinuxSeccomp,
+        SandboxType::MacosSeatbelt,
         &output
     ));
 }
@@ -39,14 +39,17 @@ fn sandbox_detection_requires_keywords() {
 #[test]
 fn sandbox_detection_identifies_keyword_in_stderr() {
     let output = make_exec_output(/*exit_code*/ 1, "", "Operation not permitted", "");
-    assert!(is_likely_sandbox_denied(SandboxType::LinuxSeccomp, &output));
+    assert!(is_likely_sandbox_denied(
+        SandboxType::MacosSeatbelt,
+        &output
+    ));
 }
 
 #[test]
 fn sandbox_detection_respects_quick_reject_exit_codes() {
     let output = make_exec_output(/*exit_code*/ 127, "", "command not found", "");
     assert!(!is_likely_sandbox_denied(
-        SandboxType::LinuxSeccomp,
+        SandboxType::MacosSeatbelt,
         &output
     ));
 }
@@ -92,7 +95,7 @@ fn sandbox_detection_ignores_network_policy_text_with_zero_exit_code() {
     );
 
     assert!(!is_likely_sandbox_denied(
-        SandboxType::LinuxSeccomp,
+        SandboxType::MacosSeatbelt,
         &output
     ));
 }
@@ -369,8 +372,6 @@ async fn process_exec_tool_call_preserves_full_buffer_capture_policy() -> Result
         &permission_profile,
         &cwd,
         std::slice::from_ref(&cwd),
-        &None,
-        /*use_legacy_landlock*/ false,
         /*stdout_stream*/ None,
     )
     .await?;
@@ -1103,8 +1104,6 @@ fn build_exec_request_preserves_windows_workspace_roots() -> Result<()> {
         &PermissionProfile::Disabled,
         &cwd,
         workspace_roots.as_slice(),
-        &None,
-        /*use_legacy_landlock*/ false,
     )?;
 
     assert_eq!(
@@ -1115,25 +1114,8 @@ fn build_exec_request_preserves_windows_workspace_roots() -> Result<()> {
 }
 
 #[cfg(unix)]
-#[test]
-fn sandbox_detection_flags_sigsys_exit_code() {
-    let exit_code = EXIT_CODE_SIGNAL_BASE + libc::SIGSYS;
-    let output = make_exec_output(exit_code, "", "", "");
-    assert!(is_likely_sandbox_denied(SandboxType::LinuxSeccomp, &output));
-}
-
-#[cfg(unix)]
 #[tokio::test]
 async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()> {
-    // On Linux/macOS, /bin/bash is typically present; on FreeBSD/OpenBSD,
-    // prefer /bin/sh to avoid NotFound errors.
-    #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
-    let command = vec![
-        "/bin/sh".to_string(),
-        "-c".to_string(),
-        "sleep 60 & echo $!; sleep 60".to_string(),
-    ];
-    #[cfg(all(unix, not(any(target_os = "freebsd", target_os = "openbsd"))))]
     let command = vec![
         "/bin/bash".to_string(),
         "-c".to_string(),
@@ -1222,8 +1204,6 @@ async fn process_exec_tool_call_respects_cancellation_token() -> Result<()> {
             &PermissionProfile::Disabled,
             &cwd,
             std::slice::from_ref(&cwd),
-            &None,
-            /*use_legacy_landlock*/ false,
             /*stdout_stream*/ None,
         ),
     )
@@ -1303,8 +1283,6 @@ while :; do sleep 1; done"#
             &PermissionProfile::Disabled,
             &cwd,
             std::slice::from_ref(&cwd),
-            &None,
-            /*use_legacy_landlock*/ false,
             /*stdout_stream*/ None,
         ),
     )

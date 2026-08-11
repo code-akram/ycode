@@ -1,10 +1,7 @@
 //! Text encoding detection and conversion utilities for shell output.
 //!
-//! Windows users frequently run into code pages such as CP1251 or CP866 when invoking commands
-//! through VS Code. Those bytes show up as invalid UTF-8 and used to be replaced with the standard
-//! Unicode replacement character. We now lean on `chardetng` and `encoding_rs` so we can
-//! automatically detect and decode the vast majority of legacy encodings before falling back to
-//! lossy UTF-8 decoding.
+//! Some shells can emit bytes outside UTF-8. Detect common encodings before falling back to
+//! lossy UTF-8 so machine-readable exec output remains usable.
 
 use chardetng::EncodingDetector;
 use encoding_rs::Encoding;

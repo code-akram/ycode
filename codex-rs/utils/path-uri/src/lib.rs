@@ -886,8 +886,7 @@ pub enum PathUriParseError {
 
 /// Path syntax used to render a [`PathUri`] as an operating-system path.
 ///
-/// This describes path grammar rather than a specific operating system because
-/// Linux and macOS share the POSIX representation relevant here.
+/// This describes path grammar rather than a specific operating system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(rename_all = "snake_case")]

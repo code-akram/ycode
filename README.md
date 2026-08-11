@@ -3,7 +3,8 @@
 > OpenAI Codex `rust-v0.147.0`. It is not official OpenAI software and is
 > currently undergoing deliberate subtraction.
 
-ycode is a Rust terminal agent for Apple Silicon macOS. The repository retains
+ycode is a Rust terminal agent for `aarch64-apple-darwin` (Apple Silicon macOS),
+its only supported target. The repository retains
 upstream names in the source while the product is being reduced deliberately.
 
 ## Quickstart

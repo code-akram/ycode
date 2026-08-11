@@ -266,11 +266,9 @@ async fn start_cli_runtime_for_archive_command(
         .map_err(|err| eyre!("failed to parse -c overrides: {err}"))?;
     let cli_runtime_target = super::CliRuntimeTarget::Embedded;
 
-    let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
-        arg0_paths.codex_self_exe.clone(),
-        arg0_paths.codex_linux_sandbox_exe.clone(),
-    )
-    .wrap_err("failed to resolve local runtime paths")?;
+    let local_runtime_paths =
+        ExecServerRuntimePaths::from_optional_path(arg0_paths.codex_self_exe.clone())
+            .wrap_err("failed to resolve local runtime paths")?;
     let prepared_environment_manager = EnvironmentManager::prepare_from_env()
         .await
         .wrap_err("failed to discover execution environments")?;
@@ -336,7 +334,6 @@ async fn start_cli_runtime_for_archive_command(
             },
             model_provider,
             codex_self_exe: arg0_paths.codex_self_exe.clone(),
-            codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
             main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
             show_raw_agent_reasoning: cli.oss.then_some(true),
             bypass_hook_trust: cli.bypass_hook_trust.then_some(true),

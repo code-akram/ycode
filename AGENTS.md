@@ -4,8 +4,8 @@
 
 - ycode's initial product is a Rust CLI for `aarch64-apple-darwin` only. Preserve
   the interactive TUI and non-interactive exec mode, including machine-readable
-  output. Linux and Intel macOS support are later subtraction targets; other
-  targets should eventually fail with a simple unsupported-target message.
+  output. Unsupported targets must fail with a simple unsupported-target
+  message.
 - Initial user workflows are interactive CLI, non-interactive exec, login,
   logout, resume, fork, help, and version, plus the core primitives they need.
 - Build and installation surfaces are Cargo/source and a POSIX curl installer
@@ -89,7 +89,7 @@ by either protected official path.
   current plugin catalog/system, connectors, hooks, and external-agent migration
   machinery until extensibility is deliberately redesigned.
 - Remove alternate providers such as AWS/Bedrock, Ollama, and LM Studio.
-- In dedicated future phases, remove macOS/Linux sandbox implementations,
+- In a dedicated future phase, remove the retained macOS sandbox implementation,
   sandbox-mode configuration, sandbox/approval selection UI, command-approval
   prompts and single-purpose approval-request plumbing, plus enterprise-managed
   policy/requirements machinery. The steady state is unrestricted filesystem

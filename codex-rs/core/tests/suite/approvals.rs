@@ -1566,14 +1566,10 @@ fn scenarios() -> Vec<ScenarioSpec> {
             outcome: Outcome::Auto,
             expectation: Expectation::FileNotCreated {
                 target: TargetPath::Workspace("ro_never.txt"),
-                message_contains: if cfg!(target_os = "linux") {
-                    &["Permission denied|Read-only file system"]
-                } else {
-                    &[
-                        "Permission denied|Operation not permitted|operation not permitted|\
-                         Read-only file system",
-                    ]
-                },
+                message_contains: &[
+                    "Permission denied|Operation not permitted|operation not permitted|\
+                     Read-only file system",
+                ],
             },
         },
         ScenarioSpec {
@@ -1692,14 +1688,10 @@ fn scenarios() -> Vec<ScenarioSpec> {
             outcome: Outcome::Auto,
             expectation: Expectation::FileNotCreated {
                 target: TargetPath::OutsideWorkspace("ww_never.txt"),
-                message_contains: if cfg!(target_os = "linux") {
-                    &["Permission denied|Read-only file system"]
-                } else {
-                    &[
-                        "Permission denied|Operation not permitted|operation not permitted|\
-                         Read-only file system",
-                    ]
-                },
+                message_contains: &[
+                    "Permission denied|Operation not permitted|operation not permitted|\
+                     Read-only file system",
+                ],
             },
         },
         ScenarioSpec {
@@ -1718,8 +1710,6 @@ fn scenarios() -> Vec<ScenarioSpec> {
                 stdout_contains: "hello unified exec",
             },
         },
-        #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
-        // Linux sandbox arg0 test workaround doesn't work on ARM
         ScenarioSpec {
             name: "unified exec on request escalated requires approval",
             approval_policy: OnRequest,

@@ -19,24 +19,11 @@ const DISABLE_KEYBOARD_ENHANCEMENT_ENV_VAR: &str = "CODEX_TUI_DISABLE_KEYBOARD_E
 
 pub(super) fn keyboard_enhancement_disabled() -> bool {
     let disable_env = std::env::var(DISABLE_KEYBOARD_ENHANCEMENT_ENV_VAR).ok();
-    let is_wsl = running_in_wsl();
-    let is_vscode_terminal = is_wsl && running_in_vscode_terminal();
-    keyboard_enhancement_disabled_for(disable_env.as_deref(), is_wsl, is_vscode_terminal)
+    keyboard_enhancement_disabled_for(disable_env.as_deref())
 }
 
-fn keyboard_enhancement_disabled_for(
-    disable_env: Option<&str>,
-    is_wsl: bool,
-    is_vscode_terminal: bool,
-) -> bool {
-    if let Some(disabled) = parse_bool_env(disable_env) {
-        return disabled;
-    }
-
-    // VS Code running a WSL shell can hide TERM_PROGRAM from the Linux process
-    // environment, so `running_in_vscode_terminal` also probes the Windows-side
-    // environment through WSL interop.
-    is_wsl && is_vscode_terminal
+fn keyboard_enhancement_disabled_for(disable_env: Option<&str>) -> bool {
+    parse_bool_env(disable_env).unwrap_or(false)
 }
 
 fn parse_bool_env(value: Option<&str>) -> Option<bool> {
@@ -48,18 +35,6 @@ fn parse_bool_env(value: Option<&str>) -> Option<bool> {
         Some(value) if value.eq_ignore_ascii_case("false") => Some(false),
         Some(value) if value.eq_ignore_ascii_case("no") => Some(false),
         _ => None,
-    }
-}
-
-fn running_in_wsl() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        crate::clipboard_paste::is_probably_wsl()
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        false
     }
 }
 
@@ -317,33 +292,11 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_enhancement_auto_disables_for_vscode_in_wsl() {
-        assert!(keyboard_enhancement_disabled_for(
-            /*disable_env*/ None, /*is_wsl*/ true, /*is_vscode_terminal*/ true
-        ));
-    }
-
-    #[test]
-    fn keyboard_enhancement_auto_disable_requires_wsl_and_vscode() {
+    fn keyboard_enhancement_env_flag_controls_disabling() {
+        assert!(!keyboard_enhancement_disabled_for(Some("0")));
+        assert!(keyboard_enhancement_disabled_for(Some("1")));
         assert!(!keyboard_enhancement_disabled_for(
-            /*disable_env*/ None, /*is_wsl*/ true, /*is_vscode_terminal*/ false
-        ));
-        assert!(!keyboard_enhancement_disabled_for(
-            /*disable_env*/ None, /*is_wsl*/ false, /*is_vscode_terminal*/ true
-        ));
-    }
-
-    #[test]
-    fn keyboard_enhancement_env_flag_overrides_auto_detection() {
-        assert!(!keyboard_enhancement_disabled_for(
-            Some("0"),
-            /*is_wsl*/ true,
-            /*is_vscode_terminal*/ true
-        ));
-        assert!(keyboard_enhancement_disabled_for(
-            Some("1"),
-            /*is_wsl*/ false,
-            /*is_vscode_terminal*/ false
+            /*disable_env*/ None
         ));
     }
 

@@ -21,12 +21,7 @@ use crossterm::event::KeyModifiers;
 use ratatui::style::Style;
 use ratatui::text::Span;
 
-#[cfg(test)]
 const ALT_PREFIX: &str = "⌥ + ";
-#[cfg(all(not(test), target_os = "macos"))]
-const ALT_PREFIX: &str = "⌥ + ";
-#[cfg(all(not(test), not(target_os = "macos")))]
-const ALT_PREFIX: &str = "alt + ";
 const CTRL_PREFIX: &str = "ctrl + ";
 const SHIFT_PREFIX: &str = "shift + ";
 

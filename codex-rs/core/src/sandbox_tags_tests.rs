@@ -16,7 +16,7 @@ use pretty_assertions::assert_eq;
 use std::path::Path;
 
 #[test]
-fn danger_full_access_is_untagged_even_when_linux_sandbox_defaults_apply() {
+fn danger_full_access_is_untagged_even_when_platform_sandbox_defaults_apply() {
     let actual = permission_profile_sandbox_tag(
         &PermissionProfile::Disabled,
         WindowsSandboxLevel::Disabled,
@@ -26,7 +26,7 @@ fn danger_full_access_is_untagged_even_when_linux_sandbox_defaults_apply() {
 }
 
 #[test]
-fn external_sandbox_keeps_external_tag_when_linux_sandbox_defaults_apply() {
+fn external_sandbox_keeps_external_tag_when_platform_sandbox_defaults_apply() {
     let actual = permission_profile_sandbox_tag(
         &PermissionProfile::External {
             network: NetworkSandboxPolicy::Enabled,
@@ -38,7 +38,7 @@ fn external_sandbox_keeps_external_tag_when_linux_sandbox_defaults_apply() {
 }
 
 #[test]
-fn default_linux_sandbox_uses_platform_sandbox_tag() {
+fn default_sandbox_uses_macos_platform_tag() {
     let actual = permission_profile_sandbox_tag(
         &PermissionProfile::read_only(),
         WindowsSandboxLevel::Disabled,

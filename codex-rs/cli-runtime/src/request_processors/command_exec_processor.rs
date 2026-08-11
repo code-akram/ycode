@@ -308,11 +308,9 @@ impl CommandExecRequestProcessor {
             arg0: None,
         };
 
-        let codex_linux_sandbox_exe = self.arg0_paths.codex_linux_sandbox_exe.clone();
         let outgoing = self.outgoing.clone();
         let request_for_task = request.clone();
         let started_network_proxy_for_task = started_network_proxy;
-        let use_legacy_landlock = self.config.features.use_legacy_landlock();
         let size = match size.map(crate::command_exec::terminal_size_from_protocol) {
             Some(Ok(size)) => Some(size),
             Some(Err(error)) => return Err(error),
@@ -324,8 +322,6 @@ impl CommandExecRequestProcessor {
             &effective_permission_profile,
             &sandbox_cwd,
             windows_sandbox_workspace_roots.as_slice(),
-            &codex_linux_sandbox_exe,
-            use_legacy_landlock,
         )
         .map_err(|err| internal_error(format!("exec failed: {err}")))?;
         self.command_exec_manager

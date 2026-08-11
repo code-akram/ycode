@@ -531,41 +531,6 @@ fn validate_unix_socket_path(socket_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
-fn validate_unix_peer_owner(stream: &std::os::unix::net::UnixStream) -> std::io::Result<()> {
-    use std::os::fd::AsRawFd;
-
-    let mut credentials = unsafe { std::mem::zeroed::<libc::ucred>() };
-    let mut credentials_len: libc::socklen_t =
-        std::mem::size_of::<libc::ucred>().try_into().map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "invalid peer credential length",
-            )
-        })?;
-    let result = unsafe {
-        libc::getsockopt(
-            stream.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_PEERCRED,
-            &mut credentials as *mut _ as *mut libc::c_void,
-            &mut credentials_len,
-        )
-    };
-    if result != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-
-    ensure_peer_uid_matches_current_user(credentials.uid)
-}
-
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd",
-    target_os = "dragonfly"
-))]
 fn validate_unix_peer_owner(stream: &std::os::unix::net::UnixStream) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
 
@@ -579,23 +544,6 @@ fn validate_unix_peer_owner(stream: &std::os::unix::net::UnixStream) -> std::io:
     ensure_peer_uid_matches_current_user(peer_uid)
 }
 
-#[cfg(all(
-    unix,
-    not(any(
-        target_os = "linux",
-        target_os = "android",
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "dragonfly"
-    ))
-))]
-fn validate_unix_peer_owner(_stream: &std::os::unix::net::UnixStream) -> std::io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn ensure_peer_uid_matches_current_user(peer_uid: libc::uid_t) -> std::io::Result<()> {
     if peer_uid != unsafe { libc::getuid() } {
         return Err(permission_denied_io_error(

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
 
-/// Internal handoff from the trusted Linux proxy bridge.
+/// Internal handoff from a trusted proxy bridge.
 #[doc(hidden)]
 pub const PROXY_ATTRIBUTION_TOKEN_ENV_KEY: &str = "CODEX_NETWORK_PROXY_ATTRIBUTION";
 

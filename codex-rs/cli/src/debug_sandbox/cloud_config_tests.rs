@@ -90,7 +90,6 @@ async fn debug_sandbox_bootstraps_cloud_managed_permission_profile_from_backend(
     .await?;
     let config = load_debug_sandbox_config_with_codex_home(
         Vec::new(),
-        /*codex_linux_sandbox_exe*/ None,
         options,
         Some(codex_home.path().to_path_buf()),
         cloud_config_bundle,

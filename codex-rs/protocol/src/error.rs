@@ -44,16 +44,6 @@ pub enum SandboxErr {
         network_policy_decision: Option<NetworkPolicyDecisionPayload>,
     },
 
-    /// Error from linux seccomp filter setup
-    #[cfg(target_os = "linux")]
-    #[error("seccomp setup error")]
-    SeccompInstall(#[from] seccompiler::Error),
-
-    /// Error from linux seccomp backend
-    #[cfg(target_os = "linux")]
-    #[error("seccomp backend error")]
-    SeccompBackend(#[from] seccompiler::BackendError),
-
     /// Command timed out
     #[error("command timed out")]
     Timeout { output: Box<ExecToolCallOutput> },
@@ -61,10 +51,6 @@ pub enum SandboxErr {
     /// Command was killed by a signal
     #[error("command was killed by a signal")]
     Signal(i32),
-
-    /// Error from linux landlock
-    #[error("Landlock was not able to fully enforce all sandbox rules")]
-    LandlockRestrict,
 }
 
 pub struct CodexErr {
@@ -153,8 +139,6 @@ pub enum CodexErrorDetails {
     /// Sandbox error
     #[error("sandbox error: {0}")]
     Sandbox(#[from] SandboxErr),
-    #[error("codex-linux-sandbox was required but not provided")]
-    LandlockSandboxExecutableNotProvided,
     #[error("unsupported operation: {0}")]
     UnsupportedOperation(String),
     #[error("{0}")]
@@ -168,12 +152,6 @@ pub enum CodexErrorDetails {
     Io(#[from] io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    #[cfg(target_os = "linux")]
-    #[error(transparent)]
-    LandlockRuleset(#[from] landlock::RulesetError),
-    #[cfg(target_os = "linux")]
-    #[error(transparent)]
-    LandlockPathFd(#[from] landlock::PathFdError),
     #[error(transparent)]
     TokioJoin(#[from] JoinError),
     #[error("{0}")]
@@ -250,20 +228,6 @@ impl From<JoinError> for CodexErr {
     }
 }
 
-#[cfg(target_os = "linux")]
-impl From<landlock::RulesetError> for CodexErr {
-    fn from(error: landlock::RulesetError) -> Self {
-        CodexErrorDetails::from(error).into()
-    }
-}
-
-#[cfg(target_os = "linux")]
-impl From<landlock::PathFdError> for CodexErr {
-    fn from(error: landlock::PathFdError) -> Self {
-        CodexErrorDetails::from(error).into()
-    }
-}
-
 impl From<CancelErr> for CodexErrorDetails {
     fn from(_: CancelErr) -> Self {
         CodexErrorDetails::TurnAborted
@@ -315,7 +279,6 @@ impl CodexErr {
         UsageNotIncluded,
         InternalServerError,
         InternalAgentDied,
-        LandlockSandboxExecutableNotProvided,
     );
 
     codex_err_tuple_constructors!(
@@ -333,10 +296,6 @@ impl CodexErr {
         Fatal(message: String),
         Io(error: io::Error),
         Json(error: serde_json::Error),
-        #[cfg(target_os = "linux")]
-        LandlockRuleset(error: landlock::RulesetError),
-        #[cfg(target_os = "linux")]
-        LandlockPathFd(error: landlock::PathFdError),
         TokioJoin(error: JoinError),
         EnvVar(error: EnvVarError),
     );
@@ -374,7 +333,6 @@ impl CodexErr {
             | CodexErrorDetails::RefreshTokenFailed(_)
             | CodexErrorDetails::UnsupportedOperation(_)
             | CodexErrorDetails::Sandbox(_)
-            | CodexErrorDetails::LandlockSandboxExecutableNotProvided
             | CodexErrorDetails::RetryLimit(_)
             | CodexErrorDetails::ContextWindowExceeded
             | CodexErrorDetails::ThreadNotFound(_)
@@ -395,8 +353,6 @@ impl CodexErr {
             | CodexErrorDetails::Io(_)
             | CodexErrorDetails::Json(_)
             | CodexErrorDetails::TokioJoin(_) => true,
-            #[cfg(target_os = "linux")]
-            CodexErrorDetails::LandlockRuleset(_) | CodexErrorDetails::LandlockPathFd(_) => false,
         }
     }
 

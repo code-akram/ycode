@@ -1,7 +1,5 @@
 mod cloud_config;
-#[cfg(target_os = "macos")]
 mod pid_tracker;
-#[cfg(target_os = "macos")]
 mod seatbelt;
 
 use std::path::PathBuf;
@@ -16,18 +14,13 @@ use codex_core::config::ConfigOverrides;
 use codex_core::config::NetworkProxyAuditMetadata;
 use codex_core::config::find_codex_home;
 use codex_core::exec_env::create_env;
-#[cfg(target_os = "macos")]
 use codex_core::spawn::CODEX_SANDBOX_ENV_VAR;
 use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::SandboxEnforcement;
 use codex_protocol::permissions::NetworkSandboxPolicy;
-use codex_sandboxing::landlock::allow_network_for_proxy;
-use codex_sandboxing::landlock::create_linux_sandbox_command_args_for_permission_profile;
-#[cfg(target_os = "macos")]
 use codex_sandboxing::seatbelt::CreateSeatbeltCommandArgsParams;
-#[cfg(target_os = "macos")]
 use codex_sandboxing::seatbelt::create_seatbelt_command_args;
 use codex_sandboxing::with_managed_mitm_ca_readable_root;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -38,27 +31,20 @@ use tokio::process::Child;
 use tokio::process::Command as TokioCommand;
 use toml::Value as TomlValue;
 
-use crate::LandlockCommand;
 use crate::SeatbeltCommand;
 use crate::exit_status::handle_exit_status;
 
-#[cfg(target_os = "macos")]
 use seatbelt::DenialLogger;
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SandboxState {
     permission_profile: PermissionProfile,
-    codex_linux_sandbox_exe: Option<PathBuf>,
     sandbox_cwd: PathUri,
-    #[serde(default)]
-    use_legacy_landlock: bool,
 }
 
-#[cfg(target_os = "macos")]
 pub async fn run_command_under_seatbelt(
     command: SeatbeltCommand,
-    codex_linux_sandbox_exe: Option<PathBuf>,
     loader_overrides: LoaderOverrides,
 ) -> anyhow::Result<()> {
     let SeatbeltCommand {
@@ -86,63 +72,10 @@ pub async fn run_command_under_seatbelt(
         },
         command,
         config_overrides,
-        codex_linux_sandbox_exe,
-        SandboxType::Seatbelt,
         log_denials,
         &allow_unix_sockets,
     )
     .await
-}
-
-#[cfg(not(target_os = "macos"))]
-pub async fn run_command_under_seatbelt(
-    _command: SeatbeltCommand,
-    _codex_linux_sandbox_exe: Option<PathBuf>,
-    _loader_overrides: LoaderOverrides,
-) -> anyhow::Result<()> {
-    anyhow::bail!("Seatbelt sandbox is only available on macOS");
-}
-
-pub async fn run_command_under_landlock(
-    command: LandlockCommand,
-    codex_linux_sandbox_exe: Option<PathBuf>,
-    loader_overrides: LoaderOverrides,
-) -> anyhow::Result<()> {
-    let LandlockCommand {
-        sandbox_state,
-        permissions_profile,
-        config_profile: _,
-        cwd,
-        include_managed_config,
-        config_overrides,
-        command,
-    } = command;
-    let managed_requirements_mode = ManagedRequirementsMode::for_profile_invocation(
-        &permissions_profile,
-        include_managed_config,
-    );
-    run_command_under_sandbox(
-        DebugSandboxConfigOptions {
-            sandbox_state,
-            permissions_profile,
-            cwd,
-            managed_requirements_mode,
-            loader_overrides,
-        },
-        command,
-        config_overrides,
-        codex_linux_sandbox_exe,
-        SandboxType::Landlock,
-        /*log_denials*/ false,
-        &[],
-    )
-    .await
-}
-
-enum SandboxType {
-    #[cfg(target_os = "macos")]
-    Seatbelt,
-    Landlock,
 }
 
 #[derive(Debug)]
@@ -177,10 +110,7 @@ async fn run_command_under_sandbox(
     mut config_options: DebugSandboxConfigOptions,
     command: Vec<String>,
     config_overrides: CliConfigOverrides,
-    codex_linux_sandbox_exe: Option<PathBuf>,
-    sandbox_type: SandboxType,
     log_denials: bool,
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
     allow_unix_sockets: &[AbsolutePathBuf],
 ) -> anyhow::Result<()> {
     let sandbox_state = config_options
@@ -195,27 +125,19 @@ async fn run_command_under_sandbox(
         .sandbox_state_readable_root
         .clone();
     let sandbox_state_disable_network = config_options.sandbox_state.sandbox_state_disable_network;
-    let codex_linux_sandbox_exe = match sandbox_state.as_ref() {
-        Some(state) => {
-            config_options.cwd = Some(
-                state
-                    .sandbox_cwd
-                    .to_abs_path()
-                    .context("sandbox state cwd is not native to this host")?
-                    .to_path_buf(),
-            );
+    if let Some(state) = sandbox_state.as_ref() {
+        config_options.cwd = Some(
             state
-                .codex_linux_sandbox_exe
-                .clone()
-                .or(codex_linux_sandbox_exe)
-        }
-        None => codex_linux_sandbox_exe,
-    };
+                .sandbox_cwd
+                .to_abs_path()
+                .context("sandbox state cwd is not native to this host")?
+                .to_path_buf(),
+        );
+    }
     let config = load_debug_sandbox_config(
         config_overrides
             .parse_overrides()
             .map_err(anyhow::Error::msg)?,
-        codex_linux_sandbox_exe,
         config_options,
         /*strict_config*/ false,
     )
@@ -264,11 +186,6 @@ async fn run_command_under_sandbox(
         };
         permission_profile = PermissionProfile::from_runtime_permissions(&file_system, network);
     }
-    let use_legacy_landlock = sandbox_state.as_ref().map_or_else(
-        || config.features.use_legacy_landlock(),
-        |state| state.use_legacy_landlock,
-    );
-
     match permission_profile.enforcement() {
         SandboxEnforcement::Managed => {}
         SandboxEnforcement::Disabled | SandboxEnforcement::External => {
@@ -289,10 +206,7 @@ async fn run_command_under_sandbox(
         }
     }
 
-    #[cfg(target_os = "macos")]
     let mut denial_logger = log_denials.then(DenialLogger::new).flatten();
-    #[cfg(not(target_os = "macos"))]
-    let _ = log_denials;
 
     let managed_network_requirements_enabled = config.managed_network_requirements_enabled();
 
@@ -327,78 +241,42 @@ async fn run_command_under_sandbox(
         sandbox_policy_cwd.as_path(),
     );
 
-    let mut child = match sandbox_type {
-        #[cfg(target_os = "macos")]
-        SandboxType::Seatbelt => {
-            let (file_system_sandbox_policy, network_sandbox_policy) =
-                runtime_permission_profile.to_runtime_permissions();
-            let args = create_seatbelt_command_args(CreateSeatbeltCommandArgsParams {
-                command,
-                file_system_sandbox_policy: &file_system_sandbox_policy,
-                network_sandbox_policy,
-                sandbox_policy_cwd: sandbox_policy_cwd.as_path(),
-                enforce_managed_network,
-                managed_network: None,
-                environment_id: None,
-                network: network.as_ref(),
-                extra_allow_unix_sockets: allow_unix_sockets,
-            })
-            .map_err(|err| anyhow::anyhow!(err))?;
-            spawn_debug_sandbox_child(
-                PathBuf::from("/usr/bin/sandbox-exec"),
-                args,
-                /*arg0*/ None,
-                cwd.to_path_buf(),
-                network_sandbox_policy,
-                env,
-                |env_map| {
-                    env_map.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
-                    if let Some(network) = network.as_ref() {
-                        network.apply_to_env(env_map);
-                    }
-                },
-            )
-            .await?
-        }
-        SandboxType::Landlock => {
-            #[expect(clippy::expect_used)]
-            let codex_linux_sandbox_exe = config
-                .codex_linux_sandbox_exe
-                .expect("codex-linux-sandbox executable not found");
-            let network_sandbox_policy = runtime_permission_profile.network_sandbox_policy();
-            let args = create_linux_sandbox_command_args_for_permission_profile(
-                command,
-                cwd.as_path(),
-                &runtime_permission_profile,
-                sandbox_policy_cwd.as_path(),
-                use_legacy_landlock,
-                allow_network_for_proxy(enforce_managed_network),
-            );
-            spawn_debug_sandbox_child(
-                codex_linux_sandbox_exe,
-                args,
-                Some("codex-linux-sandbox"),
-                cwd.to_path_buf(),
-                network_sandbox_policy,
-                env,
-                |env_map| {
-                    if let Some(network) = network.as_ref() {
-                        network.apply_to_env(env_map);
-                    }
-                },
-            )
-            .await?
-        }
-    };
+    let (file_system_sandbox_policy, network_sandbox_policy) =
+        runtime_permission_profile.to_runtime_permissions();
+    let args = create_seatbelt_command_args(CreateSeatbeltCommandArgsParams {
+        command,
+        file_system_sandbox_policy: &file_system_sandbox_policy,
+        network_sandbox_policy,
+        sandbox_policy_cwd: sandbox_policy_cwd.as_path(),
+        enforce_managed_network,
+        managed_network: None,
+        environment_id: None,
+        network: network.as_ref(),
+        extra_allow_unix_sockets: allow_unix_sockets,
+    })
+    .map_err(|err| anyhow::anyhow!(err))?;
+    let mut child = spawn_debug_sandbox_child(
+        PathBuf::from("/usr/bin/sandbox-exec"),
+        args,
+        /*arg0*/ None,
+        cwd.to_path_buf(),
+        network_sandbox_policy,
+        env,
+        |env_map| {
+            env_map.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
+            if let Some(network) = network.as_ref() {
+                network.apply_to_env(env_map);
+            }
+        },
+    )
+    .await?;
 
-    #[cfg(target_os = "macos")]
     if let Some(denial_logger) = &mut denial_logger {
         denial_logger.on_child_spawn(&child);
     }
 
     let status = child.wait().await?;
 
-    #[cfg(target_os = "macos")]
     if let Some(denial_logger) = denial_logger {
         let denials = denial_logger.finish().await;
         eprintln!("\n=== Sandbox denials ===");
@@ -447,7 +325,6 @@ async fn spawn_debug_sandbox_child(
 
 async fn load_debug_sandbox_config(
     cli_overrides: Vec<(String, TomlValue)>,
-    codex_linux_sandbox_exe: Option<PathBuf>,
     options: DebugSandboxConfigOptions,
     strict_config: bool,
 ) -> anyhow::Result<Config> {
@@ -461,7 +338,6 @@ async fn load_debug_sandbox_config(
 
     load_debug_sandbox_config_with_codex_home(
         cli_overrides,
-        codex_linux_sandbox_exe,
         options,
         /*codex_home*/ None,
         cloud_config_bundle,
@@ -472,7 +348,6 @@ async fn load_debug_sandbox_config(
 
 async fn load_debug_sandbox_config_with_codex_home(
     cli_overrides: Vec<(String, TomlValue)>,
-    codex_linux_sandbox_exe: Option<PathBuf>,
     options: DebugSandboxConfigOptions,
     codex_home: Option<PathBuf>,
     cloud_config_bundle: CloudConfigBundleLoader,
@@ -503,7 +378,6 @@ async fn load_debug_sandbox_config_with_codex_home(
         cli_overrides.clone(),
         ConfigOverrides {
             cwd: cwd.clone(),
-            codex_linux_sandbox_exe: codex_linux_sandbox_exe.clone(),
             ..Default::default()
         },
         codex_home.clone(),
@@ -523,7 +397,6 @@ async fn load_debug_sandbox_config_with_codex_home(
         ConfigOverrides {
             sandbox_mode: Some(SandboxMode::ReadOnly),
             cwd,
-            codex_linux_sandbox_exe,
             ..Default::default()
         },
         codex_home,
@@ -683,7 +556,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             Vec::new(),
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: None,
@@ -754,7 +626,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             Vec::new(),
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: None,
@@ -813,7 +684,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             cli_overrides,
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: None,
@@ -873,7 +743,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             Vec::new(),
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: None,
@@ -902,7 +771,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             Vec::new(),
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: Some(":workspace".to_string()),
@@ -940,7 +808,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             Vec::new(),
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: Some("managed-cloud".to_string()),
@@ -984,7 +851,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             Vec::new(),
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: Some(":workspace".to_string()),
@@ -1029,7 +895,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             Vec::new(),
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: Some("limited-read-test".to_string()),
@@ -1070,7 +935,6 @@ enabled = true
 
         let config = load_debug_sandbox_config_with_codex_home(
             Vec::new(),
-            /*codex_linux_sandbox_exe*/ None,
             DebugSandboxConfigOptions {
                 sandbox_state: Default::default(),
                 permissions_profile: Some(":workspace".to_string()),

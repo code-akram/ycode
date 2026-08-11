@@ -726,10 +726,8 @@ pub async fn run_main(
     let cli_runtime_target = CliRuntimeTarget::Embedded;
     let remote_cwd_override = None;
 
-    let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
-        arg0_paths.codex_self_exe.clone(),
-        arg0_paths.codex_linux_sandbox_exe.clone(),
-    )?;
+    let local_runtime_paths =
+        ExecServerRuntimePaths::from_optional_path(arg0_paths.codex_self_exe.clone())?;
     let prepared_environment_manager =
         if should_load_configured_environments(&loader_overrides, &cli_runtime_target) {
             EnvironmentManager::prepare_from_codex_home(&codex_home).await
@@ -839,7 +837,6 @@ pub async fn run_main(
         cwd: cwd_override,
         model_provider: model_provider_override.clone(),
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
-        codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         show_raw_agent_reasoning: cli.oss.then_some(true),
         bypass_hook_trust: cli.bypass_hook_trust.then_some(true),
@@ -1888,10 +1885,7 @@ mod tests {
                 .cloud_config_bundle(cloud_config_bundle)
                 .build()
                 .await?;
-            let runtime_paths = ExecServerRuntimePaths::new(
-                std::env::current_exe()?,
-                /*codex_linux_sandbox_exe*/ None,
-            )?;
+            let runtime_paths = ExecServerRuntimePaths::new(std::env::current_exe()?)?;
             let environment_manager = prepared_environment_manager
                 .build(Some(runtime_paths), config.http_client_factory())?;
 

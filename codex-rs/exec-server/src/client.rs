@@ -1746,7 +1746,7 @@ mod tests {
                     id: request.id,
                     result: serde_json::to_value(ExecResponse {
                         process_id: params.process_id,
-                        sandbox_type: Some(ProcessSandboxType::LinuxSeccomp),
+                        sandbox_type: Some(ProcessSandboxType::MacosSeatbelt),
                     })
                     .expect("process start response should serialize"),
                 }),
@@ -1806,7 +1806,7 @@ mod tests {
         assert_eq!(session.process_id(), &process_id);
         assert_eq!(
             session.sandbox_type(),
-            Some(ProcessSandboxType::LinuxSeccomp)
+            Some(ProcessSandboxType::MacosSeatbelt)
         );
         let trace = server.await.expect("server task").expect("trace context");
         let expected_traceparent = expected_trace

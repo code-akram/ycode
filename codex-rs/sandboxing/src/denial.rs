@@ -22,13 +22,11 @@ pub fn is_likely_sandbox_denied(
     // 2: misuse of shell builtins
     // 126: permission denied
     // 127: command not found
-    const SANDBOX_DENIED_KEYWORDS: [&str; 7] = [
+    const SANDBOX_DENIED_KEYWORDS: [&str; 5] = [
         "operation not permitted",
         "permission denied",
         "read-only file system",
-        "seccomp",
         "sandbox",
-        "landlock",
         "failed to write file",
     ];
 
@@ -52,17 +50,6 @@ pub fn is_likely_sandbox_denied(
     const QUICK_REJECT_EXIT_CODES: [i32; 3] = [2, 126, 127];
     if QUICK_REJECT_EXIT_CODES.contains(&exec_output.exit_code) {
         return false;
-    }
-
-    #[cfg(unix)]
-    {
-        const EXIT_CODE_SIGNAL_BASE: i32 = 128;
-        const SIGSYS_CODE: i32 = libc::SIGSYS;
-        if sandbox_type == SandboxType::LinuxSeccomp
-            && exec_output.exit_code == EXIT_CODE_SIGNAL_BASE + SIGSYS_CODE
-        {
-            return true;
-        }
     }
 
     false

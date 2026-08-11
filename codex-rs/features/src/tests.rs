@@ -173,28 +173,6 @@ fn canonical_image_generation_toggle_wins_over_extension_alias() {
 }
 
 #[test]
-fn use_legacy_landlock_config_records_deprecation_notice() {
-    let mut entries = BTreeMap::new();
-    entries.insert("use_legacy_landlock".to_string(), true);
-
-    let mut features = Features::with_defaults();
-    features.apply_map(&entries);
-
-    let usages = features.legacy_feature_usages().collect::<Vec<_>>();
-    assert_eq!(usages.len(), 1);
-    assert_eq!(usages[0].alias, "features.use_legacy_landlock");
-    assert_eq!(usages[0].feature, Feature::UseLegacyLandlock);
-    assert_eq!(
-        usages[0].summary,
-        "`[features].use_legacy_landlock` is deprecated and will be removed soon."
-    );
-    assert_eq!(
-        usages[0].details.as_deref(),
-        Some("Remove this setting to stop opting into the legacy Linux sandbox behavior.")
-    );
-}
-
-#[test]
 fn telepathy_is_legacy_alias_for_chronicle() {
     assert_eq!(feature_for_key("chronicle"), Some(Feature::Chronicle));
     assert_eq!(feature_for_key("telepathy"), Some(Feature::Chronicle));
