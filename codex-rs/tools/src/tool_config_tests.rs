@@ -26,7 +26,6 @@ fn model_with_shell_type(shell_type: ConfigShellToolType) -> ModelInfo {
         upgrade: None,
         model_messages: None,
         include_skills_usage_instructions: false,
-        include_plugin_usage_instructions: false,
         include_apps_usage_instructions: false,
         supports_reasoning_summary_parameter: true,
         default_reasoning_summary: Default::default(),

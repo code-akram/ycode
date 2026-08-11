@@ -9,7 +9,6 @@ use codex_cli_protocol::RequestId;
 use codex_cli_protocol::ServerNotification;
 use codex_cli_protocol::ServerRequest;
 use codex_cli_protocol::ServerResponse;
-use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
@@ -19,9 +18,6 @@ pub use codex_protocol::error::CodexErrKind;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::HookEventName;
-use codex_protocol::protocol::HookRunStatus;
-use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SkillScope;
 use codex_protocol::protocol::SubAgentSource;
@@ -304,8 +300,6 @@ pub struct SkillInvocation {
     pub skill_name: String,
     pub skill_scope: SkillScope,
     pub skill_path: PathBuf,
-    pub plugin_id: Option<String>,
-    pub remote_plugin_id: Option<String>,
     pub invocation_type: InvocationType,
 }
 
@@ -497,13 +491,6 @@ pub(crate) enum CustomAnalyticsFact {
     SkillInvoked(SkillInvokedInput),
     AppMentioned(AppMentionedInput),
     AppUsed(AppUsedInput),
-    HookRun(HookRunInput),
-    PluginUsed(PluginUsedInput),
-    PluginInstallRequested(PluginInstallRequestedInput),
-    PluginStateChanged(PluginStateChangedInput),
-    PluginInstallFailed(PluginInstallFailedInput),
-    ExternalAgentConfigImportCompleted(ExternalAgentConfigImportCompletedInput),
-    ExternalAgentConfigImportFailure(ExternalAgentConfigImportFailureInput),
 }
 
 pub(crate) struct SkillInvokedInput {
@@ -519,93 +506,4 @@ pub(crate) struct AppMentionedInput {
 pub(crate) struct AppUsedInput {
     pub tracking: TrackEventsContext,
     pub app: AppInvocation,
-}
-
-pub(crate) struct HookRunInput {
-    pub tracking: TrackEventsContext,
-    pub hook: HookRunFact,
-}
-
-pub struct HookRunFact {
-    pub event_name: HookEventName,
-    pub hook_source: HookSource,
-    pub status: HookRunStatus,
-}
-
-pub(crate) struct PluginUsedInput {
-    pub tracking: TrackEventsContext,
-    pub plugin: PluginTelemetryMetadata,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PluginInstallRequestSource {
-    EndpointRecommendation,
-    LegacyDiscovery,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PluginInstallRequested {
-    pub suggestion_id: String,
-    pub plugins: Vec<PluginInstallRequestedPlugin>,
-    pub source: PluginInstallRequestSource,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PluginInstallRequestedPlugin {
-    pub plugin_id: String,
-    pub remote_plugin_id: Option<String>,
-    pub plugin_name: String,
-    pub connector_ids: Vec<String>,
-}
-
-pub(crate) struct PluginInstallRequestedInput {
-    pub tracking: TrackEventsContext,
-    pub request: PluginInstallRequested,
-}
-
-pub(crate) struct PluginStateChangedInput {
-    pub plugin: PluginTelemetryMetadata,
-    pub state: PluginState,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PluginInstallSource {
-    Manual,
-    ExternalAgentMigration,
-}
-
-pub(crate) struct PluginInstallFailedInput {
-    pub plugin: PluginTelemetryMetadata,
-    pub source: PluginInstallSource,
-    pub error_type: String,
-    pub sub_error_type: Option<String>,
-}
-
-pub struct ExternalAgentConfigImportCompletedInput {
-    pub import_id: String,
-    pub source: String,
-    pub provider_id: String,
-    pub item_type: String,
-    pub success_count: usize,
-    pub failed_count: usize,
-}
-
-pub struct ExternalAgentConfigImportFailureInput {
-    pub import_id: String,
-    pub source: String,
-    pub provider_id: String,
-    pub item_type: String,
-    pub failure_stage: String,
-    pub error_type: String,
-    pub sub_error_type: Option<String>,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum PluginState {
-    Installed,
-    Uninstalled,
-    Enabled,
-    Disabled,
 }

@@ -7,7 +7,6 @@ use super::resize_reflow::trailing_run_start;
 use super::session_lifecycle::ThreadAttachPresentation;
 use super::*;
 use crate::config_update::format_config_error;
-use crate::external_agent_config_migration::flow::ExternalAgentConfigMigrationFlowOutcome;
 use crate::pager_overlay::TranscriptHistoryState;
 use crate::runtime_session::ForkGoalContinuation;
 
@@ -144,31 +143,6 @@ impl App {
 
                 self.chat_widget.maybe_send_next_queued_input();
                 // Leaving alt-screen may blank the inline viewport; force a redraw either way.
-                tui.frame_requester().schedule_frame();
-            }
-            AppEvent::OpenExternalAgentConfigMigration => {
-                match crate::external_agent_config_migration::flow::handle_external_agent_config_migration_prompt(
-                    tui,
-                    cli_runtime,
-                    &self.config,
-                )
-                .await
-                {
-                    Ok(ExternalAgentConfigMigrationFlowOutcome::Started(lines)) => {
-                        self.chat_widget.add_plain_history_lines(lines);
-                    }
-                    Ok(ExternalAgentConfigMigrationFlowOutcome::NoItems) => {
-                        self.chat_widget.add_info_message(
-                            crate::external_agent_config_migration::flow::EXTERNAL_AGENT_CONFIG_MIGRATION_NO_ITEMS_MESSAGE
-                                .to_string(),
-                            /*hint*/ None,
-                        );
-                    }
-                    Ok(ExternalAgentConfigMigrationFlowOutcome::Cancelled) => {}
-                    Err(error_message) => {
-                        self.chat_widget.add_error_message(error_message);
-                    }
-                }
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
@@ -575,242 +549,6 @@ impl App {
             AppEvent::ConfiguredPetLoaded { pet_id, result } => {
                 self.handle_configured_pet_loaded(tui, pet_id, result);
             }
-            AppEvent::FetchPluginsList { cwd } => {
-                self.fetch_plugins_list(cli_runtime, cwd);
-            }
-            AppEvent::FetchHooksList { cwd } => {
-                self.fetch_hooks_list(cli_runtime, cwd);
-            }
-            AppEvent::OpenMarketplaceAddPrompt => {
-                self.chat_widget.open_marketplace_add_prompt();
-            }
-            AppEvent::OpenMarketplaceAddLoading { source } => {
-                self.chat_widget.open_marketplace_add_loading_popup(&source);
-            }
-            AppEvent::OpenMarketplaceRemoveConfirm {
-                marketplace_name,
-                marketplace_display_name,
-            } => {
-                self.chat_widget.open_marketplace_remove_confirmation(
-                    marketplace_name,
-                    marketplace_display_name,
-                );
-            }
-            AppEvent::OpenMarketplaceRemoveLoading {
-                marketplace_display_name,
-            } => {
-                self.chat_widget
-                    .open_marketplace_remove_loading_popup(&marketplace_display_name);
-            }
-            AppEvent::OpenMarketplaceUpgradeLoading { marketplace_name } => {
-                self.chat_widget
-                    .open_marketplace_upgrade_loading_popup(marketplace_name.as_deref());
-            }
-            AppEvent::OpenPluginDetailLoading {
-                plugin_display_name,
-            } => {
-                self.chat_widget
-                    .open_plugin_detail_loading_popup(&plugin_display_name);
-            }
-            AppEvent::OpenPluginInstallLoading {
-                plugin_display_name,
-            } => {
-                self.chat_widget
-                    .open_plugin_install_loading_popup(&plugin_display_name);
-            }
-            AppEvent::OpenPluginUninstallLoading {
-                plugin_display_name,
-            } => {
-                self.chat_widget
-                    .open_plugin_uninstall_loading_popup(&plugin_display_name);
-            }
-            AppEvent::PluginsLoaded { cwd, result } => {
-                self.chat_widget.on_plugins_loaded(cwd, result);
-            }
-            AppEvent::OpenPluginsList { cwd, response } => {
-                self.chat_widget.open_plugins_list(cwd, response);
-            }
-            AppEvent::PluginRemoteSectionsLoaded {
-                cwd,
-                marketplaces,
-                section_errors,
-            } => {
-                self.chat_widget.on_plugin_remote_sections_loaded(
-                    cwd,
-                    marketplaces,
-                    section_errors,
-                );
-            }
-            AppEvent::HooksLoaded { cwd, result } => {
-                self.chat_widget.on_hooks_loaded(cwd, result);
-            }
-            AppEvent::FetchMarketplaceAdd { cwd, source } => {
-                self.fetch_marketplace_add(cli_runtime, cwd, source);
-            }
-            AppEvent::FetchMarketplaceUpgrade {
-                cwd,
-                marketplace_name,
-            } => {
-                self.fetch_marketplace_upgrade(cli_runtime, cwd, marketplace_name);
-            }
-            AppEvent::MarketplaceAddLoaded {
-                cwd,
-                source,
-                result,
-            } => {
-                let add_succeeded = result.is_ok();
-                self.chat_widget
-                    .on_marketplace_add_loaded(cwd.clone(), source, result);
-                if add_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path() {
-                    self.fetch_plugins_list(cli_runtime, cwd);
-                }
-            }
-            AppEvent::MarketplaceUpgradeLoaded { cwd, result } => {
-                let marketplace_contents_changed =
-                    matches!(&result, Ok(response) if !response.upgraded_roots.is_empty());
-                if marketplace_contents_changed {
-                    self.refresh_plugin_mentions_after_config_write();
-                }
-                self.chat_widget
-                    .on_marketplace_upgrade_loaded(cwd.clone(), result);
-                if self.chat_widget.config_ref().cwd.as_path() == cwd.as_path() {
-                    self.fetch_plugins_list(cli_runtime, cwd);
-                }
-            }
-            AppEvent::FetchMarketplaceRemove {
-                cwd,
-                marketplace_name,
-                marketplace_display_name,
-            } => {
-                self.fetch_marketplace_remove(
-                    cli_runtime,
-                    cwd,
-                    marketplace_name,
-                    marketplace_display_name,
-                );
-            }
-            AppEvent::MarketplaceRemoveLoaded {
-                cwd,
-                marketplace_name,
-                marketplace_display_name,
-                result,
-            } => {
-                let remove_succeeded = result.is_ok();
-                self.chat_widget.on_marketplace_remove_loaded(
-                    cwd.clone(),
-                    marketplace_name,
-                    marketplace_display_name,
-                    result,
-                );
-                if remove_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
-                {
-                    self.refresh_plugin_mentions_after_config_write();
-                    self.fetch_plugins_list(cli_runtime, cwd);
-                }
-            }
-            AppEvent::FetchPluginDetail { cwd, params } => {
-                self.fetch_plugin_detail(cli_runtime, cwd, params);
-            }
-            AppEvent::PluginDetailLoaded { cwd, result } => {
-                self.chat_widget.on_plugin_detail_loaded(cwd, result);
-            }
-            AppEvent::FetchPluginInstall {
-                cwd,
-                location,
-                plugin_name,
-                plugin_display_name,
-            } => {
-                self.fetch_plugin_install(
-                    cli_runtime,
-                    cwd,
-                    location,
-                    plugin_name,
-                    plugin_display_name,
-                );
-            }
-            AppEvent::FetchPluginUninstall {
-                cwd,
-                plugin_id,
-                plugin_display_name,
-            } => {
-                self.fetch_plugin_uninstall(cli_runtime, cwd, plugin_id, plugin_display_name);
-            }
-            AppEvent::SetPluginEnabled {
-                cwd,
-                plugin_id,
-                enabled,
-            } => {
-                self.set_plugin_enabled(cli_runtime, cwd, plugin_id, enabled);
-            }
-            AppEvent::PluginInstallLoaded {
-                cwd,
-                location,
-                plugin_name,
-                plugin_display_name,
-                result,
-            } => {
-                let install_succeeded = result.is_ok();
-                if install_succeeded {
-                    self.refresh_plugin_mentions_after_config_write();
-                }
-                let should_refresh_plugin_detail = self.chat_widget.on_plugin_install_loaded(
-                    cwd.clone(),
-                    location.clone(),
-                    plugin_name.clone(),
-                    plugin_display_name,
-                    result,
-                );
-                if install_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
-                {
-                    self.fetch_plugins_list(cli_runtime, cwd.clone());
-                    if should_refresh_plugin_detail {
-                        let (marketplace_path, remote_marketplace_name) =
-                            location.into_request_params();
-                        self.fetch_plugin_detail(
-                            cli_runtime,
-                            cwd,
-                            PluginReadParams {
-                                marketplace_path,
-                                remote_marketplace_name,
-                                plugin_name,
-                            },
-                        );
-                    }
-                }
-            }
-            AppEvent::PluginEnabledSet {
-                cwd,
-                plugin_id,
-                enabled,
-                result,
-            } => {
-                let queued_enabled = self
-                    .pending_plugin_enabled_writes
-                    .get_mut(&plugin_id)
-                    .and_then(Option::take);
-                let should_apply_result = if let Some(queued_enabled) = queued_enabled
-                    && (result.is_err() || queued_enabled != enabled)
-                {
-                    self.spawn_plugin_enabled_write(
-                        cli_runtime,
-                        cwd.clone(),
-                        plugin_id.clone(),
-                        queued_enabled,
-                    );
-                    false
-                } else {
-                    true
-                };
-                if should_apply_result {
-                    self.pending_plugin_enabled_writes.remove(&plugin_id);
-                    let update_succeeded = result.is_ok();
-                    if update_succeeded {
-                        self.refresh_plugin_mentions_after_config_write();
-                    }
-                    self.chat_widget
-                        .on_plugin_enabled_set(cwd, plugin_id, enabled, result);
-                }
-            }
             AppEvent::SkillsListLoaded { result } => {
                 self.handle_skills_list_result(
                     result.map_err(|err| color_eyre::eyre::eyre!(err)),
@@ -1207,36 +945,6 @@ impl App {
                     }
                 }
             }
-            AppEvent::PluginUninstallLoaded {
-                cwd,
-                plugin_id: _plugin_id,
-                plugin_display_name,
-                result,
-            } => {
-                let uninstall_succeeded = result.is_ok();
-                if uninstall_succeeded {
-                    self.refresh_plugin_mentions_after_config_write();
-                }
-                self.chat_widget.on_plugin_uninstall_loaded(
-                    cwd.clone(),
-                    plugin_display_name,
-                    result,
-                );
-                if uninstall_succeeded
-                    && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
-                {
-                    self.fetch_plugins_list(cli_runtime, cwd);
-                }
-            }
-            AppEvent::RefreshPluginMentions => {
-                self.refresh_plugin_mentions(cli_runtime);
-            }
-            AppEvent::PluginMentionsLoaded { mut plugins } => {
-                if !self.config.features.enabled(Feature::Plugins) {
-                    plugins = None;
-                }
-                self.chat_widget.on_plugin_mentions_loaded(plugins);
-            }
             AppEvent::PersistPersonalitySelection { personality } => {
                 match crate::config_update::write_config_batch(
                     cli_runtime.request_handle(),
@@ -1388,44 +1096,6 @@ impl App {
                             "Failed to update skill config for {path_display}: {err}"
                         ));
                     }
-                }
-            }
-            AppEvent::SetHookEnabled { key, enabled } => {
-                self.set_hook_enabled(cli_runtime, key, enabled);
-            }
-            AppEvent::TrustHook { key, current_hash } => {
-                self.trust_hook(cli_runtime, key, current_hash);
-            }
-            AppEvent::TrustHooks { updates } => {
-                self.trust_hooks(cli_runtime, updates);
-            }
-            AppEvent::HookEnabledSet {
-                key,
-                enabled,
-                result,
-            } => {
-                let queued_enabled = self
-                    .pending_hook_enabled_writes
-                    .get_mut(&key)
-                    .and_then(Option::take);
-                let should_apply_result = if let Some(queued_enabled) = queued_enabled
-                    && (result.is_err() || queued_enabled != enabled)
-                {
-                    self.spawn_hook_enabled_write(cli_runtime, key.clone(), queued_enabled);
-                    false
-                } else {
-                    true
-                };
-                if should_apply_result {
-                    self.pending_hook_enabled_writes.remove(&key);
-                    if let Err(err) = result {
-                        self.chat_widget.add_error_message(err);
-                    }
-                }
-            }
-            AppEvent::HookTrusted { result } => {
-                if let Err(err) = result {
-                    self.chat_widget.add_error_message(err);
                 }
             }
             AppEvent::ManageSkillsClosed => {
@@ -1648,11 +1318,6 @@ impl App {
                     .add_error_message(format!("Failed to save shortcut: {err}"));
             }
         }
-    }
-
-    fn refresh_plugin_mentions_after_config_write(&mut self) {
-        self.chat_widget.refresh_plugin_mentions();
-        self.chat_widget.submit_op(AppCommand::reload_user_config());
     }
 
     async fn apply_keymap_clear(&mut self, context: String, action: String) {

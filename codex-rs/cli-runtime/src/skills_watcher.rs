@@ -110,12 +110,8 @@ impl SkillsWatcher {
             return WatchRegistration::default();
         }
 
-        let plugins_input = config.plugins_config_input();
-        let plugins_manager = thread_manager.plugins_manager();
-        let plugin_outcome = plugins_manager.plugins_for_config(&plugins_input).await;
         let skills_input = HostSkillsLoadInput::new(
             config.cwd.clone(),
-            plugin_outcome.effective_plugin_skill_roots(),
             config.config_layer_stack.clone(),
             config.bundled_skills_enabled(),
         );
@@ -124,9 +120,7 @@ impl SkillsWatcher {
             .skill_roots_for_config(&skills_input, Some(environment.get_filesystem()))
             .await
             .into_iter()
-            // Plugin roots have explicit lifecycle invalidation; generated system skills are
-            // installed before this watcher starts.
-            .filter(|root| root.plugin_identity.is_none() && root.scope != SkillScope::System)
+            .filter(|root| root.scope != SkillScope::System)
             .map(|root| WatchPath {
                 path: root.path.into_path_buf(),
                 recursive: true,

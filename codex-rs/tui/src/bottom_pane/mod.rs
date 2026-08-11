@@ -37,7 +37,6 @@ pub(crate) use bottom_pane_view::ViewCompletion;
 use codex_cli_protocol::SkillMetadata;
 use codex_cli_protocol::ToolRequestUserInputParams;
 use codex_file_search::FileMatch;
-use codex_plugin::PluginCapabilitySummary;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::user_input::TextElement;
@@ -76,7 +75,7 @@ pub(crate) struct MentionBinding {
     pub(crate) sigil: char,
     /// Mention token text without the leading sigil (`$` or `@`).
     pub(crate) mention: String,
-    /// Canonical mention target (for example `plugin://...` or an absolute SKILL.md path).
+    /// Canonical mention target, such as an absolute `SKILL.md` path.
     pub(crate) path: String,
 }
 mod chat_composer;
@@ -110,7 +109,6 @@ pub(crate) use list_selection_view::side_by_side_layout_widths;
 pub(crate) use memories_settings_view::MemoriesSettingsView;
 use slash_commands::ServiceTierCommand;
 mod feedback_view;
-mod hooks_browser_view;
 pub(crate) use feedback_view::FeedbackAudience;
 pub(crate) use feedback_view::feedback_classification;
 pub(crate) use feedback_view::feedback_disabled_params;
@@ -137,7 +135,6 @@ mod selection_tabs;
 mod textarea;
 mod unified_exec_footer;
 pub(crate) use feedback_view::FeedbackNoteView;
-pub(crate) use hooks_browser_view::HooksBrowserView;
 pub(crate) use selection_tabs::SelectionTab;
 
 /// How long the "press again to quit" hint stays visible.
@@ -312,16 +309,6 @@ impl BottomPane {
         self.composer.set_active_reasoning_effort_baseline(effort);
     }
 
-    pub fn set_plugin_mentions(&mut self, plugins: Option<Vec<PluginCapabilitySummary>>) {
-        self.composer.set_plugin_mentions(plugins);
-        self.request_redraw();
-    }
-
-    pub fn set_plugins_command_enabled(&mut self, enabled: bool) {
-        self.composer.set_plugins_command_enabled(enabled);
-        self.request_redraw();
-    }
-
     pub fn set_token_activity_command_enabled(&mut self, enabled: bool) {
         self.composer.set_token_activity_command_enabled(enabled);
         self.request_redraw();
@@ -447,10 +434,6 @@ impl BottomPane {
 
     pub fn skills(&self) -> Option<&Vec<SkillMetadata>> {
         self.composer.skills()
-    }
-
-    pub fn plugins(&self) -> Option<&Vec<PluginCapabilitySummary>> {
-        self.composer.plugins()
     }
 
     #[cfg(test)]

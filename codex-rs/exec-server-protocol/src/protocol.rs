@@ -42,12 +42,6 @@ pub const FS_REMOVE_METHOD: &str = "fs/remove";
 pub const FS_COPY_METHOD: &str = "fs/copy";
 /// Discovers capability manifests below selected roots using executor-local filesystem access.
 pub const CAPABILITY_ROOTS_DISCOVER_METHOD: &str = "capabilityRoots/discoverV1";
-/// Ordered plugin manifest paths recognized beneath a plugin root.
-pub const DISCOVERABLE_PLUGIN_MANIFEST_PATHS: &[&str] = &[
-    ".codex-plugin/plugin.json",
-    ".claude-plugin/plugin.json",
-    ".cursor-plugin/plugin.json",
-];
 /// JSON-RPC request method for executor-side HTTP requests.
 pub const HTTP_REQUEST_METHOD: &str = "http/request";
 /// JSON-RPC notification method for streamed executor HTTP response bodies.
@@ -445,7 +439,7 @@ pub struct FsCopyParams {
 #[serde(rename_all = "camelCase")]
 pub struct FsCopyResponse {}
 
-/// Roots to inspect for plugin and skill capability manifests.
+/// Roots to inspect for filesystem skill manifests.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CapabilityRootsDiscoverParams {
@@ -480,16 +474,6 @@ pub struct CapabilityTextFile {
     pub contents: String,
 }
 
-/// Plugin files declared directly by a selected root.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiscoveredPluginFiles {
-    pub manifest: CapabilityTextFile,
-    /// File-backed connector declarations.
-    #[serde(default)]
-    pub apps_config: Option<CapabilityTextFile>,
-}
-
 /// A skill instructions file and its optional sibling metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -508,12 +492,7 @@ pub struct CapabilityRootDiscovery {
     pub id: String,
     pub path: PathUri,
     #[serde(default)]
-    pub plugin: Option<DiscoveredPluginFiles>,
-    #[serde(default)]
     pub skills: Vec<DiscoveredSkillFiles>,
-    /// Plugin manifests found while scanning the root, used to namespace nested skills.
-    #[serde(default)]
-    pub namespace_manifests: Vec<CapabilityTextFile>,
     #[serde(default)]
     pub warnings: Vec<String>,
     #[serde(default)]

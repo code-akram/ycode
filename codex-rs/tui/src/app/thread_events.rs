@@ -55,10 +55,7 @@ impl ThreadEventStore {
     pub(super) fn event_survives_session_refresh(event: &ThreadBufferedEvent) -> bool {
         match event {
             ThreadBufferedEvent::Request(_) | ThreadBufferedEvent::FeedbackSubmission(_) => true,
-            ThreadBufferedEvent::Notification(notification) => matches!(
-                notification.as_ref(),
-                ServerNotification::HookStarted(_) | ServerNotification::HookCompleted(_)
-            ),
+            ThreadBufferedEvent::Notification(_) => false,
             ThreadBufferedEvent::HistoryEntryResponse(_) => false,
         }
     }
@@ -362,16 +359,6 @@ mod tests {
     use crate::test_support::test_path_buf;
     use codex_cli_protocol::AskForApproval;
     use codex_cli_protocol::CommandExecutionRequestApprovalParams;
-    use codex_cli_protocol::HookCompletedNotification;
-    use codex_cli_protocol::HookEventName as CliRuntimeHookEventName;
-    use codex_cli_protocol::HookExecutionMode as CliRuntimeHookExecutionMode;
-    use codex_cli_protocol::HookHandlerType as CliRuntimeHookHandlerType;
-    use codex_cli_protocol::HookOutputEntry as CliRuntimeHookOutputEntry;
-    use codex_cli_protocol::HookOutputEntryKind as CliRuntimeHookOutputEntryKind;
-    use codex_cli_protocol::HookRunStatus as CliRuntimeHookRunStatus;
-    use codex_cli_protocol::HookRunSummary as CliRuntimeHookRunSummary;
-    use codex_cli_protocol::HookScope as CliRuntimeHookScope;
-    use codex_cli_protocol::HookStartedNotification;
     use codex_cli_protocol::RequestId as CliRuntimeRequestId;
 
     use codex_cli_protocol::TurnCompletedNotification;
@@ -440,61 +427,6 @@ mod tests {
                 completed_at: Some(0),
                 duration_ms: Some(1),
                 ..test_turn(turn_id, status, Vec::new())
-            },
-        })
-    }
-
-    fn hook_started_notification(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
-        ServerNotification::HookStarted(HookStartedNotification {
-            thread_id: thread_id.to_string(),
-            turn_id: Some(turn_id.to_string()),
-            run: CliRuntimeHookRunSummary {
-                id: "user-prompt-submit:0:/tmp/hooks.json".to_string(),
-                event_name: CliRuntimeHookEventName::UserPromptSubmit,
-                handler_type: CliRuntimeHookHandlerType::Command,
-                execution_mode: CliRuntimeHookExecutionMode::Sync,
-                scope: CliRuntimeHookScope::Turn,
-                source_path: test_path_buf("/tmp/hooks.json").abs(),
-                source: codex_cli_protocol::HookSource::User,
-                display_order: 0,
-                status: CliRuntimeHookRunStatus::Running,
-                status_message: Some("checking go-workflow input policy".to_string()),
-                started_at: 1,
-                completed_at: None,
-                duration_ms: None,
-                entries: Vec::new(),
-            },
-        })
-    }
-
-    fn hook_completed_notification(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
-        ServerNotification::HookCompleted(HookCompletedNotification {
-            thread_id: thread_id.to_string(),
-            turn_id: Some(turn_id.to_string()),
-            run: CliRuntimeHookRunSummary {
-                id: "user-prompt-submit:0:/tmp/hooks.json".to_string(),
-                event_name: CliRuntimeHookEventName::UserPromptSubmit,
-                handler_type: CliRuntimeHookHandlerType::Command,
-                execution_mode: CliRuntimeHookExecutionMode::Sync,
-                scope: CliRuntimeHookScope::Turn,
-                source_path: test_path_buf("/tmp/hooks.json").abs(),
-                source: codex_cli_protocol::HookSource::User,
-                display_order: 0,
-                status: CliRuntimeHookRunStatus::Stopped,
-                status_message: Some("checking go-workflow input policy".to_string()),
-                started_at: 1,
-                completed_at: Some(11),
-                duration_ms: Some(10),
-                entries: vec![
-                    CliRuntimeHookOutputEntry {
-                        kind: CliRuntimeHookOutputEntryKind::Warning,
-                        text: "go-workflow must start from PlanMode".to_string(),
-                    },
-                    CliRuntimeHookOutputEntry {
-                        kind: CliRuntimeHookOutputEntryKind::Stop,
-                        text: "prompt blocked".to_string(),
-                    },
-                ],
             },
         })
     }
@@ -602,36 +534,5 @@ mod tests {
         let snapshot = store.snapshot();
         assert!(snapshot.events.is_empty());
         assert_eq!(store.has_pending_thread_approvals(), false);
-    }
-
-    #[test]
-    fn thread_event_store_rebase_preserves_hook_notifications() {
-        let thread_id = ThreadId::new();
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_notification(hook_started_notification(thread_id, "turn-hook"));
-        store.push_notification(hook_completed_notification(thread_id, "turn-hook"));
-
-        store.rebase_buffer_after_session_refresh();
-
-        let snapshot = store.snapshot();
-        let hook_notifications = snapshot
-            .events
-            .into_iter()
-            .map(|event| match event {
-                ThreadBufferedEvent::Notification(notification) => {
-                    serde_json::to_value(notification).expect("hook notification should serialize")
-                }
-                other => panic!("expected buffered hook notification, saw: {other:?}"),
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            hook_notifications,
-            vec![
-                serde_json::to_value(hook_started_notification(thread_id, "turn-hook"))
-                    .expect("hook notification should serialize"),
-                serde_json::to_value(hook_completed_notification(thread_id, "turn-hook"))
-                    .expect("hook notification should serialize"),
-            ]
-        );
     }
 }

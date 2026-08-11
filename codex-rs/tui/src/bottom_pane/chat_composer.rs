@@ -296,7 +296,6 @@ use crate::tui::FrameRequester;
 use crate::ui_consts::LIVE_PREFIX_COLS;
 use codex_cli_protocol::SkillMetadata;
 use codex_file_search::FileMatch;
-use codex_plugin::PluginCapabilitySummary;
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -374,8 +373,6 @@ fn parent_owned_command_is_allowed(command: SlashCommand, args: &str) -> bool {
                 | SlashCommand::Diff
                 | SlashCommand::Mention
                 | SlashCommand::Skills
-                | SlashCommand::Import
-                | SlashCommand::Hooks
                 | SlashCommand::Status
                 | SlashCommand::Usage
                 | SlashCommand::Ide
@@ -387,7 +384,6 @@ fn parent_owned_command_is_allowed(command: SlashCommand, args: &str) -> bool {
                 | SlashCommand::Stop
                 | SlashCommand::MemoryDrop
                 | SlashCommand::MemoryUpdate
-                | SlashCommand::Plugins
                 | SlashCommand::Rollout
         )
 }
@@ -467,9 +463,7 @@ pub(crate) struct ChatComposer {
     /// prepare their argument text without also double-recording the full command invocation.
     pending_slash_command_history: Option<HistoryEntry>,
     skills: Option<Vec<SkillMetadata>>,
-    plugins: Option<Vec<PluginCapabilitySummary>>,
     config: ChatComposerConfig,
-    plugins_command_enabled: bool,
     token_activity_command_enabled: bool,
     service_tier_commands_enabled: bool,
     service_tier_commands: Vec<ServiceTierCommand>,
@@ -529,7 +523,6 @@ impl ChatComposer {
 
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
-            plugins_command_enabled: self.plugins_command_enabled,
             token_activity_command_enabled: self.token_activity_command_enabled,
             service_tier_commands_enabled: self.service_tier_commands_enabled,
             goal_command_enabled: self.goal_command_enabled,
@@ -628,9 +621,7 @@ impl ChatComposer {
             queue_submissions: false,
             pending_slash_command_history: None,
             skills: None,
-            plugins: None,
             config,
-            plugins_command_enabled: false,
             token_activity_command_enabled: false,
             service_tier_commands_enabled: false,
             service_tier_commands: Vec::new(),
@@ -713,25 +704,14 @@ impl ChatComposer {
         self.sync_popups();
     }
 
-    pub fn set_plugin_mentions(&mut self, plugins: Option<Vec<PluginCapabilitySummary>>) {
-        self.plugins = plugins;
-        self.refresh_mentions_v2_popup_candidates();
-        self.sync_popups();
-    }
-
-    /// Refreshes an open mention catalog when skill or plugin metadata changes.
+    /// Refreshes an open mention catalog when skill metadata changes.
     fn refresh_mentions_v2_popup_candidates(&mut self) {
         let ActivePopup::MentionV2(popup) = &mut self.popups.active else {
             return;
         };
         popup.set_candidates(super::mentions_v2::build_search_catalog(
             self.skills.as_deref(),
-            self.plugins.as_deref(),
         ));
-    }
-
-    pub fn set_plugins_command_enabled(&mut self, enabled: bool) {
-        self.plugins_command_enabled = enabled;
     }
 
     pub fn set_token_activity_command_enabled(&mut self, enabled: bool) {
@@ -2448,20 +2428,10 @@ impl ChatComposer {
         self.skills.as_ref()
     }
 
-    pub fn plugins(&self) -> Option<&Vec<PluginCapabilitySummary>> {
-        self.plugins.as_ref()
-    }
-
     fn mentions_enabled(&self) -> bool {
-        let skills_ready = self
-            .skills
+        self.skills
             .as_ref()
-            .is_some_and(|skills| !skills.is_empty());
-        let plugins_ready = self
-            .plugins
-            .as_ref()
-            .is_some_and(|plugins| !plugins.is_empty());
-        skills_ready || plugins_ready
+            .is_some_and(|skills| !skills.is_empty())
     }
 
     fn current_prefixed_token(
@@ -2762,21 +2732,6 @@ impl ChatComposer {
                 scan_from = range.end;
             }
         }
-    }
-
-    fn plugin_at_mention_highlights(&self) -> Vec<(Range<usize>, Style)> {
-        self.draft
-            .textarea
-            .text_element_snapshots()
-            .into_iter()
-            .filter_map(|snapshot| {
-                let binding = self.draft.mention_bindings.get(&snapshot.id)?;
-                if !binding.path.starts_with("plugin://") || !snapshot.text.starts_with('@') {
-                    return None;
-                }
-                Some((snapshot.range, Style::default().fg(Color::Magenta)))
-            })
-            .collect()
     }
 
     /// Prepare text for submission/queuing. Returns None if submission should be suppressed.
@@ -3952,10 +3907,7 @@ impl ChatComposer {
                 popup.set_query(&query);
             }
             _ => {
-                let candidates = super::mentions_v2::build_search_catalog(
-                    self.skills.as_deref(),
-                    self.plugins.as_deref(),
-                );
+                let candidates = super::mentions_v2::build_search_catalog(self.skills.as_deref());
                 self.popups.active =
                     ActivePopup::MentionV2(MentionV2Popup::new(candidates, &query));
             }
@@ -3984,42 +3936,6 @@ impl ChatComposer {
                     path: Some(skill.path.to_string_lossy().into_owned()),
                     category_tag: Some("[Skill]".to_string()),
                     sort_rank: 1,
-                });
-            }
-        }
-
-        if let Some(plugins) = self.plugins.as_ref() {
-            for plugin in plugins {
-                let (plugin_name, marketplace_name) = plugin
-                    .config_name
-                    .split_once('@')
-                    .unwrap_or((plugin.config_name.as_str(), ""));
-                let mut capability_labels = Vec::new();
-                if plugin.has_skills {
-                    capability_labels.push("skills".to_string());
-                }
-                let description = plugin.description.clone().or_else(|| {
-                    Some(if capability_labels.is_empty() {
-                        "Plugin".to_string()
-                    } else {
-                        format!("Plugin · {}", capability_labels.join(" · "))
-                    })
-                });
-                let mut search_terms = vec![plugin_name.to_string(), plugin.config_name.clone()];
-                if plugin.display_name != plugin_name {
-                    search_terms.push(plugin.display_name.clone());
-                }
-                if !marketplace_name.is_empty() {
-                    search_terms.push(marketplace_name.to_string());
-                }
-                mentions.push(MentionItem {
-                    display_name: plugin.display_name.clone(),
-                    description,
-                    insert_text: format!("${plugin_name}"),
-                    search_terms,
-                    path: Some(format!("plugin://{}", plugin.config_name)),
-                    category_tag: Some("[Plugin]".to_string()),
-                    sort_rank: 0,
                 });
             }
         }
@@ -4588,7 +4504,7 @@ impl ChatComposer {
                     .textarea
                     .render_ref_masked(textarea_rect, buf, &mut state, mask_char);
             } else {
-                let mut highlights = self.plugin_at_mention_highlights();
+                let mut highlights = Vec::new();
                 let search_highlight_style =
                     Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD);
                 highlights.extend(
@@ -5208,7 +5124,7 @@ mod tests {
             vec![MentionBinding {
                 sigil: '@',
                 mention: "sample".to_string(),
-                path: "plugin://sample@test".to_string(),
+                path: "/tmp/sample/SKILL.md".to_string(),
             }],
         );
 
@@ -5236,7 +5152,7 @@ mod tests {
             vec![MentionBinding {
                 sigil: '@',
                 mention: "sample".to_string(),
-                path: "plugin://sample@test".to_string(),
+                path: "/tmp/sample/SKILL.md".to_string(),
             }],
         );
 
@@ -5287,7 +5203,7 @@ mod tests {
             vec![MentionBinding {
                 sigil: '@',
                 mention: "sample".to_string(),
-                path: "plugin://sample@test".to_string(),
+                path: "/tmp/sample/SKILL.md".to_string(),
             }],
         );
         let (result, _) =
@@ -6263,7 +6179,7 @@ mod tests {
         MentionBinding {
             sigil: '@',
             mention: name.to_string(),
-            path: format!("plugin://{name}@test"),
+            path: format!("/tmp/{name}/SKILL.md"),
         }
     }
 
@@ -6776,7 +6692,7 @@ mod tests {
             vec![MentionBinding {
                 sigil: '@',
                 mention: "bound".to_string(),
-                path: "plugin://bound@test".to_string(),
+                path: "/tmp/bound/SKILL.md".to_string(),
             }],
         );
         composer.draft.textarea.set_cursor("$old ".len());
@@ -7299,7 +7215,7 @@ mod tests {
             MentionBinding {
                 sigil: '@',
                 mention: "figma".to_string(),
-                path: "plugin://figma@test".to_string(),
+                path: "/tmp/figma/SKILL.md".to_string(),
             },
             MentionBinding {
                 sigil: '$',
@@ -7344,7 +7260,7 @@ mod tests {
         let mention_bindings = vec![MentionBinding {
             sigil: '@',
             mention: "sample".to_string(),
-            path: "plugin://sample@test".to_string(),
+            path: "/tmp/sample/SKILL.md".to_string(),
         }];
         composer.set_text_content_with_mention_bindings(
             text,
@@ -7385,7 +7301,7 @@ mod tests {
         let mention_bindings = vec![MentionBinding {
             sigil: '@',
             mention: "sample".to_string(),
-            path: "plugin://sample@test".to_string(),
+            path: "/tmp/sample/SKILL.md".to_string(),
         }];
         composer.set_text_content_with_mention_bindings(
             text,
@@ -7430,7 +7346,7 @@ mod tests {
             vec![MentionBinding {
                 sigil: '@',
                 mention: "figma".to_string(),
-                path: "plugin://figma@debug".to_string(),
+                path: "/tmp/figma/SKILL.md".to_string(),
             }],
         );
         composer.draft.textarea.set_cursor("go".len());

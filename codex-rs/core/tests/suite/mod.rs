@@ -56,7 +56,6 @@ mod fork_thread;
 mod git_enrichment;
 #[cfg(not(target_os = "windows"))]
 #[cfg(not(target_os = "windows"))]
-mod hooks;
 mod image_rollout;
 mod injected_models_cache;
 mod items;
@@ -76,7 +75,6 @@ mod override_updates;
 mod pending_input;
 mod permissions_messages;
 mod personality;
-mod plugins;
 mod prompt_cache_key;
 mod prompt_caching;
 mod prompt_debug_tests;

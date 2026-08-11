@@ -188,7 +188,6 @@ impl ChatWidget {
             .map(|binding| binding.mention.clone())
             .collect();
         let mut selected_skill_paths: HashSet<AbsolutePathBuf> = HashSet::new();
-        let mut selected_plugin_ids: HashSet<String> = HashSet::new();
 
         if let Some(skills) = self.bottom_pane.skills() {
             for binding in &mention_bindings {
@@ -218,30 +217,6 @@ impl ChatWidget {
                     name: skill.name.clone(),
                     path: skill.path.to_path_buf(),
                 });
-            }
-        }
-
-        if let Some(plugins) = self.plugins_for_mentions() {
-            for binding in &mention_bindings {
-                let Some(plugin_config_name) = binding
-                    .path
-                    .strip_prefix("plugin://")
-                    .filter(|id| !id.is_empty())
-                else {
-                    continue;
-                };
-                if !selected_plugin_ids.insert(plugin_config_name.to_string()) {
-                    continue;
-                }
-                if let Some(plugin) = plugins
-                    .iter()
-                    .find(|plugin| plugin.config_name == plugin_config_name)
-                {
-                    items.push(UserInput::Mention {
-                        name: plugin.display_name.clone(),
-                        path: binding.path.clone(),
-                    });
-                }
             }
         }
 

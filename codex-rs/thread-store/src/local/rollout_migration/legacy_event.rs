@@ -165,8 +165,6 @@ pub(super) fn completed_item(
         EventMsg::ExecCommandEnd(event) => Some((
             TurnItem::CommandExecution(CommandExecutionItem {
                 id: event.call_id.clone(),
-                plugin_id: event.plugin_id.clone(),
-                script_path: event.script_path.clone(),
                 process_id: event.process_id.clone(),
                 command: event.command.clone(),
                 cwd: event.cwd.clone(),

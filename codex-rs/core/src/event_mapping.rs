@@ -24,7 +24,6 @@ use codex_protocol::protocol::CONTEXT_WINDOW_GUIDANCE_OPEN_TAG;
 use codex_protocol::protocol::CONTEXT_WINDOW_OPEN_TAG;
 use codex_protocol::protocol::ENVIRONMENTS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::MULTI_AGENT_MODE_OPEN_TAG;
-use codex_protocol::protocol::PLUGINS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::REALTIME_CONVERSATION_OPEN_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::TOOLS_OPEN_TAG;
@@ -33,7 +32,6 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::context::is_contextual_user_fragment;
-use crate::context::parse_visible_hook_prompt_message;
 use crate::web_search::web_search_action_detail;
 
 const CONTEXTUAL_DEVELOPER_PREFIXES: &[&str] = &[
@@ -43,7 +41,6 @@ const CONTEXTUAL_DEVELOPER_PREFIXES: &[&str] = &[
     MULTI_AGENT_MODE_OPEN_TAG,
     ENVIRONMENTS_INSTRUCTIONS_OPEN_TAG,
     "<git_attribution>",
-    PLUGINS_INSTRUCTIONS_OPEN_TAG,
     REALTIME_CONVERSATION_OPEN_TAG,
     SKILLS_INSTRUCTIONS_OPEN_TAG,
     TOOLS_OPEN_TAG,
@@ -179,9 +176,7 @@ pub fn parse_turn_item(item: &ResponseItem) -> Option<TurnItem> {
             phase,
             ..
         } => match role.as_str() {
-            "user" => parse_visible_hook_prompt_message(id.as_deref(), content)
-                .map(TurnItem::HookPrompt)
-                .or_else(|| parse_user_message(content).map(TurnItem::UserMessage)),
+            "user" => parse_user_message(content).map(TurnItem::UserMessage),
             "assistant" => Some(TurnItem::AgentMessage(parse_agent_message(
                 id.as_deref(),
                 content,

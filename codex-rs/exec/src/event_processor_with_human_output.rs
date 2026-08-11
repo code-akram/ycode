@@ -226,23 +226,6 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 }
                 CodexStatus::Running
             }
-            ServerNotification::HookStarted(notification) => {
-                eprintln!(
-                    "{} {}",
-                    "hook:".style(self.bold),
-                    format!("{:?}", notification.run.event_name).style(self.dimmed)
-                );
-                CodexStatus::Running
-            }
-            ServerNotification::HookCompleted(notification) => {
-                eprintln!(
-                    "{} {} {:?}",
-                    "hook:".style(self.bold),
-                    format!("{:?}", notification.run.event_name).style(self.dimmed),
-                    notification.run.status
-                );
-                CodexStatus::Running
-            }
             ServerNotification::ItemStarted(notification) => {
                 self.render_item_started(&notification.item);
                 CodexStatus::Running

@@ -41,12 +41,8 @@ mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
 mod doctor;
-mod marketplace_cmd;
-mod plugin_cmd;
 mod state_db_recovery;
 
-use crate::plugin_cmd::PluginCli;
-use crate::plugin_cmd::PluginSubcommand;
 use doctor::DoctorCommand;
 use state_db_recovery as local_state_db;
 
@@ -112,9 +108,6 @@ enum Subcommand {
 
     /// Remove stored authentication credentials.
     Logout(LogoutCommand),
-
-    /// Manage Codex plugins.
-    Plugin(PluginCli),
 
     /// Launch the Desktop app (opens the app installer if missing).
     #[cfg(target_os = "macos")]
@@ -614,37 +607,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             );
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
         }
-        Some(Subcommand::Plugin(plugin_cli)) => {
-            let PluginCli {
-                mut config_overrides,
-                subcommand,
-            } = plugin_cli;
-            prepend_config_flags(&mut config_overrides, root_config_overrides.clone());
-            match subcommand {
-                PluginSubcommand::Add(args) => {
-                    let overrides = config_overrides
-                        .parse_overrides()
-                        .map_err(anyhow::Error::msg)?;
-                    plugin_cmd::run_plugin_add(overrides, args).await?;
-                }
-                PluginSubcommand::List(args) => {
-                    let overrides = config_overrides
-                        .parse_overrides()
-                        .map_err(anyhow::Error::msg)?;
-                    plugin_cmd::run_plugin_list(overrides, args).await?;
-                }
-                PluginSubcommand::Marketplace(mut marketplace_cli) => {
-                    prepend_config_flags(&mut marketplace_cli.config_overrides, config_overrides);
-                    marketplace_cli.run().await?;
-                }
-                PluginSubcommand::Remove(args) => {
-                    let overrides = config_overrides
-                        .parse_overrides()
-                        .map_err(anyhow::Error::msg)?;
-                    plugin_cmd::run_plugin_remove(overrides, args).await?;
-                }
-            }
-        }
         #[cfg(target_os = "macos")]
         Some(Subcommand::App(app_cli)) => {
             app_cmd::run_app(app_cli).await?;
@@ -996,7 +958,6 @@ async fn run_debug_prompt_input_command(
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe,
         show_raw_agent_reasoning: shared.oss.then_some(true),
         ephemeral: Some(true),
-        bypass_hook_trust: shared.bypass_hook_trust.then_some(true),
         ..Default::default()
     };
     let config = ConfigBuilder::default()
@@ -1165,7 +1126,6 @@ fn unsupported_subcommand_name_for_strict_config(
         | Some(Subcommand::Unarchive(_))
         | Some(Subcommand::Fork(_))
         | Some(Subcommand::Doctor(_)) => None,
-        Some(Subcommand::Plugin(_)) => Some("plugin"),
         #[cfg(target_os = "macos")]
         Some(Subcommand::App(_)) => Some("app"),
         Some(Subcommand::Login(_)) => Some("login"),
@@ -1851,82 +1811,6 @@ mod tests {
     }
 
     #[test]
-    fn plugin_marketplace_help_uses_plugin_namespace() {
-        let help = help_from_args(&["codex", "plugin", "marketplace", "--help"]);
-        assert!(
-            help.contains("Usage: codex plugin marketplace [OPTIONS] <COMMAND>"),
-            "{help}"
-        );
-
-        for (subcommand, usage) in [
-            ("add", "Usage: codex plugin marketplace add"),
-            ("list", "Usage: codex plugin marketplace list"),
-            ("upgrade", "Usage: codex plugin marketplace upgrade"),
-            ("remove", "Usage: codex plugin marketplace remove"),
-        ] {
-            let help = help_from_args(&["codex", "plugin", "marketplace", subcommand, "--help"]);
-            assert!(help.contains(usage), "{help}");
-        }
-    }
-
-    #[test]
-    fn plugin_marketplace_add_parses_under_plugin() {
-        let cli =
-            MultitoolCli::try_parse_from(["codex", "plugin", "marketplace", "add", "owner/repo"])
-                .expect("parse");
-
-        assert!(matches!(cli.subcommand, Some(Subcommand::Plugin(_))));
-    }
-
-    #[test]
-    fn plugin_marketplace_upgrade_parses_under_plugin() {
-        let cli =
-            MultitoolCli::try_parse_from(["codex", "plugin", "marketplace", "upgrade", "debug"])
-                .expect("parse");
-
-        assert!(matches!(cli.subcommand, Some(Subcommand::Plugin(_))));
-    }
-
-    #[test]
-    fn plugin_add_parses_under_plugin() {
-        let cli = MultitoolCli::try_parse_from([
-            "codex",
-            "plugin",
-            "add",
-            "sample",
-            "--marketplace",
-            "debug",
-        ])
-        .expect("parse");
-
-        assert!(matches!(cli.subcommand, Some(Subcommand::Plugin(_))));
-    }
-
-    #[test]
-    fn plugin_list_parses_under_plugin() {
-        let cli =
-            MultitoolCli::try_parse_from(["codex", "plugin", "list", "--marketplace", "debug"])
-                .expect("parse");
-
-        assert!(matches!(cli.subcommand, Some(Subcommand::Plugin(_))));
-    }
-
-    #[test]
-    fn plugin_remove_parses_under_plugin() {
-        let cli = MultitoolCli::try_parse_from([
-            "codex",
-            "plugin",
-            "remove",
-            "sample",
-            "--marketplace",
-            "debug",
-        ])
-        .expect("parse");
-
-        assert!(matches!(cli.subcommand, Some(Subcommand::Plugin(_))));
-    }
-
-    #[test]
     fn update_parses_as_update_subcommand() {
         let cli = MultitoolCli::try_parse_from(["codex", "update"]).expect("parse");
         assert!(matches!(cli.subcommand, Some(Subcommand::Update)));
@@ -1941,7 +1825,6 @@ mod tests {
                 "/root",
                 "archive",
                 "--strict-config",
-                "--dangerously-bypass-hook-trust",
                 "-m",
                 "gpt-5.1-test",
                 "-p",
@@ -1961,7 +1844,6 @@ mod tests {
             Some(std::path::Path::new("/archive"))
         );
         assert!(interactive.strict_config);
-        assert!(interactive.bypass_hook_trust);
     }
 
     #[test]
@@ -2057,30 +1939,6 @@ mod tests {
             .expect_err("parse should fail");
 
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
-    }
-
-    #[test]
-    fn plugin_marketplace_remove_parses_under_plugin() {
-        let cli =
-            MultitoolCli::try_parse_from(["codex", "plugin", "marketplace", "remove", "debug"])
-                .expect("parse");
-
-        assert!(matches!(cli.subcommand, Some(Subcommand::Plugin(_))));
-    }
-
-    #[test]
-    fn marketplace_no_longer_parses_at_top_level() {
-        let add_result =
-            MultitoolCli::try_parse_from(["codex", "marketplace", "add", "owner/repo"]);
-        assert!(add_result.is_err());
-
-        let upgrade_result =
-            MultitoolCli::try_parse_from(["codex", "marketplace", "upgrade", "debug"]);
-        assert!(upgrade_result.is_err());
-
-        let remove_result =
-            MultitoolCli::try_parse_from(["codex", "marketplace", "remove", "debug"]);
-        assert!(remove_result.is_err());
     }
 
     fn sample_exit_info(conversation_id: Option<&str>, thread_name: Option<&str>) -> AppExitInfo {
@@ -2349,18 +2207,6 @@ mod tests {
             .as_ref(),
         );
         assert!(interactive.dangerously_bypass_approvals_and_sandbox);
-        assert!(interactive.resume_picker);
-        assert!(!interactive.resume_last);
-        assert_eq!(interactive.resume_session_id, None);
-    }
-
-    #[test]
-    fn resume_merges_bypass_hook_trust_flag() {
-        let interactive = finalize_resume_from_args(
-            ["codex", "resume", "--dangerously-bypass-hook-trust"].as_ref(),
-        );
-
-        assert!(interactive.bypass_hook_trust);
         assert!(interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id, None);

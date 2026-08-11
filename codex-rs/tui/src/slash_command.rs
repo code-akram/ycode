@@ -19,8 +19,6 @@ pub enum SlashCommand {
     Experimental,
     Memories,
     Skills,
-    Import,
-    Hooks,
     Rename,
     New,
     Archive,
@@ -45,7 +43,6 @@ pub enum SlashCommand {
     Theme,
     #[strum(to_string = "pets", serialize = "pet")]
     Pets,
-    Plugins,
     Logout,
     Quit,
     Exit,
@@ -86,8 +83,6 @@ impl SlashCommand {
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
             SlashCommand::Skills => "use skills to improve how Codex performs specific tasks",
-            SlashCommand::Import => "import setup, this project, and recent chats from Claude Code",
-            SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Status => "show current session configuration and token usage",
             SlashCommand::Usage => "view account usage or use a usage limit reset",
             SlashCommand::Title => "configure which items appear in the terminal title",
@@ -112,7 +107,6 @@ impl SlashCommand {
             SlashCommand::Vim => "toggle Vim mode for the composer",
             SlashCommand::Experimental => "toggle experimental features",
             SlashCommand::Memories => "configure memory use and generation",
-            SlashCommand::Plugins => "browse plugins",
             SlashCommand::Logout => "log out of Codex",
             SlashCommand::Rollout => "print the rollout file path",
         }
@@ -171,7 +165,6 @@ impl SlashCommand {
             | SlashCommand::Vim
             | SlashCommand::Experimental
             | SlashCommand::Memories
-            | SlashCommand::Import
             | SlashCommand::Clear
             | SlashCommand::Logout
             | SlashCommand::MemoryDrop
@@ -185,14 +178,12 @@ impl SlashCommand {
             | SlashCommand::Rename
             | SlashCommand::Mention
             | SlashCommand::Skills
-            | SlashCommand::Hooks
             | SlashCommand::Status
             | SlashCommand::Usage
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::App
             | SlashCommand::Goal
-            | SlashCommand::Plugins
             | SlashCommand::Title
             | SlashCommand::Statusline
             | SlashCommand::Feedback

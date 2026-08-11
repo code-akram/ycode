@@ -2,10 +2,6 @@ use std::sync::Arc;
 
 use crate::compact::InitialContextInjection;
 use crate::context::world_state::WorldState;
-use crate::hook_runtime::PostCompactHookOutcome;
-use crate::hook_runtime::PreCompactHookOutcome;
-use crate::hook_runtime::run_post_compact_hooks;
-use crate::hook_runtime::run_pre_compact_hooks;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
@@ -69,12 +65,6 @@ async fn run_compact_task_inner(
     trigger: CompactionTrigger,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
-    let pre_compact_outcome = run_pre_compact_hooks(sess, turn_context, trigger).await;
-    match pre_compact_outcome {
-        PreCompactHookOutcome::Continue => {}
-        PreCompactHookOutcome::Stopped => return Err(CodexErr::TurnAborted),
-    }
-
     let compaction_item = TurnItem::ContextCompaction(ContextCompactionItem::new());
     sess.emit_turn_item_started(turn_context, &compaction_item)
         .await;
@@ -82,11 +72,6 @@ async fn run_compact_task_inner(
         .await;
     sess.emit_turn_item_completed(turn_context, compaction_item)
         .await;
-
-    let post_compact_outcome = run_post_compact_hooks(sess, turn_context, trigger).await;
-    if let PostCompactHookOutcome::Stopped = post_compact_outcome {
-        return Err(CodexErr::TurnAborted);
-    }
 
     Ok(())
 }

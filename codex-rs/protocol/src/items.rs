@@ -1,12 +1,9 @@
 use crate::AgentPath;
-use crate::ResponseItemId;
 use crate::ThreadId;
 use crate::dynamic_tools::DynamicToolCallOutputContentItem;
 use crate::memory_citation::MemoryCitation;
-use crate::models::ContentItem;
 use crate::models::ImageDetail;
 use crate::models::MessagePhase;
-use crate::models::ResponseItem;
 use crate::models::WebSearchAction;
 use crate::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use crate::parse_command::ParsedCommand;
@@ -25,8 +22,6 @@ use crate::user_input::UserInput;
 use codex_extension_items::ExtensionItem;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
-use quick_xml::de::from_str as from_xml_str;
-use quick_xml::se::to_string as to_xml_string;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -42,7 +37,6 @@ use ts_rs::TS;
 #[ts(tag = "type")]
 pub enum TurnItem {
     UserMessage(UserMessageItem),
-    HookPrompt(HookPromptItem),
     AgentMessage(AgentMessageItem),
     Plan(PlanItem),
     Reasoning(ReasoningItem),
@@ -81,29 +75,6 @@ pub struct UserMessageItem {
     #[ts(optional)]
     pub client_id: Option<String>,
     pub content: Vec<UserInput>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
-pub struct HookPromptItem {
-    pub id: String,
-    pub fragments: Vec<HookPromptFragment>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase")]
-pub struct HookPromptFragment {
-    pub text: String,
-    pub hook_run_id: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename = "hook_prompt")]
-struct HookPromptXml {
-    #[serde(rename = "@hook_run_id")]
-    hook_run_id: String,
-    #[serde(rename = "$text")]
-    text: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
@@ -180,33 +151,9 @@ impl From<ExecCommandStatus> for CommandExecutionStatus {
     }
 }
 
-/// Returns whether a path is safe to serialize as a trusted plugin-relative path.
-///
-/// This validates the cross-platform wire shape only. The trusted plugin resolver
-/// remains responsible for establishing that the path actually came from a plugin root.
-pub fn is_safe_plugin_relative_path(path: &str) -> bool {
-    !path.is_empty()
-        && !path.starts_with('/')
-        && !path.contains('\\')
-        && path.split('/').all(|component| {
-            !component.is_empty()
-                && !matches!(component, "." | "..")
-                && !matches!(
-                    component.as_bytes(),
-                    [drive, b':', ..] if drive.is_ascii_alphabetic()
-                )
-        })
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq)]
 pub struct CommandExecutionItem {
     pub id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub plugin_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub script_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub process_id: Option<String>,
@@ -517,94 +464,10 @@ fn trim_trailing_default_image_details(
     details
 }
 
-impl HookPromptItem {
-    pub fn from_fragments(id: Option<&str>, fragments: Vec<HookPromptFragment>) -> Self {
-        Self {
-            id: id.map(str::to_string).unwrap_or_else(new_item_id),
-            fragments,
-        }
-    }
-}
-
-impl HookPromptFragment {
-    pub fn from_single_hook(text: impl Into<String>, hook_run_id: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            hook_run_id: hook_run_id.into(),
-        }
-    }
-}
-
-pub fn build_hook_prompt_message(fragments: &[HookPromptFragment]) -> Option<ResponseItem> {
-    let content = fragments
-        .iter()
-        .filter(|fragment| !fragment.hook_run_id.trim().is_empty())
-        .filter_map(|fragment| {
-            serialize_hook_prompt_fragment(&fragment.text, &fragment.hook_run_id)
-                .map(|text| ContentItem::InputText { text })
-        })
-        .collect::<Vec<_>>();
-
-    if content.is_empty() {
-        return None;
-    }
-
-    Some(ResponseItem::Message {
-        id: Some(ResponseItemId::new("msg")),
-        role: "user".to_string(),
-        content,
-        phase: None,
-        internal_chat_message_metadata_passthrough: None,
-    })
-}
-
-pub fn parse_hook_prompt_message(
-    id: Option<&str>,
-    content: &[ContentItem],
-) -> Option<HookPromptItem> {
-    let fragments = content
-        .iter()
-        .map(|content_item| {
-            let ContentItem::InputText { text } = content_item else {
-                return None;
-            };
-            parse_hook_prompt_fragment(text)
-        })
-        .collect::<Option<Vec<_>>>()?;
-
-    if fragments.is_empty() {
-        return None;
-    }
-
-    Some(HookPromptItem::from_fragments(id, fragments))
-}
-
-pub fn parse_hook_prompt_fragment(text: &str) -> Option<HookPromptFragment> {
-    let trimmed = text.trim();
-    let HookPromptXml { text, hook_run_id } = from_xml_str::<HookPromptXml>(trimmed).ok()?;
-    if hook_run_id.trim().is_empty() {
-        return None;
-    }
-
-    Some(HookPromptFragment { text, hook_run_id })
-}
-
-fn serialize_hook_prompt_fragment(text: &str, hook_run_id: &str) -> Option<String> {
-    if hook_run_id.trim().is_empty() {
-        return None;
-    }
-    to_xml_string(&HookPromptXml {
-        text: text.to_string(),
-        hook_run_id: hook_run_id.to_string(),
-    })
-    .ok()
-}
-
 impl TurnItem {
     pub fn id(&self) -> String {
         match self {
             TurnItem::UserMessage(item) => item.id.clone(),
-            TurnItem::HookPrompt(item) => item.id.clone(),
             TurnItem::AgentMessage(item) => item.id.clone(),
             TurnItem::Plan(item) => item.id.clone(),
             TurnItem::Reasoning(item) => item.id.clone(),
@@ -670,61 +533,6 @@ mod tests {
                 vec!["https://example.com/remote.mp3".to_string()],
                 vec![std::path::PathBuf::from("local.wav")],
             )
-        );
-    }
-
-    #[test]
-    fn plugin_relative_paths_use_safe_wire_shape() {
-        assert!(is_safe_plugin_relative_path("scripts/run.py"));
-
-        for path in [
-            "",
-            "/home/user/.codex/plugins/cache/sample/scripts/run.py",
-            "C:/Users/user/.codex/plugins/cache/sample/scripts/run.py",
-            "scripts/C:/run.py",
-            r"\\server\share\sample\scripts\run.py",
-            r"scripts\run.py",
-            "scripts//run.py",
-            "scripts/./run.py",
-            "scripts/../run.py",
-        ] {
-            assert!(
-                !is_safe_plugin_relative_path(path),
-                "unsafe plugin-relative path should be rejected: {path:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn hook_prompt_roundtrips_multiple_fragments() {
-        let original = vec![
-            HookPromptFragment::from_single_hook("Retry with care & joy.", "hook-run-1"),
-            HookPromptFragment::from_single_hook("Then summarize cleanly.", "hook-run-2"),
-        ];
-        let message = build_hook_prompt_message(&original).expect("hook prompt");
-
-        let ResponseItem::Message { id, content, .. } = message else {
-            panic!("expected hook prompt message");
-        };
-        assert!(id.is_some_and(|id| id.starts_with("msg_")));
-
-        let parsed = parse_hook_prompt_message(/*id*/ None, &content).expect("parsed hook prompt");
-        assert_eq!(parsed.fragments, original);
-    }
-
-    #[test]
-    fn hook_prompt_parses_legacy_single_hook_run_id() {
-        let parsed = parse_hook_prompt_fragment(
-            r#"<hook_prompt hook_run_id="hook-run-1">Retry with tests.</hook_prompt>"#,
-        )
-        .expect("legacy hook prompt");
-
-        assert_eq!(
-            parsed,
-            HookPromptFragment {
-                text: "Retry with tests.".to_string(),
-                hook_run_id: "hook-run-1".to_string(),
-            }
         );
     }
 }

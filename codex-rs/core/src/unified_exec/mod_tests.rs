@@ -180,7 +180,6 @@ async fn exec_command_with_tty(
         exit_code,
         original_token_count: Some(original_token_count),
         output_omitted_bytes,
-        hook_command: Some(cmd.to_string()),
     })
 }
 

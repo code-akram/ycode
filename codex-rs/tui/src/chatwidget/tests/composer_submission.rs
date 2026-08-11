@@ -1541,7 +1541,7 @@ fn user_message_display_from_inputs_matches_flattened_user_message_shape() {
         },
         UserInput::Mention {
             name: "repo".to_string(),
-            path: "plugin://repo@test".to_string(),
+            path: "/tmp/repo/SKILL.md".to_string(),
         },
         UserInput::Text {
             text: "world".to_string(),

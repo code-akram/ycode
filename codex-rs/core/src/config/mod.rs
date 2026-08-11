@@ -45,7 +45,6 @@ use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
 use codex_config::types::UriBasedFileOpener;
 use codex_config::types::WindowsSandboxModeToml;
-use codex_core_plugins::PluginsConfigInput;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::LOCAL_FS;
 use codex_features::CodeModeConfigToml;
@@ -863,11 +862,6 @@ pub struct Config {
     /// Optional extra configuration fields for the thread.
     pub extra_config: Option<ExtraConfig>,
 
-    /// Whether enabled hooks should run without requiring persisted hook trust for this session.
-    ///
-    /// This is a runtime-only knob populated from invocation overrides, not from config files.
-    pub bypass_hook_trust: bool,
-
     /// Optional URI-based file opener. If set, citations to files in the model
     /// output will be hyperlinked using the specified URI scheme.
     pub file_opener: UriBasedFileOpener,
@@ -1575,18 +1569,6 @@ impl Config {
         }
     }
 
-    /// Build the plugin-manager input from the effective config.
-    pub fn plugins_config_input(&self) -> PluginsConfigInput {
-        PluginsConfigInput::new(
-            self.config_layer_stack.clone(),
-            self.model_provider_id.clone(),
-            self.features.enabled(Feature::Plugins),
-            self.features.enabled(Feature::RemotePlugin),
-            self.chatgpt_base_url.clone(),
-            self.http_client_factory(),
-        )
-    }
-
     pub async fn rebuild_preserving_session_layers(
         &self,
         refreshed_config: &Config,
@@ -2242,7 +2224,6 @@ pub struct ConfigOverrides {
     pub show_raw_agent_reasoning: Option<bool>,
     pub tools_web_search_request: Option<bool>,
     pub ephemeral: Option<bool>,
-    pub bypass_hook_trust: Option<bool>,
     pub psp: Option<bool>,
     /// Additional directories that should be treated as writable roots for this session.
     pub additional_writable_roots: Vec<PathBuf>,
@@ -2884,13 +2865,10 @@ impl Config {
             windows_sandbox_mode: _,
             windows_sandbox_private_desktop: _,
             web_search_mode: mut constrained_web_search_mode,
-            allow_managed_hooks_only: _,
             allow_appshots: _,
             allow_remote_control: _,
             computer_use: _,
             feature_requirements,
-            managed_hooks: _,
-            marketplaces: _,
             exec_policy: _,
             enforce_residency,
             network: network_requirements,
@@ -2920,20 +2898,10 @@ impl Config {
             show_raw_agent_reasoning,
             tools_web_search_request: override_tools_web_search_request,
             ephemeral,
-            bypass_hook_trust,
             psp,
             additional_writable_roots,
             workspace_roots: workspace_roots_override,
         } = overrides;
-        let bypass_hook_trust = bypass_hook_trust.unwrap_or_default();
-
-        if bypass_hook_trust {
-            startup_warnings.push(
-                "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
-                    .to_string(),
-            );
-        }
-
         if sandbox_mode.is_some() && permission_profile.is_some() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -3764,7 +3732,6 @@ impl Config {
             history,
             ephemeral: ephemeral.unwrap_or_default(),
             extra_config: None,
-            bypass_hook_trust,
             file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
             codex_self_exe,
             main_execve_wrapper_exe,

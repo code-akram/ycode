@@ -5,28 +5,20 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use crate::function_tool::FunctionCallError;
-use crate::hook_runtime::PreToolUseHookResult;
-use crate::hook_runtime::record_additional_contexts;
-use crate::hook_runtime::run_post_tool_use_hooks;
-use crate::hook_runtime::run_pre_tool_use_hooks;
 use crate::memory_usage::emit_metric_for_tool_read;
 use crate::memory_usage::shell_script_for_invocation;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::flat_tool_name;
-use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
-use crate::tools::hook_names::HookToolName;
 use crate::tools::lifecycle::notify_tool_finish;
 use crate::tools::lifecycle::notify_tool_start;
 use crate::tools::router::tool_log_payload;
 use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
 use crate::util::error_or_panic;
 use codex_extension_api::ToolCallOutcome;
-use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::EventMsg;
@@ -37,7 +29,6 @@ use codex_tools::ToolSpec;
 use futures::future::BoxFuture;
 use indexmap::IndexMap;
 use indexmap::map::Entry;
-use serde_json::Value;
 
 pub(crate) type ToolTelemetryTags = Vec<(&'static str, String)>;
 
@@ -47,7 +38,7 @@ pub use codex_tools::ToolExposure;
 /// Typed runtime contract for locally executed tools.
 ///
 /// Implementers provide the shared `ToolExecutor` behavior plus optional
-/// core-owned metadata for hooks, telemetry, tool search, and argument diffs.
+/// core-owned metadata for telemetry, tool search, and argument diffs.
 pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
     /// Returns a readiness wait for this exact tool before taking the execution gate.
     fn wait_until_ready<'a>(&'a self, _session: &'a Arc<Session>) -> Option<BoxFuture<'a, ()>> {
@@ -69,78 +60,6 @@ pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
 
     fn telemetry_tags(&self, _invocation: &ToolInvocation) -> ToolTelemetryTags {
         Vec::new()
-    }
-
-    fn post_tool_use_payload(
-        &self,
-        invocation: &ToolInvocation,
-        result: &dyn ToolOutput,
-    ) -> Option<PostToolUsePayload> {
-        let ToolPayload::Function { arguments } = &invocation.payload else {
-            return None;
-        };
-
-        Some(PostToolUsePayload {
-            tool_name: function_hook_tool_name(invocation),
-            tool_use_id: result.post_tool_use_id(&invocation.call_id),
-            tool_input: result
-                .post_tool_use_input(&invocation.payload)
-                .unwrap_or_else(|| function_hook_tool_input(arguments)),
-            tool_response: result
-                .post_tool_use_response(&invocation.call_id, &invocation.payload)
-                .or_else(|| {
-                    // Most function tools can expose their model-facing output
-                    // as the hook response. Outputs with a more stable hook
-                    // contract should override post_tool_use_response above.
-                    let ResponseInputItem::FunctionCallOutput {
-                        output: FunctionCallOutputPayload { body, .. },
-                        ..
-                    } = result.to_response_item(&invocation.call_id, &invocation.payload)
-                    else {
-                        return None;
-                    };
-
-                    serde_json::to_value(body).ok()
-                })?,
-        })
-    }
-
-    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
-        let ToolPayload::Function { arguments } = &invocation.payload else {
-            return None;
-        };
-
-        Some(PreToolUsePayload {
-            tool_name: function_hook_tool_name(invocation),
-            tool_input: function_hook_tool_input(arguments),
-        })
-    }
-
-    /// Rebuilds a tool invocation from hook-facing `tool_input`.
-    ///
-    /// Tools that opt into input-rewriting hooks should invert the same stable
-    /// hook contract they expose from `pre_tool_use_payload`.
-    fn with_updated_hook_input(
-        &self,
-        invocation: ToolInvocation,
-        updated_input: Value,
-    ) -> Result<ToolInvocation, FunctionCallError> {
-        let ToolPayload::Function { .. } = &invocation.payload else {
-            return Err(FunctionCallError::RespondToModel(
-                "hook input rewrite received unsupported function tool payload".to_string(),
-            ));
-        };
-
-        let arguments = serde_json::to_string(&updated_input).map_err(|err| {
-            FunctionCallError::RespondToModel(format!(
-                "failed to serialize rewritten {} arguments: {err}",
-                flat_tool_name(&invocation.tool_name)
-            ))
-        })?;
-        Ok(ToolInvocation {
-            payload: ToolPayload::Function { arguments },
-            ..invocation
-        })
     }
 
     /// Creates an optional consumer for streamed tool argument diffs.
@@ -166,7 +85,6 @@ pub(crate) struct AnyToolResult {
     pub(crate) call_id: String,
     pub(crate) payload: ToolPayload,
     pub(crate) result: Box<dyn ToolOutput>,
-    pub(crate) post_tool_use_payload: Option<PostToolUsePayload>,
 }
 
 impl AnyToolResult {
@@ -186,58 +104,6 @@ impl AnyToolResult {
         } = self;
         result.code_mode_result(&payload)
     }
-}
-
-struct PostToolUseFeedbackOutput {
-    original: Box<dyn ToolOutput>,
-    model_visible: FunctionToolOutput,
-}
-
-impl ToolOutput for PostToolUseFeedbackOutput {
-    fn log_preview(&self) -> String {
-        self.original.log_preview()
-    }
-
-    fn success_for_logging(&self) -> bool {
-        self.original.success_for_logging()
-    }
-
-    fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
-        self.model_visible.to_response_item(call_id, payload)
-    }
-
-    fn code_mode_result(&self, payload: &ToolPayload) -> Value {
-        self.original.code_mode_result(payload)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PreToolUsePayload {
-    /// Hook-facing tool name model.
-    ///
-    /// The canonical name is serialized to hook stdin, while aliases are used
-    /// only for matcher compatibility.
-    pub(crate) tool_name: HookToolName,
-    /// Tool-specific input exposed at `tool_input`.
-    ///
-    /// Shell-like tools use `{ "command": ... }`; other tools use their
-    /// resolved JSON arguments.
-    pub(crate) tool_input: Value,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PostToolUsePayload {
-    /// Hook-facing tool name model.
-    ///
-    /// The canonical name is serialized to hook stdin, while aliases are used
-    /// only for matcher compatibility.
-    pub(crate) tool_name: HookToolName,
-    /// The originating tool-use id exposed at `tool_use_id`.
-    pub(crate) tool_use_id: String,
-    /// Tool-specific input exposed at `tool_input`.
-    pub(crate) tool_input: Value,
-    /// Tool result exposed at `tool_response`.
-    pub(crate) tool_response: Value,
 }
 
 /// A tool runtime together with its effective exposure for the current step.
@@ -516,52 +382,6 @@ impl ToolRegistry {
 
         notify_tool_start(&invocation).await;
 
-        if let Some(pre_tool_use_payload) = tool.pre_tool_use_payload(&invocation) {
-            match run_pre_tool_use_hooks(
-                &invocation.session,
-                &invocation.turn,
-                invocation.call_id.clone(),
-                &pre_tool_use_payload.tool_name,
-                &pre_tool_use_payload.tool_input,
-            )
-            .await
-            {
-                PreToolUseHookResult::Blocked(message) => {
-                    let err = FunctionCallError::RespondToModel(message);
-                    dispatch_trace.record_failed(&err);
-                    notify_tool_finish_if_unclaimed(
-                        &invocation,
-                        terminal_outcome_reached.as_deref(),
-                        ToolCallOutcome::Blocked,
-                    )
-                    .await;
-                    return Err(err);
-                }
-                PreToolUseHookResult::Continue {
-                    updated_input: Some(updated_input),
-                } => match tool.with_updated_hook_input(invocation.clone(), updated_input) {
-                    Ok(updated_invocation) => {
-                        invocation = updated_invocation;
-                    }
-                    Err(err) => {
-                        dispatch_trace.record_failed(&err);
-                        notify_tool_finish_if_unclaimed(
-                            &invocation,
-                            terminal_outcome_reached.as_deref(),
-                            ToolCallOutcome::Failed {
-                                handler_executed: false,
-                            },
-                        )
-                        .await;
-                        return Err(err);
-                    }
-                },
-                PreToolUseHookResult::Continue {
-                    updated_input: None,
-                } => {}
-            }
-        }
-
         if let Some(command) = shell_script_for_invocation(&invocation) {
             let parsed = parse_shell_script(&command);
             let mut categories = parsed.iter().map(|command| match command {
@@ -611,40 +431,6 @@ impl ToolRegistry {
             Err(_) => false,
         };
         emit_metric_for_tool_read(&invocation, success);
-        let post_tool_use_payload = if success {
-            let guard = response_cell.lock().await;
-            guard
-                .as_ref()
-                .and_then(|result| result.post_tool_use_payload.clone())
-        } else {
-            None
-        };
-        let post_tool_use_outcome = if let Some(post_tool_use_payload) = post_tool_use_payload {
-            Some(
-                run_post_tool_use_hooks(
-                    &invocation.session,
-                    &invocation.turn,
-                    post_tool_use_payload.tool_use_id,
-                    post_tool_use_payload.tool_name.name().to_string(),
-                    post_tool_use_payload.tool_name.matcher_aliases().to_vec(),
-                    post_tool_use_payload.tool_input,
-                    post_tool_use_payload.tool_response,
-                )
-                .await,
-            )
-        } else {
-            None
-        };
-        if let Some(outcome) = &post_tool_use_outcome {
-            record_additional_contexts(
-                &invocation.session,
-                &invocation.turn,
-                outcome.additional_contexts.clone(),
-            )
-            .await;
-        }
-
-        // A PostToolUse block rejects the result, not the already-completed tool execution.
         let lifecycle_outcome = match &result {
             Ok(_) => {
                 let guard = response_cell.lock().await;
@@ -671,28 +457,9 @@ impl ToolRegistry {
         match result {
             Ok(_) => {
                 let mut guard = response_cell.lock().await;
-                let mut result = guard.take().ok_or_else(|| {
+                let result = guard.take().ok_or_else(|| {
                     FunctionCallError::Fatal("tool produced no output".to_string())
                 })?;
-                if let Some(outcome) = post_tool_use_outcome {
-                    if outcome.should_block {
-                        let message = outcome.feedback_message.unwrap_or_else(|| {
-                            "PostToolUse hook blocked the tool result".to_string()
-                        });
-                        let err = FunctionCallError::RespondToModel(message);
-                        dispatch_trace.record_failed(&err);
-                        return Err(err);
-                    }
-                    if let Some(feedback_message) = outcome.feedback_message {
-                        result.result = Box::new(PostToolUseFeedbackOutput {
-                            original: result.result,
-                            model_visible: FunctionToolOutput::from_text(
-                                feedback_message,
-                                /*success*/ None,
-                            ),
-                        });
-                    }
-                }
                 dispatch_trace.record_completed(
                     &invocation,
                     &result.call_id,
@@ -739,33 +506,11 @@ async fn handle_any_tool(
         )
         .await;
     }
-    let post_tool_use_payload =
-        CoreToolRuntime::post_tool_use_payload(tool, &invocation, output.as_ref());
     Ok(AnyToolResult {
         call_id,
         payload,
         result: output,
-        post_tool_use_payload,
     })
-}
-
-fn function_hook_tool_name(invocation: &ToolInvocation) -> HookToolName {
-    if invocation.tool_name.name == "spawn_agent"
-        && (invocation.tool_name.is_default_namespace()
-            || invocation.tool_name.namespace.as_deref() == Some(MULTI_AGENT_V1_NAMESPACE))
-    {
-        return HookToolName::spawn_agent();
-    }
-
-    HookToolName::new(flat_tool_name(&invocation.tool_name).into_owned())
-}
-
-fn function_hook_tool_input(arguments: &str) -> Value {
-    if arguments.trim().is_empty() {
-        return Value::Object(serde_json::Map::new());
-    }
-
-    serde_json::from_str(arguments).unwrap_or_else(|_| Value::String(arguments.to_string()))
 }
 
 fn unsupported_tool_call_message(payload: &ToolPayload, tool_name: &ToolName) -> String {

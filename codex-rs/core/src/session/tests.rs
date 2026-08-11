@@ -22,7 +22,6 @@ use codex_config::NetworkDomainPermissionToml;
 use codex_config::NetworkDomainPermissionsToml;
 use codex_config::RequirementSource;
 use codex_config::Sourced;
-use codex_config::loader::project_trust_key;
 use codex_config::types::ToolSuggestDisabledTool;
 
 use codex_features::Feature;
@@ -44,7 +43,6 @@ use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
-use codex_protocol::config_types::TrustLevel;
 use codex_protocol::exec_output::ExecToolCallOutput;
 use codex_protocol::models::AgentMessageInputContent;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -77,7 +75,6 @@ use crate::tools::ToolRouter;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_config::config_toml::ConfigToml;
-use codex_config::config_toml::ProjectConfig;
 use codex_config::permissions_toml::FilesystemPermissionToml;
 use codex_config::permissions_toml::FilesystemPermissionsToml;
 use codex_config::permissions_toml::NetworkToml;
@@ -88,8 +85,6 @@ use codex_otel::MetricsConfig;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Settings;
-use codex_protocol::items::HookPromptFragment;
-use codex_protocol::items::build_hook_prompt_message;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::InternalChatMessageMetadataPassthrough;
@@ -632,77 +627,6 @@ fn user_input_texts(items: &[ResponseItem]) -> Vec<&str> {
         .collect()
 }
 
-fn write_project_hooks(dot_codex: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dot_codex)?;
-    std::fs::write(
-        dot_codex.join("hooks.json"),
-        r#"{
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo hello from hook"
-          }
-        ]
-      }
-    ]
-  }
-}"#,
-    )
-}
-
-async fn write_project_trust_config(
-    codex_home: &Path,
-    trusted_projects: &[(&Path, TrustLevel)],
-) -> std::io::Result<()> {
-    tokio::fs::write(
-        codex_home.join(codex_config::CONFIG_TOML_FILE),
-        toml::to_string(&ConfigToml {
-            projects: Some(
-                trusted_projects
-                    .iter()
-                    .map(|(project, trust_level)| {
-                        (
-                            project_trust_key(project),
-                            ProjectConfig {
-                                trust_level: Some(*trust_level),
-                            },
-                        )
-                    })
-                    .collect::<std::collections::HashMap<_, _>>(),
-            ),
-            ..Default::default()
-        })
-        .expect("serialize config"),
-    )
-    .await
-}
-
-async fn preview_session_start_hooks(
-    config: &crate::config::Config,
-) -> std::io::Result<Vec<codex_protocol::protocol::HookRunSummary>> {
-    let hooks = Hooks::new(HooksConfig {
-        feature_enabled: true,
-        config_layer_stack: Some(config.config_layer_stack.clone()),
-        ..HooksConfig::default()
-    });
-
-    Ok(
-        hooks.preview_session_start(&codex_hooks::SessionStartRequest {
-            session_id: ThreadId::new(),
-            cwd: config.cwd.clone(),
-            transcript_path: None,
-            model: "gpt-5.2".to_string(),
-            permission_mode: "default".to_string(),
-            target: codex_hooks::StartHookTarget::SessionStart {
-                source: codex_hooks::SessionStartSource::Startup,
-            },
-        }),
-    )
-}
-
 pub(crate) fn tool_registry_for_test_step(
     step_context: &StepContext,
 ) -> (ToolRegistry, Vec<ToolSpec>) {
@@ -800,7 +724,6 @@ async fn user_shell_commands_remain_login_shells_when_model_login_shells_are_dis
 
     Ok(())
 }
-
 #[tokio::test]
 async fn get_base_instructions_no_user_content() {
     let prompt_with_apply_patch_instructions =
@@ -962,157 +885,6 @@ async fn reload_user_config_layer_updates_base_and_selected_profile_layers() {
 }
 
 #[tokio::test]
-async fn reload_user_config_layer_refreshes_hooks() -> anyhow::Result<()> {
-    let session = make_session_with_config(|config| {
-        config
-            .features
-            .enable(Feature::CodexHooks)
-            .expect("enable Codex hooks");
-    })
-    .await?;
-    let codex_home = session.codex_home().await;
-    std::fs::create_dir_all(&codex_home)?;
-    let config_toml_path = codex_home.join(CONFIG_TOML_FILE);
-    let user_config: codex_config::TomlValue = serde_json::from_value(serde_json::json!({
-        "hooks": {
-            "SessionStart": [{
-                "hooks": [{
-                    "type": "command",
-                    "command": "python3 /tmp/user.py",
-                }],
-            }],
-        },
-    }))?;
-
-    let request = codex_hooks::SessionStartRequest {
-        session_id: session.thread_id,
-        cwd: session.get_config().await.cwd.clone(),
-        transcript_path: None,
-        model: "gpt-5.2".to_string(),
-        permission_mode: "default".to_string(),
-        target: codex_hooks::StartHookTarget::SessionStart {
-            source: codex_hooks::SessionStartSource::Startup,
-        },
-    };
-    assert!(session.hooks().preview_session_start(&request).is_empty());
-
-    let config = session.get_config().await;
-    let hook_list = codex_hooks::list_hooks(codex_hooks::HooksConfig {
-        feature_enabled: true,
-        config_layer_stack: Some(
-            config
-                .config_layer_stack
-                .with_user_config(&config_toml_path, user_config.clone())
-                .expect("hook user config should be valid"),
-        ),
-        ..codex_hooks::HooksConfig::default()
-    });
-    assert_eq!(hook_list.hooks.len(), 1);
-    assert_eq!(
-        hook_list.hooks[0].trust_status,
-        codex_protocol::protocol::HookTrustStatus::Untrusted
-    );
-
-    let trusted_user_config: codex_config::TomlValue = serde_json::from_value(serde_json::json!({
-        "hooks": {
-            "SessionStart": [{
-                "hooks": [{
-                    "type": "command",
-                    "command": "python3 /tmp/user.py",
-                }],
-            }],
-            "state": {
-                hook_list.hooks[0].key.clone(): {
-                    "trusted_hash": hook_list.hooks[0].current_hash.clone(),
-                },
-            },
-        },
-    }))?;
-    std::fs::write(&config_toml_path, toml::to_string(&trusted_user_config)?)?;
-
-    session.reload_user_config_layer().await;
-
-    assert_eq!(session.hooks().preview_session_start(&request).len(), 1);
-    Ok(())
-}
-
-#[tokio::test]
-async fn refresh_runtime_config_refreshes_hooks() -> anyhow::Result<()> {
-    let (session, _turn_context) = make_session_and_context().await;
-    {
-        let mut state = session.state.lock().await;
-        let mut config = (*state.session_configuration.original_config_do_not_use).clone();
-        config
-            .features
-            .enable(Feature::CodexHooks)
-            .expect("enable Codex hooks");
-        state.session_configuration.original_config_do_not_use = Arc::new(config);
-    }
-    let codex_home = session.codex_home().await;
-    std::fs::create_dir_all(&codex_home)?;
-    let config_toml_path = codex_home.join(CONFIG_TOML_FILE);
-    #[derive(serde::Serialize)]
-    struct NormalizedHookIdentity {
-        event_name: &'static str,
-        #[serde(flatten)]
-        group: codex_config::MatcherGroup,
-    }
-    let trusted_hash = {
-        let identity = NormalizedHookIdentity {
-            event_name: "session_start",
-            group: codex_config::MatcherGroup {
-                matcher: None,
-                hooks: vec![codex_config::HookHandlerConfig::Command {
-                    command: "python3 /tmp/user.py".to_string(),
-                    command_windows: None,
-                    timeout_sec: Some(600),
-                    r#async: false,
-                    status_message: None,
-                    additional_context_limit: None,
-                }],
-            },
-        };
-        let identity = codex_config::TomlValue::try_from(identity)?;
-        codex_config::version_for_toml(&identity)
-    };
-    let hook_key = format!("{}:session_start:0:0", config_toml_path.display());
-    let trusted_user_config: codex_config::TomlValue = serde_json::from_value(serde_json::json!({
-        "hooks": {
-            "SessionStart": [{
-                "hooks": [{
-                    "type": "command",
-                    "command": "python3 /tmp/user.py",
-                }],
-            }],
-            "state": {
-                hook_key: {
-                    "trusted_hash": trusted_hash,
-                },
-            },
-        },
-    }))?;
-    std::fs::write(&config_toml_path, toml::to_string(&trusted_user_config)?)?;
-
-    let request = codex_hooks::SessionStartRequest {
-        session_id: session.thread_id,
-        cwd: session.get_config().await.cwd.clone(),
-        transcript_path: None,
-        model: "gpt-5.2".to_string(),
-        permission_mode: "default".to_string(),
-        target: codex_hooks::StartHookTarget::SessionStart {
-            source: codex_hooks::SessionStartSource::Startup,
-        },
-    };
-    assert!(session.hooks().preview_session_start(&request).is_empty());
-
-    let next_config = load_latest_config_for_session(&session).await;
-    session.refresh_runtime_config(next_config).await;
-
-    assert_eq!(session.hooks().preview_session_start(&request).len(), 1);
-    Ok(())
-}
-
-#[tokio::test]
 async fn reconstruct_history_matches_live_compactions() {
     let (session, turn_context) = make_session_and_context().await;
     let (rollout_items, expected) = sample_rollout(&session, &turn_context).await;
@@ -1219,44 +991,6 @@ async fn record_conversation_items_stamps_missing_turn_id_and_preserves_existing
         session.clone_history().await.raw_items(),
         expected_items.as_slice()
     );
-}
-
-#[tokio::test]
-async fn record_response_item_and_emit_turn_item_emits_hook_prompt_lifecycle() {
-    let (session, turn_context, rx) = make_session_and_context_with_rx().await;
-    let response_item = build_hook_prompt_message(&[HookPromptFragment::from_single_hook(
-        "Retry with tests.",
-        "hook-run-1",
-    )])
-    .expect("hook prompt message");
-    let response_item_id = response_item.id().expect("hook prompt id").to_string();
-
-    session
-        .record_response_item_and_emit_turn_item(&turn_context, response_item)
-        .await;
-
-    let raw_response = rx.recv().await.expect("raw response item event");
-    assert!(matches!(raw_response.msg, EventMsg::RawResponseItem(_)));
-
-    let started = rx.recv().await.expect("started hook prompt event");
-    assert!(matches!(
-        started.msg,
-        EventMsg::ItemStarted(ItemStartedEvent {
-            item: TurnItem::HookPrompt(item),
-            ..
-        }) if item.id == response_item_id
-    ));
-
-    let completed = rx.recv().await.expect("completed hook prompt event");
-    assert!(matches!(
-        completed.msg,
-        EventMsg::ItemCompleted(ItemCompletedEvent {
-            item: TurnItem::HookPrompt(item),
-            ..
-        }) if item.id == response_item_id
-    ));
-
-    assert!(rx.try_recv().is_err(), "no extra events expected");
 }
 
 #[tokio::test]
@@ -2238,7 +1972,7 @@ async fn config_change_contributor_observes_effective_config_changes() {
         codex_home.join(CONFIG_TOML_FILE),
         r#"[tool_suggest]
 disabled_tools = [
-  { type = "plugin", id = "slack@openai-curated" },
+  { type = "connector", id = "calendar" },
 ]
 "#,
     )
@@ -2246,7 +1980,7 @@ disabled_tools = [
     let next_config = load_latest_config_for_session(&session).await;
     session.refresh_runtime_config(next_config).await;
 
-    let expected_disabled_tools = vec![ToolSuggestDisabledTool::plugin("slack@openai-curated")];
+    let expected_disabled_tools = vec![ToolSuggestDisabledTool::connector("calendar")];
     let expected = vec![
         RecordedConfigChange {
             previous_model: Some(original_model),
@@ -4182,7 +3916,7 @@ async fn new_default_turn_uses_config_aware_skills_for_role_overrides() {
         .services
         .skills_service
         .snapshot_for_cwd(
-            &crate::skills_load_input_from_config(&parent_config, Vec::new()),
+            &crate::skills_load_input_from_config(&parent_config),
             /*force_reload*/ true,
             Some(Arc::clone(&skill_fs)),
         )
@@ -4573,7 +4307,6 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
 
     let (tx_event, _rx_event) = async_channel::unbounded();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
         /*bundled_skills_enabled*/ true,
@@ -4592,7 +4325,6 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         ForkPersistence::Copied,
         SessionSource::Exec,
         skills_service,
-        plugins_manager,
         Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
@@ -4734,7 +4466,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             .expect("primary environment")
             .environment,
     );
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
         /*bundled_skills_enabled*/ true,
@@ -4755,10 +4486,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             config.chatgpt_base_url.trim_end_matches('/').to_string(),
             config.analytics_enabled,
         ),
-        hooks: arc_swap::ArcSwap::from_pointee(Hooks::new(HooksConfig {
-            legacy_notify_argv: config.notify.clone(),
-            ..HooksConfig::default()
-        })),
         rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
         user_shell: Arc::new(default_user_shell()),
         show_raw_agent_reasoning: config.show_raw_agent_reasoning,
@@ -4773,7 +4500,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         runtime_handle: tokio::runtime::Handle::current(),
         skills_service,
         agents_md_manager: Arc::new(AgentsMdManager::new(/*user_instructions*/ None)),
-        plugins_manager,
         extensions: Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         session_extension_data: codex_extension_api::ExtensionData::new(
             agent_control.session_id().to_string(),
@@ -4816,18 +4542,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         turn_environments: Arc::clone(&turn_environments),
     };
 
-    let plugins_input = per_turn_config.plugins_config_input();
-    let plugin_outcome = services
-        .plugins_manager
-        .plugins_for_config(&plugins_input)
-        .await;
-    let effective_skill_roots = plugin_outcome.effective_plugin_skill_roots();
-    let plugin_skill_snapshots = services
-        .plugins_manager
-        .plugin_skill_snapshots_for_config(&plugins_input);
-    let skills_input =
-        crate::skills_load_input_from_config(&per_turn_config, effective_skill_roots)
-            .with_plugin_skill_snapshots(plugin_skill_snapshots);
+    let skills_input = crate::skills_load_input_from_config(&per_turn_config);
     let skill_fs = environment.get_filesystem();
     let skills_snapshot = services
         .skills_service
@@ -4952,7 +4667,6 @@ async fn make_session_with_config_and_rx(
 
     let (tx_event, rx_event) = async_channel::unbounded();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
         /*bundled_skills_enabled*/ true,
@@ -4972,7 +4686,6 @@ async fn make_session_with_config_and_rx(
         ForkPersistence::Copied,
         SessionSource::Exec,
         skills_service,
-        plugins_manager,
         Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
@@ -5059,7 +4772,6 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
 
     let (tx_event, rx_event) = async_channel::unbounded();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
         /*bundled_skills_enabled*/ true,
@@ -5079,7 +4791,6 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         ForkPersistence::Copied,
         session_source,
         skills_service,
-        plugins_manager,
         Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
@@ -6107,7 +5818,6 @@ where
             .expect("primary environment")
             .environment,
     );
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
         /*bundled_skills_enabled*/ true,
@@ -6128,10 +5838,6 @@ where
             config.chatgpt_base_url.trim_end_matches('/').to_string(),
             config.analytics_enabled,
         ),
-        hooks: arc_swap::ArcSwap::from_pointee(Hooks::new(HooksConfig {
-            legacy_notify_argv: config.notify.clone(),
-            ..HooksConfig::default()
-        })),
         rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
         user_shell: Arc::new(default_user_shell()),
         show_raw_agent_reasoning: config.show_raw_agent_reasoning,
@@ -6146,7 +5852,6 @@ where
         runtime_handle: tokio::runtime::Handle::current(),
         skills_service,
         agents_md_manager: Arc::new(AgentsMdManager::new(/*user_instructions*/ None)),
-        plugins_manager,
         extensions: Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         session_extension_data: codex_extension_api::ExtensionData::new(
             agent_control.session_id().to_string(),
@@ -6189,18 +5894,7 @@ where
         turn_environments: Arc::clone(&turn_environments),
     };
 
-    let plugins_input = per_turn_config.plugins_config_input();
-    let plugin_outcome = services
-        .plugins_manager
-        .plugins_for_config(&plugins_input)
-        .await;
-    let effective_skill_roots = plugin_outcome.effective_plugin_skill_roots();
-    let plugin_skill_snapshots = services
-        .plugins_manager
-        .plugin_skill_snapshots_for_config(&plugins_input);
-    let skills_input =
-        crate::skills_load_input_from_config(&per_turn_config, effective_skill_roots)
-            .with_plugin_skill_snapshots(plugin_skill_snapshots);
+    let skills_input = crate::skills_load_input_from_config(&per_turn_config);
     let skill_fs = environment.get_filesystem();
     let skills_snapshot = services
         .skills_service
@@ -7534,41 +7228,6 @@ async fn attach_in_memory_thread_store(
     store
 }
 
-#[tokio::test]
-async fn hook_transcript_path_does_not_persist_non_local_thread_store() {
-    let (mut session, _) = make_session_and_context().await;
-    let store = attach_in_memory_thread_store(&mut session).await;
-
-    assert_eq!(session.hook_transcript_path().await, None);
-    assert_eq!(
-        store.calls().await,
-        codex_thread_store::InMemoryThreadStoreCalls {
-            create_thread: 1,
-            ..Default::default()
-        }
-    );
-}
-
-#[tokio::test]
-async fn hook_transcript_path_materializes_lazy_local_thread() {
-    let (mut session, _) = make_session_and_context().await;
-    let rollout_path = open_thread_persistence(&mut session).await;
-    assert!(!rollout_path.exists());
-
-    assert_eq!(
-        session.hook_transcript_path().await,
-        Some(rollout_path.clone())
-    );
-    let (items, thread_id, parse_errors) = RolloutRecorder::load_rollout_items(&rollout_path)
-        .await
-        .expect("read materialized rollout");
-    assert_eq!((thread_id, parse_errors), (Some(session.thread_id), 0));
-    assert!(matches!(
-        items.as_slice(),
-        [RolloutItem::SessionMeta(meta)] if meta.meta.id == session.thread_id
-    ));
-}
-
 async fn wait_for_flush_count(
     store: &codex_thread_store::InMemoryThreadStore,
     expected_flushes: usize,
@@ -8807,109 +8466,5 @@ while :; do sleep 1; done"#,
         .expect("shell tool task should join")
         .expect("cancelled shell tool should return a response item");
     assert_eq!(std::fs::read_to_string(cleanup_marker)?, "cleaned");
-    Ok(())
-}
-
-#[tokio::test]
-async fn session_start_hooks_only_load_from_trusted_project_layers() -> std::io::Result<()> {
-    let temp = tempfile::tempdir()?;
-    let codex_home = temp.path().join("home");
-    let project_root = temp.path().join("project");
-    let nested = project_root.join("nested");
-    let root_dot_codex = project_root.join(".codex");
-    let nested_dot_codex = nested.join(".codex");
-
-    std::fs::create_dir_all(&codex_home)?;
-    std::fs::create_dir_all(&nested_dot_codex)?;
-    std::fs::write(project_root.join(".git"), "gitdir: here")?;
-    write_project_hooks(&root_dot_codex)?;
-    write_project_hooks(&nested_dot_codex)?;
-    write_project_trust_config(&codex_home, &[(&nested, TrustLevel::Trusted)]).await?;
-
-    let config = ConfigBuilder::default()
-        .codex_home(codex_home)
-        .fallback_cwd(Some(nested))
-        .build()
-        .await?;
-
-    let hook_list = codex_hooks::list_hooks(codex_hooks::HooksConfig {
-        feature_enabled: true,
-        config_layer_stack: Some(config.config_layer_stack.clone()),
-        ..codex_hooks::HooksConfig::default()
-    });
-    let expected_source_path = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
-        nested_dot_codex.join("hooks.json"),
-    )?;
-    assert_eq!(
-        hook_list
-            .hooks
-            .iter()
-            .map(|hook| &hook.source_path)
-            .collect::<Vec<_>>(),
-        vec![&expected_source_path],
-    );
-    assert_eq!(
-        hook_list.hooks[0].trust_status,
-        codex_protocol::protocol::HookTrustStatus::Untrusted
-    );
-    assert!(preview_session_start_hooks(&config).await?.is_empty());
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn session_start_hooks_require_project_trust_without_config_toml() -> std::io::Result<()> {
-    let temp = tempfile::tempdir()?;
-    let project_root = temp.path().join("project");
-    let nested = project_root.join("nested");
-    let dot_codex = project_root.join(".codex");
-    std::fs::create_dir_all(&nested)?;
-    std::fs::write(project_root.join(".git"), "gitdir: here")?;
-    write_project_hooks(&dot_codex)?;
-
-    let cases = [
-        ("unknown", Vec::<(&Path, TrustLevel)>::new(), 0_usize),
-        (
-            "untrusted",
-            vec![(&project_root as &Path, TrustLevel::Untrusted)],
-            0_usize,
-        ),
-        (
-            "trusted",
-            vec![(&project_root as &Path, TrustLevel::Trusted)],
-            1_usize,
-        ),
-    ];
-
-    for (name, trust_entries, expected_hooks) in cases {
-        let codex_home = temp.path().join(format!("home_{name}"));
-        std::fs::create_dir_all(&codex_home)?;
-        write_project_trust_config(&codex_home, &trust_entries).await?;
-
-        let config = ConfigBuilder::default()
-            .codex_home(codex_home)
-            .fallback_cwd(Some(nested.clone()))
-            .build()
-            .await?;
-
-        let hook_list = codex_hooks::list_hooks(codex_hooks::HooksConfig {
-            feature_enabled: true,
-            config_layer_stack: Some(config.config_layer_stack.clone()),
-            ..codex_hooks::HooksConfig::default()
-        });
-        assert_eq!(
-            hook_list.hooks.len(),
-            expected_hooks,
-            "unexpected discovered hook count for {name}",
-        );
-        assert!(preview_session_start_hooks(&config).await?.is_empty());
-        if expected_hooks == 1 {
-            assert_eq!(
-                hook_list.hooks[0].trust_status,
-                codex_protocol::protocol::HookTrustStatus::Untrusted
-            );
-        }
-    }
-
     Ok(())
 }

@@ -16,18 +16,8 @@ use crate::events::CodexDynamicToolCallEventRequest;
 use crate::events::CodexFileChangeEventParams;
 use crate::events::CodexFileChangeEventRequest;
 use crate::events::CodexGoalEventRequest;
-use crate::events::CodexHookRunEventRequest;
 use crate::events::CodexImageGenerationEventParams;
 use crate::events::CodexImageGenerationEventRequest;
-use crate::events::CodexOnboardingExternalAgentImportCompleteEventRequest;
-use crate::events::CodexOnboardingExternalAgentImportCompleteMetadata;
-use crate::events::CodexOnboardingExternalAgentImportFailureEventRequest;
-use crate::events::CodexOnboardingExternalAgentImportFailureMetadata;
-use crate::events::CodexPluginEventRequest;
-use crate::events::CodexPluginInstallFailedEventRequest;
-use crate::events::CodexPluginInstallFailedMetadata;
-use crate::events::CodexPluginInstallRequestedEventRequest;
-use crate::events::CodexPluginUsedEventRequest;
 use crate::events::CodexReviewEventParams;
 use crate::events::CodexReviewEventRequest;
 use crate::events::CodexRuntimeMetadata;
@@ -58,11 +48,6 @@ use crate::events::WebSearchActionKind;
 use crate::events::codex_app_metadata;
 use crate::events::codex_compaction_event_params;
 use crate::events::codex_goal_event_params;
-use crate::events::codex_hook_run_metadata;
-use crate::events::codex_plugin_install_requested_metadata;
-use crate::events::codex_plugin_metadata;
-use crate::events::codex_plugin_used_metadata;
-use crate::events::plugin_state_event_type;
 use crate::events::subagent_source_name;
 use crate::events::subagent_thread_started_event_request;
 use crate::facts::AnalyticsFact;
@@ -74,16 +59,8 @@ use crate::facts::CodeModeToolCallStatus;
 use crate::facts::CodexCompactionEvent;
 use crate::facts::CodexGoalEvent;
 use crate::facts::CustomAnalyticsFact;
-use crate::facts::ExternalAgentConfigImportCompletedInput;
-use crate::facts::ExternalAgentConfigImportFailureInput;
-use crate::facts::HookRunInput;
 use crate::facts::ImagePreparationFact;
 use crate::facts::ImagePreparationMetadata;
-use crate::facts::PluginInstallFailedInput;
-use crate::facts::PluginInstallRequestedInput;
-use crate::facts::PluginState;
-use crate::facts::PluginStateChangedInput;
-use crate::facts::PluginUsedInput;
 use crate::facts::SkillInvokedInput;
 use crate::facts::SubAgentThreadStartedInput;
 use crate::facts::ThreadInitializationMode;
@@ -130,10 +107,8 @@ use codex_cli_protocol::UserInput;
 use codex_cli_protocol::WebSearchAction;
 use codex_git_utils::collect_git_info;
 use codex_git_utils::get_git_repo_root;
-use codex_login::default_client::originator;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
-use codex_protocol::items::is_safe_plugin_relative_path;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SkillScope;
@@ -434,7 +409,6 @@ impl TurnToolCounts {
             ThreadItem::WebSearch(_) => self.web_search += 1,
             ThreadItem::ImageGeneration(_) => self.image_generation += 1,
             ThreadItem::UserMessage { .. }
-            | ThreadItem::HookPrompt { .. }
             | ThreadItem::AgentMessage { .. }
             | ThreadItem::Plan { .. }
             | ThreadItem::Reasoning { .. }
@@ -578,27 +552,6 @@ impl AnalyticsReducer {
                 }
                 CustomAnalyticsFact::AppUsed(input) => {
                     self.ingest_app_used(input, out);
-                }
-                CustomAnalyticsFact::HookRun(input) => {
-                    self.ingest_hook_run(input, out);
-                }
-                CustomAnalyticsFact::PluginUsed(input) => {
-                    self.ingest_plugin_used(input, out);
-                }
-                CustomAnalyticsFact::PluginInstallRequested(input) => {
-                    self.ingest_plugin_install_requested(input, out);
-                }
-                CustomAnalyticsFact::PluginStateChanged(input) => {
-                    self.ingest_plugin_state_changed(input, out);
-                }
-                CustomAnalyticsFact::PluginInstallFailed(input) => {
-                    self.ingest_plugin_install_failed(input, out);
-                }
-                CustomAnalyticsFact::ExternalAgentConfigImportCompleted(input) => {
-                    self.ingest_external_agent_config_import_completed(input, out);
-                }
-                CustomAnalyticsFact::ExternalAgentConfigImportFailure(input) => {
-                    self.ingest_external_agent_config_import_failure(input, out);
                 }
             },
         }
@@ -1086,8 +1039,6 @@ impl AnalyticsReducer {
                         product_client_id: Some(tracking.product_client_id.clone()),
                         repo_url,
                         skill_scope: Some(skill_scope.to_string()),
-                        plugin_id: invocation.plugin_id,
-                        remote_plugin_id: invocation.remote_plugin_id,
                     },
                 },
             ));
@@ -1112,121 +1063,6 @@ impl AnalyticsReducer {
             event_type: "codex_app_used",
             event_params,
         }));
-    }
-
-    fn ingest_hook_run(&mut self, input: HookRunInput, out: &mut Vec<TrackEventRequest>) {
-        let HookRunInput { tracking, hook } = input;
-        out.push(TrackEventRequest::HookRun(CodexHookRunEventRequest {
-            event_type: "codex_hook_run",
-            event_params: codex_hook_run_metadata(&tracking, hook),
-        }));
-    }
-
-    fn ingest_plugin_used(&mut self, input: PluginUsedInput, out: &mut Vec<TrackEventRequest>) {
-        let PluginUsedInput { tracking, plugin } = input;
-        out.push(TrackEventRequest::PluginUsed(CodexPluginUsedEventRequest {
-            event_type: "codex_plugin_used",
-            event_params: codex_plugin_used_metadata(&tracking, plugin),
-        }));
-    }
-
-    fn ingest_plugin_install_requested(
-        &mut self,
-        input: PluginInstallRequestedInput,
-        out: &mut Vec<TrackEventRequest>,
-    ) {
-        let PluginInstallRequestedInput { tracking, request } = input;
-        out.push(TrackEventRequest::PluginInstallRequested(
-            CodexPluginInstallRequestedEventRequest {
-                event_type: "codex_plugin_install_requested",
-                event_params: codex_plugin_install_requested_metadata(&tracking, request),
-            },
-        ));
-    }
-
-    fn ingest_plugin_state_changed(
-        &mut self,
-        input: PluginStateChangedInput,
-        out: &mut Vec<TrackEventRequest>,
-    ) {
-        let PluginStateChangedInput { plugin, state } = input;
-        let event = CodexPluginEventRequest {
-            event_type: plugin_state_event_type(state),
-            event_params: codex_plugin_metadata(plugin),
-        };
-        out.push(match state {
-            PluginState::Installed => TrackEventRequest::PluginInstalled(event),
-            PluginState::Uninstalled => TrackEventRequest::PluginUninstalled(event),
-            PluginState::Enabled => TrackEventRequest::PluginEnabled(event),
-            PluginState::Disabled => TrackEventRequest::PluginDisabled(event),
-        });
-    }
-
-    fn ingest_plugin_install_failed(
-        &mut self,
-        input: PluginInstallFailedInput,
-        out: &mut Vec<TrackEventRequest>,
-    ) {
-        let PluginInstallFailedInput {
-            plugin,
-            source,
-            error_type,
-            sub_error_type,
-        } = input;
-        out.push(TrackEventRequest::PluginInstallFailed(
-            CodexPluginInstallFailedEventRequest {
-                event_type: "codex_plugin_install_failed",
-                event_params: CodexPluginInstallFailedMetadata {
-                    plugin: codex_plugin_metadata(plugin),
-                    source,
-                    error_type,
-                    sub_error_type,
-                },
-            },
-        ));
-    }
-
-    fn ingest_external_agent_config_import_completed(
-        &mut self,
-        input: ExternalAgentConfigImportCompletedInput,
-        out: &mut Vec<TrackEventRequest>,
-    ) {
-        out.push(TrackEventRequest::ExternalAgentConfigImportCompleted(
-            CodexOnboardingExternalAgentImportCompleteEventRequest {
-                event_type: "codex_onboarding_external_agent_import_complete",
-                event_params: CodexOnboardingExternalAgentImportCompleteMetadata {
-                    import_id: input.import_id,
-                    source: input.source,
-                    provider_id: input.provider_id,
-                    item_type: input.item_type,
-                    success_count: input.success_count,
-                    failed_count: input.failed_count,
-                    product_client_id: Some(originator().value),
-                },
-            },
-        ));
-    }
-
-    fn ingest_external_agent_config_import_failure(
-        &mut self,
-        input: ExternalAgentConfigImportFailureInput,
-        out: &mut Vec<TrackEventRequest>,
-    ) {
-        out.push(TrackEventRequest::ExternalAgentConfigImportFailure(
-            CodexOnboardingExternalAgentImportFailureEventRequest {
-                event_type: "codex_onboarding_external_agent_import_failure",
-                event_params: CodexOnboardingExternalAgentImportFailureMetadata {
-                    import_id: input.import_id,
-                    source: input.source,
-                    provider_id: input.provider_id,
-                    item_type: input.item_type,
-                    failure_stage: input.failure_stage,
-                    error_type: input.error_type,
-                    sub_error_type: input.sub_error_type,
-                    product_client_id: Some(originator().value),
-                },
-            },
-        ));
     }
 
     async fn ingest_response(
@@ -2116,7 +1952,6 @@ fn tracked_tool_item_id(item: &ThreadItem) -> Option<&str> {
         ThreadItem::WebSearch(item) => Some(&item.id),
         ThreadItem::ImageGeneration(item) => Some(&item.id),
         ThreadItem::UserMessage { .. }
-        | ThreadItem::HookPrompt { .. }
         | ThreadItem::AgentMessage { .. }
         | ThreadItem::Plan { .. }
         | ThreadItem::Reasoning { .. }
@@ -2209,8 +2044,6 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
     match item {
         ThreadItem::CommandExecution {
             id,
-            plugin_id,
-            script_path,
             source,
             status,
             command_actions,
@@ -2244,11 +2077,6 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
                     event_type: "codex_command_execution_event",
                     event_params: CodexCommandExecutionEventParams {
                         base,
-                        plugin_id: plugin_id.clone(),
-                        script_path: safe_plugin_relative_script_path(
-                            plugin_id.as_deref(),
-                            script_path.as_deref(),
-                        ),
                         command_execution_source: *source,
                         exit_code: *exit_code,
                         command_total_action_count: action_counts.total,
@@ -2476,14 +2304,6 @@ fn tool_item_event(input: ToolItemEventInput<'_>) -> Option<TrackEventRequest> {
         }
         _ => None,
     }
-}
-
-fn safe_plugin_relative_script_path(
-    plugin_id: Option<&str>,
-    script_path: Option<&str>,
-) -> Option<String> {
-    let script_path = script_path.filter(|path| is_safe_plugin_relative_path(path))?;
-    plugin_id.map(|_| script_path.to_string())
 }
 
 struct ToolItemOutcome {
@@ -3284,25 +3104,6 @@ mod tests {
                 image: 1,
                 audio: 1,
             }
-        );
-    }
-
-    #[test]
-    fn command_execution_script_paths_reject_unsafe_values() {
-        assert_eq!(
-            safe_plugin_relative_script_path(
-                Some("sample@openai-curated"),
-                Some("/home/user/.codex/plugins/cache/openai-curated/sample/scripts/run.py"),
-            ),
-            None
-        );
-        assert_eq!(
-            safe_plugin_relative_script_path(Some("sample@openai-curated"), Some("scripts/run.py"),),
-            Some("scripts/run.py".to_string())
-        );
-        assert_eq!(
-            safe_plugin_relative_script_path(/*plugin_id*/ None, Some("scripts/run.py"),),
-            None
         );
     }
 }

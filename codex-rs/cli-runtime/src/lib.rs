@@ -17,10 +17,8 @@ mod config_manager_service;
 mod connection_rpc_gate;
 mod current_time;
 mod dynamic_tools;
-mod effective_plugin_change;
 mod error_code;
 mod extensions;
-mod external_agent_migration;
 mod external_auth;
 mod filters;
 mod fs_watch;
@@ -41,11 +39,6 @@ mod transport;
 
 pub use crate::error_code::INPUT_TOO_LARGE_ERROR_CODE;
 pub use crate::error_code::INVALID_PARAMS_ERROR_CODE;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PluginStartupTasks {
-    Start,
-}
 
 #[cfg(any())]
 fn exec_policy_warning_location(

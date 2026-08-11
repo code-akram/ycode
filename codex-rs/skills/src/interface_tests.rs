@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 
-use super::SkillInterfaceAssetPolicy;
 use super::SkillInterfaceFile;
 use super::resolve_skill_interface;
 use crate::SkillInterface;
@@ -30,11 +29,7 @@ fn resolves_local_interface_fields_and_assets() {
     };
 
     assert_eq!(
-        resolve_skill_interface(
-            Some(interface),
-            &skill_dir,
-            SkillInterfaceAssetPolicy::LocalOnly,
-        ),
+        resolve_skill_interface(Some(interface), &skill_dir),
         Some(SkillInterface {
             display_name: Some("Demo skill".to_string()),
             short_description: Some("Short description".to_string()),
@@ -58,14 +53,7 @@ fn rejects_invalid_local_interface_fields() {
         default_prompt: Some("x".repeat(1025)),
     };
 
-    assert_eq!(
-        resolve_skill_interface(
-            Some(interface),
-            &skill_dir,
-            SkillInterfaceAssetPolicy::LocalOnly,
-        ),
-        None
-    );
+    assert_eq!(resolve_skill_interface(Some(interface), &skill_dir), None);
 }
 
 #[test]
@@ -76,14 +64,7 @@ fn rejects_absolute_asset_paths() {
         ..Default::default()
     };
 
-    assert_eq!(
-        resolve_skill_interface(
-            Some(interface),
-            &skill_dir,
-            SkillInterfaceAssetPolicy::LocalOnly,
-        ),
-        None
-    );
+    assert_eq!(resolve_skill_interface(Some(interface), &skill_dir), None);
 }
 
 #[test]
@@ -99,11 +80,7 @@ fn drops_invalid_fields_without_discarding_valid_interface_fields() {
     };
 
     assert_eq!(
-        resolve_skill_interface(
-            Some(interface),
-            &skill_dir,
-            SkillInterfaceAssetPolicy::LocalOnly,
-        ),
+        resolve_skill_interface(Some(interface), &skill_dir),
         Some(SkillInterface {
             display_name: Some("Demo skill".to_string()),
             short_description: None,
@@ -112,54 +89,5 @@ fn drops_invalid_fields_without_discarding_valid_interface_fields() {
             brand_color: None,
             default_prompt: None,
         })
-    );
-}
-
-#[test]
-fn resolves_plugin_shared_assets() {
-    let plugin_root = absolute_path("plugin");
-    let skill_dir = plugin_root.join("skills/demo");
-    let interface = SkillInterfaceFile {
-        icon_small: Some(PathBuf::from("../../assets/icon.svg")),
-        ..Default::default()
-    };
-
-    assert_eq!(
-        resolve_skill_interface(
-            Some(interface),
-            &skill_dir,
-            SkillInterfaceAssetPolicy::PluginShared {
-                plugin_root: &plugin_root,
-            },
-        ),
-        Some(SkillInterface {
-            display_name: None,
-            short_description: None,
-            icon_small: Some(plugin_root.join("assets/icon.svg")),
-            icon_large: None,
-            brand_color: None,
-            default_prompt: None,
-        })
-    );
-}
-
-#[test]
-fn rejects_plugin_assets_outside_shared_assets_root() {
-    let plugin_root = absolute_path("plugin");
-    let skill_dir = plugin_root.join("skills/demo");
-    let interface = SkillInterfaceFile {
-        icon_small: Some(PathBuf::from("../../other/icon.svg")),
-        ..Default::default()
-    };
-
-    assert_eq!(
-        resolve_skill_interface(
-            Some(interface),
-            &skill_dir,
-            SkillInterfaceAssetPolicy::PluginShared {
-                plugin_root: &plugin_root,
-            },
-        ),
-        None
     );
 }

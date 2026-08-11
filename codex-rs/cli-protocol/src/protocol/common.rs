@@ -647,77 +647,6 @@ client_request_definitions! {
         serialization: global("config"),
         response: v2::SkillsExtraRootsSetResponse,
     },
-    HooksList => "hooks/list" {
-        params: v2::HooksListParams,
-        serialization: global("config"),
-        response: v2::HooksListResponse,
-    },
-    MarketplaceAdd => "marketplace/add" {
-        params: v2::MarketplaceAddParams,
-        serialization: global("config"),
-        response: v2::MarketplaceAddResponse,
-    },
-    MarketplaceRemove => "marketplace/remove" {
-        params: v2::MarketplaceRemoveParams,
-        serialization: global("config"),
-        response: v2::MarketplaceRemoveResponse,
-    },
-    MarketplaceUpgrade => "marketplace/upgrade" {
-        params: v2::MarketplaceUpgradeParams,
-        serialization: global("config"),
-        response: v2::MarketplaceUpgradeResponse,
-    },
-    PluginList => "plugin/list" {
-        params: v2::PluginListParams,
-        serialization: None,
-        response: v2::PluginListResponse,
-    },
-    #[experimental("plugin/search")]
-    PluginSearch => "plugin/search" {
-        params: v2::PluginSearchParams,
-        serialization: None,
-        response: v2::PluginSearchResponse,
-    },
-    PluginInstalled => "plugin/installed" {
-        params: v2::PluginInstalledParams,
-        serialization: None,
-        response: v2::PluginInstalledResponse,
-    },
-    PluginRead => "plugin/read" {
-        params: v2::PluginReadParams,
-        serialization: None,
-        response: v2::PluginReadResponse,
-    },
-    PluginSkillRead => "plugin/skill/read" {
-        params: v2::PluginSkillReadParams,
-        serialization: global("config"),
-        response: v2::PluginSkillReadResponse,
-    },
-    PluginShareSave => "plugin/share/save" {
-        params: v2::PluginShareSaveParams,
-        serialization: global("config"),
-        response: v2::PluginShareSaveResponse,
-    },
-    PluginShareUpdateTargets => "plugin/share/updateTargets" {
-        params: v2::PluginShareUpdateTargetsParams,
-        serialization: global("config"),
-        response: v2::PluginShareUpdateTargetsResponse,
-    },
-    PluginShareList => "plugin/share/list" {
-        params: v2::PluginShareListParams,
-        serialization: global("config"),
-        response: v2::PluginShareListResponse,
-    },
-    PluginShareCheckout => "plugin/share/checkout" {
-        params: v2::PluginShareCheckoutParams,
-        serialization: global("config"),
-        response: v2::PluginShareCheckoutResponse,
-    },
-    PluginShareDelete => "plugin/share/delete" {
-        params: v2::PluginShareDeleteParams,
-        serialization: global("config"),
-        response: v2::PluginShareDeleteResponse,
-    },
     // File system requests are intentionally concurrent. Desktop already treats local
     // file system operations as concurrent, and app-server remote fs mirrors that model.
     FsReadFile => "fs/readFile" {
@@ -769,16 +698,6 @@ client_request_definitions! {
         params: v2::SkillsConfigWriteParams,
         serialization: global("config"),
         response: v2::SkillsConfigWriteResponse,
-    },
-    PluginInstall => "plugin/install" {
-        params: v2::PluginInstallParams,
-        serialization: global("config"),
-        response: v2::PluginInstallResponse,
-    },
-    PluginUninstall => "plugin/uninstall" {
-        params: v2::PluginUninstallParams,
-        serialization: global("config"),
-        response: v2::PluginUninstallResponse,
     },
     TurnStart => "turn/start" {
         params: v2::TurnStartParams,
@@ -1000,26 +919,6 @@ client_request_definitions! {
         params: v2::ConfigReadParams,
         serialization: global_shared_read("config"),
         response: v2::ConfigReadResponse,
-    },
-    ExternalAgentConfigDetect => "externalAgentConfig/detect" {
-        params: v2::ExternalAgentConfigDetectParams,
-        serialization: global("config"),
-        response: v2::ExternalAgentConfigDetectResponse,
-    },
-    ExternalAgentConfigImport => "externalAgentConfig/import" {
-        params: v2::ExternalAgentConfigImportParams,
-        serialization: global("config"),
-        response: v2::ExternalAgentConfigImportResponse,
-    },
-    ExternalAgentConfigImportHistoryRecord => "externalAgentConfig/import/recordHistory" {
-        params: v2::ExternalAgentConfigImportHistoryRecordParams,
-        serialization: global("config"),
-        response: v2::ExternalAgentConfigImportHistoryRecordResponse,
-    },
-    ExternalAgentConfigImportHistoriesRead => "externalAgentConfig/import/readHistories" {
-        params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
-        serialization: global_shared_read("config"),
-        response: v2::ExternalAgentConfigImportHistoriesReadResponse,
     },
     ConfigValueWrite => "config/value/write" {
         params: v2::ConfigValueWriteParams,
@@ -1425,9 +1324,7 @@ server_notification_definitions! {
     ThreadSettingsUpdated => "thread/settings/updated" (v2::ThreadSettingsUpdatedNotification),
     ThreadTokenUsageUpdated => "thread/tokenUsage/updated" (v2::ThreadTokenUsageUpdatedNotification),
     TurnStarted => "turn/started" (v2::TurnStartedNotification),
-    HookStarted => "hook/started" (v2::HookStartedNotification),
     TurnCompleted => "turn/completed" (v2::TurnCompletedNotification),
-    HookCompleted => "hook/completed" (v2::HookCompletedNotification),
     TurnDiffUpdated => "turn/diff/updated" (v2::TurnDiffUpdatedNotification),
     TurnPlanUpdated => "turn/plan/updated" (v2::TurnPlanUpdatedNotification),
     ItemStarted => "item/started" (v2::ItemStartedNotification),
@@ -1454,8 +1351,6 @@ server_notification_definitions! {
     ServerRequestResolved => "serverRequest/resolved" (v2::ServerRequestResolvedNotification),
     AccountUpdated => "account/updated" (v2::AccountUpdatedNotification),
     AccountRateLimitsUpdated => "account/rateLimits/updated" (v2::AccountRateLimitsUpdatedNotification),
-    ExternalAgentConfigImportProgress => "externalAgentConfig/import/progress" (v2::ExternalAgentConfigImportProgressNotification),
-    ExternalAgentConfigImportCompleted => "externalAgentConfig/import/completed" (v2::ExternalAgentConfigImportCompletedNotification),
     FsChanged => "fs/changed" (v2::FsChangedNotification),
     ReasoningSummaryTextDelta => "item/reasoning/summaryTextDelta" (v2::ReasoningSummaryTextDeltaNotification),
     ReasoningSummaryPartAdded => "item/reasoning/summaryPartAdded" (v2::ReasoningSummaryPartAddedNotification),
@@ -1815,19 +1710,6 @@ mod tests {
             })
         );
 
-        let plugin_install = ClientRequest::PluginInstall {
-            request_id: request_id(),
-            params: v2::PluginInstallParams {
-                marketplace_path: Some(absolute_path("/tmp/marketplace")),
-                remote_marketplace_name: None,
-                plugin_name: "plugin-a".to_string(),
-            },
-        };
-        assert_eq!(
-            plugin_install.serialization_scope(),
-            Some(ClientRequestSerializationScope::Global("config"))
-        );
-
         let skills_list = ClientRequest::SkillsList {
             request_id: request_id(),
             params: v2::SkillsListParams {
@@ -1848,46 +1730,6 @@ mod tests {
         };
         assert_eq!(
             skills_extra_roots_set.serialization_scope(),
-            Some(ClientRequestSerializationScope::Global("config"))
-        );
-
-        let plugin_list = ClientRequest::PluginList {
-            request_id: request_id(),
-            params: v2::PluginListParams {
-                cwds: None,
-                marketplace_kinds: None,
-                force_refetch: false,
-            },
-        };
-        assert_eq!(plugin_list.serialization_scope(), None);
-
-        let plugin_read = ClientRequest::PluginRead {
-            request_id: request_id(),
-            params: v2::PluginReadParams {
-                marketplace_path: Some(absolute_path("/tmp/marketplace")),
-                remote_marketplace_name: None,
-                plugin_name: "plugin-a".to_string(),
-            },
-        };
-        assert_eq!(plugin_read.serialization_scope(), None);
-
-        let plugin_installed = ClientRequest::PluginInstalled {
-            request_id: request_id(),
-            params: v2::PluginInstalledParams {
-                cwds: None,
-                install_suggestion_plugin_names: None,
-            },
-        };
-        assert_eq!(plugin_installed.serialization_scope(), None);
-
-        let plugin_uninstall = ClientRequest::PluginUninstall {
-            request_id: request_id(),
-            params: v2::PluginUninstallParams {
-                plugin_id: "plugin-a".to_string(),
-            },
-        };
-        assert_eq!(
-            plugin_uninstall.serialization_scope(),
             Some(ClientRequestSerializationScope::Global("config"))
         );
 
@@ -1942,17 +1784,6 @@ mod tests {
             Some(ClientRequestSerializationScope::Thread {
                 thread_id: "guardian-thread".to_string()
             })
-        );
-
-        let marketplace_remove = ClientRequest::MarketplaceRemove {
-            request_id: request_id(),
-            params: v2::MarketplaceRemoveParams {
-                marketplace_name: "marketplace".to_string(),
-            },
-        };
-        assert_eq!(
-            marketplace_remove.serialization_scope(),
-            Some(ClientRequestSerializationScope::Global("config"))
         );
 
         let add_credits_nudge = ClientRequest::SendAddCreditsNudgeEmail {

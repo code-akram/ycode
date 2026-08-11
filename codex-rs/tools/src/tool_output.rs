@@ -26,27 +26,6 @@ pub trait ToolOutput: Send {
 
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem;
 
-    /// Returns the tool call id exposed to `PostToolUse` hooks for this output.
-    fn post_tool_use_id(&self, call_id: &str) -> String {
-        call_id.to_string()
-    }
-
-    /// Returns the tool input exposed to `PostToolUse` hooks for this output.
-    fn post_tool_use_input(&self, _payload: &ToolPayload) -> Option<JsonValue> {
-        None
-    }
-
-    /// Returns the stable value exposed to `PostToolUse` hooks for this tool output.
-    ///
-    /// Tool handlers decide whether a tool participates in `PostToolUse`, but
-    /// this method lets the output type own any conversion from model-facing
-    /// response content to hook-facing data. Returning `None` means the output
-    /// should not produce a post-use hook payload, not merely that the tool had
-    /// empty output.
-    fn post_tool_use_response(&self, _call_id: &str, _payload: &ToolPayload) -> Option<JsonValue> {
-        None
-    }
-
     fn code_mode_result(&self, payload: &ToolPayload) -> JsonValue {
         response_input_to_code_mode_result(self.to_response_item("", payload))
     }
@@ -70,18 +49,6 @@ where
 
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
         (**self).to_response_item(call_id, payload)
-    }
-
-    fn post_tool_use_id(&self, call_id: &str) -> String {
-        (**self).post_tool_use_id(call_id)
-    }
-
-    fn post_tool_use_input(&self, payload: &ToolPayload) -> Option<JsonValue> {
-        (**self).post_tool_use_input(payload)
-    }
-
-    fn post_tool_use_response(&self, call_id: &str, payload: &ToolPayload) -> Option<JsonValue> {
-        (**self).post_tool_use_response(call_id, payload)
     }
 
     fn code_mode_result(&self, payload: &ToolPayload) -> JsonValue {
@@ -150,10 +117,6 @@ impl ToolOutput for JsonToolOutput {
             call_id: call_id.to_string(),
             output,
         }
-    }
-
-    fn post_tool_use_response(&self, _call_id: &str, _payload: &ToolPayload) -> Option<JsonValue> {
-        Some(self.value.clone())
     }
 
     fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {

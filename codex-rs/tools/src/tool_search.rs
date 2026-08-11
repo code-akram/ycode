@@ -3,10 +3,18 @@ use crate::LoadableToolSpec;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiNamespaceTool;
 use crate::ResponsesApiTool;
-use crate::ToolSearchSourceInfo;
 use crate::ToolSpec;
 use crate::default_namespace_description;
 use codex_protocol::DEFAULT_FUNCTION_NAMESPACE;
+
+pub const TOOL_SEARCH_TOOL_NAME: &str = "tool_search";
+pub const TOOL_SEARCH_DEFAULT_LIMIT: usize = 8;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolSearchSourceInfo {
+    pub name: String,
+    pub description: Option<String>,
+}
 
 #[derive(Clone, PartialEq)]
 pub struct ToolSearchEntry {

@@ -470,7 +470,6 @@ WHERE thread_id = ?
                 phase: Some(MessagePhase::Commentary) | None,
                 ..
             }
-            | ThreadItem::HookPrompt { .. }
             | ThreadItem::Plan { .. }
             | ThreadItem::Reasoning { .. }
             | ThreadItem::CommandExecution { .. }

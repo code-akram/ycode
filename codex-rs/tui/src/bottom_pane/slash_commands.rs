@@ -55,7 +55,6 @@ impl SlashCommandItem {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct BuiltinCommandFlags {
-    pub(crate) plugins_command_enabled: bool,
     pub(crate) token_activity_command_enabled: bool,
     pub(crate) service_tier_commands_enabled: bool,
     pub(crate) goal_command_enabled: bool,
@@ -67,7 +66,6 @@ pub(crate) struct BuiltinCommandFlags {
 pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static str, SlashCommand)> {
     built_in_slash_commands()
         .into_iter()
-        .filter(|(_, cmd)| flags.plugins_command_enabled || *cmd != SlashCommand::Plugins)
         .filter(|(_, cmd)| flags.token_activity_command_enabled || *cmd != SlashCommand::Usage)
         .filter(|(_, cmd)| flags.goal_command_enabled || *cmd != SlashCommand::Goal)
         .filter(|(_, cmd)| flags.personality_command_enabled || *cmd != SlashCommand::Personality)
@@ -158,7 +156,6 @@ mod tests {
 
     fn all_enabled_flags() -> BuiltinCommandFlags {
         BuiltinCommandFlags {
-            plugins_command_enabled: true,
             token_activity_command_enabled: true,
             service_tier_commands_enabled: true,
             goal_command_enabled: true,

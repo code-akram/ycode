@@ -567,20 +567,21 @@ fn create_collab_input_items_schema() -> JsonSchema {
         (
             "path".to_string(),
             JsonSchema::string(Some(
-                "Path when type is local_image/local_audio/skill, or a structured mention target such as plugin://<plugin-name>@<marketplace-name> when type is mention."
-                    .to_string(),
+                "Path when type is local_image, local_audio, skill, or mention.".to_string(),
             )),
         ),
         (
             "name".to_string(),
-            JsonSchema::string(Some("Display name when type is skill or mention.".to_string())),
+            JsonSchema::string(Some(
+                "Display name when type is skill or mention.".to_string(),
+            )),
         ),
     ]);
 
-    JsonSchema::array(JsonSchema::object(properties, /*required*/ None, Some(false.into())), Some(
-            "Structured input items. Use this to pass explicit mentions (for example plugin:// paths)."
-                .to_string(),
-        ))
+    JsonSchema::array(
+        JsonSchema::object(properties, /*required*/ None, Some(false.into())),
+        Some("Structured input items, including explicit filesystem-skill mentions.".to_string()),
+    )
 }
 
 fn spawn_agent_common_properties_v1(agent_type_description: &str) -> BTreeMap<String, JsonSchema> {

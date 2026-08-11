@@ -15,14 +15,6 @@ use crate::compact_remote_v2::run_inline_remote_auto_compact_task as run_inline_
 use crate::context::ContextualUserFragment;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::feedback_tags;
-use crate::hook_runtime::inspect_pending_input;
-use crate::hook_runtime::record_additional_contexts;
-use crate::hook_runtime::record_pending_input;
-use crate::hook_runtime::run_legacy_after_agent_hook;
-use crate::hook_runtime::run_pending_session_start_hooks;
-use crate::hook_runtime::run_turn_stop_hooks;
-use crate::plugins::build_plugin_injections;
-use crate::plugins::collect_explicit_plugin_mentions;
 use crate::responses_metadata::CodexResponsesMetadata;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::responses_retry::ResponsesStreamRequest;
@@ -68,7 +60,6 @@ use codex_protocol::error::CodexErr;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::TurnItem;
-use codex_protocol::items::build_hook_prompt_message;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseInputItem;
@@ -140,7 +131,7 @@ pub(crate) async fn run_turn(
     .await
     {
         if matches!(err.details(), CodexErrorDetails::TurnAborted) {
-            run_hooks_and_record_inputs(&sess, &turn_context, &input).await;
+            record_inputs(&sess, &turn_context, &input).await;
             return Err(err);
         }
         if matches!(err.details(), CodexErrorDetails::ToolCollision(_)) {
@@ -161,7 +152,7 @@ pub(crate) async fn run_turn(
     {
         Ok(step_context) => step_context,
         Err(err) if matches!(err.details(), CodexErrorDetails::TurnAborted) => {
-            run_hooks_and_record_inputs(&sess, &turn_context, &input).await;
+            record_inputs(&sess, &turn_context, &input).await;
             return Err(err);
         }
         Err(err) => return Err(err),
@@ -184,13 +175,8 @@ pub(crate) async fn run_turn(
         return Ok(None);
     };
 
-    if run_pending_session_start_hooks(&sess, &turn_context).await {
-        return Ok(None);
-    }
     let mut can_drain_pending_input = input.is_empty();
-    if run_hooks_and_record_inputs(&sess, &turn_context, &input).await {
-        return Ok(None);
-    }
+    record_inputs(&sess, &turn_context, &input).await;
 
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: turn_context.model_info.slug.clone(),
@@ -206,7 +192,6 @@ pub(crate) async fn run_turn(
     track_turn_resolved_config_analytics(&sess, &turn_context, &input).await;
 
     let mut last_agent_message: Option<String> = None;
-    let mut stop_hook_active = false;
     // Although from the perspective of codex.rs, TurnDiffTracker has the lifecycle of a Task which contains
     // many turns, from the perspective of the user, it is a single turn.
     let turn_diff_tracker = Arc::new(tokio::sync::Mutex::new(
@@ -234,9 +219,7 @@ pub(crate) async fn run_turn(
             Vec::new()
         };
 
-        if run_hooks_and_record_inputs(&sess, &turn_context, &pending_input).await {
-            break;
-        }
+        record_inputs(&sess, &turn_context, &pending_input).await;
 
         let window_id = sess.current_window_id().await;
         super::rollout_budget::maybe_record_reminder(
@@ -394,62 +377,12 @@ pub(crate) async fn run_turn(
                             .await;
                         return Ok(None);
                     }
-                    if run_pending_session_start_hooks(&sess, &turn_context).await {
-                        return Ok(None);
-                    }
                     can_drain_pending_input = !model_needs_follow_up;
                     continue;
                 }
 
                 if !needs_follow_up {
                     last_agent_message = sampling_request_last_agent_message;
-                    let stop_outcome = run_turn_stop_hooks(
-                        &sess,
-                        &turn_context,
-                        stop_hook_active,
-                        last_agent_message.clone(),
-                    )
-                    .await;
-                    if stop_outcome.should_block {
-                        if let Some(hook_prompt_message) =
-                            build_hook_prompt_message(&stop_outcome.continuation_fragments)
-                        {
-                            sess.record_response_item_and_emit_turn_item(
-                                &turn_context,
-                                hook_prompt_message,
-                            )
-                            .await;
-                            sess.input_queue
-                                .accept_mailbox_delivery_for_current_turn(
-                                    &sess.active_turn,
-                                    &turn_context.sub_id,
-                                )
-                                .await;
-                            stop_hook_active = true;
-                            continue;
-                        } else {
-                            sess.send_event(
-                                &turn_context,
-                                EventMsg::Warning(WarningEvent {
-                                    message: "Stop hook requested continuation without a prompt; ignoring the block.".to_string(),
-                                }),
-                            )
-                            .await;
-                        }
-                    }
-                    if stop_outcome.should_stop {
-                        break;
-                    }
-                    if run_legacy_after_agent_hook(
-                        &sess,
-                        &turn_context,
-                        &sampling_request_input,
-                        last_agent_message.clone(),
-                    )
-                    .await
-                    {
-                        return Ok(None);
-                    }
                     break;
                 }
                 continue;
@@ -516,32 +449,31 @@ async fn turn_diff_display_roots(step_context: &StepContext) -> Vec<(String, Pat
 }
 
 #[instrument(level = "trace", skip_all)]
-pub(crate) async fn run_hooks_and_record_inputs(
+pub(crate) async fn record_inputs(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     input: &[TurnInput],
-) -> bool {
-    let mut blocked_input = false;
-    let mut accepted_user_input = false;
+) {
     for input_item in input {
-        let hook_outcome = inspect_pending_input(sess, turn_context, input_item).await;
-        if hook_outcome.should_stop {
-            blocked_input = true;
-            record_additional_contexts(sess, turn_context, hook_outcome.additional_contexts).await;
-        } else {
-            if matches!(input_item, TurnInput::UserInput { content, .. } if !content.is_empty()) {
-                accepted_user_input = true;
+        match input_item {
+            TurnInput::UserInput { content, client_id } => {
+                sess.record_user_prompt_and_emit_turn_item(
+                    turn_context.as_ref(),
+                    content,
+                    client_id.clone(),
+                )
+                .await;
             }
-            record_pending_input(
-                sess,
-                turn_context,
-                input_item.clone(),
-                hook_outcome.additional_contexts,
-            )
-            .await;
+            TurnInput::ResponseItem(item) => {
+                sess.record_conversation_items(turn_context, std::slice::from_ref(item))
+                    .await;
+            }
+            TurnInput::InterAgentCommunication(communication) => {
+                sess.record_inter_agent_communication(turn_context, communication.clone())
+                    .await;
+            }
         }
     }
-    blocked_input && !accepted_user_input
 }
 
 fn turn_user_input(input: &[TurnInput]) -> Vec<UserInput> {
@@ -570,13 +502,6 @@ async fn build_skill_injections_for_turn(
     let skills_snapshot = turn_context.skills_snapshot();
     let skills_outcome = skills_snapshot.outcome();
     let mentioned_skills = collect_explicit_skill_mentions(user_input, skills_outcome);
-    let loaded_plugins = sess
-        .services
-        .plugins_manager
-        .plugins_for_config(&turn_context.config.plugins_config_input())
-        .await;
-    let mentioned_plugins =
-        collect_explicit_plugin_mentions(user_input, loaded_plugins.capability_summaries());
     let tracking = build_track_events_context(
         turn_context.model_info.slug.clone(),
         sess.thread_id.to_string(),
@@ -612,7 +537,6 @@ async fn build_skill_injections_for_turn(
         })
         .map(|skill| ContextualUserFragment::into(crate::context::SkillInstructions::from(skill)))
         .collect::<Vec<_>>();
-    injection_items.extend(build_plugin_injections(&mentioned_plugins));
     injection_items.extend(extension_injection_items);
     Some(injection_items)
 }
@@ -1253,8 +1177,6 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<(String, Option<
         | EventMsg::RawResponseItem(_)
         | EventMsg::RawResponseCompleted(_)
         | EventMsg::ItemStarted(_)
-        | EventMsg::HookStarted(_)
-        | EventMsg::HookCompleted(_)
         | EventMsg::AgentMessageContentDelta(_)
         | EventMsg::ReasoningContentDelta(_)
         | EventMsg::ReasoningRawContentDelta(_)

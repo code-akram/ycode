@@ -218,15 +218,7 @@ impl ConfigManager {
         mut typesafe_overrides: ConfigOverrides,
         fallback_cwd: Option<PathBuf>,
     ) -> std::io::Result<Config> {
-        let mut request_overrides = request_overrides.unwrap_or_default();
-        if let Some(value) = request_overrides.remove("bypass_hook_trust") {
-            typesafe_overrides.bypass_hook_trust = Some(value.as_bool().ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "`bypass_hook_trust` override must be a boolean",
-                )
-            })?);
-        }
+        let request_overrides = request_overrides.unwrap_or_default();
         let merged_cli_overrides = cli_overrides
             .iter()
             .cloned()

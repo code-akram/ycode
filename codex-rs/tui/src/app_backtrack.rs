@@ -944,8 +944,8 @@ mod tests {
                     path: PathBuf::from("/tmp/skills/skill/SKILL.md"),
                 },
                 UserInput::Mention {
-                    name: "Sample Plugin".to_string(),
-                    path: "plugin://sample@test".to_string(),
+                    name: "sample".to_string(),
+                    path: "/tmp/sample/SKILL.md".to_string(),
                 },
             ],
         }];
@@ -975,7 +975,7 @@ mod tests {
                 MentionBinding {
                     sigil: '@',
                     mention: "sample".to_string(),
-                    path: "plugin://sample@test".to_string(),
+                    path: "/tmp/sample/SKILL.md".to_string(),
                 },
             ]
         );

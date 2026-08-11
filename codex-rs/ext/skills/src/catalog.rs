@@ -6,7 +6,7 @@ use std::sync::Arc;
 /// Source authority that owns a skill package and must be used to read it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SkillSourceKind {
-    /// Codex-hosted skills, including bundled, user, repo, plugin-installed,
+    /// Codex-hosted skills, including bundled, user, and repo skills,
     /// and downloaded/materialized remote skills.
     Host,
     /// Skills owned by an execution environment.

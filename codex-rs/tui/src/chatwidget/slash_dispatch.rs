@@ -335,13 +335,6 @@ impl ChatWidget {
             SlashCommand::Skills => {
                 self.open_skills_menu();
             }
-            SlashCommand::Import => {
-                self.app_event_tx
-                    .send(AppEvent::OpenExternalAgentConfigMigration);
-            }
-            SlashCommand::Hooks => {
-                self.add_hooks_output();
-            }
             SlashCommand::Status => {
                 if self.should_prefetch_rate_limits() {
                     let request_id = self.next_status_refresh_request_id;
@@ -388,9 +381,6 @@ impl ChatWidget {
             }
             SlashCommand::MemoryUpdate => {
                 self.add_cli_runtime_stub_message("Memory maintenance");
-            }
-            SlashCommand::Plugins => {
-                self.add_plugins_output();
             }
             SlashCommand::Rollout => {
                 if let Some(path) = self.rollout_path() {
@@ -859,7 +849,6 @@ impl ChatWidget {
 
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
-            plugins_command_enabled: self.config.features.enabled(Feature::Plugins),
             token_activity_command_enabled: self.has_codex_backend_auth,
             goal_command_enabled: self.config.features.enabled(Feature::Goals),
             service_tier_commands_enabled: self.fast_mode_enabled(),
@@ -888,7 +877,6 @@ impl ChatWidget {
             | SlashCommand::Stop
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate
-            | SlashCommand::Plugins
             | SlashCommand::Rollout
             | SlashCommand::Copy
             | SlashCommand::Raw
@@ -920,8 +908,6 @@ impl ChatWidget {
             | SlashCommand::Logout
             | SlashCommand::Mention
             | SlashCommand::Skills
-            | SlashCommand::Import
-            | SlashCommand::Hooks
             | SlashCommand::Title
             | SlashCommand::Statusline
             | SlashCommand::Theme

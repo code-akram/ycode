@@ -13,8 +13,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use strum_macros::EnumIter;
-
 use crate::AgentPath;
 use crate::ResponseItemId;
 use crate::SessionId;
@@ -1411,8 +1409,6 @@ pub enum EventMsg {
 
     ItemStarted(ItemStartedEvent),
     ItemCompleted(ItemCompletedEvent),
-    HookStarted(HookStartedEvent),
-    HookCompleted(HookCompletedEvent),
 
     AgentMessageContentDelta(AgentMessageContentDeltaEvent),
     ReasoningContentDelta(ReasoningContentDeltaEvent),
@@ -1441,134 +1437,6 @@ pub enum EventMsg {
 
     /// Path-based v2 sub-agent activity.
     SubAgentActivity(SubAgentActivityEvent),
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS, EnumIter)]
-#[serde(rename_all = "snake_case")]
-pub enum HookEventName {
-    PreToolUse,
-    PermissionRequest,
-    PostToolUse,
-    PreCompact,
-    PostCompact,
-    SessionStart,
-    SessionEnd,
-    UserPromptSubmit,
-    SubagentStart,
-    SubagentStop,
-    Stop,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum HookHandlerType {
-    Command,
-    Prompt,
-    Agent,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum HookExecutionMode {
-    Sync,
-    Async,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum HookScope {
-    Thread,
-    Turn,
-}
-
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum HookSource {
-    System,
-    User,
-    Project,
-    Mdm,
-    SessionFlags,
-    Plugin,
-    CloudRequirements,
-    CloudManagedConfig,
-    LegacyManagedConfigFile,
-    LegacyManagedConfigMdm,
-    #[default]
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum HookTrustStatus {
-    Managed,
-    Untrusted,
-    Trusted,
-    Modified,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum HookRunStatus {
-    Running,
-    Completed,
-    Failed,
-    Blocked,
-    Stopped,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum HookOutputEntryKind {
-    Warning,
-    Stop,
-    Feedback,
-    Context,
-    Error,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub struct HookOutputEntry {
-    pub kind: HookOutputEntryKind,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub struct HookRunSummary {
-    pub id: String,
-    pub event_name: HookEventName,
-    pub handler_type: HookHandlerType,
-    pub execution_mode: HookExecutionMode,
-    pub scope: HookScope,
-    pub source_path: AbsolutePathBuf,
-    #[serde(default)]
-    pub source: HookSource,
-    pub display_order: i64,
-    pub status: HookRunStatus,
-    pub status_message: Option<String>,
-    #[ts(type = "number")]
-    pub started_at: i64,
-    #[ts(type = "number | null")]
-    pub completed_at: Option<i64>,
-    #[ts(type = "number | null")]
-    pub duration_ms: Option<i64>,
-    pub entries: Vec<HookOutputEntry>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub struct HookStartedEvent {
-    pub turn_id: Option<String>,
-    pub run: HookRunSummary,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub struct HookCompletedEvent {
-    pub turn_id: Option<String>,
-    pub run: HookRunSummary,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -3378,14 +3246,6 @@ pub enum ExecCommandStatus {
 pub struct ExecCommandBeginEvent {
     /// Identifier so this can be paired with the ExecCommandEnd event.
     pub call_id: String,
-    /// Trusted first-party plugin attributed to this command, when known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub plugin_id: Option<String>,
-    /// Safe plugin-relative path attributed to this command, when known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub script_path: Option<String>,
     /// Identifier for the underlying PTY process (when available).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -3412,14 +3272,6 @@ pub struct ExecCommandBeginEvent {
 pub struct ExecCommandEndEvent {
     /// Identifier for the ExecCommandBegin that finished.
     pub call_id: String,
-    /// Trusted first-party plugin attributed to this command, when known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub plugin_id: Option<String>,
-    /// Safe plugin-relative path attributed to this command, when known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub script_path: Option<String>,
     /// Identifier for the underlying PTY process (when available).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

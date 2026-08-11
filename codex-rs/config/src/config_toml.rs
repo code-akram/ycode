@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::HooksToml;
 use crate::permissions_toml::PermissionsToml;
 use crate::profile_toml::ConfigProfile;
 use crate::types::AnalyticsConfigToml;
@@ -13,11 +12,9 @@ use crate::types::AppsConfigToml;
 use crate::types::AuthCredentialsStoreMode;
 use crate::types::FeedbackConfigToml;
 use crate::types::History;
-use crate::types::MarketplaceConfig;
 use crate::types::MemoriesToml;
 use crate::types::Notice;
 use crate::types::OtelConfigToml;
-use crate::types::PluginConfig;
 use crate::types::SandboxWorkspaceWrite;
 use crate::types::ShellEnvironmentPolicyToml;
 use crate::types::SkillsConfig;
@@ -405,17 +402,6 @@ pub struct ConfigToml {
 
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,
-
-    /// Lifecycle hooks configured inline in TOML plus user-level overrides.
-    pub hooks: Option<HooksToml>,
-
-    /// User-level plugin config entries keyed by plugin name.
-    #[serde(default)]
-    pub plugins: HashMap<String, PluginConfig>,
-
-    /// User-level marketplace entries keyed by marketplace name.
-    #[serde(default)]
-    pub marketplaces: HashMap<String, MarketplaceConfig>,
 
     /// Centralized feature flags (new). Prefer this over individual toggles.
     #[serde(default)]

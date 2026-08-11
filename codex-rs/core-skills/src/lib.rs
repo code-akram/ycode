@@ -22,5 +22,4 @@ pub use model::SkillLoadOutcome;
 pub use model::SkillMetadata;
 pub use model::SkillPolicy;
 pub use model::filter_skill_load_outcome_for_product;
-pub use root_loader::PluginSkillSnapshots;
 pub use skill_instructions::SkillInstructions;

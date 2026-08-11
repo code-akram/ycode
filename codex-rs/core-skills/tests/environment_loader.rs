@@ -179,12 +179,8 @@ async fn host_loading_reuses_walk_inventory_for_symlinked_skill_pack() {
     use codex_utils_absolute_path::test_support::PathBufExt;
 
     let root = tempdir().expect("tempdir");
-    let shared_plugin_root = tempdir().expect("tempdir");
-    let manifest_path = shared_plugin_root.path().join(".codex-plugin/plugin.json");
-    fs::create_dir_all(manifest_path.parent().expect("manifest parent")).expect("manifest dir");
-    fs::write(&manifest_path, r#"{"name":"linked"}"#).expect("manifest");
-
-    let skills_root = shared_plugin_root.path().join("skills");
+    let shared_skills_root = tempdir().expect("tempdir");
+    let skills_root = shared_skills_root.path().join("skills");
     for name in ["first", "second"] {
         let skill_path = skills_root.join(name).join("SKILL.md");
         fs::create_dir_all(skill_path.parent().expect("skill parent")).expect("skill dir");
@@ -214,12 +210,7 @@ async fn host_loading_reuses_walk_inventory_for_symlinked_skill_pack() {
             path: host_root.abs(),
             scope: SkillScope::User,
             file_system,
-            plugin_identity: None,
-            plugin_namespace: None,
-            plugin_root: None,
-            discovery_mode: codex_utils_plugins::SkillDiscoveryMode::Recursive,
         }],
-        /*plugin_skill_snapshots*/ None,
         Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_ROOT_SCANS)),
     );
     fn assert_send<T: Send>(_: &T) {}
@@ -237,7 +228,7 @@ async fn host_loading_reuses_walk_inventory_for_symlinked_skill_pack() {
         outcome.skills,
         vec![
             SkillMetadata {
-                name: "linked:first".to_string(),
+                name: "first".to_string(),
                 description: "first skill.".to_string(),
                 short_description: None,
                 interface: None,
@@ -248,11 +239,9 @@ async fn host_loading_reuses_walk_inventory_for_symlinked_skill_pack() {
                 }),
                 path_to_skills_md: first_skill_path,
                 scope: SkillScope::User,
-                plugin_id: None,
-                remote_plugin_id: None,
             },
             SkillMetadata {
-                name: "linked:second".to_string(),
+                name: "second".to_string(),
                 description: "second skill.".to_string(),
                 short_description: None,
                 interface: None,
@@ -260,8 +249,6 @@ async fn host_loading_reuses_walk_inventory_for_symlinked_skill_pack() {
                 policy: None,
                 path_to_skills_md: second_skill_path,
                 scope: SkillScope::User,
-                plugin_id: None,
-                remote_plugin_id: None,
             },
         ]
     );
@@ -280,15 +267,5 @@ async fn host_loading_reuses_walk_inventory_for_symlinked_skill_pack() {
             .metadata_files
             .iter()
             .all(|path| path.basename().as_deref() != Some("openai.yaml"))
-    );
-    let manifest_uri =
-        PathUri::from_host_native_path(dunce::canonicalize(manifest_path).unwrap()).unwrap();
-    assert_eq!(
-        calls
-            .metadata_files
-            .iter()
-            .filter(|path| **path == manifest_uri)
-            .count(),
-        1
     );
 }

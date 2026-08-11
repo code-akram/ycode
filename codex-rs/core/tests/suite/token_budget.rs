@@ -125,38 +125,6 @@ fn ev_completed_with_usage(id: &str, input_tokens: i64, output_tokens: i64) -> V
     })
 }
 
-fn python_hook_command(script_path: &Path) -> String {
-    format!("python3 \"{}\"", script_path.display())
-}
-
-fn write_token_budget_compact_hooks(home: &Path) {
-    let script_path = home.join("token_budget_compact_hook.py");
-    std::fs::write(
-        &script_path,
-        "import json\nimport sys\njson.load(sys.stdin)\n",
-    )
-    .expect("write compact hook script");
-    let hooks = json!({
-        "hooks": {
-            "PreCompact": [{
-                "matcher": "manual",
-                "hooks": [{
-                    "type": "command",
-                    "command": python_hook_command(&script_path),
-                }]
-            }],
-            "PostCompact": [{
-                "matcher": "manual",
-                "hooks": [{
-                    "type": "command",
-                    "command": python_hook_command(&script_path),
-                }]
-            }]
-        }
-    });
-    std::fs::write(home.join("hooks.json"), hooks.to_string()).expect("write hooks.json");
-}
-
 async fn assert_context_compaction_item_lifecycle(codex: &std::sync::Arc<codex_core::CodexThread>) {
     let mut saw_compaction_started = false;
     let mut saw_compaction_completed = false;
@@ -1050,55 +1018,6 @@ async fn token_budget_context_uses_new_window_after_compaction() -> Result<()> {
         requests[1].body_contains_text("after compact"),
         "follow-up should still include the new turn input"
     );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn token_budget_compaction_runs_compact_hooks() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-    let test = test_codex()
-        .with_pre_build_hook(write_token_budget_compact_hooks)
-        .with_config(|config| {
-            config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
-            config
-                .features
-                .enable(Feature::TokenBudget)
-                .expect("test config should allow token budget");
-            trust_discovered_hooks(config);
-        })
-        .build(&server)
-        .await?;
-
-    test.codex.submit(Op::Compact).await?;
-
-    let pre_compact = wait_for_event_match(&test.codex, |event| match event {
-        EventMsg::HookCompleted(completed)
-            if completed.run.event_name == HookEventName::PreCompact =>
-        {
-            Some(completed.clone())
-        }
-        _ => None,
-    })
-    .await;
-    assert_eq!(pre_compact.run.status, HookRunStatus::Completed);
-
-    let post_compact = wait_for_event_match(&test.codex, |event| match event {
-        EventMsg::HookCompleted(completed)
-            if completed.run.event_name == HookEventName::PostCompact =>
-        {
-            Some(completed.clone())
-        }
-        _ => None,
-    })
-    .await;
-    assert_eq!(post_compact.run.status, HookRunStatus::Completed);
-    wait_for_event(&test.codex, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
 
     Ok(())
 }

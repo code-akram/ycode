@@ -1,9 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::path::Component;
 use std::path::Path;
-use std::path::PathBuf;
 
 use codex_core_skills::MAX_SKILL_PROMPT_BYTES;
 use codex_protocol::protocol::SkillScope;
@@ -22,7 +20,7 @@ const MAX_CATALOG_SKILL_DESCRIPTION_CHARS: usize = 1_024;
 const TRUNCATED_SKILL_DESCRIPTION_SUFFIX: &str = "...";
 const SKILL_DESCRIPTION_TRUNCATION_WARNING_THRESHOLD_CHARS: usize = 100;
 const APPROX_BYTES_PER_TOKEN: usize = 4;
-const SKILL_DESCRIPTION_TRUNCATED_WARNING: &str = "Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.";
+const SKILL_DESCRIPTION_TRUNCATED_WARNING: &str = "Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills to leave more room for the rest.";
 const SKILL_DESCRIPTIONS_REMOVED_WARNING_PREFIX: &str =
     "Exceeded skills context budget. All skill descriptions were removed and";
 pub(crate) const MAX_SKILL_NAME_BYTES: usize = 256;
@@ -952,7 +950,6 @@ fn build_alias_plan(
         return None;
     }
 
-    let plugin_version_skill_counts = plugin_version_skill_counts_for_entries(entries);
     let mut alias_root_by_display_root = HashMap::new();
     let mut alias_roots = Vec::new();
     let mut seen = HashSet::new();
@@ -966,10 +963,7 @@ fn build_alias_plan(
         let Some(display_root) = entry.display_path_root() else {
             continue;
         };
-        let alias_root =
-            alias_root_for_display_root(Path::new(display_root), &plugin_version_skill_counts)
-                .to_string_lossy()
-                .replace('\\', "/");
+        let alias_root = display_root.replace('\\', "/");
         alias_root_by_display_root.insert(display_root.to_string(), alias_root.clone());
         if seen.insert(alias_root.clone()) {
             alias_roots.push(alias_root);
@@ -996,68 +990,6 @@ fn build_alias_plan(
         root_aliases,
         table_cost,
     })
-}
-
-fn plugin_version_skill_counts_for_entries(
-    entries: &[&SkillCatalogEntry],
-) -> HashMap<PathBuf, usize> {
-    let mut counts = HashMap::new();
-    for root in entries.iter().filter_map(|entry| {
-        (entry.authority.kind == SkillSourceKind::Host)
-            .then(|| entry.display_path_root())
-            .flatten()
-    }) {
-        if let Some(plugin_version_base) = plugin_version_base(Path::new(root)) {
-            let count = counts.entry(plugin_version_base).or_insert(0usize);
-            *count = count.saturating_add(1);
-        }
-    }
-    counts
-}
-
-fn alias_root_for_display_root(
-    root: &Path,
-    plugin_version_skill_counts: &HashMap<PathBuf, usize>,
-) -> PathBuf {
-    let Some(plugin_version_base) = plugin_version_base(root) else {
-        return root.to_path_buf();
-    };
-    let skill_count = plugin_version_skill_counts
-        .get(&plugin_version_base)
-        .copied()
-        .unwrap_or_default();
-    if skill_count > 1 {
-        root.to_path_buf()
-    } else {
-        plugin_marketplace_base(root).unwrap_or_else(|| root.to_path_buf())
-    }
-}
-
-fn plugin_marketplace_base(path: &Path) -> Option<PathBuf> {
-    let mut candidate = path;
-    while let Some(parent) = candidate.parent() {
-        if parent.file_name()?.to_str()? == "cache"
-            && parent.parent()?.file_name()?.to_str()? == "plugins"
-        {
-            return Some(candidate.to_path_buf());
-        }
-        candidate = parent;
-    }
-    None
-}
-
-fn plugin_version_base(path: &Path) -> Option<PathBuf> {
-    let marketplace_base = plugin_marketplace_base(path)?;
-    let mut relative_components = path.strip_prefix(&marketplace_base).ok()?.components();
-    let plugin = match relative_components.next()? {
-        Component::Normal(plugin) => plugin,
-        _ => return None,
-    };
-    let version = match relative_components.next()? {
-        Component::Normal(version) => version,
-        _ => return None,
-    };
-    Some(marketplace_base.join(plugin).join(version))
 }
 
 fn render_skill_path_with_aliases(entry: &SkillCatalogEntry, plan: &AliasPlan) -> String {

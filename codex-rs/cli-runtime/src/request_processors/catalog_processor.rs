@@ -6,11 +6,9 @@ use futures::StreamExt;
 pub(crate) struct CatalogRequestProcessor {
     pub(super) outgoing: Arc<OutgoingMessageSender>,
     pub(super) skills_watcher: Arc<SkillsWatcher>,
-    pub(super) auth_manager: Arc<AuthManager>,
     pub(super) thread_manager: Arc<ThreadManager>,
     pub(super) config: Arc<Config>,
     pub(super) config_manager: ConfigManager,
-    pub(super) workspace_settings_cache: Arc<workspace_settings::WorkspaceSettingsCache>,
 }
 
 const SKILLS_LIST_CWD_CONCURRENCY: usize = 5;
@@ -33,8 +31,6 @@ fn skills_to_info(
                         short_description: interface.short_description,
                         icon_small: interface.icon_small,
                         icon_large: interface.icon_large,
-                        icon_small_url: None,
-                        icon_large_url: None,
                         brand_color: interface.brand_color,
                         default_prompt: interface.default_prompt,
                     }
@@ -63,30 +59,6 @@ fn skills_to_info(
         .collect()
 }
 
-fn hooks_to_info(hooks: &[codex_hooks::HookListEntry]) -> Vec<HookMetadata> {
-    hooks
-        .iter()
-        .map(|hook| HookMetadata {
-            key: hook.key.clone(),
-            event_name: hook.event_name.into(),
-            handler_type: hook.handler_type.into(),
-            matcher: hook.matcher.clone(),
-            command: hook.command.clone(),
-            timeout_sec: hook.timeout_sec,
-            status_message: hook.status_message.clone(),
-            additional_context_limit: hook.additional_context_limit,
-            source_path: hook.source_path.clone(),
-            source: hook.source.into(),
-            plugin_id: hook.plugin_id.clone(),
-            display_order: hook.display_order,
-            enabled: hook.enabled,
-            is_managed: hook.is_managed,
-            current_hash: hook.current_hash.clone(),
-            trust_status: hook.trust_status.into(),
-        })
-        .collect()
-}
-
 fn errors_to_info(
     errors: &[codex_core::skills::SkillError],
 ) -> Vec<codex_cli_protocol::SkillErrorInfo> {
@@ -103,20 +75,16 @@ impl CatalogRequestProcessor {
     pub(crate) fn new(
         outgoing: Arc<OutgoingMessageSender>,
         skills_watcher: Arc<SkillsWatcher>,
-        auth_manager: Arc<AuthManager>,
         thread_manager: Arc<ThreadManager>,
         config: Arc<Config>,
         config_manager: ConfigManager,
-        workspace_settings_cache: Arc<workspace_settings::WorkspaceSettingsCache>,
     ) -> Self {
         Self {
             outgoing,
             skills_watcher,
-            auth_manager,
             thread_manager,
             config,
             config_manager,
-            workspace_settings_cache,
         }
     }
 
@@ -125,15 +93,6 @@ impl CatalogRequestProcessor {
         params: SkillsListParams,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         self.skills_list_response(params)
-            .await
-            .map(|response| Some(response.into()))
-    }
-
-    pub(crate) async fn hooks_list(
-        &self,
-        params: HooksListParams,
-    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        self.hooks_list_response(params)
             .await
             .map(|response| Some(response.into()))
     }
@@ -221,28 +180,6 @@ impl CatalogRequestProcessor {
             .map_err(|err| internal_error(format!("failed to reload config: {err}")))
     }
 
-    async fn workspace_codex_plugins_enabled(
-        &self,
-        config: &Config,
-        auth: Option<&CodexAuth>,
-    ) -> bool {
-        match workspace_settings::codex_plugins_enabled_for_workspace(
-            config,
-            auth,
-            Some(&self.workspace_settings_cache),
-        )
-        .await
-        {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                warn!(
-                    "failed to fetch workspace Codex plugins setting; allowing Codex plugins: {err:#}"
-                );
-                true
-            }
-        }
-    }
-
     async fn list_models(
         thread_manager: Arc<ThreadManager>,
         http_client_factory: codex_http_client::HttpClientFactory,
@@ -322,11 +259,6 @@ impl CatalogRequestProcessor {
             }
             None => self.load_latest_config(/*fallback_cwd*/ None).await?,
         };
-        let auth = self.auth_manager.auth().await;
-        let workspace_codex_plugins_enabled = self
-            .workspace_codex_plugins_enabled(&config, auth.as_ref())
-            .await;
-
         let data = FEATURES
             .iter()
             .map(|spec| {
@@ -360,8 +292,7 @@ impl CatalogRequestProcessor {
                     display_name,
                     description,
                     announcement,
-                    enabled: config.features.enabled(spec.id)
-                        && (workspace_codex_plugins_enabled || spec.id != Feature::Plugins),
+                    enabled: config.features.enabled(spec.id),
                     default_enabled: spec.default_enabled,
                 }
             })
@@ -476,17 +407,8 @@ impl CatalogRequestProcessor {
         };
 
         let config = self.load_latest_config(/*fallback_cwd*/ None).await?;
-        let auth = self.auth_manager.auth().await;
-        let workspace_codex_plugins_enabled = self
-            .workspace_codex_plugins_enabled(&config, auth.as_ref())
-            .await;
         let skills_service = self.thread_manager.skills_service();
-        let plugins_manager = self.thread_manager.plugins_manager();
-        if force_reload
-            && workspace_codex_plugins_enabled
-            && config.features.enabled(Feature::Plugins)
-        {
-            plugins_manager.clear_cache();
+        if force_reload {
             skills_service.clear_cache();
         }
         let fs = self
@@ -498,7 +420,6 @@ impl CatalogRequestProcessor {
             .map(|(index, cwd)| {
                 let config = &config;
                 let fs = fs.clone();
-                let plugins_manager = &plugins_manager;
                 let skills_service = &skills_service;
                 async move {
                     let (cwd_abs, config_layer_stack) = match self.resolve_cwd_config(&cwd).await {
@@ -518,38 +439,11 @@ impl CatalogRequestProcessor {
                             );
                         }
                     };
-                    let (effective_skill_roots, plugin_skill_snapshots) =
-                        if workspace_codex_plugins_enabled {
-                            let plugins_input = config.plugins_config_input();
-                            if config_layer_stack == plugins_input.config_layer_stack {
-                                let plugins =
-                                    plugins_manager.plugins_for_config(&plugins_input).await;
-                                (
-                                    plugins.effective_plugin_skill_roots(),
-                                    plugins_manager
-                                        .plugin_skill_snapshots_for_config(&plugins_input),
-                                )
-                            } else {
-                                (
-                                    plugins_manager
-                                        .effective_skill_roots_for_layer_stack(
-                                            &config_layer_stack,
-                                            &plugins_input,
-                                        )
-                                        .await,
-                                    None,
-                                )
-                            }
-                        } else {
-                            (Vec::new(), None)
-                        };
                     let skills_input = codex_core::skills::HostSkillsLoadInput::new(
                         cwd_abs.clone(),
-                        effective_skill_roots,
                         config_layer_stack,
                         config.bundled_skills_enabled(),
-                    )
-                    .with_plugin_skill_snapshots(plugin_skill_snapshots);
+                    );
                     let snapshot = skills_service
                         .snapshot_for_cwd(&skills_input, force_reload, fs)
                         .await;
@@ -592,79 +486,6 @@ impl CatalogRequestProcessor {
         Ok(SkillsExtraRootsSetResponse {})
     }
 
-    /// Handle `hooks/list` by resolving hooks for each requested cwd.
-    async fn hooks_list_response(
-        &self,
-        params: HooksListParams,
-    ) -> Result<HooksListResponse, JSONRPCErrorError> {
-        let HooksListParams { cwds } = params;
-        let cwds = if cwds.is_empty() {
-            vec![self.config.cwd.to_path_buf()]
-        } else {
-            cwds
-        };
-
-        let auth = self.auth_manager.auth().await;
-        let plugins_manager = self.thread_manager.plugins_manager();
-        let mut data = Vec::new();
-        for cwd in cwds {
-            let config = match self
-                .config_manager
-                .load_for_cwd(
-                    /*request_overrides*/ None,
-                    ConfigOverrides::default(),
-                    Some(cwd.clone()),
-                )
-                .await
-            {
-                Ok(config) => config,
-                Err(err) => {
-                    let error_path = cwd.clone();
-                    data.push(codex_cli_protocol::HooksListEntry {
-                        cwd,
-                        hooks: Vec::new(),
-                        warnings: Vec::new(),
-                        errors: vec![codex_cli_protocol::HookErrorInfo {
-                            path: error_path,
-                            message: err.to_string(),
-                        }],
-                    });
-                    continue;
-                }
-            };
-            let workspace_codex_plugins_enabled = self
-                .workspace_codex_plugins_enabled(&config, auth.as_ref())
-                .await;
-            let plugins_enabled =
-                config.features.enabled(Feature::Plugins) && workspace_codex_plugins_enabled;
-            let plugin_hooks = if plugins_enabled {
-                let plugins_input = config.plugins_config_input();
-                let plugin_outcome = plugins_manager.plugins_for_config(&plugins_input).await;
-                codex_core_plugins::PluginHookLoadOutcome {
-                    hook_sources: plugin_outcome.effective_plugin_hook_sources(),
-                    hook_load_warnings: plugin_outcome.effective_plugin_hook_warnings(),
-                }
-            } else {
-                codex_core_plugins::PluginHookLoadOutcome::default()
-            };
-            let hooks = codex_hooks::list_hooks(codex_hooks::HooksConfig {
-                feature_enabled: config.features.enabled(Feature::CodexHooks),
-                bypass_hook_trust: config.bypass_hook_trust,
-                config_layer_stack: Some(config.config_layer_stack),
-                plugin_hook_sources: plugin_hooks.hook_sources,
-                plugin_hook_load_warnings: plugin_hooks.hook_load_warnings,
-                ..Default::default()
-            });
-            data.push(codex_cli_protocol::HooksListEntry {
-                cwd,
-                hooks: hooks_to_info(&hooks.hooks),
-                warnings: hooks.warnings,
-                errors: Vec::new(),
-            });
-        }
-        Ok(HooksListResponse { data })
-    }
-
     async fn skills_config_write_response_inner(
         &self,
         params: SkillsConfigWriteParams,
@@ -694,7 +515,6 @@ impl CatalogRequestProcessor {
             .apply()
             .await
             .map(|()| {
-                self.thread_manager.plugins_manager().clear_cache();
                 self.thread_manager.skills_service().clear_cache();
                 SkillsConfigWriteResponse {
                     effective_enabled: enabled,

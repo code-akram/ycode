@@ -34,9 +34,7 @@ members = [
     "skills",
     "core",
     "core-api",
-    "core-plugins",
     "core-skills",
-    "hooks",
     "http-client",
     "secrets",
     "exec",
@@ -54,7 +52,6 @@ members = [
     "ext/memories",
     "ext/skills",
     "ext/web-search",
-    "external-agent-migration",
     "keyring-store",
     "file-search",
     "file-watcher",
@@ -97,7 +94,6 @@ members = [
     "utils/oss",
     "utils/output-truncation",
     "utils/path-utils",
-    "utils/plugins",
     "utils/fuzzy-match",
     "utils/stream-parser",
     "utils/template",
@@ -110,7 +106,6 @@ members = [
     "thread-store",
     "uds",
     "codex-experimental-api-macros",
-    "plugin",
     "model-provider",
 ]
 resolver = "2"
@@ -157,7 +152,6 @@ codex-agent-extension = { path = "ext/agent" }
 codex-context-fragments = { path = "context-fragments" }
 codex-core = { path = "core" }
 codex-core-api = { path = "core-api" }
-codex-core-plugins = { path = "core-plugins" }
 codex-core-skills = { path = "core-skills" }
 codex-exec = { path = "exec" }
 codex-file-system = { path = "file-system" }
@@ -170,7 +164,6 @@ codex-extension-items = { path = "ext/items" }
 codex-goal-extension = { path = "ext/goal" }
 codex-git-attribution = { path = "ext/git-attribution" }
 codex-image-generation-extension = { path = "ext/image-generation" }
-codex-external-agent-migration = { path = "external-agent-migration" }
 codex-experimental-api-macros = { path = "codex-experimental-api-macros" }
 codex-features = { path = "features" }
 codex-feedback = { path = "feedback" }
@@ -178,7 +171,6 @@ codex-install-context = { path = "install-context" }
 codex-file-search = { path = "file-search" }
 codex-file-watcher = { path = "file-watcher" }
 codex-git-utils = { path = "git-utils" }
-codex-hooks = { path = "hooks" }
 codex-keyring-store = { path = "keyring-store" }
 codex-lmstudio = { path = "lmstudio" }
 codex-login = { path = "login" }
@@ -192,7 +184,6 @@ codex-models-manager = { path = "models-manager" }
 codex-network-proxy = { path = "network-proxy" }
 codex-ollama = { path = "ollama" }
 codex-otel = { path = "otel" }
-codex-plugin = { path = "plugin" }
 codex-model-provider = { path = "model-provider" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
@@ -227,7 +218,6 @@ codex-utils-oss = { path = "utils/oss" }
 codex-utils-output-truncation = { path = "utils/output-truncation" }
 codex-utils-path = { path = "utils/path-utils" }
 codex-utils-path-uri = { path = "utils/path-uri" }
-codex-utils-plugins = { path = "utils/plugins" }
 codex-utils-pty = { path = "utils/pty" }
 codex-utils-rustls-provider = { path = "utils/rustls-provider" }
 codex-utils-sleep-inhibitor = { path = "utils/sleep-inhibitor" }

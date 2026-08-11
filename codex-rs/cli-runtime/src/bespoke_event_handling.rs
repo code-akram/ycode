@@ -31,8 +31,6 @@ use codex_cli_protocol::FileChangeRequestApprovalParams;
 use codex_cli_protocol::FileChangeRequestApprovalResponse;
 use codex_cli_protocol::GrantedPermissionProfile as V2GrantedPermissionProfile;
 use codex_cli_protocol::GuardianWarningNotification;
-use codex_cli_protocol::HookCompletedNotification;
-use codex_cli_protocol::HookStartedNotification;
 use codex_cli_protocol::ItemCompletedNotification;
 use codex_cli_protocol::ItemStartedNotification;
 use codex_cli_protocol::ModelReroutedNotification;
@@ -122,8 +120,6 @@ enum CommandExecutionApprovalPresentation {
 
 #[derive(Debug, PartialEq)]
 struct CommandExecutionCompletionItem {
-    plugin_id: Option<String>,
-    script_path: Option<String>,
     command: String,
     cwd: LegacyAppPathString,
     command_actions: Vec<V2ParsedCommand>,
@@ -654,26 +650,6 @@ pub(crate) async fn apply_bespoke_event_handling(
             );
             outgoing.send_server_notification(notification).await;
         }
-        EventMsg::HookStarted(event) => {
-            let notification = HookStartedNotification {
-                thread_id: conversation_id.to_string(),
-                turn_id: event.turn_id,
-                run: event.run.into(),
-            };
-            outgoing
-                .send_server_notification(ServerNotification::HookStarted(notification))
-                .await;
-        }
-        EventMsg::HookCompleted(event) => {
-            let notification = HookCompletedNotification {
-                thread_id: conversation_id.to_string(),
-                turn_id: event.turn_id,
-                run: event.run.into(),
-            };
-            outgoing
-                .send_server_notification(ServerNotification::HookCompleted(notification))
-                .await;
-        }
         EventMsg::RawResponseItem(raw_response_item_event) => {
             maybe_emit_raw_response_item_completed(
                 conversation_id,
@@ -966,8 +942,6 @@ async fn start_command_execution_item(
     conversation_id: &ThreadId,
     turn_id: String,
     item_id: String,
-    plugin_id: Option<String>,
-    script_path: Option<String>,
     command: String,
     cwd: LegacyAppPathString,
     command_actions: Vec<V2ParsedCommand>,
@@ -989,8 +963,6 @@ async fn start_command_execution_item(
             started_at_ms: now_unix_timestamp_ms(),
             item: ThreadItem::CommandExecution {
                 id: item_id,
-                plugin_id,
-                script_path,
                 command,
                 cwd,
                 process_id: None,
@@ -1033,8 +1005,6 @@ async fn complete_command_execution_item(
 
     let item = ThreadItem::CommandExecution {
         id: item_id,
-        plugin_id: completion_item.plugin_id,
-        script_path: completion_item.script_path,
         command: completion_item.command,
         cwd: completion_item.cwd,
         process_id,

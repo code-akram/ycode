@@ -1704,15 +1704,6 @@ respect_system_proxy = true
             .outbound_proxy_policy(),
         codex_http_client::OutboundProxyPolicy::RespectSystemProxy
     );
-    assert_eq!(
-        config.plugins_config_input().remote_plugin_service_config(),
-        codex_core_plugins::remote::RemotePluginServiceConfig::new(
-            config.chatgpt_base_url,
-            codex_http_client::HttpClientFactory::new(
-                codex_http_client::OutboundProxyPolicy::RespectSystemProxy,
-            ),
-        )
-    );
     Ok(())
 }
 
@@ -7003,15 +6994,12 @@ async fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() 
         default_permissions: None,
         remote_sandbox_config: None,
         allowed_web_search_modes: Some(vec![codex_config::WebSearchModeRequirement::Cached]),
-        allow_managed_hooks_only: None,
         allow_appshots: None,
         allow_remote_control: None,
         computer_use: None,
         browser_use: None,
         windows: None,
         feature_requirements: None,
-        hooks: None,
-        marketplaces: None,
         apps: None,
         rules: None,
         enforce_residency: None,
@@ -7727,29 +7715,6 @@ async fn active_profile_is_cleared_when_requirements_force_fallback() -> std::io
     assert!(
         config.startup_warnings.iter().any(|warning| warning
             .contains("Configured value for `permission_profile` is disallowed by requirements")),
-        "{:?}",
-        config.startup_warnings
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn bypass_hook_trust_adds_startup_warning() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-
-    let config = ConfigBuilder::without_managed_config_for_tests()
-        .codex_home(codex_home.path().to_path_buf())
-        .fallback_cwd(Some(codex_home.path().to_path_buf()))
-        .harness_overrides(ConfigOverrides {
-            bypass_hook_trust: Some(true),
-            ..Default::default()
-        })
-        .build()
-        .await?;
-
-    assert!(
-        config.startup_warnings.iter().any(|warning| warning
-            == "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."),
         "{:?}",
         config.startup_warnings
     );
@@ -9011,7 +8976,6 @@ async fn tool_suggest_discoverables_load_from_config_toml() -> std::io::Result<(
 [tool_suggest]
 discoverables = [
   { type = "connector", id = "connector_alpha" },
-  { type = "plugin", id = "plugin_alpha@openai-curated" },
   { type = "connector", id = "   " }
 ]
 "#,
@@ -9025,10 +8989,6 @@ discoverables = [
                 ToolSuggestDiscoverable {
                     kind: ToolSuggestDiscoverableType::Connector,
                     id: "connector_alpha".to_string(),
-                },
-                ToolSuggestDiscoverable {
-                    kind: ToolSuggestDiscoverableType::Plugin,
-                    id: "plugin_alpha@openai-curated".to_string(),
                 },
                 ToolSuggestDiscoverable {
                     kind: ToolSuggestDiscoverableType::Connector,
@@ -9050,16 +9010,10 @@ discoverables = [
     assert_eq!(
         config.tool_suggest,
         ToolSuggestConfig {
-            discoverables: vec![
-                ToolSuggestDiscoverable {
-                    kind: ToolSuggestDiscoverableType::Connector,
-                    id: "connector_alpha".to_string(),
-                },
-                ToolSuggestDiscoverable {
-                    kind: ToolSuggestDiscoverableType::Plugin,
-                    id: "plugin_alpha@openai-curated".to_string(),
-                },
-            ],
+            discoverables: vec![ToolSuggestDiscoverable {
+                kind: ToolSuggestDiscoverableType::Connector,
+                id: "connector_alpha".to_string(),
+            },],
             disabled_tools: Vec::new(),
         }
     );
@@ -9075,7 +9029,6 @@ disabled_tools = [
   { type = "connector", id = " connector_calendar " },
   { type = "connector", id = "connector_calendar" },
   { type = "connector", id = "   " },
-  { type = "plugin", id = "slack@openai-curated" }
 ]
 "#,
     )
@@ -9089,7 +9042,6 @@ disabled_tools = [
                 ToolSuggestDisabledTool::connector(" connector_calendar "),
                 ToolSuggestDisabledTool::connector("connector_calendar"),
                 ToolSuggestDisabledTool::connector("   "),
-                ToolSuggestDisabledTool::plugin("slack@openai-curated"),
             ],
         })
     );
@@ -9106,10 +9058,7 @@ disabled_tools = [
         config.tool_suggest,
         ToolSuggestConfig {
             discoverables: Vec::new(),
-            disabled_tools: vec![
-                ToolSuggestDisabledTool::connector("connector_calendar"),
-                ToolSuggestDisabledTool::plugin("slack@openai-curated"),
-            ],
+            disabled_tools: vec![ToolSuggestDisabledTool::connector("connector_calendar"),],
         }
     );
     Ok(())
@@ -9130,7 +9079,6 @@ trust_level = "trusted"
 [tool_suggest]
 disabled_tools = [
   {{ type = "connector", id = " user_connector " }},
-  {{ type = "plugin", id = "shared_plugin" }},
   {{ type = "connector", id = "project_connector" }},
 ]
 "#
@@ -9145,8 +9093,6 @@ disabled_tools = [
 [tool_suggest]
 disabled_tools = [
   { type = "connector", id = "project_connector" },
-  { type = "plugin", id = "project_plugin" },
-  { type = "plugin", id = "shared_plugin" },
 ]
 "#,
     )?;
@@ -9164,9 +9110,7 @@ disabled_tools = [
         config.tool_suggest.disabled_tools,
         vec![
             ToolSuggestDisabledTool::connector("user_connector"),
-            ToolSuggestDisabledTool::plugin("shared_plugin"),
             ToolSuggestDisabledTool::connector("project_connector"),
-            ToolSuggestDisabledTool::plugin("project_plugin"),
         ]
     );
     Ok(())

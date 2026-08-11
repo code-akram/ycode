@@ -197,10 +197,7 @@ mod tests {
     use crate::tools::context::ToolCallSource;
     use crate::tools::context::ToolInvocation;
     use crate::tools::context::ToolPayload;
-    use crate::tools::hook_names::HookToolName;
     use crate::tools::registry::CoreToolRuntime;
-    use crate::tools::registry::PostToolUsePayload;
-    use crate::tools::registry::PreToolUsePayload;
     use crate::turn_diff_tracker::TurnDiffTracker;
 
     struct StubExtensionExecutor;
@@ -298,44 +295,6 @@ mod tests {
         assert!(!handler.matches_kind(&ToolPayload::Custom {
             input: "raw input".to_string(),
         }));
-    }
-
-    #[tokio::test]
-    async fn exposes_generic_hook_payloads() {
-        let handler = ExtensionToolAdapter::new(Arc::new(StubExtensionExecutor));
-        let (session, turn) = crate::session::tests::make_session_and_context().await;
-        let turn = Arc::new(turn);
-        let invocation = ToolInvocation {
-            session: session.into(),
-            step_context: StepContext::for_test(Arc::clone(&turn)),
-            turn,
-            cancellation_token: tokio_util::sync::CancellationToken::new(),
-            tracker: Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
-            call_id: "call-extension".to_string(),
-            tool_name: codex_tools::ToolName::plain("extension_echo"),
-            source: ToolCallSource::Direct,
-            payload: ToolPayload::Function {
-                arguments: json!({ "message": "hello" }).to_string(),
-            },
-        };
-        let output = codex_tools::JsonToolOutput::new(json!({ "ok": true }));
-
-        assert_eq!(
-            CoreToolRuntime::pre_tool_use_payload(&handler, &invocation),
-            Some(PreToolUsePayload {
-                tool_name: HookToolName::new("extension_echo"),
-                tool_input: json!({ "message": "hello" }),
-            })
-        );
-        assert_eq!(
-            CoreToolRuntime::post_tool_use_payload(&handler, &invocation, &output),
-            Some(PostToolUsePayload {
-                tool_name: HookToolName::new("extension_echo"),
-                tool_use_id: "call-extension".to_string(),
-                tool_input: json!({ "message": "hello" }),
-                tool_response: json!({ "ok": true }),
-            })
-        );
     }
 
     #[tokio::test]

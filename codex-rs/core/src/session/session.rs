@@ -444,19 +444,13 @@ pub(crate) struct CliRuntimeClientMetadata {
     pub(crate) client_version: Option<String>,
 }
 
-async fn warm_plugins_and_skills_for_session_init(
+async fn warm_skills_for_session_init(
     config: Arc<Config>,
-    plugins_manager: Arc<PluginsManager>,
     skills_service: Arc<HostSkillsService>,
     turn_environments: &TurnEnvironmentSnapshot,
 ) -> Vec<SkillError> {
     let fs = turn_environments.primary_filesystem();
-    let plugins_input = config.plugins_config_input();
-    let plugin_outcome = plugins_manager.plugins_for_config(&plugins_input).await;
-    let effective_skill_roots = plugin_outcome.effective_plugin_skill_roots();
-    let plugin_skill_snapshots = plugins_manager.plugin_skill_snapshots_for_config(&plugins_input);
-    let skills_input = skills_load_input_from_config(config.as_ref(), effective_skill_roots)
-        .with_plugin_skill_snapshots(plugin_skill_snapshots);
+    let skills_input = skills_load_input_from_config(config.as_ref());
     skills_service
         .snapshot_for_config(&skills_input, fs)
         .await
@@ -496,7 +490,6 @@ impl Session {
         fork_persistence: ForkPersistence,
         session_source: SessionSource,
         skills_service: Arc<HostSkillsService>,
-        plugins_manager: Arc<PluginsManager>,
         code_mode_session_provider: Arc<dyn codex_code_mode::CodeModeSessionProvider>,
         extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
         mut thread_extension_init: ExtensionDataInit,
@@ -891,15 +884,14 @@ impl Session {
             );
             let resolved_environments = turn_environments.snapshot().await;
             let agents_md_manager = Arc::new(AgentsMdManager::new(user_instructions));
-            let plugin_skill_warmup = warm_plugins_and_skills_for_session_init(
+            let skill_warmup = warm_skills_for_session_init(
                 Arc::clone(&config),
-                Arc::clone(&plugins_manager),
                 Arc::clone(&skills_service),
                 &resolved_environments,
             )
             .instrument(info_span!(
-                "session_init.plugin_skill_warmup",
-                otel.name = "session_init.plugin_skill_warmup",
+                "session_init.skill_warmup",
+                otel.name = "session_init.skill_warmup",
             ));
             let thread_name_lookup =
                 thread_title_from_thread_store(live_thread_init.as_ref(), &thread_store, thread_id)
@@ -907,12 +899,12 @@ impl Session {
                         "session_init.thread_name_lookup",
                         otel.name = "session_init.thread_name_lookup",
                     ));
-            let ((), plugin_skill_errors, thread_name) = tokio::join!(
+            let ((), skill_errors, thread_name) = tokio::join!(
                 agents_md_manager.refresh(config.as_ref(), &resolved_environments),
-                plugin_skill_warmup,
+                skill_warmup,
                 thread_name_lookup,
             );
-            for err in &plugin_skill_errors {
+            for err in &skill_errors {
                 error!(
                     "failed to load skill {}: {}",
                     err.path.display(),
@@ -926,21 +918,6 @@ impl Session {
                 session_configuration.clone(),
                 initial_auto_compact_window_ids,
             );
-            let hooks = build_hooks_for_config(
-                &config,
-                plugins_manager.as_ref(),
-                resolved_environments.single_local_environment(),
-            )
-            .await;
-            for warning in hooks.startup_warnings() {
-                post_session_configured_events.push(Event {
-                    id: INITIAL_SUBMIT_ID.to_owned(),
-                    msg: EventMsg::Warning(WarningEvent {
-                        message: warning.clone(),
-                    }),
-                });
-            }
-
             let analytics_events_client = analytics_events_client.unwrap_or_else(|| {
                 AnalyticsEventsClient::new(
                     Arc::clone(&auth_manager),
@@ -976,7 +953,6 @@ impl Session {
                 shell_zsh_path: config.zsh_path.clone(),
                 main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
                 analytics_events_client,
-                hooks: arc_swap::ArcSwap::from_pointee(hooks),
                 rollout_thread_trace,
                 user_shell: Arc::new(default_shell),
                 show_raw_agent_reasoning: config.show_raw_agent_reasoning,
@@ -991,7 +967,6 @@ impl Session {
                 runtime_handle: tokio::runtime::Handle::current(),
                 skills_service,
                 agents_md_manager,
-                plugins_manager: Arc::clone(&plugins_manager),
                 extensions,
                 // TODO(jif): extract session to share between sub-agents
                 session_extension_data,
@@ -1076,23 +1051,11 @@ impl Session {
             }
             turn_environments.start_connection_event_forwarding(tx_event.clone());
 
-            let session_start_source = match &initial_history {
-                InitialHistory::Resumed(_) => codex_hooks::SessionStartSource::Resume,
-                InitialHistory::New | InitialHistory::Forked(_) => {
-                    codex_hooks::SessionStartSource::Startup
-                }
-                InitialHistory::Cleared => codex_hooks::SessionStartSource::Clear,
-            };
-
             // record_initial_history can emit events. We record only after the SessionConfiguredEvent is emitted.
             Box::pin(sess.record_initial_history(initial_history)).await;
             if matches!(&sess.fork_persistence, ForkPersistence::Referenced { .. }) {
                 // Keep the source reserved until the child's history reference is durable.
                 sess.try_ensure_rollout_materialized().await?;
-            }
-            {
-                let mut state = sess.state.lock().await;
-                state.queue_pending_session_start_source(session_start_source);
             }
             Ok(sess)
         }

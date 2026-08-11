@@ -30,7 +30,6 @@ use crate::image_preparation::prepare_response_items as prepare_image_response_i
 use crate::parse_turn_item;
 use crate::realtime_conversation::RealtimeConversationManager;
 use crate::session::step_context::StepContext;
-use crate::session::turn_context::TurnEnvironment;
 use crate::session_prefix::format_inter_agent_completion_message;
 use crate::skills_load_input_from_config;
 use crate::turn_metadata::TurnMetadataState;
@@ -55,8 +54,6 @@ use codex_extension_api::TurnContextContributionInput;
 use codex_features::FEATURES;
 use codex_features::Feature;
 use codex_features::unstable_features_warning_event;
-use codex_hooks::Hooks;
-use codex_hooks::HooksConfig;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::auth_env_telemetry::collect_auth_env_telemetry;
@@ -285,8 +282,6 @@ use crate::tools::parallel::ToolCallRuntime;
 use crate::turn_timing::TurnTimingState;
 use crate::turn_timing::record_turn_ttfm_metric;
 use crate::unified_exec::UnifiedExecProcessManager;
-use codex_core_plugins::PluginCommandAttribution;
-use codex_core_plugins::PluginsManager;
 use codex_git_utils::get_git_repo_root;
 use codex_otel::SessionTelemetry;
 use codex_otel::THREAD_STARTED_METRIC;
@@ -374,7 +369,6 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) models_manager: SharedModelsManager,
     pub(crate) environment_manager: Arc<EnvironmentManager>,
     pub(crate) skills_service: Arc<HostSkillsService>,
-    pub(crate) plugins_manager: Arc<PluginsManager>,
     pub(crate) code_mode_session_provider: Arc<dyn codex_code_mode::CodeModeSessionProvider>,
     pub(crate) extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
     pub(crate) conversation_history: InitialHistory,
@@ -465,7 +459,6 @@ impl Session {
             models_manager,
             environment_manager,
             skills_service,
-            plugins_manager,
             code_mode_session_provider,
             extensions,
             conversation_history,
@@ -640,7 +633,6 @@ impl Session {
             fork_persistence,
             session_source_clone,
             skills_service,
-            plugins_manager,
             code_mode_session_provider,
             extensions,
             thread_extension_init,
@@ -1395,7 +1387,7 @@ impl Session {
         // layers such as request/session overrides that were present when this session
         // was created.
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
-        let (previous_config, new_config, config) = {
+        let (previous_config, new_config) = {
             let mut state = self.state.lock().await;
             let previous_config = notify_config_contributors
                 .then(|| Self::build_effective_session_config(&state.session_configuration));
@@ -1409,26 +1401,9 @@ impl Session {
             state.session_configuration.original_config_do_not_use = Arc::clone(&config);
             let new_config = notify_config_contributors
                 .then(|| Self::build_effective_session_config(&state.session_configuration));
-            (previous_config, new_config, config)
+            (previous_config, new_config)
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
-        let environments = self.services.turn_environments.snapshot().await;
-        let hooks = build_hooks_for_config(
-            config.as_ref(),
-            self.services.plugins_manager.as_ref(),
-            environments.single_local_environment(),
-        )
-        .await;
-
-        let state = self.state.lock().await;
-        // A newer refresh may have updated the config while this hook build was in flight.
-        // Only publish hooks derived from the current config snapshot.
-        if Arc::ptr_eq(
-            &state.session_configuration.original_config_do_not_use,
-            &config,
-        ) {
-            self.services.hooks.store(Arc::new(hooks));
-        }
     }
 
     fn emit_config_changed_contributors(
@@ -1453,8 +1428,8 @@ impl Session {
     }
 
     pub(crate) async fn reload_user_config_layer(&self) {
-        // Refresh layer-backed runtime state for an existing session, including enabled plugin,
-        // skill, and hook state. Derived config fields such as feature gates and legacy notify
+        // Refresh layer-backed runtime state for an existing session, including enabled skill
+        // state. Derived config fields such as feature gates and legacy notify
         // settings remain session-static.
         //
         // Prefer `refresh_runtime_config()` when the host can already provide a materialized
@@ -1524,7 +1499,6 @@ impl Session {
             config
         };
         self.services.skills_service.clear_cache();
-        self.services.plugins_manager.clear_cache();
         self.refresh_runtime_config(next_config).await;
     }
 
@@ -2014,7 +1988,6 @@ impl Session {
         proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
         additional_permissions: Option<AdditionalPermissionProfile>,
         available_decisions: Option<Vec<ReviewDecision>>,
-        plugin_attribution_override: Option<PluginCommandAttribution>,
     ) -> ReviewDecision {
         let _elicitation = self.services.elicitations.register();
         //  command-level approvals use `call_id`.
@@ -2057,16 +2030,8 @@ impl Session {
                 additional_permissions.as_ref(),
             )
         });
-        let plugin_attribution = plugin_attribution_override
-            .or_else(|| turn_context.plugin_attribution_for_command(&command, &cwd));
-        let (plugin_id, script_path) = plugin_attribution
-            .as_ref()
-            .map(PluginCommandAttribution::serialized_fields)
-            .unzip();
         let event = EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
             call_id,
-            plugin_id,
-            script_path,
             approval_id,
             turn_id: turn_context.sub_id.clone(),
             environment_id,
@@ -2198,7 +2163,6 @@ impl Session {
                 request,
                 /*retry_reason*/ None,
                 GuardianReviewOptions {
-                    plugin_attribution_override: None,
                     approval_request_source:
                         codex_analytics::GuardianApprovalRequestSource::MainTurn,
                     external_cancel: Some(cancellation_token.clone()),
@@ -2954,10 +2918,6 @@ impl Session {
             self.persist_rollout_items(&[RolloutItem::TurnContext(turn_context_item)])
                 .await;
         }
-        {
-            let mut state = self.state.lock().await;
-            state.queue_pending_session_start_source(codex_hooks::SessionStartSource::Compact);
-        }
     }
 
     async fn persist_rollout_response_items(&self, items: &[ResponseItem]) {
@@ -3636,10 +3596,6 @@ impl Session {
         self.abort_all_tasks(TurnAbortReason::Interrupted).await;
     }
 
-    pub(crate) fn hooks(&self) -> Arc<Hooks> {
-        self.services.hooks.load_full()
-    }
-
     pub(crate) fn user_shell(&self) -> Arc<shell::Shell> {
         Arc::clone(&self.services.user_shell)
     }
@@ -3649,26 +3605,6 @@ impl Session {
             return Ok(None);
         };
         live_thread.local_rollout_path().await.map_err(Into::into)
-    }
-
-    pub(crate) async fn hook_transcript_path(&self) -> Option<PathBuf> {
-        let rollout_path = match self.current_rollout_path().await {
-            Ok(Some(path)) => path,
-            Ok(None) => return None,
-            Err(err) => {
-                warn!("{err}");
-                return None;
-            }
-        };
-        self.ensure_rollout_materialized().await;
-        Some(rollout_path)
-    }
-
-    pub(crate) async fn take_pending_session_start_source(
-        &self,
-    ) -> Option<codex_hooks::SessionStartSource> {
-        let mut state = self.state.lock().await;
-        state.take_pending_session_start_source()
     }
 
     fn show_raw_agent_reasoning(&self) -> bool {
@@ -3712,37 +3648,6 @@ pub(crate) fn emit_subagent_session_started(
         subagent_source,
         created_at,
     });
-}
-
-/// Builds the hook engine for one config snapshot, including any enabled plugin hooks.
-async fn build_hooks_for_config(
-    config: &Config,
-    plugins_manager: &PluginsManager,
-    environment: Option<&TurnEnvironment>,
-) -> Hooks {
-    let (hook_shell_program, hook_shell_argv) = environment
-        .and_then(|environment| environment.shell.as_ref())
-        .map(|shell| {
-            let mut argv = shell.derive_exec_args("", /*use_login_shell*/ false);
-            let program = argv.remove(0);
-            let _ = argv.pop();
-            (Some(program), argv)
-        })
-        .unwrap_or_default();
-    let plugins_input = config.plugins_config_input();
-    let plugin_outcome = plugins_manager.plugins_for_config(&plugins_input).await;
-    let plugin_hook_sources = plugin_outcome.effective_plugin_hook_sources();
-    let plugin_hook_load_warnings = plugin_outcome.effective_plugin_hook_warnings();
-    Hooks::new(HooksConfig {
-        legacy_notify_argv: config.notify.clone(),
-        feature_enabled: config.features.enabled(Feature::CodexHooks),
-        bypass_hook_trust: config.bypass_hook_trust,
-        config_layer_stack: Some(config.config_layer_stack.clone()),
-        plugin_hook_sources,
-        plugin_hook_load_warnings,
-        shell_program: hook_shell_program,
-        shell_args: hook_shell_argv,
-    })
 }
 
 #[cfg(test)]

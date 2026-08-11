@@ -10,7 +10,6 @@ use crate::context::world_state::ModelInstructionsState;
 use crate::context::world_state::MultiAgentModeState;
 use crate::context::world_state::MultiAgentUsageHintState;
 use crate::context::world_state::PersonalityState;
-use crate::context::world_state::PluginsInstructionsState;
 use crate::context::world_state::RealtimeState;
 use crate::context::world_state::ToolsState;
 use crate::context::world_state::WorldState;
@@ -132,10 +131,6 @@ impl Session {
                     .config
                     .features
                     .enabled(Feature::DeferredExecutor),
-        ));
-        world_state.add_section(PluginsInstructionsState::new(
-            turn_context.config.features.enabled(Feature::Plugins)
-                && turn_context.model_info.include_plugin_usage_instructions,
         ));
         if turn_context
             .config

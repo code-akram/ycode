@@ -235,7 +235,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         oss,
         oss_provider,
         config_profile_v2,
-        bypass_hook_trust,
         cwd,
     } = shared;
 
@@ -366,7 +365,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         show_raw_agent_reasoning: oss.then_some(true),
         tools_web_search_request: None,
         ephemeral: ephemeral.then_some(true),
-        bypass_hook_trust: bypass_hook_trust.then_some(true),
         psp: Some(psp),
         ..Default::default()
     };
@@ -892,10 +890,8 @@ fn thread_resume_params_from_config(config: &Config, thread_id: String) -> Threa
     }
 }
 
-fn thread_config_overrides_from_config(config: &Config) -> Option<HashMap<String, Value>> {
-    config
-        .bypass_hook_trust
-        .then(|| HashMap::from([("bypass_hook_trust".to_string(), Value::Bool(true))]))
+fn thread_config_overrides_from_config(_config: &Config) -> Option<HashMap<String, Value>> {
+    None
 }
 
 async fn send_request_with_response<T>(
@@ -1014,20 +1010,6 @@ fn should_process_notification(
             .is_none_or(|candidate| candidate == thread_id),
         ServerNotification::Error(notification) => {
             notification.thread_id == thread_id && notification.turn_id == turn_id
-        }
-        ServerNotification::HookCompleted(notification) => {
-            notification.thread_id == thread_id
-                && notification
-                    .turn_id
-                    .as_deref()
-                    .is_none_or(|candidate| candidate == turn_id)
-        }
-        ServerNotification::HookStarted(notification) => {
-            notification.thread_id == thread_id
-                && notification
-                    .turn_id
-                    .as_deref()
-                    .is_none_or(|candidate| candidate == turn_id)
         }
         ServerNotification::ItemCompleted(notification) => {
             notification.thread_id == thread_id && notification.turn_id == turn_id

@@ -1013,7 +1013,7 @@ mod tests {
         let disabled = history.on_entry_response(
             /*log_id*/ 42,
             /*offset*/ 0,
-            Some("[@sample](plugin://sample@test) and [$figma](/tmp/figma/SKILL.md)".to_string()),
+            Some("[@sample](/tmp/sample/SKILL.md) and [$figma](/tmp/figma/SKILL.md)".to_string()),
             &tx,
         );
         assert_eq!(
@@ -1027,7 +1027,7 @@ mod tests {
                     MentionBinding {
                         sigil: '$',
                         mention: "sample".to_string(),
-                        path: "plugin://sample@test".to_string(),
+                        path: "/tmp/sample/SKILL.md".to_string(),
                     },
                     MentionBinding {
                         sigil: '$',
@@ -1044,7 +1044,7 @@ mod tests {
         let enabled = history.on_entry_response(
             /*log_id*/ 42,
             /*offset*/ 0,
-            Some("[@sample](plugin://sample@test) and [$figma](/tmp/figma/SKILL.md)".to_string()),
+            Some("[@sample](/tmp/sample/SKILL.md) and [$figma](/tmp/figma/SKILL.md)".to_string()),
             &tx,
         );
         assert_eq!(
@@ -1058,7 +1058,7 @@ mod tests {
                     MentionBinding {
                         sigil: '@',
                         mention: "sample".to_string(),
-                        path: "plugin://sample@test".to_string(),
+                        path: "/tmp/sample/SKILL.md".to_string(),
                     },
                     MentionBinding {
                         sigil: '$',

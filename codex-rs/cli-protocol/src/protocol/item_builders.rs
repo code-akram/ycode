@@ -89,8 +89,6 @@ pub fn build_command_execution_begin_item(payload: &ExecCommandBeginEvent) -> Th
         CommandExecutionPresentation::from_raw(&payload.command, &payload.parsed_cmd, &payload.cwd);
     ThreadItem::CommandExecution {
         id: payload.call_id.clone(),
-        plugin_id: payload.plugin_id.clone(),
-        script_path: payload.script_path.clone(),
         command: presentation.command,
         cwd: payload.cwd.clone().into(),
         process_id: payload.process_id.clone(),
@@ -115,8 +113,6 @@ pub fn build_command_execution_end_item(payload: &ExecCommandEndEvent) -> Thread
 
     ThreadItem::CommandExecution {
         id: payload.call_id.clone(),
-        plugin_id: payload.plugin_id.clone(),
-        script_path: payload.script_path.clone(),
         command: presentation.command,
         cwd: payload.cwd.clone().into(),
         process_id: payload.process_id.clone(),

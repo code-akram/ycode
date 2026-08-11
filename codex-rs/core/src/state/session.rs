@@ -1,7 +1,6 @@
 //! Session-wide mutable state.
 
 use codex_protocol::models::ResponseItem;
-use std::collections::VecDeque;
 
 use super::AdditionalContextStore;
 use super::auto_compact_window::AutoCompactWindow;
@@ -34,7 +33,6 @@ pub(crate) struct SessionState {
     /// Startup prewarmed session prepared during session initialization.
     pub(crate) startup_prewarm: Option<SessionStartupPrewarmHandle>,
     pub(crate) current_time_reminder: CurrentTimeReminderState,
-    pub(crate) pending_session_start_sources: VecDeque<codex_hooks::SessionStartSource>,
     next_turn_is_first: bool,
 }
 
@@ -63,7 +61,6 @@ impl SessionState {
             auto_compact_window: AutoCompactWindow::new_with_ids(auto_compact_window_ids),
             startup_prewarm: None,
             current_time_reminder: CurrentTimeReminderState::default(),
-            pending_session_start_sources: VecDeque::new(),
             next_turn_is_first: true,
         }
     }
@@ -234,19 +231,6 @@ impl SessionState {
 
     pub(crate) fn take_session_startup_prewarm(&mut self) -> Option<SessionStartupPrewarmHandle> {
         self.startup_prewarm.take()
-    }
-
-    pub(crate) fn queue_pending_session_start_source(
-        &mut self,
-        value: codex_hooks::SessionStartSource,
-    ) {
-        self.pending_session_start_sources.push_back(value);
-    }
-
-    pub(crate) fn take_pending_session_start_source(
-        &mut self,
-    ) -> Option<codex_hooks::SessionStartSource> {
-        self.pending_session_start_sources.pop_front()
     }
 }
 

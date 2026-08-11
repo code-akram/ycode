@@ -20,10 +20,6 @@ impl ChatWidget {
         if feature == Feature::Personality {
             self.sync_personality_command_enabled();
         }
-        if feature == Feature::Plugins {
-            self.sync_plugins_command_enabled();
-            self.refresh_plugin_mentions();
-        }
         if feature == Feature::Goals {
             self.sync_goal_command_enabled();
             if !enabled {
@@ -144,11 +140,6 @@ impl ChatWidget {
     pub(super) fn sync_personality_command_enabled(&mut self) {
         self.bottom_pane
             .set_personality_command_enabled(self.config.features.enabled(Feature::Personality));
-    }
-
-    pub(super) fn sync_plugins_command_enabled(&mut self) {
-        self.bottom_pane
-            .set_plugins_command_enabled(self.config.features.enabled(Feature::Plugins));
     }
 
     pub(super) fn sync_goal_command_enabled(&mut self) {
@@ -278,7 +269,6 @@ impl ChatWidget {
         if cwd_changed {
             self.refresh_skills_for_current_cwd(/*force_reload*/ true);
         }
-        self.refresh_plugin_mentions();
         self.request_redraw();
     }
 

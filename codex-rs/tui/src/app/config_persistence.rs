@@ -67,7 +67,7 @@ impl App {
             .rebuild_config_for_cwd(self.chat_widget.config_ref().cwd.to_path_buf())
             .await?;
         self.config = config;
-        self.chat_widget.sync_plugin_mentions_config(&self.config);
+        self.chat_widget.sync_runtime_config(&self.config);
         Ok(())
     }
 

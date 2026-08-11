@@ -25,11 +25,6 @@ use codex_cli_protocol::ClientRequest;
 use codex_cli_protocol::ConfigBatchWriteParams;
 use codex_cli_protocol::ConfigRequirementsReadResponse;
 use codex_cli_protocol::ConfigWriteResponse;
-use codex_cli_protocol::ExternalAgentConfigDetectParams;
-use codex_cli_protocol::ExternalAgentConfigDetectResponse;
-use codex_cli_protocol::ExternalAgentConfigImportParams;
-use codex_cli_protocol::ExternalAgentConfigImportResponse;
-use codex_cli_protocol::ExternalAgentConfigMigrationItem;
 use codex_cli_protocol::GetAccountParams;
 use codex_cli_protocol::GetAccountRateLimitsResponse;
 use codex_cli_protocol::GetAccountResponse;
@@ -124,8 +119,6 @@ use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 use uuid::Uuid;
@@ -133,7 +126,6 @@ use uuid::Uuid;
 const JSONRPC_INVALID_REQUEST: i64 = -32600;
 const JSONRPC_METHOD_NOT_FOUND: i64 = -32601;
 const JSONRPC_INVALID_PARAMS: i64 = -32602;
-pub(crate) const EXTERNAL_AGENT_CONFIG_IMPORT_IN_PROGRESS_MESSAGE: &str = "A previous external agent import is still running. Wait for it to finish before importing again.";
 const THREAD_SETTINGS_UPDATE_METHOD: &str = "thread/settings/update";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -257,7 +249,6 @@ pub(crate) struct CliRuntimeSession {
     thread_settings_update_supported: bool,
     default_model: Option<String>,
     available_models: Vec<ModelPreset>,
-    external_agent_config_import_completion_pending: AtomicBool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -318,7 +309,6 @@ impl CliRuntimeSession {
             thread_settings_update_supported: true,
             default_model: None,
             available_models: Vec::new(),
-            external_agent_config_import_completion_pending: AtomicBool::new(false),
         }
     }
 
@@ -458,64 +448,6 @@ impl CliRuntimeSession {
             })
             .await
             .map_err(|err| bootstrap_request_error("account/read failed during TUI bootstrap", err))
-    }
-
-    pub(crate) async fn external_agent_config_detect(
-        &mut self,
-        params: ExternalAgentConfigDetectParams,
-    ) -> Result<ExternalAgentConfigDetectResponse> {
-        let request_id = self.next_request_id();
-        self.client
-            .request_typed(ClientRequest::ExternalAgentConfigDetect { request_id, params })
-            .await
-            .wrap_err("externalAgentConfig/detect failed during external agent import")
-    }
-
-    pub(crate) async fn external_agent_config_import(
-        &mut self,
-        migration_items: Vec<ExternalAgentConfigMigrationItem>,
-        migration_source: String,
-    ) -> Result<()> {
-        // Mark the import active before sending the request so a fast completion notification
-        // cannot arrive before the TUI records it.
-        if self
-            .external_agent_config_import_completion_pending
-            .swap(true, Ordering::Relaxed)
-        {
-            color_eyre::eyre::bail!(EXTERNAL_AGENT_CONFIG_IMPORT_IN_PROGRESS_MESSAGE);
-        }
-        let request_id = self.next_request_id();
-        let response: Result<ExternalAgentConfigImportResponse> = self
-            .client
-            .request_typed(ClientRequest::ExternalAgentConfigImport {
-                request_id,
-                params: ExternalAgentConfigImportParams {
-                    migration_items,
-                    source: Some("cli".to_string()),
-                    provider_id: Some(migration_source.clone()),
-                    migration_source: Some(migration_source),
-                },
-            })
-            .await
-            .wrap_err("externalAgentConfig/import failed during external agent import");
-        match response {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                self.external_agent_config_import_completion_pending
-                    .store(false, Ordering::Relaxed);
-                Err(err)
-            }
-        }
-    }
-
-    pub(crate) fn external_agent_config_import_in_progress(&self) -> bool {
-        self.external_agent_config_import_completion_pending
-            .load(Ordering::Relaxed)
-    }
-
-    pub(crate) fn consume_external_agent_config_import_completion(&self) -> bool {
-        self.external_agent_config_import_completion_pending
-            .swap(false, Ordering::Relaxed)
     }
 
     pub(crate) async fn next_event(&mut self) -> Option<CliRuntimeEvent> {
@@ -1495,9 +1427,6 @@ fn config_request_overrides_from_config(
         "web_search",
         Some(config.web_search_mode.value().to_string()),
     );
-    if config.bypass_hook_trust {
-        overrides.insert("bypass_hook_trust".to_string(), true.into());
-    }
     Some(overrides)
 }
 
@@ -2092,7 +2021,6 @@ mod tests {
             .web_search_mode
             .set(WebSearchMode::Disabled)
             .expect("test web search mode should be allowed");
-        config.bypass_hook_trust = true;
         config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
         let thread_id = ThreadId::new();
 
@@ -2127,7 +2055,6 @@ mod tests {
             ("model_verbosity".to_string(), string("low")),
             ("personality".to_string(), string("pragmatic")),
             ("web_search".to_string(), string("disabled")),
-            ("bypass_hook_trust".to_string(), true.into()),
         ]);
         assert_eq!(start.config, Some(expected_config.clone()));
         assert_eq!(resume.config, Some(expected_config.clone()));

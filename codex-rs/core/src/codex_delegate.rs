@@ -75,7 +75,6 @@ pub(crate) async fn run_codex_thread_interactive(
             .turn_environments
             .environment_manager(),
         skills_service: Arc::clone(&parent_session.services.skills_service),
-        plugins_manager: Arc::clone(&parent_session.services.plugins_manager),
         code_mode_session_provider: parent_session.services.code_mode_service.session_provider(),
         extensions: Arc::clone(&parent_session.services.extensions),
         conversation_history,
@@ -357,8 +356,6 @@ async fn handle_exec_approval(
     let approval_id_for_op = event.effective_approval_id();
     let ExecApprovalRequestEvent {
         call_id,
-        plugin_id,
-        script_path,
         approval_id,
         environment_id,
         command,
@@ -370,15 +367,6 @@ async fn handle_exec_approval(
         available_decisions,
         ..
     } = event;
-    let plugin_attribution = plugin_id
-        .zip(script_path)
-        .and_then(|(plugin_id, script_path)| {
-            let plugin_id = PluginId::parse(&plugin_id).ok()?;
-            is_safe_plugin_relative_path(&script_path).then_some(PluginCommandAttribution {
-                plugin_id,
-                normalized_relative_path: script_path,
-            })
-        });
     let decision = if routes_approval_to_guardian(parent_ctx) {
         let review_cancel = cancel_token.child_token();
         let review_rx = spawn_approval_request_review(
@@ -399,7 +387,6 @@ async fn handle_exec_approval(
             },
             reason,
             GuardianReviewOptions {
-                plugin_attribution_override: plugin_attribution.clone(),
                 approval_request_source: GuardianApprovalRequestSource::DelegatedSubagent,
                 external_cancel: Some(review_cancel.clone()),
             },
@@ -426,7 +413,6 @@ async fn handle_exec_approval(
                 proposed_execpolicy_amendment,
                 additional_permissions,
                 available_decisions,
-                plugin_attribution,
             ),
             parent_session,
             &approval_id_for_op,
@@ -512,7 +498,6 @@ async fn handle_patch_approval(
             },
             reason.clone(),
             GuardianReviewOptions {
-                plugin_attribution_override: None,
                 approval_request_source: GuardianApprovalRequestSource::DelegatedSubagent,
                 external_cancel: Some(review_cancel.clone()),
             },

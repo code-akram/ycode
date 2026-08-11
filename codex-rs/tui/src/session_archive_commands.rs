@@ -328,7 +328,6 @@ async fn start_cli_runtime_for_archive_command(
             codex_self_exe: arg0_paths.codex_self_exe.clone(),
             main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
             show_raw_agent_reasoning: cli.oss.then_some(true),
-            bypass_hook_trust: cli.bypass_hook_trust.then_some(true),
             psp: Some(cli.psp),
             ..Default::default()
         })

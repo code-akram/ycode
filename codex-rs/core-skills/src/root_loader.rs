@@ -1,12 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fmt;
-use std::hash::Hash;
-use std::hash::Hasher;
 use std::sync::Arc;
-use std::sync::Mutex;
 
-use codex_utils_plugins::PluginSkillRoot;
 use futures::StreamExt;
 use tokio::sync::Semaphore;
 
@@ -17,48 +12,8 @@ use crate::loader::SkillRootSnapshot;
 use crate::loader::load_skill_root;
 use crate::model::SkillFileSystemsByPath;
 
-/// Parsed plugin skill-root snapshots produced by one plugin load.
-///
-/// Clones share the same snapshots. The plugins manager stores them with the corresponding loaded
-/// plugins and passes a clone to skill loading as an optional preload.
-#[derive(Clone)]
-pub struct PluginSkillSnapshots {
-    snapshots_by_root: Arc<Mutex<HashMap<PluginSkillRoot, SkillRootSnapshot>>>,
-}
-
-impl PluginSkillSnapshots {
-    /// Creates an empty snapshot collection for a plugin load to populate.
-    pub fn for_plugin_load() -> Self {
-        Self {
-            snapshots_by_root: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
-
-impl PartialEq for PluginSkillSnapshots {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.snapshots_by_root, &other.snapshots_by_root)
-    }
-}
-
-impl Eq for PluginSkillSnapshots {}
-
-impl Hash for PluginSkillSnapshots {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.snapshots_by_root).hash(state);
-    }
-}
-
-impl fmt::Debug for PluginSkillSnapshots {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PluginSkillSnapshots")
-            .finish_non_exhaustive()
-    }
-}
-
 pub(crate) async fn load_and_merge_skill_roots<I>(
     roots: I,
-    plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
     root_scan_slots: &Semaphore,
 ) -> SkillLoadOutcome
 where
@@ -71,7 +26,7 @@ where
                 .acquire()
                 .await
                 .unwrap_or_else(|_| unreachable!());
-            let snapshot = load_skill_root_snapshot(root, plugin_skill_snapshots).await;
+            let snapshot = load_skill_root_snapshot(root).await;
             (root_index, snapshot)
         })
         // Keep each load's scan queue bounded while avoiding head-of-line blocking.
@@ -88,56 +43,8 @@ where
     merge_skill_root_snapshots(root_snapshots)
 }
 
-/// Loads one root while preserving the existing plugin-loader snapshot reuse.
-///
-/// This is a temporary migration boundary for callers that load non-plugin roots elsewhere but
-/// still need plugin roots to use the legacy preload cache.
-pub async fn load_skill_root_snapshot(
-    root: SkillRoot,
-    plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
-) -> SkillRootSnapshot {
-    let cache_key = match (
-        root.plugin_identity.clone(),
-        root.plugin_namespace.clone(),
-        root.plugin_root.clone(),
-    ) {
-        (Some(plugin_identity), Some(plugin_namespace), Some(plugin_root)) => {
-            Some(PluginSkillRoot {
-                path: root.path.clone(),
-                plugin_identity,
-                plugin_namespace,
-                plugin_root,
-                discovery_mode: root.discovery_mode,
-            })
-        }
-        _ => None,
-    };
-    let cached_snapshot = cache_key.as_ref().and_then(|cache_key| {
-        let plugin_skill_snapshots = plugin_skill_snapshots?;
-        plugin_skill_snapshots
-            .snapshots_by_root
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(cache_key)
-            .cloned()
-    });
-
-    match cached_snapshot {
-        Some(snapshot) => snapshot,
-        None => {
-            let snapshot = load_skill_root(root).await;
-            if let Some(plugin_skill_snapshots) = plugin_skill_snapshots
-                && let Some(cache_key) = cache_key
-            {
-                plugin_skill_snapshots
-                    .snapshots_by_root
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(cache_key, snapshot.clone());
-            }
-            snapshot
-        }
-    }
+pub async fn load_skill_root_snapshot(root: SkillRoot) -> SkillRootSnapshot {
+    load_skill_root(root).await
 }
 
 pub(crate) fn merge_skill_root_snapshots(snapshots: Vec<SkillRootSnapshot>) -> SkillLoadOutcome {
@@ -162,7 +69,6 @@ pub(crate) fn merge_skill_root_snapshots(snapshots: Vec<SkillRootSnapshot>) -> S
     for snapshot in snapshots {
         let SkillRootSnapshot {
             root,
-            is_agent_plugin,
             skills,
             skill_discovery_path_by_path: discovery_paths,
             errors,
@@ -179,9 +85,6 @@ pub(crate) fn merge_skill_root_snapshots(snapshots: Vec<SkillRootSnapshot>) -> S
                     skill_discovery_path_by_path.insert(path.clone(), discovery_path.clone());
                 }
                 file_systems_by_skill_path.insert(path.clone(), Arc::clone(&file_system));
-                if is_agent_plugin {
-                    outcome.agent_plugin_skill_paths.insert(path);
-                }
             }
         }
         outcome.skills.extend(skills);
@@ -202,9 +105,6 @@ pub(crate) fn merge_skill_root_snapshots(snapshots: Vec<SkillRootSnapshot>) -> S
     let used_roots = skill_root_by_path.values().cloned().collect::<HashSet<_>>();
     skill_roots.retain(|root| used_roots.contains(root));
     file_systems_by_skill_path.retain(|path, _| retained_skill_paths.contains(path));
-    outcome
-        .agent_plugin_skill_paths
-        .retain(|path| retained_skill_paths.contains(path));
     outcome.skill_roots = skill_roots;
     outcome.skill_root_by_path = Arc::new(skill_root_by_path);
     outcome.skill_discovery_path_by_path = Arc::new(skill_discovery_path_by_path);

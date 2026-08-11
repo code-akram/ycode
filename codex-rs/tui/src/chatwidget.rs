@@ -113,7 +113,6 @@ use codex_git_utils::CommitLogEntry;
 use codex_git_utils::get_git_repo_root;
 use codex_otel::RuntimeMetricsSummary;
 use codex_otel::SessionTelemetry;
-use codex_plugin::PluginCapabilitySummary;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
 use codex_protocol::approvals::GuardianAssessmentAction;
@@ -269,7 +268,6 @@ use crate::get_git_diff::get_git_diff;
 use crate::history_cell;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::HistoryRenderMode;
-use crate::history_cell::HookCell;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::WebSearchCell;
 use crate::key_hint;
@@ -319,17 +317,11 @@ mod pets;
 mod session_flow;
 mod session_header;
 use self::session_header::SessionHeader;
-mod hook_lifecycle;
-mod hooks;
 mod interaction;
 mod skills;
 mod slash_dispatch;
 use self::skills::collect_tool_mentions;
 use self::skills::find_skill_mentions_with_tool_mentions;
-mod plugin_catalog;
-mod plugins;
-use self::plugins::PluginListFetchState;
-use self::plugins::PluginsCacheState;
 mod model_popups;
 mod notifications;
 use self::notifications::Notification;
@@ -534,13 +526,6 @@ pub(crate) struct ChatWidget {
     task_complete_pending: bool,
     unified_exec_processes: Vec<UnifiedExecProcessSummary>,
     ide_context: IdeContextState,
-    plugins_cache: PluginsCacheState,
-    plugins_fetch_state: PluginListFetchState,
-    plugin_remote_sections_loading: bool,
-    plugin_remote_sections_loaded: bool,
-    plugin_remote_section_errors: Vec<crate::app_event::PluginRemoteSectionError>,
-    plugins_active_tab_id: Option<String>,
-    newly_installed_marketplace_tab_id: Option<String>,
     // Queue of interruptive UI events deferred during an active write cycle
     interrupts: InterruptManager,
     // Accumulates the current reasoning block text to extract a header
@@ -550,8 +535,6 @@ pub(crate) struct ChatWidget {
     // Preserves reasoning-summary part boundaries for transcript-only recording.
     reasoning_summary_parts: Vec<String>,
     status_state: StatusState,
-    // Active hook runs render in a dedicated live cell so they can run alongside tools.
-    active_hook_cell: Option<HookCell>,
     // Reused for built-in pet CDN requests so redirects remain route-aware.
     pub(crate) pet_http_client: codex_http_client::RouteAwareClientPool,
     // Ambient companion rendered over the transcript area, never inside the footer rows.
@@ -997,8 +980,6 @@ impl ChatWidget {
     }
 
     pub(crate) fn pre_draw_tick(&mut self) {
-        self.update_due_hook_visibility();
-        self.schedule_hook_timer_if_needed();
         self.bottom_pane.pre_draw_tick();
         if let Some(pet) = self.ambient_pet.as_ref() {
             pet.schedule_next_frame();
@@ -1186,14 +1167,6 @@ impl ChatWidget {
             "Stopping all background terminals.".to_string(),
             /*hint*/ None,
         );
-    }
-
-    fn plugins_for_mentions(&self) -> Option<&[PluginCapabilitySummary]> {
-        if !self.config.features.enabled(Feature::Plugins) {
-            return None;
-        }
-
-        self.bottom_pane.plugins().map(Vec::as_slice)
     }
 
     /// Build a placeholder header cell while the session is configuring.
@@ -1497,29 +1470,9 @@ impl ChatWidget {
 
     fn on_list_skills(&mut self, ev: SkillsListResponse) {
         self.set_skills_from_response(&ev);
-        self.refresh_plugin_mentions();
     }
 
-    pub(crate) fn refresh_plugin_mentions(&mut self) {
-        if !self.config.features.enabled(Feature::Plugins) {
-            self.bottom_pane.set_plugin_mentions(/*plugins*/ None);
-            return;
-        }
-
-        self.app_event_tx.send(AppEvent::RefreshPluginMentions);
-    }
-
-    pub(crate) fn on_plugin_mentions_loaded(
-        &mut self,
-        plugins: Option<Vec<PluginCapabilitySummary>>,
-    ) {
-        if self.bottom_pane.plugins() == plugins.as_ref() {
-            return;
-        }
-        self.bottom_pane.set_plugin_mentions(plugins);
-    }
-
-    pub(crate) fn sync_plugin_mentions_config(&mut self, config: &Config) {
+    pub(crate) fn sync_runtime_config(&mut self, config: &Config) {
         self.config.features = config.features.clone();
         self.config.config_layer_stack = config.config_layer_stack.clone();
         self.config.memories = config.memories.clone();
@@ -1554,7 +1507,7 @@ impl ChatWidget {
     /// Returns a cache key describing the current in-flight cells for the transcript overlay.
     ///
     /// `Ctrl+T` renders committed transcript cells plus a render-only live tail derived from the
-    /// current active, hook, and asynchronous usage cells, and the overlay caches that tail; this
+    /// current active and asynchronous usage cells, and the overlay caches that tail; this
     /// key is what it uses to decide whether it must recompute. When there are no live cells, this
     /// returns `None` so the overlay can drop the tail entirely.
     ///
@@ -1563,14 +1516,9 @@ impl ChatWidget {
     /// the main viewport updates.
     pub(crate) fn active_cell_transcript_key(&self) -> Option<ActiveCellTranscriptKey> {
         let cell = self.transcript.active_cell.as_ref();
-        let hook_cell = self.active_hook_cell.as_ref();
         let token_activity_cell = self.pending_token_activity_output();
         let rate_limit_reset_hint = self.pending_rate_limit_reset_hint();
-        if cell.is_none()
-            && hook_cell.is_none()
-            && token_activity_cell.is_none()
-            && rate_limit_reset_hint.is_none()
-        {
+        if cell.is_none() && token_activity_cell.is_none() && rate_limit_reset_hint.is_none() {
             return None;
         }
         Some(ActiveCellTranscriptKey {
@@ -1578,11 +1526,7 @@ impl ChatWidget {
             is_stream_continuation: cell
                 .map(|cell| cell.is_stream_continuation())
                 .unwrap_or(false),
-            animation_tick: cell
-                .and_then(|cell| cell.transcript_animation_tick())
-                .or_else(|| {
-                    hook_cell.and_then(super::history_cell::HistoryCell::transcript_animation_tick)
-                }),
+            animation_tick: cell.and_then(|cell| cell.transcript_animation_tick()),
         })
     }
 
@@ -1599,14 +1543,6 @@ impl ChatWidget {
         let mut lines = Vec::new();
         if let Some(cell) = self.transcript.active_cell.as_ref() {
             lines.extend(cell.transcript_hyperlink_lines(width));
-        }
-        if let Some(hook_cell) = self.active_hook_cell.as_ref() {
-            // Compute hook lines first so hidden hooks do not add a separator.
-            let hook_lines = hook_cell.transcript_hyperlink_lines(width);
-            if !hook_lines.is_empty() && !lines.is_empty() {
-                lines.push(HyperlinkLine::from(""));
-            }
-            lines.extend(hook_lines);
         }
         if let Some(token_activity_cell) = self.pending_token_activity_output() {
             let token_activity_lines = token_activity_cell.transcript_hyperlink_lines(width);

@@ -67,7 +67,6 @@ impl ChatWidget {
         self.quit_shortcut_key = None;
         self.update_task_running_state();
         self.status_state.retry_status_header = None;
-        self.clear_active_hook_cell();
         self.status_state.pending_status_indicator_restore = false;
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ true);
@@ -144,7 +143,6 @@ impl ChatWidget {
         // Mark task stopped and request redraw now that all content is in history.
         self.status_state.pending_status_indicator_restore = false;
         self.input_queue.user_turn_pending_start = false;
-        self.clear_active_hook_cell();
         self.turn_lifecycle.finish();
         self.clear_safety_buffering();
         self.update_task_running_state();
@@ -205,7 +203,6 @@ impl ChatWidget {
         // Turn-scoped hook rows are transient live state; once the turn is over,
         // do not leave an orphaned running row behind if no matching completion
         // event arrived before cancellation.
-        self.clear_active_hook_cell();
         // Reset running state and clear streaming buffers.
         self.input_queue.user_turn_pending_start = false;
         self.turn_lifecycle.finish();

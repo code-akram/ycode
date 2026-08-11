@@ -11,17 +11,7 @@ use crate::facts::AppMentionedInput;
 use crate::facts::AppUsedInput;
 use crate::facts::CodexGoalEvent;
 use crate::facts::CustomAnalyticsFact;
-use crate::facts::ExternalAgentConfigImportCompletedInput;
-use crate::facts::ExternalAgentConfigImportFailureInput;
-use crate::facts::HookRunFact;
-use crate::facts::HookRunInput;
 use crate::facts::ImagePreparationFact;
-use crate::facts::PluginInstallFailedInput;
-use crate::facts::PluginInstallRequested;
-use crate::facts::PluginInstallRequestedInput;
-use crate::facts::PluginInstallSource;
-use crate::facts::PluginState;
-use crate::facts::PluginStateChangedInput;
 use crate::facts::SkillInvocation;
 use crate::facts::SkillInvokedInput;
 use crate::facts::SubAgentThreadStartedInput;
@@ -43,8 +33,6 @@ use codex_cli_protocol::ServerResponse;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::default_client::create_client;
-use codex_plugin::PluginId;
-use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -69,7 +57,6 @@ pub(crate) enum AnalyticsEventsQueueMessage {
 pub(crate) struct AnalyticsEventsQueue {
     pub(crate) sender: mpsc::Sender<AnalyticsEventsQueueMessage>,
     pub(crate) app_used_emitted_keys: Arc<Mutex<HashSet<(String, String)>>>,
-    pub(crate) plugin_used_emitted_keys: Arc<Mutex<HashSet<(String, String)>>>,
 }
 
 #[derive(Clone)]
@@ -156,7 +143,6 @@ impl AnalyticsEventsQueue {
         Self {
             sender,
             app_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
-            plugin_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -187,29 +173,6 @@ impl AnalyticsEventsQueue {
             emitted.clear();
         }
         emitted.insert((tracking.turn_id.clone(), connector_id.clone()))
-    }
-
-    pub(crate) fn should_enqueue_plugin_used(
-        &self,
-        tracking: &TrackEventsContext,
-        plugin: &PluginTelemetryMetadata,
-    ) -> bool {
-        let mut emitted = self
-            .plugin_used_emitted_keys
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if emitted.len() >= ANALYTICS_EVENT_DEDUPE_MAX_KEYS {
-            emitted.clear();
-        }
-        let Some(plugin_id) = plugin
-            .plugin_id
-            .as_ref()
-            .map(PluginId::as_key)
-            .or_else(|| plugin.remote_plugin_id.clone())
-        else {
-            return true;
-        };
-        emitted.insert((tracking.turn_id.clone(), plugin_id))
     }
 }
 
@@ -360,37 +323,6 @@ impl AnalyticsEventsClient {
         )));
     }
 
-    pub fn track_hook_run(&self, tracking: TrackEventsContext, hook: HookRunFact) {
-        self.record_fact(AnalyticsFact::Custom(CustomAnalyticsFact::HookRun(
-            HookRunInput { tracking, hook },
-        )));
-    }
-
-    pub fn track_plugin_used(&self, tracking: TrackEventsContext, plugin: PluginTelemetryMetadata) {
-        let Some(queue) = self.queue.as_ref() else {
-            return;
-        };
-        if !queue.should_enqueue_plugin_used(&tracking, &plugin) {
-            return;
-        }
-        self.record_fact(AnalyticsFact::Custom(CustomAnalyticsFact::PluginUsed(
-            crate::facts::PluginUsedInput { tracking, plugin },
-        )));
-    }
-
-    pub fn track_plugin_install_requested(
-        &self,
-        tracking: TrackEventsContext,
-        request: PluginInstallRequested,
-    ) {
-        self.record_fact(AnalyticsFact::Custom(
-            CustomAnalyticsFact::PluginInstallRequested(PluginInstallRequestedInput {
-                tracking,
-                request,
-            }),
-        ));
-    }
-
     pub fn track_compaction(&self, event: crate::facts::CodexCompactionEvent) {
         self.record_fact(AnalyticsFact::Custom(CustomAnalyticsFact::Compaction(
             Box::new(event),
@@ -431,77 +363,6 @@ impl AnalyticsEventsClient {
         self.record_fact(AnalyticsFact::Custom(CustomAnalyticsFact::TurnCodexError(
             Box::new(fact),
         )));
-    }
-
-    pub fn track_plugin_installed(&self, plugin: PluginTelemetryMetadata) {
-        self.record_fact(AnalyticsFact::Custom(
-            CustomAnalyticsFact::PluginStateChanged(PluginStateChangedInput {
-                plugin,
-                state: PluginState::Installed,
-            }),
-        ));
-    }
-
-    pub fn track_plugin_install_failed(
-        &self,
-        plugin: PluginTelemetryMetadata,
-        source: PluginInstallSource,
-        error_type: String,
-        sub_error_type: Option<String>,
-    ) {
-        self.record_fact(AnalyticsFact::Custom(
-            CustomAnalyticsFact::PluginInstallFailed(PluginInstallFailedInput {
-                plugin,
-                source,
-                error_type,
-                sub_error_type,
-            }),
-        ));
-    }
-
-    pub fn track_external_agent_config_import_completed(
-        &self,
-        input: ExternalAgentConfigImportCompletedInput,
-    ) {
-        self.record_fact(AnalyticsFact::Custom(
-            CustomAnalyticsFact::ExternalAgentConfigImportCompleted(input),
-        ));
-    }
-
-    pub fn track_external_agent_config_import_failure(
-        &self,
-        input: ExternalAgentConfigImportFailureInput,
-    ) {
-        self.record_fact(AnalyticsFact::Custom(
-            CustomAnalyticsFact::ExternalAgentConfigImportFailure(input),
-        ));
-    }
-
-    pub fn track_plugin_uninstalled(&self, plugin: PluginTelemetryMetadata) {
-        self.record_fact(AnalyticsFact::Custom(
-            CustomAnalyticsFact::PluginStateChanged(PluginStateChangedInput {
-                plugin,
-                state: PluginState::Uninstalled,
-            }),
-        ));
-    }
-
-    pub fn track_plugin_enabled(&self, plugin: PluginTelemetryMetadata) {
-        self.record_fact(AnalyticsFact::Custom(
-            CustomAnalyticsFact::PluginStateChanged(PluginStateChangedInput {
-                plugin,
-                state: PluginState::Enabled,
-            }),
-        ));
-    }
-
-    pub fn track_plugin_disabled(&self, plugin: PluginTelemetryMetadata) {
-        self.record_fact(AnalyticsFact::Custom(
-            CustomAnalyticsFact::PluginStateChanged(PluginStateChangedInput {
-                plugin,
-                state: PluginState::Disabled,
-            }),
-        ));
     }
 
     pub(crate) fn record_fact(&self, input: AnalyticsFact) {

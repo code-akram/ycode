@@ -20,8 +20,7 @@ use codex_protocol::config_types::AgentSettings;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
-use codex_utils_plugins::mention_syntax::PLUGIN_TEXT_MENTION_SIGIL;
-use codex_utils_plugins::mention_syntax::TOOL_MENTION_SIGIL;
+use codex_skills::TOOL_MENTION_SIGIL;
 
 use super::ChatWidget;
 
@@ -561,30 +560,7 @@ pub(crate) fn mention_bindings_from_user_inputs(
                 mention: name.clone(),
                 path: path.to_string_lossy().into_owned(),
             }),
-            UserInput::Mention { name, path } => {
-                let plugin_id = path.strip_prefix("plugin://");
-                let mention = if let Some(plugin_id) = plugin_id {
-                    plugin_id
-                        .split_once('@')
-                        .map(|(plugin_name, _)| plugin_name)
-                        .unwrap_or(plugin_id)
-                        .to_string()
-                } else {
-                    name.clone()
-                };
-                let sigil = if plugin_id.is_some()
-                    && mention_start(PLUGIN_TEXT_MENTION_SIGIL, &mention).is_some()
-                {
-                    PLUGIN_TEXT_MENTION_SIGIL
-                } else {
-                    TOOL_MENTION_SIGIL
-                };
-                Some(MentionBinding {
-                    sigil,
-                    mention,
-                    path: path.clone(),
-                })
-            }
+            UserInput::Mention { .. } => None,
             UserInput::Text { .. }
             | UserInput::Image { .. }
             | UserInput::LocalImage { .. }

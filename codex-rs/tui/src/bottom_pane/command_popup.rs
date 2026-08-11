@@ -41,7 +41,6 @@ pub(crate) struct CommandPopup {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CommandPopupFlags {
-    pub(crate) plugins_command_enabled: bool,
     pub(crate) token_activity_command_enabled: bool,
     pub(crate) service_tier_commands_enabled: bool,
     pub(crate) goal_command_enabled: bool,
@@ -52,7 +51,6 @@ pub(crate) struct CommandPopupFlags {
 impl From<CommandPopupFlags> for BuiltinCommandFlags {
     fn from(value: CommandPopupFlags) -> Self {
         Self {
-            plugins_command_enabled: value.plugins_command_enabled,
             token_activity_command_enabled: value.token_activity_command_enabled,
             service_tier_commands_enabled: value.service_tier_commands_enabled,
             goal_command_enabled: value.goal_command_enabled,
@@ -501,7 +499,6 @@ mod tests {
     fn personality_command_hidden_when_disabled() {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
-                plugins_command_enabled: false,
                 token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,
@@ -530,7 +527,6 @@ mod tests {
     fn personality_command_visible_when_enabled() {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
-                plugins_command_enabled: false,
                 token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,

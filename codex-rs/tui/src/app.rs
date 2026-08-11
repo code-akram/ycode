@@ -10,8 +10,6 @@ use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
 use crate::app_event::FeedbackCategory;
 use crate::app_event::HistoryLookupResponse;
-use crate::app_event::PluginLocation;
-use crate::app_event::PluginRemoteSectionError;
 use crate::app_event::RateLimitRefreshOrigin;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::FeedbackAudience;
@@ -29,7 +27,6 @@ use crate::history_cell;
 use crate::history_cell::HistoryCell;
 #[cfg(not(debug_assertions))]
 use crate::history_cell::UpdateAvailableHistoryCell;
-use crate::hooks_rpc::HookTrustUpdate;
 use crate::key_hint::KeyBindingListExt;
 use crate::keymap::KeyChordMatcher;
 use crate::keymap::RuntimeKeymap;
@@ -81,18 +78,7 @@ use codex_cli_protocol::ConfigWriteResponse;
 use codex_cli_protocol::FeedbackUploadParams;
 use codex_cli_protocol::FeedbackUploadResponse;
 use codex_cli_protocol::GetAccountRateLimitsResponse;
-use codex_cli_protocol::HooksListEntry;
 use codex_cli_protocol::MergeStrategy;
-use codex_cli_protocol::PluginInstallParams;
-use codex_cli_protocol::PluginInstallResponse;
-use codex_cli_protocol::PluginListMarketplaceKind;
-use codex_cli_protocol::PluginListParams;
-use codex_cli_protocol::PluginListResponse;
-use codex_cli_protocol::PluginMarketplaceEntry;
-use codex_cli_protocol::PluginReadParams;
-use codex_cli_protocol::PluginReadResponse;
-use codex_cli_protocol::PluginUninstallParams;
-use codex_cli_protocol::PluginUninstallResponse;
 use codex_cli_protocol::SandboxMode as CliRuntimeSandboxMode;
 use codex_cli_protocol::SendAddCreditsNudgeEmailParams;
 use codex_cli_protocol::ServerNotification;
@@ -183,7 +169,6 @@ mod loaded_threads;
 mod pending_interactive_replay;
 mod pets;
 mod platform_actions;
-mod plugin_mentions;
 mod replay_filter;
 mod resize_reflow;
 mod runtime_event_targets;
@@ -463,13 +448,6 @@ pub(crate) struct App {
     pending_startup_thread_start: bool,
     /// Invalidates in-flight full rate-limit reads when a newer rolling hard stop arrives.
     rate_limit_hard_stop_generation: u64,
-    // Serialize plugin enablement writes per plugin so stale completions cannot
-    // overwrite a newer toggle, even if the plugin is toggled from different
-    // cwd contexts.
-    pending_plugin_enabled_writes: HashMap<String, Option<bool>>,
-    // Serialize hook enablement writes per hook so stale completions cannot
-    // persist an older toggle after a newer one.
-    pending_hook_enabled_writes: HashMap<String, Option<bool>>,
 }
 
 fn active_turn_not_steerable_turn_error(error: &TypedRequestError) -> Option<CliRuntimeTurnError> {
@@ -644,7 +622,6 @@ impl App {
         environment_manager: Arc<EnvironmentManager>,
         startup_elapsed_before_app: Duration,
         startup_bootstrap: Option<CliRuntimeBootstrap>,
-        startup_hooks_browser: Option<HooksListEntry>,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
         let startup_started_at = Instant::now();
@@ -922,12 +899,7 @@ See the Codex keymap documentation for supported actions and examples."
             pending_runtime_requests: PendingCliRuntimeRequests::default(),
             pending_startup_thread_start,
             rate_limit_hard_stop_generation: 0,
-            pending_plugin_enabled_writes: HashMap::new(),
-            pending_hook_enabled_writes: HashMap::new(),
         };
-        if let Some(entry) = startup_hooks_browser {
-            app.chat_widget.open_hooks_browser(entry);
-        }
         app.update_visible_history_rows(tui.terminal.last_known_screen_size);
         let initial_session_started_at = Instant::now();
         if let Some(started) = initial_started_thread {

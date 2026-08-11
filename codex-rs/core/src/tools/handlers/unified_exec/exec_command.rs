@@ -10,12 +10,7 @@ use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::apply_patch::intercept_apply_patch;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::handlers::resolve_tool_environment;
-use crate::tools::handlers::rewrite_function_string_argument;
-use crate::tools::handlers::updated_hook_command;
-use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::CoreToolRuntime;
-use crate::tools::registry::PostToolUsePayload;
-use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
 use crate::unified_exec::ExecCommandRequest;
 use crate::unified_exec::UnifiedExecContext;
@@ -32,7 +27,6 @@ use super::super::shell_spec::create_exec_command_tool_with_environment_id;
 use super::ExecCommandArgs;
 use super::ExecCommandEnvironmentArgs;
 use super::get_command;
-use super::post_unified_exec_tool_use_payload;
 use super::shell_mode_for_environment;
 
 #[derive(Clone, Copy)]
@@ -221,7 +215,6 @@ impl ExecCommandHandler {
                 exit_code: None,
                 original_token_count: None,
                 output_omitted_bytes: None,
-                hook_command: None,
             }));
         }
 
@@ -253,48 +246,6 @@ impl ExecCommandHandler {
 impl CoreToolRuntime for ExecCommandHandler {
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(payload, ToolPayload::Function { .. })
-    }
-
-    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
-        let ToolPayload::Function { arguments } = &invocation.payload else {
-            return None;
-        };
-
-        parse_arguments::<ExecCommandArgs>(arguments)
-            .ok()
-            .map(|args| PreToolUsePayload {
-                tool_name: HookToolName::bash(),
-                tool_input: serde_json::json!({ "command": args.cmd }),
-            })
-    }
-
-    fn with_updated_hook_input(
-        &self,
-        mut invocation: ToolInvocation,
-        updated_input: serde_json::Value,
-    ) -> Result<ToolInvocation, FunctionCallError> {
-        let ToolPayload::Function { arguments } = invocation.payload else {
-            return Err(FunctionCallError::RespondToModel(
-                "hook input rewrite received unsupported exec_command payload".to_string(),
-            ));
-        };
-        invocation.payload = ToolPayload::Function {
-            arguments: rewrite_function_string_argument(
-                &arguments,
-                "exec_command",
-                "cmd",
-                updated_hook_command(&updated_input)?,
-            )?,
-        };
-        Ok(invocation)
-    }
-
-    fn post_tool_use_payload(
-        &self,
-        invocation: &ToolInvocation,
-        result: &dyn crate::tools::context::ToolOutput,
-    ) -> Option<PostToolUsePayload> {
-        post_unified_exec_tool_use_payload(invocation, result)
     }
 }
 

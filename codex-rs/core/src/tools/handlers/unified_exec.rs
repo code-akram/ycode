@@ -1,10 +1,5 @@
 use crate::shell::Shell;
 use crate::shell::get_shell_by_model_provided_path;
-use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolOutput;
-use crate::tools::context::ToolPayload;
-use crate::tools::hook_names::HookToolName;
-use crate::tools::registry::PostToolUsePayload;
 use codex_exec_server::Environment;
 use codex_tools::UnifiedExecShellMode;
 use serde::Deserialize;
@@ -61,25 +56,6 @@ fn default_tty() -> bool {
 #[derive(Debug)]
 pub(crate) struct ResolvedCommand {
     pub(crate) command: Vec<String>,
-}
-
-fn post_unified_exec_tool_use_payload(
-    invocation: &ToolInvocation,
-    result: &dyn ToolOutput,
-) -> Option<PostToolUsePayload> {
-    let ToolPayload::Function { .. } = &invocation.payload else {
-        return None;
-    };
-
-    let tool_input = result.post_tool_use_input(&invocation.payload)?;
-    let tool_use_id = result.post_tool_use_id(&invocation.call_id);
-    let tool_response = result.post_tool_use_response(&tool_use_id, &invocation.payload)?;
-    Some(PostToolUsePayload {
-        tool_name: HookToolName::bash(),
-        tool_use_id,
-        tool_input,
-        tool_response,
-    })
 }
 
 pub(crate) fn get_command(

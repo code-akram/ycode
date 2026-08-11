@@ -121,7 +121,6 @@ mod tests {
             command: "true".to_string(),
             cwd: AbsolutePathBuf::current_dir().expect("current dir").into(),
             process_id: None,
-            plugin_id: None,
             script_path: None,
             source: CommandExecutionSource::Agent,
             status: CommandExecutionStatus::InProgress,

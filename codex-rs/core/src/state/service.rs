@@ -13,12 +13,9 @@ use crate::tools::ExecutedToolCallRecorder;
 use crate::tools::code_mode::CodeModeService;
 use crate::tools::handlers::ToolSearchHandlerCache;
 use crate::unified_exec::UnifiedExecProcessManager;
-use arc_swap::ArcSwap;
 use codex_analytics::AnalyticsEventsClient;
-use codex_core_plugins::PluginsManager;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionRegistry;
-use codex_hooks::Hooks;
 use codex_http_client::RouteAwareClientPool;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
@@ -38,7 +35,6 @@ pub(crate) struct SessionServices {
     #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) main_execve_wrapper_exe: Option<PathBuf>,
     pub(crate) analytics_events_client: AnalyticsEventsClient,
-    pub(crate) hooks: ArcSwap<Hooks>,
     pub(crate) rollout_thread_trace: ThreadTraceContext,
     pub(crate) user_shell: Arc<crate::shell::Shell>,
     pub(crate) show_raw_agent_reasoning: bool,
@@ -50,7 +46,6 @@ pub(crate) struct SessionServices {
     pub(crate) runtime_handle: Handle,
     pub(crate) skills_service: Arc<HostSkillsService>,
     pub(crate) agents_md_manager: Arc<AgentsMdManager>,
-    pub(crate) plugins_manager: Arc<PluginsManager>,
     pub(crate) extensions: Arc<ExtensionRegistry<crate::config::Config>>,
     pub(crate) session_extension_data: ExtensionData,
     pub(crate) thread_extension_data: ExtensionData,

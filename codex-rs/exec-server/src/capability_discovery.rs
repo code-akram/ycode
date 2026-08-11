@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::io;
 
 use codex_exec_server_protocol::CapabilityRootDiscoverRequest;
@@ -6,8 +5,6 @@ use codex_exec_server_protocol::CapabilityRootDiscovery;
 use codex_exec_server_protocol::CapabilityRootsDiscoverParams;
 use codex_exec_server_protocol::CapabilityRootsDiscoverResponse;
 use codex_exec_server_protocol::CapabilityTextFile;
-use codex_exec_server_protocol::DISCOVERABLE_PLUGIN_MANIFEST_PATHS;
-use codex_exec_server_protocol::DiscoveredPluginFiles;
 use codex_exec_server_protocol::DiscoveredSkillFiles;
 use codex_file_system::ExecutorFileSystem;
 use codex_file_system::FileSystemSandboxContext;
@@ -15,8 +12,6 @@ use codex_file_system::WalkEntryKind;
 use codex_file_system::WalkOptions;
 use codex_utils_path_uri::PathUri;
 use futures::StreamExt;
-use serde::Deserialize;
-use serde_json::Value;
 
 pub(crate) const MAX_ROOTS_PER_REQUEST: usize = 128;
 const MAX_SCAN_DEPTH: usize = 6;
@@ -68,9 +63,7 @@ async fn discover_root(
     let mut discovery = CapabilityRootDiscovery {
         id,
         path: path.clone(),
-        plugin: None,
         skills: Vec::new(),
-        namespace_manifests: Vec::new(),
         warnings: Vec::new(),
         error: None,
     };
@@ -122,7 +115,6 @@ async fn discover_root(
     }
 
     let mut skill_paths = Vec::new();
-    let mut namespace_manifest_paths = Vec::new();
     for entry in walk.entries {
         if entry.kind != WalkEntryKind::File {
             continue;
@@ -130,89 +122,10 @@ async fn discover_root(
         if entry.path.basename().as_deref() == Some(SKILL_FILE_NAME) {
             skill_paths.push(entry.path.clone());
         }
-        if is_plugin_manifest_path(&entry.path) {
-            namespace_manifest_paths.push(entry.path);
-        }
     }
     skill_paths.sort_unstable_by_key(PathUri::to_string);
-    namespace_manifest_paths.sort_unstable_by(|left, right| {
-        let left_root = plugin_root_for_manifest(left).map(|path| path.to_string());
-        let right_root = plugin_root_for_manifest(right).map(|path| path.to_string());
-        left_root
-            .cmp(&right_root)
-            .then_with(|| plugin_manifest_priority(left).cmp(&plugin_manifest_priority(right)))
-    });
 
     let mut budget = BundleBudget::default();
-    let root_manifest = read_first_plugin_manifest(
-        file_system,
-        &path,
-        sandbox,
-        &mut budget,
-        &mut discovery.warnings,
-    )
-    .await;
-
-    let inherited_manifest = match root_manifest.as_ref() {
-        Some(manifest) => Some(manifest.clone()),
-        None => {
-            read_nearest_ancestor_manifest(
-                file_system,
-                &path,
-                sandbox,
-                &mut budget,
-                &mut discovery.warnings,
-            )
-            .await
-        }
-    };
-    let mut seen_namespace_roots = HashSet::new();
-    if let Some(manifest) = inherited_manifest {
-        if let Some(plugin_root) = plugin_root_for_manifest(&manifest.path) {
-            seen_namespace_roots.insert(plugin_root);
-        }
-        discovery.namespace_manifests.push(manifest);
-    }
-    for manifest_path in namespace_manifest_paths {
-        let Some(plugin_root) = plugin_root_for_manifest(&manifest_path) else {
-            continue;
-        };
-        if !seen_namespace_roots.insert(plugin_root) {
-            continue;
-        }
-        if let Some(manifest) = read_optional_text_file(
-            file_system,
-            manifest_path,
-            sandbox,
-            &mut budget,
-            &mut discovery.warnings,
-        )
-        .await
-        {
-            discovery.namespace_manifests.push(manifest);
-        }
-    }
-
-    if let Some(manifest) = root_manifest {
-        let declarations = plugin_declaration_paths(&path, &manifest, &mut discovery.warnings);
-        let apps_config = match declarations.apps_config {
-            Some(path) => {
-                read_optional_text_file(
-                    file_system,
-                    path,
-                    sandbox,
-                    &mut budget,
-                    &mut discovery.warnings,
-                )
-                .await
-            }
-            None => None,
-        };
-        discovery.plugin = Some(DiscoveredPluginFiles {
-            manifest,
-            apps_config,
-        });
-    }
 
     for skill_path in skill_paths {
         let Some(instructions) = read_optional_text_file(
@@ -249,45 +162,6 @@ async fn discover_root(
     }
 
     discovery
-}
-
-async fn read_first_plugin_manifest(
-    file_system: &dyn ExecutorFileSystem,
-    root: &PathUri,
-    sandbox: Option<&FileSystemSandboxContext>,
-    budget: &mut BundleBudget,
-    warnings: &mut Vec<String>,
-) -> Option<CapabilityTextFile> {
-    for relative_path in DISCOVERABLE_PLUGIN_MANIFEST_PATHS {
-        let Ok(path) = root.join(relative_path) else {
-            continue;
-        };
-        if let Some(manifest) =
-            read_optional_text_file(file_system, path, sandbox, budget, warnings).await
-        {
-            return Some(manifest);
-        }
-    }
-    None
-}
-
-async fn read_nearest_ancestor_manifest(
-    file_system: &dyn ExecutorFileSystem,
-    root: &PathUri,
-    sandbox: Option<&FileSystemSandboxContext>,
-    budget: &mut BundleBudget,
-    warnings: &mut Vec<String>,
-) -> Option<CapabilityTextFile> {
-    let mut ancestor = root.parent();
-    while let Some(path) = ancestor {
-        if let Some(manifest) =
-            read_first_plugin_manifest(file_system, &path, sandbox, budget, warnings).await
-        {
-            return Some(manifest);
-        }
-        ancestor = path.parent();
-    }
-    None
 }
 
 async fn read_optional_text_file(
@@ -376,26 +250,6 @@ async fn read_optional_text_file(
     Some(CapabilityTextFile { path, contents })
 }
 
-fn is_plugin_manifest_path(path: &PathUri) -> bool {
-    plugin_manifest_priority(path).is_some()
-}
-
-fn plugin_manifest_priority(path: &PathUri) -> Option<usize> {
-    if path.basename().as_deref() != Some("plugin.json") {
-        return None;
-    }
-    let manifest_directory = path.parent()?.basename()?;
-    DISCOVERABLE_PLUGIN_MANIFEST_PATHS
-        .iter()
-        .position(|relative_path| {
-            relative_path.strip_suffix("/plugin.json") == Some(manifest_directory.as_str())
-        })
-}
-
-fn plugin_root_for_manifest(path: &PathUri) -> Option<PathUri> {
-    path.parent()?.parent()
-}
-
 #[derive(Default)]
 struct BundleBudget {
     bytes: usize,
@@ -410,71 +264,5 @@ impl BundleBudget {
 
     fn add(&mut self, bytes: usize) {
         self.bytes += bytes;
-    }
-}
-
-#[derive(Default)]
-struct PluginDeclarationPaths {
-    apps_config: Option<PathUri>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RawPluginDeclarations {
-    #[serde(default)]
-    apps: Option<Value>,
-}
-
-fn plugin_declaration_paths(
-    root: &PathUri,
-    manifest: &CapabilityTextFile,
-    warnings: &mut Vec<String>,
-) -> PluginDeclarationPaths {
-    let declarations = match serde_json::from_str::<RawPluginDeclarations>(&manifest.contents) {
-        Ok(declarations) => declarations,
-        Err(_) => return PluginDeclarationPaths::default(),
-    };
-    PluginDeclarationPaths {
-        apps_config: declarations
-            .apps
-            .as_ref()
-            .and_then(|value| declared_file_path(root, "apps", value, &manifest.path, warnings)),
-    }
-}
-
-fn declared_file_path(
-    root: &PathUri,
-    field: &str,
-    value: &Value,
-    manifest_path: &PathUri,
-    warnings: &mut Vec<String>,
-) -> Option<PathUri> {
-    let Value::String(path) = value else {
-        return None;
-    };
-    let Some(relative_path) = path.strip_prefix("./") else {
-        warnings.push(format!(
-            "ignoring {field} in {manifest_path}: path must start with `./`"
-        ));
-        return None;
-    };
-    if relative_path.is_empty()
-        || relative_path
-            .split(['/', '\\'])
-            .any(|component| component == "..")
-    {
-        warnings.push(format!(
-            "ignoring {field} in {manifest_path}: path must remain below the capability root"
-        ));
-        return None;
-    }
-    match root.join(relative_path) {
-        Ok(path) if path.starts_with(root) => Some(path),
-        Ok(_) | Err(_) => {
-            warnings.push(format!(
-                "ignoring {field} in {manifest_path}: path must remain below the capability root"
-            ));
-            None
-        }
     }
 }

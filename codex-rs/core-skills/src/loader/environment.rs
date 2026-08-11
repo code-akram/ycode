@@ -11,7 +11,7 @@ use futures::StreamExt;
 use crate::model::SkillDependencies;
 use crate::model::SkillPolicy;
 
-use super::MAX_QUALIFIED_NAME_LEN;
+use super::MAX_NAME_LEN;
 use super::SkillMetadataFile;
 use super::discovery::DirectorySymlinkPolicy;
 use super::discovery::DiscoveredSkill;
@@ -20,7 +20,6 @@ use super::discovery::MAX_CONCURRENT_SKILL_LOADS;
 use super::discovery::SkillDiscoveryOptions;
 use super::discovery::SkillMetadataDiscovery;
 use super::discovery::discover_skills;
-use super::namespace::SkillNamespaceResolver;
 use super::resolve_dependencies;
 use super::resolve_policy;
 use super::sanitize_single_line;
@@ -106,7 +105,6 @@ pub async fn load_environment_skills_from_root(
         SkillDiscoveryOptions {
             directory_symlinks: DirectorySymlinkPolicy::Follow,
             hidden_directories: HiddenDirectoryPolicy::Include,
-            mode: codex_utils_plugins::SkillDiscoveryMode::Recursive,
         },
     )
     .await;
@@ -115,19 +113,6 @@ pub async fn load_environment_skills_from_root(
     if discovery.skills.is_empty() {
         return outcome;
     }
-
-    let skill_paths = discovery
-        .skills
-        .iter()
-        .map(|skill| skill.path.clone())
-        .collect::<Vec<_>>();
-    let namespace_resolver = SkillNamespaceResolver::discover(
-        file_system,
-        root,
-        &skill_paths,
-        discovery.plugin_roots,
-        discovery.namespace_roots,
-    );
 
     // Remote executors can multiplex these independent per-skill reads, so polling a bounded
     // number together allows the I/O for each skill and its metadata to happen concurrently.
@@ -142,20 +127,15 @@ pub async fn load_environment_skills_from_root(
             }
         })
         .buffered(MAX_CONCURRENT_SKILL_LOADS)
-        .collect::<Vec<_>>();
-    let (namespace_resolver, skill_results) = tokio::join!(namespace_resolver, skill_results);
-
+        .collect::<Vec<_>>()
+        .await;
     for (path, result) in skill_results {
         let result = result.and_then(|skill| {
-            let name = namespace_resolver
-                .for_skill(root, &skill.path_to_skills_md)
-                .qualify(&skill.base_name);
-            validate_len(&name, MAX_QUALIFIED_NAME_LEN, "qualified name")
-                .map_err(|err| err.to_string())?;
+            validate_len(&skill.base_name, MAX_NAME_LEN, "name").map_err(|err| err.to_string())?;
 
             Ok(EnvironmentSkillMetadata {
                 path_to_skills_md: skill.path_to_skills_md,
-                name,
+                name: skill.base_name,
                 description: skill.description,
                 short_description: skill.short_description,
                 dependencies: skill.dependencies,

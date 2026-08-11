@@ -185,20 +185,7 @@ fn collab_is_legacy_alias_for_multi_agent() {
 }
 
 #[test]
-fn codex_hooks_is_legacy_alias_for_hooks() {
-    assert_eq!(feature_for_key("hooks"), Some(Feature::CodexHooks));
-    assert_eq!(feature_for_key("codex_hooks"), Some(Feature::CodexHooks));
-}
-
-#[test]
 fn from_sources_applies_base_profile_and_overrides() {
-    let mut base_entries = BTreeMap::new();
-    base_entries.insert("plugins".to_string(), true);
-    let base_features = FeaturesToml {
-        entries: base_entries,
-        ..Default::default()
-    };
-
     let mut profile_entries = BTreeMap::new();
     profile_entries.insert("code_mode_only".to_string(), true);
     let profile_features = FeaturesToml {
@@ -208,7 +195,6 @@ fn from_sources_applies_base_profile_and_overrides() {
 
     let features = Features::from_sources(
         FeatureConfigSource {
-            features: Some(&base_features),
             ..Default::default()
         },
         FeatureConfigSource {
@@ -220,7 +206,6 @@ fn from_sources_applies_base_profile_and_overrides() {
         },
     );
 
-    assert_eq!(features.enabled(Feature::Plugins), true);
     assert_eq!(features.enabled(Feature::CodeModeOnly), true);
     assert_eq!(features.enabled(Feature::CodeMode), true);
     assert_eq!(features.enabled(Feature::ApplyPatchFreeform), false);
@@ -319,22 +304,6 @@ fn from_sources_ignores_removed_js_repl_feature_keys() {
 fn from_sources_ignores_removed_apply_patch_freeform_feature_key() {
     let features_toml =
         FeaturesToml::from(BTreeMap::from([("apply_patch_freeform".to_string(), true)]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
-}
-
-#[test]
-fn from_sources_ignores_removed_plugin_hooks_feature_key() {
-    let features_toml = FeaturesToml::from(BTreeMap::from([("plugin_hooks".to_string(), true)]));
 
     let features = Features::from_sources(
         FeatureConfigSource {

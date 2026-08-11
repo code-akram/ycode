@@ -101,7 +101,6 @@ mod diff_model;
 mod diff_render;
 mod exec_cell;
 mod exec_command;
-mod external_agent_config_migration;
 mod external_editor;
 mod file_search;
 mod frames;
@@ -110,7 +109,6 @@ mod git_action_directives;
 mod goal_display;
 mod goal_files;
 mod history_cell;
-mod hooks_rpc;
 mod ide_context;
 mod inline_visualization;
 pub(crate) mod insert_history;
@@ -152,7 +150,6 @@ mod shimmer;
 mod skills_helpers;
 mod slash_command;
 mod startup_error;
-mod startup_hooks_review;
 mod status;
 mod status_indicator_widget;
 mod streaming;
@@ -195,9 +192,6 @@ pub(crate) mod test_support;
 
 use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
 use crate::onboarding::onboarding_screen::run_onboarding_app;
-use crate::startup_hooks_review::StartupHooksReviewOutcome;
-use crate::startup_hooks_review::load_startup_hooks_review_entry;
-use crate::startup_hooks_review::maybe_run_startup_hooks_review;
 use crate::tui::Tui;
 pub use cli::Cli;
 use codex_arg0::Arg0DispatchPaths;
@@ -804,7 +798,6 @@ pub async fn run_main(
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         show_raw_agent_reasoning: cli.oss.then_some(true),
-        bypass_hook_trust: cli.bypass_hook_trust.then_some(true),
         psp: Some(cli.psp),
         ..Default::default()
     };
@@ -1415,35 +1408,9 @@ async fn run_ratatui_app(
         },
     };
 
-    // Persistent cli-runtime resumes may attach to an already-running thread,
-    // where resume config overrides are ignored.
-    let is_persistent_resume = !matches!(&cli_runtime_target, CliRuntimeTarget::Embedded)
-        && matches!(
-            &session_selection,
-            resume_picker::SessionSelection::Resume(_)
-        );
-    let bypass_hook_trust_for_startup_review = config.bypass_hook_trust && !is_persistent_resume;
-    let hooks_request_handle = cli_runtime.request_handle();
-    let hooks_cwd = config.cwd.to_path_buf();
     let startup_prefetch_started_at = Instant::now();
-    let (startup_bootstrap, startup_hooks_entry) = tokio::join!(
-        cli_runtime.bootstrap(&config),
-        load_startup_hooks_review_entry(hooks_request_handle, hooks_cwd),
-    );
-    let startup_bootstrap = Some(startup_bootstrap?);
+    let startup_bootstrap = Some(cli_runtime.bootstrap(&config).await?);
     let startup_elapsed_before_app = startup_prefetch_started_at.elapsed();
-    let startup_hooks_browser = match maybe_run_startup_hooks_review(
-        &mut cli_runtime,
-        &mut tui,
-        &config,
-        bypass_hook_trust_for_startup_review,
-        startup_hooks_entry,
-    )
-    .await?
-    {
-        StartupHooksReviewOutcome::Continue => None,
-        StartupHooksReviewOutcome::OpenHooksBrowser(data) => Some(data),
-    };
 
     let app_result = App::run(
         &mut tui,
@@ -1464,7 +1431,6 @@ async fn run_ratatui_app(
         environment_manager,
         startup_elapsed_before_app,
         startup_bootstrap,
-        startup_hooks_browser,
     )
     .await;
 

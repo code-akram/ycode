@@ -15,7 +15,6 @@ pub use codex_skills::ToolMentions;
 pub use codex_skills::extract_tool_mentions;
 pub use codex_skills::extract_tool_mentions_with_sigil;
 pub use codex_skills::normalize_skill_path;
-pub use codex_skills::plugin_config_name_from_path;
 pub use codex_skills::tool_kind_for_path;
 use codex_utils_path_uri::PathUri;
 use codex_utils_string::take_bytes_at_char_boundary;
@@ -98,12 +97,7 @@ pub async fn build_skill_injections(
         let path = PathUri::from_abs_path(&skill.path_to_skills_md);
         match fs.read_file_text(&path, /*sandbox*/ None).await {
             Ok(contents) => {
-                let (contents, truncated) =
-                    if loaded_skills.is_some_and(|outcome| outcome.is_agent_plugin_skill(skill)) {
-                        bounded_skill_prompt_contents(&contents)
-                    } else {
-                        (contents, false)
-                    };
+                let (contents, truncated) = bounded_skill_prompt_contents(&contents);
                 if truncated {
                     result.warnings.push(format!(
                         "Skill `{}` exceeded the main prompt context limit and was truncated.",
@@ -115,8 +109,6 @@ pub async fn build_skill_injections(
                     skill_name: skill.name.clone(),
                     skill_scope: skill.scope,
                     skill_path: skill.path_to_skills_md.to_path_buf(),
-                    plugin_id: skill.plugin_id.clone(),
-                    remote_plugin_id: skill.remote_plugin_id.clone(),
                     invocation_type: InvocationType::Explicit,
                 });
                 result.items.push(SkillInjection {

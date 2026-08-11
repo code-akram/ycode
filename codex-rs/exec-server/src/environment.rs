@@ -961,7 +961,7 @@ impl Environment {
         }
     }
 
-    /// Discovers plugin and skill manifests through the environment's high-level discovery API.
+    /// Discovers filesystem skills through the environment's high-level discovery API.
     pub async fn discover_capability_roots(
         &self,
         params: CapabilityRootsDiscoverParams,

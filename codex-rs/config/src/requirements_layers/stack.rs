@@ -8,8 +8,6 @@
 //! break:
 //! - `remote_sandbox_config` is evaluated within each layer before merging.
 //! - `rules.prefix_rules` append high-priority rules first.
-//! - `hooks` append high-priority event groups first while failing closed on
-//!   active managed-dir conflicts.
 //! - `permissions.filesystem.deny_read` is a high-priority-first union across
 //!   layers.
 
@@ -23,8 +21,6 @@ use std::io;
 use thiserror::Error;
 use toml::Value as TomlValue;
 
-use super::hooks::HookDirectoryField;
-use super::hooks::HookMergeState;
 use super::layer::ComposableRequirementsLayer;
 use super::layer::RequirementsLayerEntry;
 use super::permissions::DenyReadMergeState;
@@ -67,48 +63,18 @@ pub(super) fn compose_requirements_for_hostname(
     hostname: Option<&str>,
 ) -> Result<Option<ConfigRequirementsWithSources>, RequirementsCompositionError> {
     let hostname = hostname.map(str::to_string);
-    compose_requirements_with_hostname_resolver_and_hook_directory(
-        layers,
-        move || hostname.clone(),
-        HookDirectoryField::current_platform(),
-    )
-}
-
-#[cfg(test)]
-pub(super) fn compose_requirements_for_hostname_and_hook_directory(
-    layers: impl IntoIterator<Item = RequirementsLayerEntry>,
-    hostname: Option<&str>,
-    hook_directory_field: HookDirectoryField,
-) -> Result<Option<ConfigRequirementsWithSources>, RequirementsCompositionError> {
-    let hostname = hostname.map(str::to_string);
-    compose_requirements_with_hostname_resolver_and_hook_directory(
-        layers,
-        move || hostname.clone(),
-        hook_directory_field,
-    )
+    compose_requirements_with_hostname_resolver(layers, move || hostname.clone())
 }
 
 fn compose_requirements_with_hostname_resolver(
     layers: impl IntoIterator<Item = RequirementsLayerEntry>,
     hostname_resolver: impl Fn() -> Option<String>,
 ) -> Result<Option<ConfigRequirementsWithSources>, RequirementsCompositionError> {
-    compose_requirements_with_hostname_resolver_and_hook_directory(
-        layers,
-        hostname_resolver,
-        HookDirectoryField::current_platform(),
-    )
-}
-
-fn compose_requirements_with_hostname_resolver_and_hook_directory(
-    layers: impl IntoIterator<Item = RequirementsLayerEntry>,
-    hostname_resolver: impl Fn() -> Option<String>,
-    hook_directory_field: HookDirectoryField,
-) -> Result<Option<ConfigRequirementsWithSources>, RequirementsCompositionError> {
     // Evaluate every layer in this composition against the same hostname while
     // keeping resolution lazy when no layer needs remote sandbox matching.
     let hostname = OnceCell::new();
     let cached_hostname_resolver = || hostname.get_or_init(&hostname_resolver).clone();
-    let mut stack = RequirementsLayerStack::new(hook_directory_field);
+    let mut stack = RequirementsLayerStack::new();
     for layer in layers {
         stack.add_layer(layer, &cached_hostname_resolver)?;
     }
@@ -117,15 +83,11 @@ fn compose_requirements_with_hostname_resolver_and_hook_directory(
 
 struct RequirementsLayerStack {
     layers: Vec<ComposableRequirementsLayer>,
-    hook_directory_field: HookDirectoryField,
 }
 
 impl RequirementsLayerStack {
-    fn new(hook_directory_field: HookDirectoryField) -> Self {
-        Self {
-            layers: Vec::new(),
-            hook_directory_field,
-        }
+    fn new() -> Self {
+        Self { layers: Vec::new() }
     }
 
     fn add_layer(
@@ -143,10 +105,7 @@ impl RequirementsLayerStack {
     fn compose(
         self,
     ) -> Result<Option<ConfigRequirementsWithSources>, RequirementsCompositionError> {
-        let Self {
-            layers,
-            hook_directory_field,
-        } = self;
+        let Self { layers } = self;
 
         let mut merged_toml = TomlValue::Table(toml::map::Map::new());
         for layer in &layers {
@@ -162,8 +121,6 @@ impl RequirementsLayerStack {
         let mut output = ConfigRequirementsWithSources::default();
         populate_merged_regular_fields_with_sources(&mut output, requirements, &layers);
         let mut rules = None;
-        let mut hooks = HookMergeState::new(hook_directory_field);
-        let mut hooks_output = None;
         let mut deny_read = DenyReadMergeState::default();
         // Regular TOML fields are folded low-to-high like config. These custom
         // fields append or union values, so process them high-to-low to keep
@@ -171,15 +128,9 @@ impl RequirementsLayerStack {
         for layer in layers.iter().rev() {
             let domain_fields = &layer.domain_fields;
             super::rules::merge(&mut rules, domain_fields.rules.clone(), &layer.source);
-            hooks.merge(
-                &mut hooks_output,
-                domain_fields.hooks.clone(),
-                &layer.source,
-            )?;
             deny_read.merge(domain_fields.permissions.clone(), &layer.source);
         }
         output.rules = rules;
-        output.hooks = hooks_output;
         deny_read.apply_to(&mut output.permissions);
 
         let output_is_empty = output.clone().into_toml().is_empty();
@@ -221,15 +172,12 @@ fn populate_merged_regular_fields_with_sources(
         default_permissions,
         remote_sandbox_config: _,
         allowed_web_search_modes,
-        allow_managed_hooks_only,
         allow_appshots,
         allow_remote_control,
         computer_use,
         browser_use,
         windows,
         feature_requirements,
-        hooks: _,
-        marketplaces,
         apps,
         rules: _,
         enforce_residency,
@@ -262,14 +210,12 @@ fn populate_merged_regular_fields_with_sources(
     );
     set_sourced!(default_permissions, &["default_permissions"]);
     set_sourced!(allowed_web_search_modes, &["allowed_web_search_modes"]);
-    set_sourced!(allow_managed_hooks_only, &["allow_managed_hooks_only"]);
     set_sourced!(allow_appshots, &["allow_appshots"]);
     set_sourced!(allow_remote_control, &["allow_remote_control"]);
     set_sourced!(computer_use, &["computer_use"]);
     set_sourced!(browser_use, &["browser_use"]);
     set_sourced!(windows, &["windows"]);
     set_sourced!(feature_requirements, &["features", "feature_requirements"]);
-    set_sourced!(marketplaces, &["marketplaces"]);
     set_sourced!(apps, &["apps"]);
     set_sourced!(enforce_residency, &["enforce_residency"]);
     set_sourced!(network, &["experimental_network"]);

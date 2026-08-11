@@ -9,13 +9,6 @@ use crate::events::CodexCliRuntimeClientMetadata;
 use crate::events::CodexCommandExecutionEventParams;
 use crate::events::CodexCommandExecutionEventRequest;
 use crate::events::CodexCompactionEventRequest;
-use crate::events::CodexHookRunEventRequest;
-use crate::events::CodexOnboardingExternalAgentImportFailureEventRequest;
-use crate::events::CodexOnboardingExternalAgentImportFailureMetadata;
-use crate::events::CodexPluginEventRequest;
-use crate::events::CodexPluginInstallFailedEventRequest;
-use crate::events::CodexPluginInstallFailedMetadata;
-use crate::events::CodexPluginUsedEventRequest;
 use crate::events::CodexReviewEventParams;
 use crate::events::CodexReviewEventRequest;
 use crate::events::CodexRuntimeMetadata;
@@ -38,9 +31,6 @@ use crate::events::ThreadInitializedEventParams;
 use crate::events::ToolItemTerminalStatus;
 use crate::events::TrackEventRequest;
 use crate::events::codex_app_metadata;
-use crate::events::codex_hook_run_metadata;
-use crate::events::codex_plugin_metadata;
-use crate::events::codex_plugin_used_metadata;
 use crate::events::subagent_thread_started_event_request;
 use crate::facts::AnalyticsFact;
 use crate::facts::AnalyticsJsonRpcError;
@@ -58,24 +48,11 @@ use crate::facts::CompactionStatus;
 use crate::facts::CompactionStrategy;
 use crate::facts::CompactionTrigger;
 use crate::facts::CustomAnalyticsFact;
-use crate::facts::ExternalAgentConfigImportCompletedInput;
-use crate::facts::ExternalAgentConfigImportFailureInput;
-use crate::facts::HookRunFact;
-use crate::facts::HookRunInput;
 use crate::facts::ImageDetailSetting;
 use crate::facts::ImagePreparationFact;
 use crate::facts::ImagePreparationMetadata;
 use crate::facts::InputError;
 use crate::facts::InvocationType;
-use crate::facts::PluginInstallFailedInput;
-use crate::facts::PluginInstallRequestSource;
-use crate::facts::PluginInstallRequested;
-use crate::facts::PluginInstallRequestedInput;
-use crate::facts::PluginInstallRequestedPlugin;
-use crate::facts::PluginInstallSource;
-use crate::facts::PluginState;
-use crate::facts::PluginStateChangedInput;
-use crate::facts::PluginUsedInput;
 use crate::facts::SkillInvocation;
 use crate::facts::SkillInvokedInput;
 use crate::facts::SubAgentThreadStartedInput;
@@ -150,18 +127,12 @@ use codex_cli_protocol::UserInput;
 use codex_cli_protocol::WebSearchItem;
 use codex_login::default_client::DEFAULT_ORIGINATOR;
 use codex_login::default_client::originator;
-use codex_plugin::PluginCapabilitySummary;
-use codex_plugin::PluginId;
-use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::approvals::NetworkApprovalProtocol;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::error::CodexErr;
 use codex_protocol::models::NetworkPermissions as CoreNetworkPermissions;
 use codex_protocol::models::PermissionProfile as CorePermissionProfile;
 use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::HookEventName;
-use codex_protocol::protocol::HookRunStatus;
-use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadSource;
@@ -891,22 +862,16 @@ fn sample_command_execution_item_with_actions(
     exit_code: Option<i32>,
     duration_ms: Option<i64>,
     command_actions: Vec<CommandAction>,
-    plugin_id: Option<&str>,
-    script_path: Option<&str>,
 ) -> ThreadItem {
     let mut item = sample_command_execution_item(status, exit_code, duration_ms);
     let ThreadItem::CommandExecution {
         command_actions: item_command_actions,
-        plugin_id: item_plugin_id,
-        script_path: item_script_path,
         ..
     } = &mut item
     else {
         unreachable!("sample command execution item should be CommandExecution");
     };
     *item_command_actions = command_actions;
-    *item_plugin_id = plugin_id.map(str::to_string);
-    *item_script_path = script_path.map(str::to_string);
     item
 }
 
@@ -1569,7 +1534,6 @@ fn app_used_dedupe_is_keyed_by_turn_and_connector() {
     let queue = AnalyticsEventsQueue {
         sender,
         app_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
-        plugin_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
     };
     let app = AppInvocation {
         connector_id: Some("calendar".to_string()),
@@ -1695,8 +1659,6 @@ fn command_execution_event_serializes_expected_shape() {
                 requested_additional_permissions: false,
                 requested_network_access: false,
             },
-            plugin_id: Some("sample@openai-curated".to_string()),
-            script_path: Some("scripts/run.py".to_string()),
             command_execution_source: CommandExecutionSource::Agent,
             exit_code: Some(0),
             command_total_action_count: 4,
@@ -1750,8 +1712,6 @@ fn command_execution_event_serializes_expected_shape() {
                 "failure_kind": null,
                 "requested_additional_permissions": false,
                 "requested_network_access": false,
-                "plugin_id": "sample@openai-curated",
-                "script_path": "scripts/run.py",
                 "command_execution_source": "agent",
                 "exit_code": 0,
                 "command_total_action_count": 4,
@@ -2521,8 +2481,6 @@ async fn item_lifecycle_notifications_publish_command_execution_event() {
                                 command: "cargo test".to_string(),
                             },
                         ],
-                        Some("sample@openai-curated"),
-                        Some("scripts/run.py"),
                     ),
                 },
             ))),
@@ -2538,11 +2496,6 @@ async fn item_lifecycle_notifications_publish_command_execution_event() {
     assert_eq!(payload[0]["event_params"]["turn_id"], "turn-1");
     assert_eq!(payload[0]["event_params"]["item_id"], "item-1");
     assert_eq!(payload[0]["event_params"]["tool_name"], "shell");
-    assert_eq!(
-        payload[0]["event_params"]["plugin_id"],
-        "sample@openai-curated"
-    );
-    assert_eq!(payload[0]["event_params"]["script_path"], "scripts/run.py");
     assert_eq!(
         payload[0]["event_params"]["command_execution_source"],
         "agent"
@@ -3488,241 +3441,6 @@ async fn subagent_tool_items_inherit_parent_connection_metadata() {
     );
 }
 
-#[test]
-fn plugin_used_event_serializes_expected_shape() {
-    let tracking = test_tracking_context("thread-3", "turn-3");
-    let event = TrackEventRequest::PluginUsed(CodexPluginUsedEventRequest {
-        event_type: "codex_plugin_used",
-        event_params: codex_plugin_used_metadata(&tracking, sample_plugin_metadata()),
-    });
-
-    let payload = serde_json::to_value(&event).expect("serialize plugin used event");
-
-    assert_eq!(
-        payload,
-        json!({
-            "event_type": "codex_plugin_used",
-            "event_params": {
-                "plugin_id": "sample@test",
-                "remote_plugin_id": null,
-                "plugin_name": "sample",
-                "marketplace_name": "test",
-                "has_skills": true,
-                "product_client_id": TEST_PRODUCT_CLIENT_ID,
-                "thread_id": "thread-3",
-                "turn_id": "turn-3",
-                "model_slug": "gpt-5"
-            }
-        })
-    );
-}
-
-#[test]
-fn plugin_management_event_serializes_expected_shape() {
-    let event = TrackEventRequest::PluginInstalled(CodexPluginEventRequest {
-        event_type: "codex_plugin_installed",
-        event_params: codex_plugin_metadata(sample_plugin_metadata()),
-    });
-
-    let payload = serde_json::to_value(&event).expect("serialize plugin installed event");
-
-    assert_eq!(
-        payload,
-        json!({
-            "event_type": "codex_plugin_installed",
-            "event_params": {
-                "plugin_id": "sample@test",
-                "remote_plugin_id": null,
-                "plugin_name": "sample",
-                "marketplace_name": "test",
-                "has_skills": true,
-                "product_client_id": originator().value
-            }
-        })
-    );
-}
-
-#[test]
-fn plugin_install_failed_event_serializes_expected_shape() {
-    let event = TrackEventRequest::PluginInstallFailed(CodexPluginInstallFailedEventRequest {
-        event_type: "codex_plugin_install_failed",
-        event_params: CodexPluginInstallFailedMetadata {
-            plugin: codex_plugin_metadata(sample_plugin_metadata()),
-            source: PluginInstallSource::Manual,
-            error_type: "store_io".to_string(),
-            sub_error_type: Some("failed_to_copy_plugin_file".to_string()),
-        },
-    });
-
-    let payload = serde_json::to_value(&event).expect("serialize plugin install failed event");
-
-    assert_eq!(
-        payload,
-        json!({
-            "event_type": "codex_plugin_install_failed",
-            "event_params": {
-                "plugin_id": "sample@test",
-                "remote_plugin_id": null,
-                "plugin_name": "sample",
-                "marketplace_name": "test",
-                "has_skills": true,
-                "product_client_id": originator().value,
-                "source": "manual",
-                "error_type": "store_io",
-                "sub_error_type": "failed_to_copy_plugin_file"
-            }
-        })
-    );
-}
-
-#[test]
-fn plugin_management_event_keeps_plugin_id_local_when_remote_id_exists() {
-    let mut plugin = sample_plugin_metadata();
-    plugin.remote_plugin_id = Some("plugins~Plugin_remote".to_string());
-    let event = TrackEventRequest::PluginInstalled(CodexPluginEventRequest {
-        event_type: "codex_plugin_installed",
-        event_params: codex_plugin_metadata(plugin),
-    });
-
-    let payload = serde_json::to_value(&event).expect("serialize plugin installed event");
-
-    assert_eq!(
-        payload,
-        json!({
-            "event_type": "codex_plugin_installed",
-            "event_params": {
-                "plugin_id": "sample@test",
-                "remote_plugin_id": "plugins~Plugin_remote",
-                "plugin_name": "sample",
-                "marketplace_name": "test",
-                "has_skills": true,
-                "product_client_id": originator().value
-            }
-        })
-    );
-}
-
-#[test]
-fn hook_run_event_serializes_expected_shape() {
-    let tracking = test_tracking_context("thread-3", "turn-3");
-    let event = TrackEventRequest::HookRun(CodexHookRunEventRequest {
-        event_type: "codex_hook_run",
-        event_params: codex_hook_run_metadata(
-            &tracking,
-            HookRunFact {
-                event_name: HookEventName::PreToolUse,
-                hook_source: HookSource::User,
-                status: HookRunStatus::Completed,
-            },
-        ),
-    });
-
-    let payload = serde_json::to_value(&event).expect("serialize hook run event");
-
-    assert_eq!(
-        payload,
-        json!({
-            "event_type": "codex_hook_run",
-            "event_params": {
-                "thread_id": "thread-3",
-                "turn_id": "turn-3",
-                "product_client_id": TEST_PRODUCT_CLIENT_ID,
-                "model_slug": "gpt-5",
-                "hook_name": "PreToolUse",
-                "hook_source": "user",
-                "status": "completed"
-            }
-        })
-    );
-}
-
-#[test]
-fn hook_run_metadata_maps_sources_and_statuses() {
-    let tracking = test_tracking_context("thread-1", "turn-1");
-
-    let system = serde_json::to_value(codex_hook_run_metadata(
-        &tracking,
-        HookRunFact {
-            event_name: HookEventName::SessionStart,
-            hook_source: HookSource::System,
-            status: HookRunStatus::Completed,
-        },
-    ))
-    .expect("serialize system hook");
-    let project = serde_json::to_value(codex_hook_run_metadata(
-        &tracking,
-        HookRunFact {
-            event_name: HookEventName::Stop,
-            hook_source: HookSource::Project,
-            status: HookRunStatus::Blocked,
-        },
-    ))
-    .expect("serialize project hook");
-    let cloud_requirements = serde_json::to_value(codex_hook_run_metadata(
-        &tracking,
-        HookRunFact {
-            event_name: HookEventName::Stop,
-            hook_source: HookSource::CloudRequirements,
-            status: HookRunStatus::Blocked,
-        },
-    ))
-    .expect("serialize cloud requirements hook");
-    let unknown = serde_json::to_value(codex_hook_run_metadata(
-        &tracking,
-        HookRunFact {
-            event_name: HookEventName::UserPromptSubmit,
-            hook_source: HookSource::Unknown,
-            status: HookRunStatus::Failed,
-        },
-    ))
-    .expect("serialize unknown hook");
-
-    assert_eq!(system["hook_source"], "system");
-    assert_eq!(system["status"], "completed");
-    assert_eq!(project["hook_source"], "project");
-    assert_eq!(project["status"], "blocked");
-    assert_eq!(cloud_requirements["hook_source"], "cloud_requirements");
-    assert_eq!(cloud_requirements["status"], "blocked");
-    assert_eq!(unknown["hook_source"], "unknown");
-    assert_eq!(unknown["status"], "failed");
-}
-
-#[test]
-fn hook_run_metadata_maps_stopped_status() {
-    let tracking = test_tracking_context("thread-1", "turn-1");
-
-    let stopped = serde_json::to_value(codex_hook_run_metadata(
-        &tracking,
-        HookRunFact {
-            event_name: HookEventName::Stop,
-            hook_source: HookSource::User,
-            status: HookRunStatus::Stopped,
-        },
-    ))
-    .expect("serialize stopped hook");
-
-    assert_eq!(stopped["hook_source"], "user");
-    assert_eq!(stopped["status"], "stopped");
-}
-
-#[test]
-fn plugin_used_dedupe_is_keyed_by_turn_and_plugin() {
-    let (sender, _receiver) = mpsc::channel(1);
-    let queue = AnalyticsEventsQueue {
-        sender,
-        app_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
-        plugin_used_emitted_keys: Arc::new(Mutex::new(HashSet::new())),
-    };
-    let plugin = sample_plugin_metadata();
-
-    let turn_1 = test_tracking_context("thread-1", "turn-1");
-    let turn_2 = test_tracking_context("thread-1", "turn-2");
-
-    assert_eq!(queue.should_enqueue_plugin_used(&turn_1, &plugin), true);
-    assert_eq!(queue.should_enqueue_plugin_used(&turn_1, &plugin), false);
-    assert_eq!(queue.should_enqueue_plugin_used(&turn_2, &plugin), true);
-}
-
 #[tokio::test]
 async fn reducer_ingests_skill_invoked_fact() {
     let mut reducer = AnalyticsReducer::default();
@@ -3744,8 +3462,6 @@ async fn reducer_ingests_skill_invoked_fact() {
                     skill_name: "doc".to_string(),
                     skill_scope: codex_protocol::protocol::SkillScope::User,
                     skill_path,
-                    plugin_id: None,
-                    remote_plugin_id: None,
                     invocation_type: InvocationType::Explicit,
                 }],
             })),
@@ -3763,431 +3479,11 @@ async fn reducer_ingests_skill_invoked_fact() {
             "event_params": {
                 "product_client_id": TEST_PRODUCT_CLIENT_ID,
                 "skill_scope": "user",
-                "plugin_id": null,
-                "remote_plugin_id": null,
                 "repo_url": null,
                 "thread_id": "thread-1",
                 "turn_id": "turn-1",
                 "invoke_type": "explicit",
                 "model_slug": "gpt-5"
-            }
-        }])
-    );
-}
-
-#[tokio::test]
-async fn reducer_includes_plugin_ids_for_plugin_skill_invocations() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-    let tracking = test_tracking_context("thread-1", "turn-1");
-    let skill_path =
-        PathBuf::from("/Users/abc/.codex/plugins/cache/test/sample/skills/doc/SKILL.md");
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::SkillInvoked(SkillInvokedInput {
-                tracking,
-                invocations: vec![SkillInvocation {
-                    skill_name: "sample:doc".to_string(),
-                    skill_scope: codex_protocol::protocol::SkillScope::User,
-                    skill_path,
-                    plugin_id: Some("sample@test".to_string()),
-                    remote_plugin_id: Some("plugins~Plugin_sample".to_string()),
-                    invocation_type: InvocationType::Explicit,
-                }],
-            })),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(
-        (
-            &payload[0]["event_params"]["plugin_id"],
-            &payload[0]["event_params"]["remote_plugin_id"],
-        ),
-        (&json!("sample@test"), &json!("plugins~Plugin_sample"))
-    );
-}
-
-#[tokio::test]
-async fn reducer_ingests_hook_run_fact() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::HookRun(HookRunInput {
-                tracking: test_tracking_context("thread-1", "turn-1"),
-                hook: HookRunFact {
-                    event_name: HookEventName::PostToolUse,
-                    hook_source: HookSource::Unknown,
-                    status: HookRunStatus::Failed,
-                },
-            })),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(payload.as_array().expect("events array").len(), 1);
-    assert_eq!(payload[0]["event_type"], "codex_hook_run");
-    assert_eq!(payload[0]["event_params"]["hook_name"], "PostToolUse");
-    assert_eq!(payload[0]["event_params"]["hook_source"], "unknown");
-    assert_eq!(payload[0]["event_params"]["status"], "failed");
-}
-
-#[tokio::test]
-async fn reducer_ingests_app_and_plugin_facts() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-    let tracking = test_tracking_context("thread-1", "turn-1");
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::AppMentioned(AppMentionedInput {
-                tracking: tracking.clone(),
-                mentions: vec![AppInvocation {
-                    connector_id: Some("calendar".to_string()),
-                    app_name: Some("Calendar".to_string()),
-                    invocation_type: Some(InvocationType::Explicit),
-                }],
-            })),
-            &mut events,
-        )
-        .await;
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::AppUsed(AppUsedInput {
-                tracking: tracking.clone(),
-                app: AppInvocation {
-                    connector_id: Some("drive".to_string()),
-                    app_name: Some("Drive".to_string()),
-                    invocation_type: Some(InvocationType::Implicit),
-                },
-            })),
-            &mut events,
-        )
-        .await;
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::PluginUsed(PluginUsedInput {
-                tracking,
-                plugin: sample_plugin_metadata(),
-            })),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(payload.as_array().expect("events array").len(), 3);
-    assert_eq!(payload[0]["event_type"], "codex_app_mentioned");
-    assert_eq!(payload[1]["event_type"], "codex_app_used");
-    assert_eq!(payload[2]["event_type"], "codex_plugin_used");
-    assert_eq!(
-        payload[0]["event_params"]["product_client_id"],
-        TEST_PRODUCT_CLIENT_ID
-    );
-    assert_eq!(
-        payload[1]["event_params"]["product_client_id"],
-        TEST_PRODUCT_CLIENT_ID
-    );
-    assert_eq!(
-        payload[2]["event_params"]["product_client_id"],
-        TEST_PRODUCT_CLIENT_ID
-    );
-}
-
-#[tokio::test]
-async fn reducer_ingests_plugin_state_changed_fact() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::PluginStateChanged(
-                PluginStateChangedInput {
-                    plugin: sample_plugin_metadata(),
-                    state: PluginState::Disabled,
-                },
-            )),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(
-        payload,
-        json!([{
-            "event_type": "codex_plugin_disabled",
-            "event_params": {
-                "plugin_id": "sample@test",
-                "remote_plugin_id": null,
-                "plugin_name": "sample",
-                "marketplace_name": "test",
-                "has_skills": true,
-                "product_client_id": originator().value
-            }
-        }])
-    );
-}
-
-#[tokio::test]
-async fn reducer_ingests_plugin_install_requested_fact() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-    let tracking = test_tracking_context("thread-1", "turn-1");
-    let request = PluginInstallRequested {
-        suggestion_id: "request_plugin_install_call-1".to_string(),
-        plugins: vec![
-            PluginInstallRequestedPlugin {
-                plugin_id: "calendar@openai-curated-remote".to_string(),
-                remote_plugin_id: Some("plugin_calendar".to_string()),
-                plugin_name: "Calendar".to_string(),
-                connector_ids: vec!["connector_calendar".to_string()],
-            },
-            PluginInstallRequestedPlugin {
-                plugin_id: "github@openai-curated-remote".to_string(),
-                remote_plugin_id: None,
-                plugin_name: "GitHub".to_string(),
-                connector_ids: vec!["connector_github".to_string()],
-            },
-        ],
-        source: PluginInstallRequestSource::EndpointRecommendation,
-    };
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::PluginInstallRequested(
-                PluginInstallRequestedInput { tracking, request },
-            )),
-            &mut events,
-        )
-        .await;
-
-    assert_eq!(
-        serde_json::to_value(&events).expect("serialize events"),
-        json!([{
-            "event_type": "codex_plugin_install_requested",
-            "event_params": {
-                "suggestion_id": "request_plugin_install_call-1",
-                "plugins": [{
-                    "plugin_id": "calendar@openai-curated-remote",
-                    "remote_plugin_id": "plugin_calendar",
-                    "plugin_name": "Calendar",
-                    "connector_ids": ["connector_calendar"],
-                }, {
-                    "plugin_id": "github@openai-curated-remote",
-                    "remote_plugin_id": null,
-                    "plugin_name": "GitHub",
-                    "connector_ids": ["connector_github"],
-                }],
-                "source": "endpoint_recommendation",
-                "thread_id": "thread-1",
-                "turn_id": "turn-1",
-                "model_slug": "gpt-5",
-                "product_client_id": originator().value,
-            }
-        }])
-    );
-}
-
-#[tokio::test]
-async fn reducer_ingests_plugin_install_failed_fact() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::PluginInstallFailed(
-                PluginInstallFailedInput {
-                    plugin: sample_plugin_metadata(),
-                    source: PluginInstallSource::ExternalAgentMigration,
-                    error_type: "invalid_plugin".to_string(),
-                    sub_error_type: Some("failed_to_copy_plugin_file".to_string()),
-                },
-            )),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(
-        payload,
-        json!([{
-            "event_type": "codex_plugin_install_failed",
-            "event_params": {
-                "plugin_id": "sample@test",
-                "remote_plugin_id": null,
-                "plugin_name": "sample",
-                "marketplace_name": "test",
-                "has_skills": true,
-                "product_client_id": originator().value,
-                "source": "external_agent_migration",
-                "error_type": "invalid_plugin",
-                "sub_error_type": "failed_to_copy_plugin_file"
-            }
-        }])
-    );
-}
-
-#[tokio::test]
-async fn reducer_ingests_plugin_install_failed_fact_without_detail() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-    let plugin = PluginTelemetryMetadata {
-        plugin_id: None,
-        remote_plugin_id: Some("plugins~Plugin_00000000000000000000000000000000".to_string()),
-        capability_summary: None,
-    };
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::PluginInstallFailed(
-                PluginInstallFailedInput {
-                    plugin,
-                    source: PluginInstallSource::Manual,
-                    error_type: "remote_catalog_unexpected_status".to_string(),
-                    sub_error_type: None,
-                },
-            )),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(
-        payload,
-        json!([{
-            "event_type": "codex_plugin_install_failed",
-            "event_params": {
-                "plugin_id": null,
-                "remote_plugin_id": "plugins~Plugin_00000000000000000000000000000000",
-                "plugin_name": null,
-                "marketplace_name": null,
-                "has_skills": null,
-                "product_client_id": originator().value,
-                "source": "manual",
-                "error_type": "remote_catalog_unexpected_status",
-                "sub_error_type": null
-            }
-        }])
-    );
-}
-
-#[tokio::test]
-async fn reducer_ingests_external_agent_config_import_completed_fact() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::ExternalAgentConfigImportCompleted(
-                ExternalAgentConfigImportCompletedInput {
-                    import_id: "import-1".to_string(),
-                    source: "cli_runtime".to_string(),
-                    provider_id: "test-provider-42".to_string(),
-                    item_type: "PLUGINS".to_string(),
-                    success_count: 2,
-                    failed_count: 1,
-                },
-            )),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(
-        payload,
-        json!([{
-            "event_type": "codex_onboarding_external_agent_import_complete",
-            "event_params": {
-                "import_id": "import-1",
-                "source": "cli_runtime",
-                "provider_id": "test-provider-42",
-                "type": "PLUGINS",
-                "success_count": 2,
-                "failed_count": 1,
-                "product_client_id": originator().value,
-            }
-        }])
-    );
-}
-
-#[test]
-fn external_agent_config_import_failure_event_serializes_expected_shape() {
-    let event = TrackEventRequest::ExternalAgentConfigImportFailure(
-        CodexOnboardingExternalAgentImportFailureEventRequest {
-            event_type: "codex_onboarding_external_agent_import_failure",
-            event_params: CodexOnboardingExternalAgentImportFailureMetadata {
-                import_id: "import-1".to_string(),
-                source: "cli_runtime".to_string(),
-                provider_id: "test-provider-42".to_string(),
-                item_type: "PLUGINS".to_string(),
-                failure_stage: "plugin_import".to_string(),
-                error_type: "plugin_import".to_string(),
-                sub_error_type: Some("failed_to_copy_plugin_file".to_string()),
-                product_client_id: Some(originator().value),
-            },
-        },
-    );
-
-    let payload = serde_json::to_value(&event).expect("serialize import failure event");
-
-    assert_eq!(
-        payload,
-        json!({
-            "event_type": "codex_onboarding_external_agent_import_failure",
-            "event_params": {
-                "import_id": "import-1",
-                "source": "cli_runtime",
-                "provider_id": "test-provider-42",
-                "type": "PLUGINS",
-                "failure_stage": "plugin_import",
-                "error_type": "plugin_import",
-                "sub_error_type": "failed_to_copy_plugin_file",
-                "product_client_id": originator().value,
-            }
-        })
-    );
-}
-
-#[tokio::test]
-async fn reducer_ingests_external_agent_config_import_failure_fact() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-
-    reducer
-        .ingest(
-            AnalyticsFact::Custom(CustomAnalyticsFact::ExternalAgentConfigImportFailure(
-                ExternalAgentConfigImportFailureInput {
-                    import_id: "import-1".to_string(),
-                    source: "cli_runtime".to_string(),
-                    provider_id: "test-provider-42".to_string(),
-                    item_type: "PLUGINS".to_string(),
-                    failure_stage: "plugin_import".to_string(),
-                    error_type: "plugin_import".to_string(),
-                    sub_error_type: Some("failed_to_copy_plugin_file".to_string()),
-                },
-            )),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(
-        payload,
-        json!([{
-            "event_type": "codex_onboarding_external_agent_import_failure",
-            "event_params": {
-                "import_id": "import-1",
-                "source": "cli_runtime",
-                "provider_id": "test-provider-42",
-                "type": "PLUGINS",
-                "failure_stage": "plugin_import",
-                "error_type": "plugin_import",
-                "sub_error_type": "failed_to_copy_plugin_file",
-                "product_client_id": originator().value,
             }
         }])
     );
@@ -5306,18 +4602,4 @@ async fn turn_completed_without_started_notification_emits_null_started_at() {
         json!(null)
     );
     assert_eq!(payload["event_params"]["total_tokens"], json!(null));
-}
-
-fn sample_plugin_metadata() -> PluginTelemetryMetadata {
-    PluginTelemetryMetadata {
-        plugin_id: Some(PluginId::parse("sample@test").expect("valid plugin id")),
-        remote_plugin_id: None,
-        capability_summary: Some(PluginCapabilitySummary {
-            config_name: "sample@test".to_string(),
-            display_name: "sample".to_string(),
-            plugin_namespace: None,
-            description: None,
-            has_skills: true,
-        }),
-    }
 }

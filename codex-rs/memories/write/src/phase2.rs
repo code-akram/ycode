@@ -325,7 +325,6 @@ mod agent {
         // Consolidation runs as an internal worker and must not recursively delegate.
         let _ = agent_config.features.disable(Feature::Collab);
         let _ = agent_config.features.disable(Feature::MemoryTool);
-        let _ = agent_config.features.disable(Feature::Plugins);
 
         // Preserve the parent's explicit choice to skip Codex-managed sandboxing.
         match parent_permission_profile {

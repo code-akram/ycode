@@ -26,20 +26,16 @@ impl<'a> ToolMentions<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolMentionKind {
-    Plugin,
     Skill,
     Other,
 }
 
-const PLUGIN_PATH_PREFIX: &str = "plugin://";
 const SKILL_PATH_PREFIX: &str = "skill://";
 const SKILL_FILENAME: &str = "SKILL.md";
-const TOOL_MENTION_SIGIL: char = '$';
+pub const TOOL_MENTION_SIGIL: char = '$';
 
 pub fn tool_kind_for_path(path: &str) -> ToolMentionKind {
-    if path.starts_with(PLUGIN_PATH_PREFIX) {
-        ToolMentionKind::Plugin
-    } else if path.starts_with(SKILL_PATH_PREFIX) || is_skill_filename(path) {
+    if path.starts_with(SKILL_PATH_PREFIX) || is_skill_filename(path) {
         ToolMentionKind::Skill
     } else {
         ToolMentionKind::Other
@@ -49,11 +45,6 @@ pub fn tool_kind_for_path(path: &str) -> ToolMentionKind {
 fn is_skill_filename(path: &str) -> bool {
     let file_name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     file_name.eq_ignore_ascii_case(SKILL_FILENAME)
-}
-
-pub fn plugin_config_name_from_path(path: &str) -> Option<&str> {
-    path.strip_prefix(PLUGIN_PATH_PREFIX)
-        .filter(|value| !value.is_empty())
 }
 
 pub fn normalize_skill_path(path: &str) -> &str {
@@ -83,10 +74,12 @@ pub fn extract_tool_mentions_with_sigil(text: &str, sigil: char) -> ToolMentions
                 parse_linked_tool_mention(text, text_bytes, index, sigil)
         {
             if !is_common_env_var(name) {
-                if tool_kind_for_path(path) != ToolMentionKind::Plugin {
+                if tool_kind_for_path(path) == ToolMentionKind::Skill {
                     mentioned_names.insert(name);
                 }
-                mentioned_paths.insert(path);
+                if tool_kind_for_path(path) == ToolMentionKind::Skill {
+                    mentioned_paths.insert(path);
+                }
             }
             index = end_index;
             continue;

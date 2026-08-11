@@ -16,10 +16,6 @@ use crate::compact_remote::should_keep_compacted_history_item;
 use crate::compact_remote_history::HistoryItemGroup;
 use crate::compact_remote_history::history_item_groups;
 use crate::context_manager::estimate_item_token_count;
-use crate::hook_runtime::PostCompactHookOutcome;
-use crate::hook_runtime::PreCompactHookOutcome;
-use crate::hook_runtime::run_post_compact_hooks;
-use crate::hook_runtime::run_pre_compact_hooks;
 use crate::responses_metadata::CodexResponsesMetadata;
 use crate::responses_metadata::CompactionTurnMetadata;
 use crate::responses_retry::ResponsesStreamRequest;
@@ -148,22 +144,6 @@ async fn run_remote_compact_task_inner(
         phase,
     )
     .await;
-    let pre_compact_outcome = run_pre_compact_hooks(sess, turn_context, trigger).await;
-    match pre_compact_outcome {
-        PreCompactHookOutcome::Continue => {}
-        PreCompactHookOutcome::Stopped => {
-            let error = CodexErr::TurnAborted;
-            attempt
-                .track(
-                    sess.as_ref(),
-                    codex_analytics::CompactionStatus::Interrupted,
-                    Some(&error),
-                    analytics_details,
-                )
-                .await;
-            return Err(error);
-        }
-    }
     let result = run_remote_compact_task_inner_impl(
         sess,
         step_context,
@@ -176,15 +156,6 @@ async fn run_remote_compact_task_inner(
     .await;
     let status = compaction_status_from_result(&result);
     let codex_error = result.as_ref().err();
-    if result.is_ok() {
-        let post_compact_outcome = run_post_compact_hooks(sess, turn_context, trigger).await;
-        if let PostCompactHookOutcome::Stopped = post_compact_outcome {
-            attempt
-                .track(sess.as_ref(), status, codex_error, analytics_details)
-                .await;
-            return Err(CodexErr::TurnAborted);
-        }
-    }
     attempt
         .track(sess.as_ref(), status, codex_error, analytics_details)
         .await;

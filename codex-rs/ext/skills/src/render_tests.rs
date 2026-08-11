@@ -574,40 +574,6 @@ fn mixed_catalog_prefers_executor_inclusion_over_total_aliased_inclusion() {
 }
 
 #[test]
-fn singleton_plugin_versions_share_the_marketplace_alias_root() {
-    let github_root = "/Users/test/.codex/plugins/cache/openai-curated/github/hash123/skills";
-    let slack_root = "/Users/test/.codex/plugins/cache/openai-curated/slack/hash456/skills";
-    let entries = [
-        entry("github", "GitHub skill.", /*short_description*/ None)
-            .with_display_path(format!("{github_root}/github/SKILL.md"))
-            .with_display_path_root(github_root),
-        entry("slack", "Slack skill.", /*short_description*/ None)
-            .with_display_path(format!("{slack_root}/slack/SKILL.md"))
-            .with_display_path_root(slack_root),
-    ];
-    let visible_entries = entries.iter().collect::<Vec<_>>();
-
-    let plan = build_alias_plan(
-        &visible_entries,
-        SkillMetadataBudget::Characters(usize::MAX),
-    )
-    .expect("alias plan should build");
-
-    assert_eq!(
-        plan.skill_root_lines,
-        vec!["- `r0` = `/Users/test/.codex/plugins/cache/openai-curated`".to_string()]
-    );
-    assert_eq!(
-        render_skill_path_with_aliases(&entries[0], &plan),
-        "r0/github/hash123/skills/github/SKILL.md"
-    );
-    assert_eq!(
-        render_skill_path_with_aliases(&entries[1], &plan),
-        "r0/slack/hash456/skills/slack/SKILL.md"
-    );
-}
-
-#[test]
 fn omission_notice_follows_render_policy_and_is_charged_to_catalog_budget() {
     let catalog = SkillCatalog {
         entries: (0..20)

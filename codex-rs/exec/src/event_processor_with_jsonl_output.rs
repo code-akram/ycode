@@ -427,9 +427,6 @@ impl EventProcessorWithJsonOutput {
                 }));
                 CodexStatus::Running
             }
-            ServerNotification::HookStarted(_) | ServerNotification::HookCompleted(_) => {
-                CodexStatus::Running
-            }
             ServerNotification::ItemStarted(notification) => {
                 if let Some(item) = self.map_started_item(notification.item) {
                     events.push(ThreadEvent::ItemStarted(ItemStartedEvent { item }));

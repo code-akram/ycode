@@ -21,7 +21,6 @@ use super::requirements_exec_policy::RequirementsExecPolicyToml;
 use crate::Constrained;
 use crate::ConstraintError;
 use crate::ManagedAuthPolicy;
-use crate::ManagedHooksRequirementsToml;
 use crate::config_toml::ConfigToml;
 use crate::permissions_toml::PermissionProfileToml;
 use crate::types::AppToolApproval;
@@ -162,13 +161,10 @@ pub struct ConfigRequirements {
     pub windows_sandbox_mode: ConstrainedWithSource<Option<WindowsSandboxModeToml>>,
     pub windows_sandbox_private_desktop: Option<Sourced<bool>>,
     pub web_search_mode: ConstrainedWithSource<WebSearchMode>,
-    pub allow_managed_hooks_only: Option<Sourced<bool>>,
     pub allow_appshots: Option<Sourced<bool>>,
     pub allow_remote_control: Option<Sourced<bool>>,
     pub computer_use: Option<Sourced<ComputerUseRequirementsToml>>,
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
-    pub managed_hooks: Option<ConstrainedWithSource<ManagedHooksRequirementsToml>>,
-    pub marketplaces: Option<Sourced<MarketplaceRequirementsToml>>,
     pub exec_policy: Option<Sourced<RequirementsExecPolicy>>,
     pub enforce_residency: ConstrainedWithSource<Option<ResidencyRequirement>>,
     /// Managed network constraints derived from requirements.
@@ -211,13 +207,10 @@ impl Default for ConfigRequirements {
                 Constrained::allow_any(WebSearchMode::Cached),
                 /*source*/ None,
             ),
-            allow_managed_hooks_only: None,
             allow_appshots: None,
             allow_remote_control: None,
             computer_use: None,
             feature_requirements: None,
-            managed_hooks: None,
-            marketplaces: None,
             exec_policy: None,
             enforce_residency: ConstrainedWithSource::new(
                 Constrained::allow_any(/*initial_value*/ None),
@@ -252,41 +245,6 @@ impl ConfigRequirements {
     pub fn exec_policy_source(&self) -> Option<&RequirementSource> {
         self.exec_policy.as_ref().map(|policy| &policy.source)
     }
-}
-
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct MarketplaceRequirementsToml {
-    pub restrict_to_allowed_sources: Option<bool>,
-    #[serde(default)]
-    pub allowed_sources: BTreeMap<String, MarketplaceAllowedSourceToml>,
-}
-
-impl MarketplaceRequirementsToml {
-    pub fn is_empty(&self) -> bool {
-        self.restrict_to_allowed_sources.is_none() && self.allowed_sources.is_empty()
-    }
-}
-
-/// Raw marketplace source rule whose active fields are interpreted after
-/// requirements composition.
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct MarketplaceAllowedSourceToml {
-    pub source: Option<MarketplaceAllowedSourceKind>,
-    pub url: Option<String>,
-    #[serde(rename = "ref")]
-    pub ref_name: Option<String>,
-    pub host_pattern: Option<String>,
-    pub path: Option<PathBuf>,
-}
-
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum MarketplaceAllowedSourceKind {
-    Git,
-    HostPattern,
-    Local,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
@@ -896,7 +854,6 @@ pub struct ConfigRequirementsToml {
     pub default_permissions: Option<String>,
     pub remote_sandbox_config: Option<Vec<RemoteSandboxConfigToml>>,
     pub allowed_web_search_modes: Option<Vec<WebSearchModeRequirement>>,
-    pub allow_managed_hooks_only: Option<bool>,
     pub allow_appshots: Option<bool>,
     pub allow_remote_control: Option<bool>,
     pub computer_use: Option<ComputerUseRequirementsToml>,
@@ -904,8 +861,6 @@ pub struct ConfigRequirementsToml {
     pub windows: Option<WindowsRequirementsToml>,
     #[serde(rename = "features", alias = "feature_requirements")]
     pub feature_requirements: Option<FeatureRequirementsToml>,
-    pub hooks: Option<ManagedHooksRequirementsToml>,
-    pub marketplaces: Option<MarketplaceRequirementsToml>,
     pub apps: Option<AppsRequirementsToml>,
     pub rules: Option<RequirementsExecPolicyToml>,
     pub enforce_residency: Option<ResidencyRequirement>,
@@ -986,15 +941,12 @@ pub struct ConfigRequirementsWithSources {
     pub allowed_permission_profiles: Option<Sourced<BTreeMap<String, bool>>>,
     pub default_permissions: Option<Sourced<String>>,
     pub allowed_web_search_modes: Option<Sourced<Vec<WebSearchModeRequirement>>>,
-    pub allow_managed_hooks_only: Option<Sourced<bool>>,
     pub allow_appshots: Option<Sourced<bool>>,
     pub allow_remote_control: Option<Sourced<bool>>,
     pub computer_use: Option<Sourced<ComputerUseRequirementsToml>>,
     pub browser_use: Option<Sourced<BrowserUseRequirementsToml>>,
     pub windows: Option<Sourced<WindowsRequirementsToml>>,
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
-    pub hooks: Option<Sourced<ManagedHooksRequirementsToml>>,
-    pub marketplaces: Option<Sourced<MarketplaceRequirementsToml>>,
     pub apps: Option<Sourced<AppsRequirementsToml>>,
     pub rules: Option<Sourced<RequirementsExecPolicyToml>>,
     pub enforce_residency: Option<Sourced<ResidencyRequirement>>,
@@ -1038,15 +990,12 @@ impl ConfigRequirementsWithSources {
             default_permissions: _,
             remote_sandbox_config: _,
             allowed_web_search_modes: _,
-            allow_managed_hooks_only: _,
             allow_appshots: _,
             allow_remote_control: _,
             computer_use: _,
             browser_use: _,
             windows: _,
             feature_requirements: _,
-            hooks: _,
-            marketplaces: _,
             apps: _,
             rules: _,
             enforce_residency: _,
@@ -1083,15 +1032,12 @@ impl ConfigRequirementsWithSources {
                 allowed_permission_profiles,
                 default_permissions,
                 allowed_web_search_modes,
-                allow_managed_hooks_only,
                 allow_appshots,
                 allow_remote_control,
                 computer_use,
                 browser_use,
                 windows,
                 feature_requirements,
-                hooks,
-                marketplaces,
                 rules,
                 enforce_residency,
                 network,
@@ -1126,15 +1072,12 @@ impl ConfigRequirementsWithSources {
             allowed_permission_profiles,
             default_permissions,
             allowed_web_search_modes,
-            allow_managed_hooks_only,
             allow_appshots,
             allow_remote_control,
             computer_use,
             browser_use,
             windows,
             feature_requirements,
-            hooks,
-            marketplaces,
             apps,
             rules,
             enforce_residency,
@@ -1159,15 +1102,12 @@ impl ConfigRequirementsWithSources {
             default_permissions: default_permissions.map(|sourced| sourced.value),
             remote_sandbox_config: None,
             allowed_web_search_modes: allowed_web_search_modes.map(|sourced| sourced.value),
-            allow_managed_hooks_only: allow_managed_hooks_only.map(|sourced| sourced.value),
             allow_appshots: allow_appshots.map(|sourced| sourced.value),
             allow_remote_control: allow_remote_control.map(|sourced| sourced.value),
             computer_use: computer_use.map(|sourced| sourced.value),
             browser_use: browser_use.map(|sourced| sourced.value),
             windows: windows.map(|sourced| sourced.value),
             feature_requirements: feature_requirements.map(|sourced| sourced.value),
-            hooks: hooks.map(|sourced| sourced.value),
-            marketplaces: marketplaces.map(|sourced| sourced.value),
             apps: apps.map(|sourced| sourced.value),
             rules: rules.map(|sourced| sourced.value),
             enforce_residency: enforce_residency.map(|sourced| sourced.value),
@@ -1261,7 +1201,6 @@ impl ConfigRequirementsToml {
             && self.default_permissions.is_none()
             && self.remote_sandbox_config.is_none()
             && self.allowed_web_search_modes.is_none()
-            && self.allow_managed_hooks_only.is_none()
             && self.allow_appshots.is_none()
             && self.allow_remote_control.is_none()
             && self
@@ -1280,14 +1219,6 @@ impl ConfigRequirementsToml {
                 .feature_requirements
                 .as_ref()
                 .is_none_or(FeatureRequirementsToml::is_empty)
-            && self
-                .hooks
-                .as_ref()
-                .is_none_or(ManagedHooksRequirementsToml::is_empty)
-            && self
-                .marketplaces
-                .as_ref()
-                .is_none_or(MarketplaceRequirementsToml::is_empty)
             && self
                 .apps
                 .as_ref()
@@ -1416,15 +1347,12 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             allowed_permission_profiles: _,
             default_permissions: _,
             allowed_web_search_modes,
-            allow_managed_hooks_only,
             allow_appshots,
             allow_remote_control,
             computer_use,
             browser_use: _,
             windows,
             feature_requirements,
-            hooks,
-            marketplaces,
             apps: _apps,
             rules,
             enforce_residency,
@@ -1646,35 +1574,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
         };
         let feature_requirements =
             feature_requirements.filter(|requirements| !requirements.value.is_empty());
-        let managed_hooks = hooks
-            .filter(|managed_hooks| managed_hooks.value.handler_count() > 0)
-            .map(|sourced_hooks| {
-                let Sourced {
-                    value,
-                    source: requirement_source,
-                } = sourced_hooks;
-                let allowed = value;
-                let allowed_for_error = format!("{allowed:?}");
-                let requirement_source_for_error = requirement_source.clone();
-                let constrained = Constrained::new(allowed.clone(), move |candidate| {
-                    if candidate == &allowed {
-                        Ok(())
-                    } else {
-                        Err(ConstraintError::InvalidValue {
-                            field_name: "hooks",
-                            candidate: format!("{candidate:?}"),
-                            allowed: allowed_for_error.clone(),
-                            requirement_source: requirement_source_for_error.clone(),
-                        })
-                    }
-                })?;
-                Ok(ConstrainedWithSource::new(
-                    constrained,
-                    Some(requirement_source),
-                ))
-            })
-            .transpose()?;
-
         let enforce_residency = match enforce_residency {
             Some(Sourced {
                 value: residency,
@@ -1725,13 +1624,10 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             windows_sandbox_mode,
             windows_sandbox_private_desktop,
             web_search_mode,
-            allow_managed_hooks_only,
             allow_appshots,
             allow_remote_control,
             computer_use,
             feature_requirements,
-            managed_hooks,
-            marketplaces,
             exec_policy,
             enforce_residency,
             network,
@@ -1877,15 +1773,12 @@ mod tests {
             default_permissions,
             remote_sandbox_config: _,
             allowed_web_search_modes,
-            allow_managed_hooks_only,
             allow_appshots,
             allow_remote_control,
             computer_use,
             browser_use,
             windows,
             feature_requirements,
-            hooks,
-            marketplaces,
             apps,
             rules,
             enforce_residency,
@@ -1920,8 +1813,6 @@ mod tests {
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allowed_web_search_modes: allowed_web_search_modes
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
-            allow_managed_hooks_only: allow_managed_hooks_only
-                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allow_appshots: allow_appshots
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allow_remote_control: allow_remote_control
@@ -1931,8 +1822,6 @@ mod tests {
             windows: windows.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             feature_requirements: feature_requirements
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
-            hooks: hooks.map(|value| Sourced::new(value, RequirementSource::Unknown)),
-            marketplaces: marketplaces.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             apps: apps.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             rules: rules.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             enforce_residency: enforce_residency
@@ -1943,32 +1832,6 @@ mod tests {
             guardian_policy_config: guardian_policy_config
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
         }
-    }
-
-    #[test]
-    fn deserialize_allow_managed_hooks_only() -> Result<()> {
-        let requirements: ConfigRequirementsToml = from_str(
-            r#"
-                allow_managed_hooks_only = true
-            "#,
-        )?;
-
-        assert_eq!(requirements.allow_managed_hooks_only, Some(true));
-        assert!(!requirements.is_empty());
-        Ok(())
-    }
-
-    #[test]
-    fn allow_managed_hooks_only_false_is_still_configured() -> Result<()> {
-        let requirements: ConfigRequirementsToml = from_str(
-            r#"
-                allow_managed_hooks_only = false
-            "#,
-        )?;
-
-        assert_eq!(requirements.allow_managed_hooks_only, Some(false));
-        assert!(!requirements.is_empty());
-        Ok(())
     }
 
     #[test]
@@ -2189,8 +2052,6 @@ mod tests {
             browser_use: None,
             windows: Some(windows.clone()),
             feature_requirements: Some(feature_requirements.clone()),
-            hooks: None,
-            marketplaces: None,
             apps: None,
             rules: None,
             enforce_residency: Some(enforce_residency),
@@ -2256,8 +2117,6 @@ mod tests {
                     feature_requirements,
                     enforce_source.clone(),
                 )),
-                hooks: None,
-                marketplaces: None,
                 apps: None,
                 rules: None,
                 enforce_residency: Some(Sourced::new(enforce_residency, enforce_source)),
@@ -2303,8 +2162,6 @@ mod tests {
                 browser_use: None,
                 windows: None,
                 feature_requirements: None,
-                hooks: None,
-                marketplaces: None,
                 apps: None,
                 rules: None,
                 enforce_residency: None,
@@ -2359,8 +2216,6 @@ mod tests {
                 browser_use: None,
                 windows: None,
                 feature_requirements: None,
-                hooks: None,
-                marketplaces: None,
                 apps: None,
                 rules: None,
                 enforce_residency: None,
@@ -3462,124 +3317,6 @@ allowed_approvals_reviewers = ["user"]
             ))
         );
 
-        Ok(())
-    }
-
-    #[test]
-    fn deserialize_managed_hooks_requirements() -> Result<()> {
-        let toml_str = r#"
-managed_dir = "/enterprise/hooks"
-windows_managed_dir = 'C:\enterprise\hooks'
-
-[[PreToolUse]]
-matcher = "^Bash$"
-
-[[PreToolUse.hooks]]
-type = "command"
-command = "python3 /enterprise/hooks/pre.py"
-timeout = 10
-statusMessage = "checking"
-        "#;
-        let hooks: ManagedHooksRequirementsToml = from_str(toml_str)?;
-
-        assert_eq!(
-            hooks.managed_dir.as_deref(),
-            Some(std::path::Path::new("/enterprise/hooks"))
-        );
-        assert_eq!(hooks.handler_count(), 1);
-        assert_eq!(hooks.hooks.pre_tool_use.len(), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn merge_unset_fields_does_not_overwrite_existing_hooks() -> Result<()> {
-        let mut target = ConfigRequirementsWithSources::default();
-        target.merge_unset_fields(
-            RequirementSource::LegacyManagedConfigTomlFromMdm,
-            from_str::<ConfigRequirementsToml>(
-                r#"
-[hooks]
-managed_dir = "/cloud/hooks"
-
-[[hooks.PreToolUse]]
-matcher = "^Bash$"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "python3 /cloud/hooks/pre.py"
-                "#,
-            )?,
-        );
-        target.merge_unset_fields(
-            RequirementSource::SystemRequirementsToml {
-                file: system_requirements_toml_file_for_test()?,
-            },
-            from_str::<ConfigRequirementsToml>(
-                r#"
-[hooks]
-managed_dir = "/system/hooks"
-
-[[hooks.PreToolUse]]
-matcher = "^Bash$"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "python3 /system/hooks/pre.py"
-                "#,
-            )?,
-        );
-
-        assert_eq!(
-            target
-                .hooks
-                .as_ref()
-                .and_then(|hooks| hooks.value.managed_dir.as_ref())
-                .map(std::path::PathBuf::as_path),
-            Some(std::path::Path::new("/cloud/hooks"))
-        );
-        assert_eq!(
-            target.hooks.as_ref().map(|hooks| hooks.source.clone()),
-            Some(RequirementSource::LegacyManagedConfigTomlFromMdm)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn managed_hooks_constraint_rejects_drift() -> Result<()> {
-        let config: ConfigRequirementsToml = from_str(
-            r#"
-[hooks]
-managed_dir = "/enterprise/hooks"
-
-[[hooks.PreToolUse]]
-matcher = "^Bash$"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "python3 /enterprise/hooks/pre.py"
-            "#,
-        )?;
-        let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
-        let mut managed_hooks = requirements
-            .managed_hooks
-            .expect("expected managed hooks requirements");
-
-        let err = managed_hooks
-            .set(ManagedHooksRequirementsToml {
-                managed_dir: Some(std::path::PathBuf::from("/other/hooks")),
-                windows_managed_dir: None,
-                hooks: HookEventsToml::default(),
-            })
-            .expect_err("managed hooks should reject drift");
-
-        assert!(matches!(
-            err,
-            ConstraintError::InvalidValue {
-                field_name: "hooks",
-                requirement_source: RequirementSource::Unknown,
-                ..
-            }
-        ));
         Ok(())
     }
 

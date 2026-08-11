@@ -14,8 +14,6 @@ use codex_protocol::protocol::SkillScope;
 use codex_skills::system_cache_root_dir;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
-use codex_utils_plugins::PluginSkillRoot;
-use codex_utils_plugins::SkillDiscoveryMode;
 use dirs::home_dir;
 use futures::StreamExt;
 use toml::Value as TomlValue;
@@ -30,7 +28,6 @@ pub(crate) async fn resolve_skill_roots(
     repository_file_system: Option<Arc<dyn ExecutorFileSystem>>,
     config_layer_stack: &ConfigLayerStack,
     cwd: &AbsolutePathBuf,
-    plugin_skill_roots: Vec<PluginSkillRoot>,
     extra_skill_roots: Vec<AbsolutePathBuf>,
 ) -> Vec<SkillRoot> {
     let home_dir =
@@ -40,7 +37,6 @@ pub(crate) async fn resolve_skill_roots(
         config_layer_stack,
         cwd,
         home_dir.as_ref(),
-        plugin_skill_roots,
         extra_skill_roots,
     )
     .await
@@ -51,7 +47,6 @@ async fn resolve_skill_roots_with_home_dir(
     config_layer_stack: &ConfigLayerStack,
     cwd: &AbsolutePathBuf,
     home_dir: Option<&AbsolutePathBuf>,
-    plugin_skill_roots: Vec<PluginSkillRoot>,
     extra_skill_roots: Vec<AbsolutePathBuf>,
 ) -> Vec<SkillRoot> {
     let mut roots =
@@ -59,15 +54,6 @@ async fn resolve_skill_roots_with_home_dir(
             .into_iter()
             .map(host_root_to_skill_root)
             .collect::<Vec<_>>();
-    roots.extend(plugin_skill_roots.into_iter().map(|root| SkillRoot {
-        path: root.path,
-        scope: SkillScope::User,
-        file_system: Arc::clone(&LOCAL_FS),
-        plugin_identity: Some(root.plugin_identity),
-        plugin_namespace: Some(root.plugin_namespace),
-        plugin_root: Some(root.plugin_root),
-        discovery_mode: root.discovery_mode,
-    }));
     roots.extend(
         extra_skill_roots
             .into_iter()
@@ -103,7 +89,6 @@ fn roots_from_layer_stack(
                         path: config_folder.join(SKILLS_DIR_NAME),
                         scope: SkillScope::Repo,
                         file_system: Arc::clone(repository_file_system),
-                        plugin_root: None,
                     });
                 }
             }
@@ -149,7 +134,6 @@ fn local_root(path: AbsolutePathBuf, scope: SkillScope) -> HostSkillRoot {
         path,
         scope,
         file_system: Arc::clone(&LOCAL_FS),
-        plugin_root: None,
     }
 }
 
@@ -158,10 +142,6 @@ fn host_root_to_skill_root(root: HostSkillRoot) -> SkillRoot {
         path: root.path,
         scope: root.scope,
         file_system: root.file_system,
-        plugin_identity: None,
-        plugin_namespace: None,
-        plugin_root: None,
-        discovery_mode: SkillDiscoveryMode::Recursive,
     }
 }
 
@@ -197,7 +177,6 @@ async fn repo_agents_skill_roots(
                 path: agents_skills,
                 scope: SkillScope::Repo,
                 file_system: Arc::clone(&repository_file_system),
-                plugin_root: None,
             }),
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}

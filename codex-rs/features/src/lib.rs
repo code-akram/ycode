@@ -88,8 +88,6 @@ pub enum Feature {
     ShellTool,
     /// Enable the built-in local image viewer.
     ViewImage,
-    /// Enable Claude-style lifecycle hooks loaded from hooks.json files.
-    CodexHooks,
     /// Store CLI auth in the encrypted local secrets backend when keyring storage is selected.
     SecretAuthStorage,
 
@@ -139,8 +137,6 @@ pub enum Feature {
     RuntimeMetrics,
     /// Enable startup memory extraction and file-backed memory consolidation.
     MemoryTool,
-    /// Enable importing project-scoped memory from external agents.
-    ExternalAgentMemoryImport,
     /// Compress cold local thread-store rollout files.
     LocalThreadStoreCompression,
     /// Enable the Chronicle sidecar for passive screen-context memories.
@@ -165,14 +161,8 @@ pub enum Feature {
     DeferredToolWorldState,
     /// Enable discoverable tool suggestions for apps.
     ToolSuggest,
-    /// Include recommended plugins in model-visible context.
-    RecommendedPlugins,
-    /// Enable plugins.
-    Plugins,
-    /// Discover selected-root plugin and skill manifests through one high-level exec-server RPC.
+    /// Discover selected-root skill manifests through one high-level exec-server RPC.
     ExecutorCapabilityDiscovery,
-    /// Removed compatibility flag for plugin-bundled lifecycle hooks.
-    PluginHooks,
     /// Allow the in-app browser pane in desktop apps.
     ///
     /// Requirements-only gate: this should be set from requirements, not user config.
@@ -197,12 +187,6 @@ pub enum Feature {
     ///
     /// Requirements-only gate: this should be set from requirements, not user config.
     ComputerUse,
-    /// Enable the PS-backed remote plugin catalog.
-    RemotePlugin,
-    /// Enable remote plugin sharing flows.
-    PluginSharing,
-    /// Removed compatibility flag retained as a no-op.
-    ExternalMigration,
     /// Enable extension-backed image generation.
     ImageGeneration,
     /// Tell the model when a prompt image was resized and include its dimensions.
@@ -457,9 +441,6 @@ impl Features {
                     continue;
                 }
                 "image_detail_original" | "resize_all_images" | "item_ids" => {
-                    continue;
-                }
-                "plugin_hooks" => {
                     continue;
                 }
                 "skill_env_var_dependency_prompt" => {
@@ -907,12 +888,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::ExternalAgentMemoryImport,
-        key: "external_agent_memory_import",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::LocalThreadStoreCompression,
         key: "local_thread_store_compression",
         stage: Stage::UnderDevelopment,
@@ -941,12 +916,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "exec_permission_approvals",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CodexHooks,
-        key: "hooks",
-        stage: Stage::Stable,
-        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::RequestPermissionsTool,
@@ -1049,27 +1018,9 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::RecommendedPlugins,
-        key: "recommended_plugins",
-        stage: Stage::Stable,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::Plugins,
-        key: "plugins",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
         id: Feature::ExecutorCapabilityDiscovery,
         key: "executor_capability_discovery",
         stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::PluginHooks,
-        key: "plugin_hooks",
-        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {
@@ -1107,24 +1058,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "computer_use",
         stage: Stage::Stable,
         default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::RemotePlugin,
-        key: "remote_plugin",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::PluginSharing,
-        key: "plugin_sharing",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::ExternalMigration,
-        key: "external_migration",
-        stage: Stage::Removed,
-        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ImageGeneration,

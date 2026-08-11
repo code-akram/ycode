@@ -80,47 +80,6 @@ fn resolve_sandbox_permissions(
     Ok(sandbox_permissions.unwrap_or_default())
 }
 
-fn updated_hook_command(updated_input: &Value) -> Result<&str, FunctionCallError> {
-    updated_input
-        .get("command")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            FunctionCallError::RespondToModel(
-                "hook returned updatedInput without string field `command`".to_string(),
-            )
-        })
-}
-
-fn rewrite_function_arguments(
-    arguments: &str,
-    tool_name: &str,
-    rewrite: impl FnOnce(&mut Map<String, Value>),
-) -> Result<String, FunctionCallError> {
-    let mut arguments: Value = parse_arguments(arguments)?;
-    let Value::Object(arguments) = &mut arguments else {
-        return Err(FunctionCallError::RespondToModel(format!(
-            "{tool_name} arguments must be an object"
-        )));
-    };
-    rewrite(arguments);
-    serde_json::to_string(&arguments).map_err(|err| {
-        FunctionCallError::RespondToModel(format!(
-            "failed to serialize rewritten {tool_name} arguments: {err}"
-        ))
-    })
-}
-
-fn rewrite_function_string_argument(
-    arguments: &str,
-    tool_name: &str,
-    field_name: &str,
-    value: &str,
-) -> Result<String, FunctionCallError> {
-    rewrite_function_arguments(arguments, tool_name, |arguments| {
-        arguments.insert(field_name.to_string(), Value::String(value.to_string()));
-    })
-}
-
 fn parse_arguments_with_base_path<T>(
     arguments: &str,
     base_path: &AbsolutePathBuf,

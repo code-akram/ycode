@@ -10,13 +10,6 @@ pub(crate) fn skill_display_name(skill: &SkillMetadata) -> String {
         return display_name.to_string();
     }
 
-    if let Some((plugin_name, skill_name)) = skill.name.split_once(':')
-        && !plugin_name.is_empty()
-        && !skill_name.is_empty()
-    {
-        return format!("{skill_name} ({plugin_name})");
-    }
-
     skill.name.clone()
 }
 

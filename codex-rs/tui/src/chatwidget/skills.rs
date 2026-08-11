@@ -15,8 +15,8 @@ use codex_cli_protocol::SkillsListEntry;
 use codex_cli_protocol::SkillsListResponse;
 use codex_features::Feature;
 use codex_protocol::parse_command::ParsedCommand;
+use codex_skills::TOOL_MENTION_SIGIL;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_plugins::mention_syntax::TOOL_MENTION_SIGIL;
 
 impl ChatWidget {
     pub(crate) fn open_skills_list(&mut self) {
@@ -396,7 +396,11 @@ fn is_mention_name_char(byte: u8) -> bool {
 }
 
 fn is_skill_path(path: &str) -> bool {
-    !path.starts_with("plugin://")
+    path.starts_with("skill://")
+        || path
+            .rsplit(['/', '\\'])
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case("SKILL.md"))
 }
 
 fn normalize_skill_path(path: &str) -> &str {

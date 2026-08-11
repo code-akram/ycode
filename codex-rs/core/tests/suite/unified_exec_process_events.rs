@@ -462,17 +462,6 @@ enabled = true
 mode = "full"
 allow_local_binding = true
 
-[features]
-hooks = true
-
-[hooks]
-
-[[hooks.PermissionRequest]]
-
-[[hooks.PermissionRequest.hooks]]
-type = "command"
-command = "unused"
-timeout = 900
 "#,
                 )
                 .expect("write managed-network test config");
@@ -483,7 +472,6 @@ timeout = 900
         config.use_experimental_unified_exec_tool = true;
         if managed_network {
             config.approvals_reviewer = ApprovalsReviewer::AutoReview;
-            config.bypass_hook_trust = true;
         }
         config
             .features

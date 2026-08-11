@@ -5,10 +5,6 @@ use crate::Prompt;
 use crate::client::ModelClientSession;
 use crate::client_common::ResponseEvent;
 use crate::context::world_state::WorldState;
-use crate::hook_runtime::PostCompactHookOutcome;
-use crate::hook_runtime::PreCompactHookOutcome;
-use crate::hook_runtime::run_post_compact_hooks;
-use crate::hook_runtime::run_pre_compact_hooks;
 use crate::responses_metadata::CodexResponsesMetadata;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::responses_metadata::CompactionTurnMetadata;
@@ -180,22 +176,6 @@ async fn run_compact_task_inner(
         phase,
     )
     .await;
-    let pre_compact_outcome = run_pre_compact_hooks(&sess, &turn_context, trigger).await;
-    match pre_compact_outcome {
-        PreCompactHookOutcome::Continue => {}
-        PreCompactHookOutcome::Stopped => {
-            let error = CodexErr::TurnAborted;
-            attempt
-                .track(
-                    sess.as_ref(),
-                    CompactionStatus::Interrupted,
-                    Some(&error),
-                    CompactionAnalyticsDetails::default(),
-                )
-                .await;
-            return Err(error);
-        }
-    }
     let result = run_compact_task_inner_impl(
         Arc::clone(&sess),
         Arc::clone(&turn_context),
@@ -206,20 +186,6 @@ async fn run_compact_task_inner(
     .await;
     let status = compaction_status_from_result(&result);
     let codex_error = result.as_ref().err();
-    if result.is_ok() {
-        let post_compact_outcome = run_post_compact_hooks(&sess, &turn_context, trigger).await;
-        if let PostCompactHookOutcome::Stopped = post_compact_outcome {
-            attempt
-                .track(
-                    sess.as_ref(),
-                    status,
-                    codex_error,
-                    CompactionAnalyticsDetails::default(),
-                )
-                .await;
-            return Err(CodexErr::TurnAborted);
-        }
-    }
     attempt
         .track(
             sess.as_ref(),

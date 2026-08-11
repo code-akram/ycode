@@ -15,10 +15,6 @@ use crate::compact_remote_history::history_item_groups;
 use crate::context::world_state::WorldState;
 use crate::context_manager::ContextManager;
 use crate::context_manager::estimate_item_token_count;
-use crate::hook_runtime::PostCompactHookOutcome;
-use crate::hook_runtime::PreCompactHookOutcome;
-use crate::hook_runtime::run_post_compact_hooks;
-use crate::hook_runtime::run_pre_compact_hooks;
 use crate::responses_metadata::CompactionTurnMetadata;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
@@ -136,22 +132,6 @@ async fn run_remote_compact_task_inner(
         phase,
     )
     .await;
-    let pre_compact_outcome = run_pre_compact_hooks(sess, turn_context, trigger).await;
-    match pre_compact_outcome {
-        PreCompactHookOutcome::Continue => {}
-        PreCompactHookOutcome::Stopped => {
-            let error = CodexErr::TurnAborted;
-            attempt
-                .track(
-                    sess.as_ref(),
-                    codex_analytics::CompactionStatus::Interrupted,
-                    Some(&error),
-                    analytics_details,
-                )
-                .await;
-            return Err(error);
-        }
-    }
     let result = run_remote_compact_task_inner_impl(
         sess,
         step_context,
@@ -164,15 +144,6 @@ async fn run_remote_compact_task_inner(
     .await;
     let status = compaction_status_from_result(&result);
     let codex_error = result.as_ref().err();
-    if result.is_ok() {
-        let post_compact_outcome = run_post_compact_hooks(sess, turn_context, trigger).await;
-        if let PostCompactHookOutcome::Stopped = post_compact_outcome {
-            attempt
-                .track(sess.as_ref(), status, codex_error, analytics_details)
-                .await;
-            return Err(CodexErr::TurnAborted);
-        }
-    }
     attempt
         .track(sess.as_ref(), status, codex_error, analytics_details)
         .await;
@@ -330,7 +301,7 @@ pub(crate) async fn process_compacted_history(
 /// - `developer` messages because remote output can include stale/duplicated
 ///   instruction content.
 /// - non-user-content `user` messages (session prefix/instruction wrappers),
-///   while preserving real user messages and persisted hook prompts.
+///   while preserving real user messages.
 ///
 /// This intentionally keeps:
 /// - `assistant` messages (future remote compaction models may emit them)
@@ -343,7 +314,7 @@ pub(crate) fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
         ResponseItem::Message { role, .. } if role == "user" => {
             matches!(
                 crate::event_mapping::parse_turn_item(item),
-                Some(TurnItem::UserMessage(_) | TurnItem::HookPrompt(_))
+                Some(TurnItem::UserMessage(_))
             )
         }
         ResponseItem::Message { role, .. } if role == "assistant" => true,

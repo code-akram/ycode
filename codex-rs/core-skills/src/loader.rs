@@ -1,6 +1,5 @@
 mod discovery;
 mod environment;
-mod namespace;
 
 pub use crate::root_loader::load_skill_root_snapshot;
 pub use environment::EnvironmentSkillLoadOutcome;
@@ -18,7 +17,6 @@ use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::protocol::Product;
 use codex_protocol::protocol::SkillScope;
 use codex_skills::ParsedSkillFrontmatter;
-use codex_skills::SkillInterfaceAssetPolicy;
 use codex_skills::SkillInterfaceFile;
 use codex_skills::SkillParseError;
 use codex_skills::parse_skill_frontmatter_metadata;
@@ -26,8 +24,6 @@ use codex_skills::resolve_skill_interface;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use codex_utils_path_uri::PathUri;
-use codex_utils_plugins::PluginIdentity;
-use codex_utils_plugins::SkillDiscoveryMode;
 use discovery::DirectorySymlinkPolicy;
 use discovery::DiscoveredSkill;
 use discovery::HiddenDirectoryPolicy;
@@ -38,7 +34,6 @@ use discovery::SkillMetadataDiscovery;
 use discovery::discover_skills;
 use futures::FutureExt;
 use futures::StreamExt;
-use namespace::SkillNamespaceResolver;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error;
@@ -97,7 +92,6 @@ const SKILLS_FILENAME: &str = "SKILL.md";
 const SKILLS_METADATA_DIR: &str = "agents";
 const SKILLS_METADATA_FILENAME: &str = "openai.yaml";
 const MAX_NAME_LEN: usize = 64;
-const MAX_QUALIFIED_NAME_LEN: usize = MAX_NAME_LEN * 2 + 1;
 const MAX_DESCRIPTION_LEN: usize = 1024;
 const MAX_DEPENDENCY_TYPE_LEN: usize = MAX_NAME_LEN;
 const MAX_DEPENDENCY_TRANSPORT_LEN: usize = MAX_NAME_LEN;
@@ -142,22 +136,17 @@ pub struct SkillRoot {
     pub path: AbsolutePathBuf,
     pub scope: SkillScope,
     pub file_system: Arc<dyn ExecutorFileSystem>,
-    pub plugin_identity: Option<PluginIdentity>,
-    pub plugin_namespace: Option<String>,
-    pub plugin_root: Option<AbsolutePathBuf>,
-    pub discovery_mode: SkillDiscoveryMode,
 }
 
 pub async fn load_skills_from_roots<I>(
     roots: I,
-    plugin_skill_snapshots: Option<&crate::PluginSkillSnapshots>,
     root_scan_slots: Arc<Semaphore>,
 ) -> SkillLoadOutcome
 where
     I: IntoIterator<Item = SkillRoot> + Send,
     I::IntoIter: Send,
 {
-    crate::root_loader::load_and_merge_skill_roots(roots, plugin_skill_snapshots, &root_scan_slots)
+    crate::root_loader::load_and_merge_skill_roots(roots, &root_scan_slots)
         .boxed()
         .await
 }
@@ -169,7 +158,6 @@ where
 #[derive(Clone)]
 pub struct SkillRootSnapshot {
     pub(crate) root: AbsolutePathBuf,
-    pub(crate) is_agent_plugin: bool,
     pub(crate) skills: Vec<SkillMetadata>,
     pub(crate) skill_discovery_path_by_path: Arc<HashMap<AbsolutePathBuf, AbsolutePathBuf>>,
     pub(crate) errors: Vec<SkillError>,
@@ -186,7 +174,6 @@ impl SkillRootSnapshot {
     ) -> Self {
         Self {
             root,
-            is_agent_plugin: false,
             skills,
             skill_discovery_path_by_path,
             errors,
@@ -202,7 +189,6 @@ pub(crate) async fn load_skill_root(root: SkillRoot) -> SkillRootSnapshot {
     load_skills_under_root(&root, &canonical_root, &mut outcome).await;
     SkillRootSnapshot {
         root: canonical_root,
-        is_agent_plugin: root.discovery_mode == SkillDiscoveryMode::DirectChildren,
         skills: outcome.skills,
         skill_discovery_path_by_path: outcome.skill_discovery_path_by_path,
         errors: outcome.errors,
@@ -227,21 +213,11 @@ async fn load_skills_under_root(
     outcome: &mut SkillLoadOutcome,
 ) {
     let fs = skill_root.file_system.as_ref();
-    let plugin_identity = skill_root.plugin_identity.as_ref();
-    let plugin_root = match skill_root.plugin_root.as_ref() {
-        Some(plugin_root) => Some(canonicalize_for_skill_identity(fs, plugin_root).await),
-        None => None,
-    };
     let directory_symlinks = match skill_root.scope {
         SkillScope::User | SkillScope::Repo | SkillScope::Admin => DirectorySymlinkPolicy::Follow,
         SkillScope::System => DirectorySymlinkPolicy::Ignore,
     };
-    let SkillDiscovery {
-        skills,
-        plugin_roots,
-        mut namespace_roots,
-        warnings,
-    } = discover_skills(
+    let SkillDiscovery { skills, warnings } = discover_skills(
         fs,
         &PathUri::from_abs_path(root),
         // Preserve host discovery behavior: directory aliases are scope-dependent, while hidden
@@ -249,7 +225,6 @@ async fn load_skills_under_root(
         SkillDiscoveryOptions {
             directory_symlinks,
             hidden_directories: HiddenDirectoryPolicy::Skip,
-            mode: skill_root.discovery_mode,
         },
     )
     .await;
@@ -260,19 +235,10 @@ async fn load_skills_under_root(
     if skills.is_empty() {
         return;
     }
-    let root_uri = PathUri::from_abs_path(root);
-    let resolved_plugin_root = plugin_root.as_ref();
     let resolved_skills = futures::stream::iter(skills)
         .map(|skill| async move {
             let path_uri = match fs.canonicalize(&skill.path, /*sandbox*/ None).await {
                 Ok(path) => path,
-                Err(err) if skill_root.discovery_mode == SkillDiscoveryMode::DirectChildren => {
-                    error!(
-                        "failed to resolve Agent Plugin skill path {}: {err}",
-                        skill.path
-                    );
-                    return None;
-                }
                 Err(_) => skill.path.clone(),
             };
             let path = match path_uri.to_abs_path() {
@@ -282,37 +248,6 @@ async fn load_skills_under_root(
                     return None;
                 }
             };
-            if skill_root.discovery_mode == SkillDiscoveryMode::DirectChildren {
-                let Some(plugin_root) = resolved_plugin_root else {
-                    error!("Agent Plugin skill root is missing its plugin root");
-                    return None;
-                };
-                if !path.as_path().starts_with(plugin_root.as_path()) {
-                    error!(
-                        "Agent Plugin skill path {} resolves outside plugin root {}",
-                        path.display(),
-                        plugin_root.display()
-                    );
-                    return None;
-                }
-                match fs.get_metadata(&path_uri, /*sandbox*/ None).await {
-                    Ok(metadata) if metadata.is_file => {}
-                    Ok(_) => {
-                        error!(
-                            "Agent Plugin skill path {} is not a regular file",
-                            path.display()
-                        );
-                        return None;
-                    }
-                    Err(err) => {
-                        error!(
-                            "failed to inspect Agent Plugin skill path {}: {err}",
-                            path.display()
-                        );
-                        return None;
-                    }
-                }
-            }
             Some(ResolvedDiscoveredSkill {
                 skill,
                 path,
@@ -323,66 +258,29 @@ async fn load_skills_under_root(
         .filter_map(futures::future::ready)
         .collect::<Vec<_>>()
         .await;
-    namespace_roots.extend(resolved_skills.iter().filter_map(|skill| {
-        (skill.path_uri != skill.skill.path)
-            .then(|| skill.path_uri.parent())
-            .flatten()
-    }));
-    let skill_paths = resolved_skills
-        .iter()
-        .map(|skill| skill.path_uri.clone())
-        .collect::<Vec<_>>();
-    let namespace_resolver = async {
-        match skill_root.plugin_namespace.as_deref() {
-            Some(namespace) => SkillNamespaceResolver::with_provided_namespace(namespace),
-            None => {
-                SkillNamespaceResolver::discover(
-                    fs,
-                    &root_uri,
-                    &skill_paths,
-                    plugin_roots,
-                    namespace_roots,
-                )
-                .await
-            }
-        }
-    };
     let skill_results = futures::stream::iter(resolved_skills)
-        .map(|skill| {
-            let plugin_root = plugin_root.as_ref();
-            async move {
-                let discovery_path = skill
-                    .skill
-                    .path
-                    .to_abs_path()
-                    .unwrap_or_else(|_| skill.path.clone());
-                let result = parse_skill_file(
-                    fs,
-                    &skill.skill,
-                    &skill.path,
-                    &skill.path_uri,
-                    skill_root.scope,
-                    plugin_identity,
-                    plugin_root,
-                )
-                .await
-                .map_err(|err| err.to_string());
-                (skill.path, skill.path_uri, discovery_path, result)
-            }
+        .map(|skill| async move {
+            let discovery_path = skill
+                .skill
+                .path
+                .to_abs_path()
+                .unwrap_or_else(|_| skill.path.clone());
+            let result = parse_skill_file(
+                fs,
+                &skill.skill,
+                &skill.path,
+                &skill.path_uri,
+                skill_root.scope,
+            )
+            .await
+            .map_err(|err| err.to_string());
+            (skill.path, discovery_path, result)
         })
         .buffered(MAX_CONCURRENT_SKILL_LOADS)
         .collect::<Vec<_>>()
-        .boxed();
-    let (namespace_resolver, skill_results) = tokio::join!(namespace_resolver, skill_results);
-    for (path, path_uri, discovery_path, result) in skill_results {
-        let result = result.and_then(|mut skill| {
-            skill.name = namespace_resolver
-                .for_skill(&root_uri, &path_uri)
-                .qualify(&skill.name);
-            validate_len(&skill.name, MAX_QUALIFIED_NAME_LEN, "qualified name")
-                .map_err(|err| err.to_string())?;
-            Ok(skill)
-        });
+        .boxed()
+        .await;
+    for (path, discovery_path, result) in skill_results {
         match result {
             Ok(skill) => {
                 Arc::make_mut(&mut outcome.skill_discovery_path_by_path)
@@ -403,8 +301,6 @@ async fn parse_skill_file(
     path: &AbsolutePathBuf,
     path_uri: &PathUri,
     scope: SkillScope,
-    plugin_identity: Option<&PluginIdentity>,
-    plugin_root: Option<&AbsolutePathBuf>,
 ) -> Result<SkillMetadata, SkillLoadError> {
     let metadata_path = path_uri
         .parent()
@@ -418,7 +314,7 @@ async fn parse_skill_file(
     .unwrap_or(SkillMetadataDiscovery::Absent);
     let (contents, loaded_metadata) = tokio::join!(
         fs.read_file_text(path_uri, /*sandbox*/ None),
-        load_skill_metadata(fs, path, &metadata, plugin_root),
+        load_skill_metadata(fs, path, &metadata),
     );
     let contents = contents.map_err(SkillLoadError::Read)?;
     let ParsedSkillFrontmatter {
@@ -441,8 +337,6 @@ async fn parse_skill_file(
         policy,
         path_to_skills_md: path.clone(),
         scope,
-        plugin_id: plugin_identity.map(|identity| identity.plugin_id.clone()),
-        remote_plugin_id: plugin_identity.and_then(|identity| identity.remote_plugin_id.clone()),
     })
 }
 
@@ -462,7 +356,6 @@ async fn load_skill_metadata(
     fs: &dyn ExecutorFileSystem,
     skill_path: &AbsolutePathBuf,
     metadata: &SkillMetadataDiscovery,
-    plugin_root: Option<&AbsolutePathBuf>,
 ) -> LoadedSkillMetadata {
     // Fail open: optional metadata should not block loading SKILL.md.
     let Some(skill_dir) = skill_path.parent() else {
@@ -523,12 +416,8 @@ async fn load_skill_metadata(
         dependencies,
         policy,
     } = parsed;
-    let asset_policy = match plugin_root {
-        Some(plugin_root) => SkillInterfaceAssetPolicy::PluginShared { plugin_root },
-        None => SkillInterfaceAssetPolicy::LocalOnly,
-    };
     LoadedSkillMetadata {
-        interface: resolve_skill_interface(interface, &skill_dir, asset_policy),
+        interface: resolve_skill_interface(interface, &skill_dir),
         dependencies: resolve_dependencies(dependencies),
         policy: resolve_policy(policy),
     }

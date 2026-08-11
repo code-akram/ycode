@@ -126,7 +126,7 @@ fn select_skills_from_mentions(
 
     let mention_skill_paths: HashSet<String> = mentions
         .paths()
-        .filter(|path| tool_kind_for_path(path) != ToolMentionKind::Plugin)
+        .filter(|path| tool_kind_for_path(path) == ToolMentionKind::Skill)
         .map(normalize_host_skill_path)
         .collect();
 

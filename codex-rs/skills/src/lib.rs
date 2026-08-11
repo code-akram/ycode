@@ -7,17 +7,16 @@ mod parser;
 mod policy;
 mod selection;
 
-pub use interface::SkillInterfaceAssetPolicy;
 pub use interface::SkillInterfaceFile;
 pub use interface::resolve_skill_interface;
 pub use invocation::ImplicitSkillLookup;
 pub use invocation::detect_implicit_skill_invocation_for_command;
+pub use mentions::TOOL_MENTION_SIGIL;
 pub use mentions::ToolMentionKind;
 pub use mentions::ToolMentions;
 pub use mentions::extract_tool_mentions;
 pub use mentions::extract_tool_mentions_with_sigil;
 pub use mentions::normalize_skill_path;
-pub use mentions::plugin_config_name_from_path;
 pub use mentions::tool_kind_for_path;
 pub use model::EnvironmentSkillMetadata;
 pub use model::SkillConfigRule;

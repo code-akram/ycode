@@ -18,15 +18,6 @@ use codex_cli_protocol::AddCreditsNudgeEmailStatus;
 use codex_cli_protocol::ConsumeAccountRateLimitResetCreditResponse;
 use codex_cli_protocol::GetAccountRateLimitsResponse;
 use codex_cli_protocol::GetAccountTokenUsageResponse;
-use codex_cli_protocol::MarketplaceAddResponse;
-use codex_cli_protocol::MarketplaceRemoveResponse;
-use codex_cli_protocol::MarketplaceUpgradeResponse;
-use codex_cli_protocol::PluginInstallResponse;
-use codex_cli_protocol::PluginListResponse;
-use codex_cli_protocol::PluginMarketplaceEntry;
-use codex_cli_protocol::PluginReadParams;
-use codex_cli_protocol::PluginReadResponse;
-use codex_cli_protocol::PluginUninstallResponse;
 use codex_cli_protocol::SkillsListResponse;
 use codex_cli_protocol::Thread;
 use codex_cli_protocol::ThreadGoalStatus;
@@ -45,7 +36,6 @@ use crate::chatwidget::UserMessage;
 use crate::goal_files::GoalDraft;
 use crate::runtime_session::CliRuntimeStartedThread;
 use codex_features::Feature;
-use codex_plugin::PluginCapabilitySummary;
 use codex_protocol::config_types::Personality;
 use codex_protocol::openai_models::ReasoningEffort;
 
@@ -98,28 +88,6 @@ pub(crate) enum HistoryLookupResponse {
 pub(crate) enum ConsolidationScrollbackReflow {
     IfResizeReflowRan,
     Required,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PluginLocation {
-    Local { marketplace_path: AbsolutePathBuf },
-    Remote { marketplace_name: String },
-}
-
-impl PluginLocation {
-    pub(crate) fn into_request_params(self) -> (Option<AbsolutePathBuf>, Option<String>) {
-        match self {
-            PluginLocation::Local { marketplace_path } => (Some(marketplace_path), None),
-            PluginLocation::Remote { marketplace_name } => (None, Some(marketplace_name)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PluginRemoteSectionError {
-    pub(crate) section_id: String,
-    pub(crate) label: String,
-    pub(crate) message: String,
 }
 
 /// Distinguishes why a rate-limit refresh was requested so the completion
@@ -272,9 +240,6 @@ pub(crate) enum AppEvent {
 
     /// Open the resume picker inside the running TUI session.
     OpenResumePicker,
-
-    /// Open the Claude Code migration picker inside the running TUI session.
-    OpenExternalAgentConfigMigration,
 
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
@@ -478,187 +443,6 @@ pub(crate) enum AppEvent {
         result: Result<Option<crate::pets::AmbientPet>, String>,
     },
 
-    /// Fetch plugin marketplace state for the provided working directory.
-    FetchPluginsList {
-        cwd: PathBuf,
-    },
-
-    /// Fetch lifecycle hook inventory for the provided working directory.
-    FetchHooksList {
-        cwd: PathBuf,
-    },
-
-    /// Result of fetching plugin marketplace state.
-    PluginsLoaded {
-        cwd: PathBuf,
-        result: Result<PluginListResponse, String>,
-    },
-
-    /// Open the plugin list from an already cached response.
-    OpenPluginsList {
-        cwd: PathBuf,
-        response: PluginListResponse,
-    },
-
-    /// Result of explicitly fetching remote-backed plugin sections.
-    PluginRemoteSectionsLoaded {
-        cwd: PathBuf,
-        marketplaces: Vec<PluginMarketplaceEntry>,
-        section_errors: Vec<PluginRemoteSectionError>,
-    },
-
-    /// Result of fetching lifecycle hook inventory.
-    HooksLoaded {
-        cwd: PathBuf,
-        result: Result<codex_cli_protocol::HooksListResponse, String>,
-    },
-
-    /// Open the prompt for adding a marketplace source.
-    OpenMarketplaceAddPrompt,
-
-    /// Replace the plugins popup with a marketplace-add loading state.
-    OpenMarketplaceAddLoading {
-        source: String,
-    },
-
-    /// Add a marketplace from the provided source.
-    FetchMarketplaceAdd {
-        cwd: PathBuf,
-        source: String,
-    },
-
-    /// Result of adding a marketplace.
-    MarketplaceAddLoaded {
-        cwd: PathBuf,
-        source: String,
-        result: Result<MarketplaceAddResponse, String>,
-    },
-
-    /// Open the confirmation prompt for removing a marketplace.
-    OpenMarketplaceRemoveConfirm {
-        marketplace_name: String,
-        marketplace_display_name: String,
-    },
-
-    /// Replace the plugins popup with a marketplace-remove loading state.
-    OpenMarketplaceRemoveLoading {
-        marketplace_display_name: String,
-    },
-
-    /// Remove a marketplace by name.
-    FetchMarketplaceRemove {
-        cwd: PathBuf,
-        marketplace_name: String,
-        marketplace_display_name: String,
-    },
-
-    /// Result of removing a marketplace.
-    MarketplaceRemoveLoaded {
-        cwd: PathBuf,
-        marketplace_name: String,
-        marketplace_display_name: String,
-        result: Result<MarketplaceRemoveResponse, String>,
-    },
-
-    /// Replace the plugins popup with a marketplace-upgrade loading state.
-    OpenMarketplaceUpgradeLoading {
-        marketplace_name: Option<String>,
-    },
-
-    /// Upgrade configured Git marketplaces.
-    FetchMarketplaceUpgrade {
-        cwd: PathBuf,
-        marketplace_name: Option<String>,
-    },
-
-    /// Result of upgrading configured Git marketplaces.
-    MarketplaceUpgradeLoaded {
-        cwd: PathBuf,
-        result: Result<MarketplaceUpgradeResponse, String>,
-    },
-
-    /// Replace the plugins popup with a plugin-detail loading state.
-    OpenPluginDetailLoading {
-        plugin_display_name: String,
-    },
-
-    /// Fetch detail for a specific plugin from a marketplace.
-    FetchPluginDetail {
-        cwd: PathBuf,
-        params: PluginReadParams,
-    },
-
-    /// Result of fetching plugin detail.
-    PluginDetailLoaded {
-        cwd: PathBuf,
-        result: Result<PluginReadResponse, String>,
-    },
-
-    /// Replace the plugins popup with an install loading state.
-    OpenPluginInstallLoading {
-        plugin_display_name: String,
-    },
-
-    /// Replace the plugins popup with an uninstall loading state.
-    OpenPluginUninstallLoading {
-        plugin_display_name: String,
-    },
-
-    /// Install a specific plugin from a marketplace.
-    FetchPluginInstall {
-        cwd: PathBuf,
-        location: PluginLocation,
-        plugin_name: String,
-        plugin_display_name: String,
-    },
-
-    /// Result of installing a plugin.
-    PluginInstallLoaded {
-        cwd: PathBuf,
-        location: PluginLocation,
-        plugin_name: String,
-        plugin_display_name: String,
-        result: Result<PluginInstallResponse, String>,
-    },
-
-    /// Uninstall a specific plugin by canonical plugin id.
-    FetchPluginUninstall {
-        cwd: PathBuf,
-        plugin_id: String,
-        plugin_display_name: String,
-    },
-
-    /// Result of uninstalling a plugin.
-    PluginUninstallLoaded {
-        cwd: PathBuf,
-        plugin_id: String,
-        plugin_display_name: String,
-        result: Result<PluginUninstallResponse, String>,
-    },
-
-    /// Enable or disable an installed plugin.
-    SetPluginEnabled {
-        cwd: PathBuf,
-        plugin_id: String,
-        enabled: bool,
-    },
-
-    /// Result of enabling or disabling a plugin.
-    PluginEnabledSet {
-        cwd: PathBuf,
-        plugin_id: String,
-        enabled: bool,
-        result: Result<(), String>,
-    },
-
-    /// Refresh plugin mention bindings from the current config.
-    RefreshPluginMentions,
-
-    /// Result of refreshing plugin mention bindings.
-    PluginMentionsLoaded {
-        plugins: Option<Vec<PluginCapabilitySummary>>,
-    },
-
     /// Result of the startup skills refresh that runs after the first frame is scheduled.
     ///
     /// This event is startup-only. Interactive skills refreshes are handled synchronously through the app
@@ -795,35 +579,6 @@ pub(crate) enum AppEvent {
     SetSkillEnabled {
         path: AbsolutePathBuf,
         enabled: bool,
-    },
-
-    /// Enable or disable a hook by stable hook key.
-    SetHookEnabled {
-        key: String,
-        enabled: bool,
-    },
-
-    /// Trust the current definition for a hook by stable hook key.
-    TrustHook {
-        key: String,
-        current_hash: String,
-    },
-
-    /// Trust the current definitions for one or more hooks by stable hook key.
-    TrustHooks {
-        updates: Vec<crate::hooks_rpc::HookTrustUpdate>,
-    },
-
-    /// Result of persisting hook enabled state.
-    HookEnabledSet {
-        key: String,
-        enabled: bool,
-        result: Result<(), String>,
-    },
-
-    /// Result of persisting hook trust state.
-    HookTrusted {
-        result: Result<(), String>,
     },
 
     /// Notify that the manage skills popup was closed.

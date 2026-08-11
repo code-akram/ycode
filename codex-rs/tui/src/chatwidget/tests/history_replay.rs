@@ -149,12 +149,7 @@ async fn replayed_user_messages_seed_composer_history() {
             ReplayKind::ResumeInitialMessages,
         );
     };
-    replay_mention(
-        "user-1",
-        "use $sample",
-        "Sample Plugin",
-        "plugin://sample@test",
-    );
+    replay_mention("user-1", "use $sample", "sample", "/tmp/sample/SKILL.md");
     replay_mention(
         "user-2",
         "use $local-skill",
@@ -181,7 +176,7 @@ async fn replayed_user_messages_seed_composer_history() {
         vec![MentionBinding {
             sigil: '$',
             mention: "sample".to_string(),
-            path: "plugin://sample@test".to_string(),
+            path: "/tmp/sample/SKILL.md".to_string(),
         }]
     );
 
@@ -206,7 +201,7 @@ async fn replayed_user_messages_seed_composer_history() {
     ));
 
     assert_eq!(next_lookup_offset(), 1);
-    chat.handle_history_entry_response(response(1, "use [$sample](plugin://sample@test)"));
+    chat.handle_history_entry_response(response(1, "use [$sample](/tmp/sample/SKILL.md)"));
 
     assert_eq!(next_lookup_offset(), 0);
     chat.handle_history_entry_response(response(0, "/rename smoke-1"));

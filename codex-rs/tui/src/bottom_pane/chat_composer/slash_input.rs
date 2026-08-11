@@ -171,7 +171,6 @@ impl<'a> SlashInput<'a> {
     pub(super) fn command_popup(&self, filter_text: &str) -> CommandPopup {
         let mut command_popup = CommandPopup::new(
             CommandPopupFlags {
-                plugins_command_enabled: self.command_flags.plugins_command_enabled,
                 token_activity_command_enabled: self.command_flags.token_activity_command_enabled,
                 service_tier_commands_enabled: self.command_flags.service_tier_commands_enabled,
                 goal_command_enabled: self.command_flags.goal_command_enabled,

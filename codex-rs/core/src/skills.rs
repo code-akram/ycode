@@ -9,7 +9,6 @@ use codex_extension_api::SkillInvocationKind;
 use codex_otel::sanitize_metric_tag_value;
 use codex_protocol::protocol::SkillScope;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_plugins::PluginSkillRoot;
 use std::collections::HashSet;
 use tokio::sync::Mutex;
 
@@ -35,13 +34,9 @@ pub use codex_skills_extension::bundled_skills_enabled_from_stack;
 #[derive(Debug, Default)]
 struct ImplicitSkillInvocations(Mutex<HashSet<String>>);
 
-pub(crate) fn skills_load_input_from_config(
-    config: &Config,
-    effective_skill_roots: Vec<PluginSkillRoot>,
-) -> HostSkillsLoadInput {
+pub(crate) fn skills_load_input_from_config(config: &Config) -> HostSkillsLoadInput {
     HostSkillsLoadInput::new(
         config.cwd.clone(),
-        effective_skill_roots,
         config.config_layer_stack.clone(),
         config.bundled_skills_enabled(),
     )
@@ -64,8 +59,6 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
         skill_name: candidate.name,
         skill_scope: candidate.scope,
         skill_path: candidate.path_to_skills_md.to_path_buf(),
-        plugin_id: candidate.plugin_id,
-        remote_plugin_id: candidate.remote_plugin_id,
         invocation_type: InvocationType::Implicit,
     };
     let skill_scope = match invocation.skill_scope {

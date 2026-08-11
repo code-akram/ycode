@@ -21,12 +21,8 @@ use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::handlers::apply_patch_spec::create_apply_patch_freeform_tool;
 use crate::tools::handlers::resolve_tool_environment;
-use crate::tools::handlers::updated_hook_command;
-use crate::tools::hook_names::HookToolName;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::CoreToolRuntime;
-use crate::tools::registry::PostToolUsePayload;
-use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolArgumentDiffConsumer;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::runtimes::apply_patch::ApplyPatchRequest;
@@ -195,13 +191,6 @@ fn format_update_chunks_for_progress(chunks: &[codex_apply_patch::UpdateFileChun
 }
 
 /// Extracts the raw patch text used as the command-shaped hook input for apply_patch.
-fn apply_patch_payload_command(payload: &ToolPayload) -> Option<String> {
-    match payload {
-        ToolPayload::Custom { input } => Some(input.clone()),
-        _ => None,
-    }
-}
-
 impl ToolExecutor<ToolInvocation> for ApplyPatchHandler {
     fn tool_name(&self) -> ToolName {
         ToolName::plain("apply_patch")
@@ -311,45 +300,6 @@ impl CoreToolRuntime for ApplyPatchHandler {
 
     fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
         Some(Box::<ApplyPatchArgumentDiffConsumer>::default())
-    }
-
-    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
-        apply_patch_payload_command(&invocation.payload).map(|command| PreToolUsePayload {
-            tool_name: HookToolName::apply_patch(),
-            tool_input: serde_json::json!({ "command": command }),
-        })
-    }
-
-    fn with_updated_hook_input(
-        &self,
-        mut invocation: ToolInvocation,
-        updated_input: serde_json::Value,
-    ) -> Result<ToolInvocation, FunctionCallError> {
-        let patch = updated_hook_command(&updated_input)?;
-        invocation.payload = match invocation.payload {
-            ToolPayload::Custom { .. } => ToolPayload::Custom {
-                input: patch.to_string(),
-            },
-            payload => payload,
-        };
-        Ok(invocation)
-    }
-
-    fn post_tool_use_payload(
-        &self,
-        invocation: &ToolInvocation,
-        result: &dyn crate::tools::context::ToolOutput,
-    ) -> Option<PostToolUsePayload> {
-        let tool_response =
-            result.post_tool_use_response(&invocation.call_id, &invocation.payload)?;
-        Some(PostToolUsePayload {
-            tool_name: HookToolName::apply_patch(),
-            tool_use_id: invocation.call_id.clone(),
-            tool_input: serde_json::json!({
-                "command": apply_patch_payload_command(&invocation.payload)?,
-            }),
-            tool_response,
-        })
     }
 }
 

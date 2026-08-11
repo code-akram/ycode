@@ -175,16 +175,6 @@ pub(crate) fn thread_items_to_transcript_cells(
 
 fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
     let lines = match item {
-        ThreadItem::HookPrompt { fragments, .. } => fragments
-            .iter()
-            .map(|fragment| {
-                vec![
-                    "hook prompt: ".dim(),
-                    fragment.text.trim().to_string().into(),
-                ]
-                .into()
-            })
-            .collect::<Vec<_>>(),
         ThreadItem::CommandExecution {
             command,
             status,

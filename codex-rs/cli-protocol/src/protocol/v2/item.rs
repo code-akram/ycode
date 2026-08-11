@@ -230,12 +230,6 @@ pub enum ThreadItem {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
-    HookPrompt {
-        id: String,
-        fragments: Vec<HookPromptFragment>,
-    },
-    #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
     AgentMessage {
         id: String,
         text: String,
@@ -265,12 +259,6 @@ pub enum ThreadItem {
     #[ts(rename_all = "camelCase")]
     CommandExecution {
         id: String,
-        /// Trusted first-party plugin id when this command resolves to one plugin script.
-        #[serde(default)]
-        plugin_id: Option<String>,
-        /// Safe plugin-relative path when this command resolves to one plugin script.
-        #[serde(default)]
-        script_path: Option<String>,
         /// The command to be executed.
         command: String,
         /// The command's working directory.
@@ -374,19 +362,10 @@ pub enum ThreadItem {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(rename_all = "camelCase", export_to = "v2/")]
-pub struct HookPromptFragment {
-    pub text: String,
-    pub hook_run_id: String,
-}
-
 impl ThreadItem {
     pub fn id(&self) -> &str {
         match self {
             ThreadItem::UserMessage { id, .. }
-            | ThreadItem::HookPrompt { id, .. }
             | ThreadItem::AgentMessage { id, .. }
             | ThreadItem::Plan { id, .. }
             | ThreadItem::Reasoning { id, .. }
@@ -728,14 +707,6 @@ impl From<CoreTurnItem> for ThreadItem {
                 client_id: user.client_id,
                 content: user.content.into_iter().map(UserInput::from).collect(),
             },
-            CoreTurnItem::HookPrompt(hook_prompt) => ThreadItem::HookPrompt {
-                id: hook_prompt.id,
-                fragments: hook_prompt
-                    .fragments
-                    .into_iter()
-                    .map(HookPromptFragment::from)
-                    .collect(),
-            },
             CoreTurnItem::AgentMessage(agent) => {
                 let text = agent
                     .content
@@ -768,8 +739,6 @@ impl From<CoreTurnItem> for ThreadItem {
                 );
                 ThreadItem::CommandExecution {
                     id: command.id,
-                    plugin_id: command.plugin_id,
-                    script_path: command.script_path,
                     command: presentation.command,
                     cwd: command.cwd.clone().into(),
                     process_id: command.process_id,
@@ -872,15 +841,6 @@ impl From<CoreTurnItem> for ThreadItem {
             CoreTurnItem::ContextCompaction(compaction) => {
                 ThreadItem::ContextCompaction { id: compaction.id }
             }
-        }
-    }
-}
-
-impl From<codex_protocol::items::HookPromptFragment> for HookPromptFragment {
-    fn from(value: codex_protocol::items::HookPromptFragment) -> Self {
-        Self {
-            text: value.text,
-            hook_run_id: value.hook_run_id,
         }
     }
 }

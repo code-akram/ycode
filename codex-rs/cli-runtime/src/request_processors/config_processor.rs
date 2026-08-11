@@ -6,7 +6,6 @@ use crate::error_code::internal_error;
 use crate::error_code::invalid_request;
 use crate::outgoing_message::ConnectionRequestId;
 use crate::outgoing_message::OutgoingMessageSender;
-use codex_analytics::AnalyticsEventsClient;
 use codex_cli_protocol::BrowserUseRequirements;
 use codex_cli_protocol::ClientResponsePayload;
 use codex_cli_protocol::ComputerUseRequirements;
@@ -18,13 +17,10 @@ use codex_cli_protocol::ConfigRequirementsReadResponse;
 use codex_cli_protocol::ConfigValueWriteParams;
 use codex_cli_protocol::ConfigWriteErrorCode;
 use codex_cli_protocol::ConfigWriteResponse;
-use codex_cli_protocol::ConfiguredHookHandler;
-use codex_cli_protocol::ConfiguredHookMatcherGroup;
 use codex_cli_protocol::ExperimentalFeatureEnablementSetParams;
 use codex_cli_protocol::ExperimentalFeatureEnablementSetResponse;
 use codex_cli_protocol::FeedbackRequirements;
 use codex_cli_protocol::JSONRPCErrorError;
-use codex_cli_protocol::ManagedHooksRequirements;
 use codex_cli_protocol::ModelProviderCapabilitiesReadResponse;
 use codex_cli_protocol::ModelsRequirements;
 use codex_cli_protocol::NetworkDomainPermission;
@@ -33,17 +29,12 @@ use codex_cli_protocol::NetworkUnixSocketPermission;
 use codex_cli_protocol::NewThreadModelDefaults;
 use codex_cli_protocol::SandboxMode;
 use codex_config::ConfigRequirementsToml;
-use codex_config::HookEventsToml;
-use codex_config::HookHandlerConfig as CoreHookHandlerConfig;
-use codex_config::ManagedHooksRequirementsToml;
-use codex_config::MatcherGroup as CoreMatcherGroup;
 use codex_config::ResidencyRequirement as CoreResidencyRequirement;
 use codex_config::SandboxModeRequirement as CoreSandboxModeRequirement;
 use codex_core::ThreadManager;
 use codex_features::canonical_feature_for_key;
 use codex_features::feature_for_key;
 use codex_model_provider::create_model_provider;
-use codex_plugin::PluginId;
 use codex_protocol::config_types::WebSearchMode;
 use serde_json::json;
 use std::path::PathBuf;
@@ -53,7 +44,6 @@ const SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT: &[&str] = &[
     "memories",
     "mentions_v2",
     "remote_control",
-    "remote_plugin",
     "tool_suggest",
 ];
 
@@ -62,7 +52,6 @@ pub(crate) struct ConfigRequestProcessor {
     outgoing: Arc<OutgoingMessageSender>,
     config_manager: ConfigManager,
     thread_manager: Arc<ThreadManager>,
-    analytics_events_client: AnalyticsEventsClient,
 }
 
 impl ConfigRequestProcessor {
@@ -70,13 +59,11 @@ impl ConfigRequestProcessor {
         outgoing: Arc<OutgoingMessageSender>,
         config_manager: ConfigManager,
         thread_manager: Arc<ThreadManager>,
-        analytics_events_client: AnalyticsEventsClient,
     ) -> Self {
         Self {
             outgoing,
             config_manager,
             thread_manager,
-            analytics_events_client,
         }
     }
 
@@ -174,7 +161,6 @@ impl ConfigRequestProcessor {
     }
 
     pub(crate) async fn handle_config_mutation(&self) {
-        self.thread_manager.plugins_manager().clear_cache();
         self.thread_manager.skills_service().clear_cache();
     }
 
@@ -205,35 +191,20 @@ impl ConfigRequestProcessor {
         &self,
         params: ConfigValueWriteParams,
     ) -> Result<ConfigWriteResponse, JSONRPCErrorError> {
-        let pending_changes = codex_core_plugins::toggles::collect_plugin_enabled_candidates(
-            [(&params.key_path, &params.value)].into_iter(),
-        );
-        let response = self
-            .config_manager
+        self.config_manager
             .write_value(params)
             .await
-            .map_err(map_error)?;
-        self.emit_plugin_toggle_events(pending_changes).await;
-        Ok(response)
+            .map_err(map_error)
     }
 
     async fn batch_write_inner(
         &self,
         params: ConfigBatchWriteParams,
     ) -> Result<ConfigWriteResponse, JSONRPCErrorError> {
-        let pending_changes = codex_core_plugins::toggles::collect_plugin_enabled_candidates(
-            params
-                .edits
-                .iter()
-                .map(|edit| (&edit.key_path, &edit.value)),
-        );
-        let response = self
-            .config_manager
+        self.config_manager
             .batch_write(params)
             .await
-            .map_err(map_error)?;
-        self.emit_plugin_toggle_events(pending_changes).await;
-        Ok(response)
+            .map_err(map_error)
     }
 
     async fn set_experimental_feature_enablement(
@@ -303,26 +274,6 @@ impl ConfigRequestProcessor {
             thread.refresh_runtime_config(next_config).await;
         }
     }
-
-    async fn emit_plugin_toggle_events(
-        &self,
-        pending_changes: std::collections::BTreeMap<String, bool>,
-    ) {
-        let plugins_manager = self.thread_manager.plugins_manager();
-        for (plugin_id, enabled) in pending_changes {
-            let Ok(plugin_id) = PluginId::parse(&plugin_id) else {
-                continue;
-            };
-            let metadata = plugins_manager
-                .telemetry_metadata_for_installed_plugin(&plugin_id)
-                .await;
-            if enabled {
-                self.analytics_events_client.track_plugin_enabled(metadata);
-            } else {
-                self.analytics_events_client.track_plugin_disabled(metadata);
-            }
-        }
-    }
 }
 
 fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigRequirements {
@@ -357,7 +308,6 @@ fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigR
             }
             normalized
         }),
-        allow_managed_hooks_only: requirements.allow_managed_hooks_only,
         allow_appshots: requirements.allow_appshots,
         allow_remote_control: requirements.allow_remote_control,
         computer_use: requirements
@@ -369,7 +319,6 @@ fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigR
         feature_requirements: requirements
             .feature_requirements
             .map(|requirements| requirements.entries),
-        hooks: requirements.hooks.map(map_hooks_requirements_to_api),
         enforce_residency: requirements
             .enforce_residency
             .map(map_residency_requirement_to_api),
@@ -405,85 +354,6 @@ fn map_browser_use_requirements_to_api(
 ) -> BrowserUseRequirements {
     BrowserUseRequirements {
         disable_auto_review: browser_use.disable_auto_review,
-    }
-}
-
-fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> ManagedHooksRequirements {
-    let ManagedHooksRequirementsToml {
-        managed_dir,
-        windows_managed_dir,
-        hooks,
-    } = hooks;
-    let HookEventsToml {
-        pre_tool_use,
-        permission_request,
-        post_tool_use,
-        pre_compact,
-        post_compact,
-        session_start,
-        session_end,
-        user_prompt_submit,
-        subagent_start,
-        subagent_stop,
-        stop,
-    } = hooks;
-
-    ManagedHooksRequirements {
-        managed_dir,
-        windows_managed_dir,
-        pre_tool_use: map_hook_matcher_groups_to_api(pre_tool_use),
-        permission_request: map_hook_matcher_groups_to_api(permission_request),
-        post_tool_use: map_hook_matcher_groups_to_api(post_tool_use),
-        pre_compact: map_hook_matcher_groups_to_api(pre_compact),
-        post_compact: map_hook_matcher_groups_to_api(post_compact),
-        session_start: map_hook_matcher_groups_to_api(session_start),
-        session_end: map_hook_matcher_groups_to_api(session_end),
-        user_prompt_submit: map_hook_matcher_groups_to_api(user_prompt_submit),
-        subagent_start: map_hook_matcher_groups_to_api(subagent_start),
-        subagent_stop: map_hook_matcher_groups_to_api(subagent_stop),
-        stop: map_hook_matcher_groups_to_api(stop),
-    }
-}
-
-fn map_hook_matcher_groups_to_api(
-    groups: Vec<CoreMatcherGroup>,
-) -> Vec<ConfiguredHookMatcherGroup> {
-    groups
-        .into_iter()
-        .map(map_hook_matcher_group_to_api)
-        .collect()
-}
-
-fn map_hook_matcher_group_to_api(group: CoreMatcherGroup) -> ConfiguredHookMatcherGroup {
-    ConfiguredHookMatcherGroup {
-        matcher: group.matcher,
-        hooks: group
-            .hooks
-            .into_iter()
-            .map(map_hook_handler_to_api)
-            .collect(),
-    }
-}
-
-fn map_hook_handler_to_api(handler: CoreHookHandlerConfig) -> ConfiguredHookHandler {
-    match handler {
-        CoreHookHandlerConfig::Command {
-            command,
-            command_windows,
-            timeout_sec,
-            r#async,
-            status_message,
-            additional_context_limit,
-        } => ConfiguredHookHandler::Command {
-            command,
-            command_windows,
-            timeout_sec,
-            r#async,
-            status_message,
-            additional_context_limit,
-        },
-        CoreHookHandlerConfig::Prompt {} => ConfiguredHookHandler::Prompt {},
-        CoreHookHandlerConfig::Agent {} => ConfiguredHookHandler::Agent {},
     }
 }
 

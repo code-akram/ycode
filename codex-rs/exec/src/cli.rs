@@ -134,7 +134,6 @@ impl FromArgMatches for ExecSharedCliOptions {
 
 fn mark_exec_global_args(cmd: clap::Command) -> clap::Command {
     cmd.mut_arg("model", |arg| arg.global(true))
-        .mut_arg("bypass_hook_trust", |arg| arg.global(true))
 }
 
 #[derive(Debug, clap::Subcommand)]

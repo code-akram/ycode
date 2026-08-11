@@ -12,7 +12,6 @@ use chrono::DateTime;
 use codex_protocol::ThreadId;
 use codex_protocol::items::ReasoningItem;
 use codex_protocol::items::TurnItem;
-use codex_protocol::items::parse_hook_prompt_message;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ItemCompletedEvent;
@@ -128,20 +127,8 @@ impl LegacyRolloutCanonicalizer {
                 ));
             }
             RolloutItem::ResponseItem(response) => {
-                let hook = match &response {
-                    ResponseItem::Message {
-                        role, content, id, ..
-                    } if role == "user" => parse_hook_prompt_message(id.as_deref(), content),
-                    _ => None,
-                };
                 self.write_item(writer, &timestamp, RolloutItem::ResponseItem(response))
                     .await?;
-                if let Some(hook) = hook {
-                    self.ensure_turn(writer, &timestamp, source_index).await?;
-                    self.reasoning = None;
-                    self.write_completed_item(writer, &timestamp, TurnItem::HookPrompt(hook))
-                        .await?;
-                }
             }
             RolloutItem::EventMsg(EventMsg::ThreadRolledBack(_)) => {
                 return Err(migration_error(

@@ -4,7 +4,6 @@ use crate::session::turn_context::TurnContext;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::sandboxing::ToolError;
 use codex_apply_patch::AppliedPatchDelta;
-use codex_core_plugins::PluginCommandAttribution;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::SandboxErr;
 use codex_protocol::exec_output::ExecToolCallOutput;
@@ -101,14 +100,11 @@ fn tracker_update_for_known_delta<'a>(
 }
 
 async fn emit_exec_command_begin(ctx: ToolEventCtx<'_>, exec_input: &ExecCommandInput<'_>) {
-    let (plugin_id, script_path) = plugin_attribution_fields(exec_input.plugin_attribution);
     ctx.session
         .emit_turn_item_started(
             ctx.turn,
             &TurnItem::CommandExecution(CommandExecutionItem {
                 id: ctx.call_id.to_string(),
-                plugin_id,
-                script_path,
                 process_id: exec_input.process_id.map(str::to_owned),
                 command: exec_input.command.to_vec(),
                 cwd: exec_input.cwd.clone(),
@@ -133,7 +129,6 @@ pub(crate) enum ToolEmitter {
         cwd: PathUri,
         source: ExecCommandSource,
         parsed_cmd: Vec<ParsedCommand>,
-        plugin_attribution: Option<PluginCommandAttribution>,
     },
     ApplyPatch {
         changes: HashMap<PathBuf, FileChange>,
@@ -146,24 +141,17 @@ pub(crate) enum ToolEmitter {
         source: ExecCommandSource,
         parsed_cmd: Vec<ParsedCommand>,
         process_id: Option<String>,
-        plugin_attribution: Option<PluginCommandAttribution>,
     },
 }
 
 impl ToolEmitter {
-    pub fn shell(
-        command: Vec<String>,
-        cwd: AbsolutePathBuf,
-        source: ExecCommandSource,
-        plugin_attribution: Option<PluginCommandAttribution>,
-    ) -> Self {
+    pub fn shell(command: Vec<String>, cwd: AbsolutePathBuf, source: ExecCommandSource) -> Self {
         let parsed_cmd = parse_command(&command);
         Self::Shell {
             command,
             cwd: PathUri::from_abs_path(&cwd),
             source,
             parsed_cmd,
-            plugin_attribution,
         }
     }
 
@@ -184,7 +172,6 @@ impl ToolEmitter {
         cwd: PathUri,
         source: ExecCommandSource,
         process_id: Option<String>,
-        plugin_attribution: Option<PluginCommandAttribution>,
     ) -> Self {
         let parsed_cmd = parse_command(command);
         Self::UnifiedExec {
@@ -193,7 +180,6 @@ impl ToolEmitter {
             source,
             parsed_cmd,
             process_id,
-            plugin_attribution,
         }
     }
 
@@ -205,7 +191,6 @@ impl ToolEmitter {
                     cwd,
                     source,
                     parsed_cmd,
-                    plugin_attribution,
                     ..
                 },
                 stage,
@@ -213,13 +198,8 @@ impl ToolEmitter {
                 emit_exec_stage(
                     ctx,
                     ExecCommandInput::new(
-                        command,
-                        cwd,
-                        parsed_cmd,
-                        *source,
-                        /*interaction_input*/ None,
+                        command, cwd, parsed_cmd, *source, /*interaction_input*/ None,
                         /*process_id*/ None,
-                        plugin_attribution.as_ref(),
                     ),
                     stage,
                 )
@@ -341,7 +321,6 @@ impl ToolEmitter {
                     source,
                     parsed_cmd,
                     process_id,
-                    plugin_attribution,
                 },
                 stage,
             ) => {
@@ -354,7 +333,6 @@ impl ToolEmitter {
                         *source,
                         /*interaction_input*/ None,
                         process_id.as_deref(),
-                        plugin_attribution.as_ref(),
                     ),
                     stage,
                 )
@@ -468,7 +446,6 @@ struct ExecCommandInput<'a> {
     source: ExecCommandSource,
     interaction_input: Option<&'a str>,
     process_id: Option<&'a str>,
-    plugin_attribution: Option<&'a PluginCommandAttribution>,
 }
 
 impl<'a> ExecCommandInput<'a> {
@@ -479,7 +456,6 @@ impl<'a> ExecCommandInput<'a> {
         source: ExecCommandSource,
         interaction_input: Option<&'a str>,
         process_id: Option<&'a str>,
-        plugin_attribution: Option<&'a PluginCommandAttribution>,
     ) -> Self {
         Self {
             command,
@@ -488,7 +464,6 @@ impl<'a> ExecCommandInput<'a> {
             source,
             interaction_input,
             process_id,
-            plugin_attribution,
         }
     }
 }
@@ -566,14 +541,11 @@ async fn emit_exec_end(
     exec_input: ExecCommandInput<'_>,
     exec_result: ExecCommandResult,
 ) {
-    let (plugin_id, script_path) = plugin_attribution_fields(exec_input.plugin_attribution);
     ctx.session
         .emit_turn_item_completed(
             ctx.turn,
             TurnItem::CommandExecution(CommandExecutionItem {
                 id: ctx.call_id.to_string(),
-                plugin_id,
-                script_path,
                 process_id: exec_input.process_id.map(str::to_owned),
                 command: exec_input.command.to_vec(),
                 cwd: exec_input.cwd.clone(),
@@ -590,14 +562,6 @@ async fn emit_exec_end(
             }),
         )
         .await;
-}
-
-fn plugin_attribution_fields(
-    attribution: Option<&PluginCommandAttribution>,
-) -> (Option<String>, Option<String>) {
-    attribution
-        .map(PluginCommandAttribution::serialized_fields)
-        .unzip()
 }
 
 async fn emit_patch_end(

@@ -79,7 +79,6 @@ const RAW_DIFF_SUMMARY_WIDTH: usize = 10_000;
 
 mod base;
 mod exec;
-mod hook_cell;
 mod markdown_render_cache;
 mod messages;
 mod notices;
@@ -92,9 +91,6 @@ mod session;
 
 pub(crate) use base::*;
 pub(crate) use exec::*;
-pub(crate) use hook_cell::HookCell;
-pub(crate) use hook_cell::new_active_hook_cell;
-pub(crate) use hook_cell::new_completed_hook_cell;
 pub(crate) use messages::*;
 pub(crate) use notices::*;
 pub(crate) use patches::*;

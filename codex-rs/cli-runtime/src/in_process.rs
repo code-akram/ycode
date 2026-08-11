@@ -106,9 +106,7 @@ type PendingClientRequestResponse = std::result::Result<Result, JSONRPCErrorErro
 fn server_notification_requires_delivery(notification: &ServerNotification) -> bool {
     matches!(
         notification,
-        ServerNotification::TurnCompleted(_)
-            | ServerNotification::ThreadSettingsUpdated(_)
-            | ServerNotification::ExternalAgentConfigImportCompleted(_)
+        ServerNotification::TurnCompleted(_) | ServerNotification::ThreadSettingsUpdated(_)
     )
 }
 
@@ -464,7 +462,6 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                 installation_id,
                 code_mode_session_provider: None,
                 rpc_transport: CliRuntimeRpcTransport::InProcess,
-                plugin_startup_tasks: crate::PluginStartupTasks::Start,
             }));
             let mut thread_created_rx = processor.thread_created_receiver();
             let session = Arc::new(ConnectionSessionState::new());

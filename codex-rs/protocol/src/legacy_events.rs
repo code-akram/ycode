@@ -155,8 +155,6 @@ impl CommandExecutionItem {
     pub(crate) fn as_legacy_begin_event(&self, turn_id: String, started_at_ms: i64) -> EventMsg {
         EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
             call_id: self.id.clone(),
-            plugin_id: self.plugin_id.clone(),
-            script_path: self.script_path.clone(),
             process_id: self.process_id.clone(),
             turn_id,
             started_at_ms,
@@ -181,8 +179,6 @@ impl CommandExecutionItem {
         };
         Some(EventMsg::ExecCommandEnd(ExecCommandEndEvent {
             call_id: self.id.clone(),
-            plugin_id: self.plugin_id.clone(),
-            script_path: self.script_path.clone(),
             process_id: self.process_id.clone(),
             turn_id,
             completed_at_ms,
@@ -459,7 +455,6 @@ impl TurnItem {
     pub fn as_legacy_events(&self, show_raw_agent_reasoning: bool) -> Vec<EventMsg> {
         match self {
             TurnItem::UserMessage(item) => vec![item.as_legacy_event()],
-            TurnItem::HookPrompt(_) => Vec::new(),
             TurnItem::AgentMessage(item) => item.as_legacy_events(),
             TurnItem::Plan(_) => Vec::new(),
             TurnItem::CommandExecution(_)

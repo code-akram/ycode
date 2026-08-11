@@ -1462,48 +1462,6 @@ async fn completed_token_activity_refresh_waits_for_active_history_cell() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::CommitPendingUsageOutput));
 }
 
-#[tokio::test]
-async fn completed_token_activity_refresh_waits_for_active_hook() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    set_chatgpt_auth(&mut chat);
-    handle_hook_started(
-        &mut chat,
-        hook_run(
-            "post-tool-use:0:/tmp/hooks.json",
-            codex_cli_protocol::HookEventName::PostToolUse,
-            codex_cli_protocol::HookRunStatus::Running,
-            "checking output policy",
-            Vec::new(),
-        ),
-    );
-
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
-    assert!(
-        chat.finish_token_activity_refresh(
-            request_id,
-            Err("token activity unavailable".to_string()),
-        )
-    );
-    assert!(chat.usage_history_insertion_blocked());
-
-    handle_hook_completed(
-        &mut chat,
-        hook_run(
-            "post-tool-use:0:/tmp/hooks.json",
-            codex_cli_protocol::HookEventName::PostToolUse,
-            codex_cli_protocol::HookRunStatus::Completed,
-            "checking output policy",
-            vec![codex_cli_protocol::HookOutputEntry {
-                kind: codex_cli_protocol::HookOutputEntryKind::Context,
-                text: "hook context".to_string(),
-            }],
-        ),
-    );
-
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::CommitPendingUsageOutput));
-}
-
 async fn pending_token_activity_refresh_keeps_composer_visible_in_short_viewport() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
@@ -2167,18 +2125,6 @@ async fn slash_memory_update_reports_stubbed_feature() {
     assert!(
         op_rx.try_recv().is_err(),
         "expected no memory op to be sent"
-    );
-}
-
-#[tokio::test]
-async fn slash_import_opens_claude_code_import_picker() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.dispatch_command(SlashCommand::Import);
-
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::OpenExternalAgentConfigMigration)
     );
 }
 

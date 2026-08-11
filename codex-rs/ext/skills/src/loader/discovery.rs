@@ -5,7 +5,6 @@ use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::WalkEntryKind;
 use codex_exec_server::WalkOptions;
 use codex_utils_path_uri::PathUri;
-use codex_utils_plugins::DISCOVERABLE_PLUGIN_MANIFEST_PATHS;
 
 use super::MAX_SCAN_DEPTH;
 use super::MAX_SKILLS_DIRS_PER_ROOT;
@@ -33,8 +32,6 @@ pub(super) struct SkillDiscoveryOptions {
 
 pub(super) struct SkillDiscovery {
     pub skills: Vec<DiscoveredSkill>,
-    pub plugin_roots: HashSet<PathUri>,
-    pub namespace_roots: HashSet<PathUri>,
     pub warnings: Vec<String>,
 }
 
@@ -56,8 +53,6 @@ pub(super) async fn discover_skills(
 ) -> SkillDiscovery {
     let empty_discovery = || SkillDiscovery {
         skills: Vec::new(),
-        plugin_roots: HashSet::new(),
-        namespace_roots: HashSet::new(),
         warnings: Vec::new(),
     };
     let walk = match file_system
@@ -112,7 +107,6 @@ pub(super) async fn discover_skills(
     let mut skill_files = Vec::new();
     let mut file_paths = HashSet::new();
     let mut metadata_directory_parents = HashSet::new();
-    let mut plugin_roots = HashSet::new();
     for entry in walk.entries {
         if skip_hidden && has_hidden_ancestor_below_root(&entry.path, root) {
             continue;
@@ -126,13 +120,6 @@ pub(super) async fn discover_skills(
                     && let Some(skill_dir) = entry.path.parent()
                 {
                     metadata_directory_parents.insert(skill_dir);
-                }
-                if DISCOVERABLE_PLUGIN_MANIFEST_PATHS
-                    .iter()
-                    .any(|path| path.split('/').next() == entry.path.basename().as_deref())
-                    && let Some(plugin_root) = entry.path.parent()
-                {
-                    plugin_roots.insert(plugin_root);
                 }
             }
             WalkEntryKind::File => {
@@ -156,12 +143,7 @@ pub(super) async fn discover_skills(
         })
         .collect();
 
-    SkillDiscovery {
-        skills,
-        plugin_roots,
-        namespace_roots: HashSet::from([root.clone()]),
-        warnings,
-    }
+    SkillDiscovery { skills, warnings }
 }
 
 fn has_hidden_ancestor_below_root(path: &PathUri, root: &PathUri) -> bool {

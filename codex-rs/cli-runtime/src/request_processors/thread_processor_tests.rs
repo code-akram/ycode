@@ -698,8 +698,6 @@ mod thread_processor_behavior_tests {
             .load_with_overrides(
                 Some(HashMap::from([
                     ("model_provider".to_string(), json!("request")),
-                    ("features.plugins".to_string(), json!(true)),
-                    ("bypass_hook_trust".to_string(), json!(true)),
                     (
                         "model_providers.session".to_string(),
                         json!({
@@ -715,8 +713,6 @@ mod thread_processor_behavior_tests {
 
         assert_eq!(config.model_provider_id, "session");
         assert_eq!(config.model_provider, session_provider);
-        assert!(!config.features.enabled(Feature::Plugins));
-        assert!(config.bypass_hook_trust);
         Ok(())
     }
 

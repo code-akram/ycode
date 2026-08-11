@@ -33,11 +33,6 @@ pub struct SharedCliOptions {
     #[arg(long = "profile", short = 'p')]
     pub config_profile_v2: Option<ProfileV2Name>,
 
-    /// Run enabled hooks without requiring persisted hook trust for this invocation.
-    /// DANGEROUS. Intended only for automation that already vets hook sources.
-    #[arg(long = "dangerously-bypass-hook-trust", default_value_t = false)]
-    pub bypass_hook_trust: bool,
-
     /// Tell the agent to use the specified directory as its working root.
     #[clap(long = "cd", short = 'C', value_name = "DIR")]
     pub cwd: Option<PathBuf>,
@@ -51,7 +46,6 @@ impl SharedCliOptions {
             oss,
             oss_provider,
             config_profile_v2,
-            bypass_hook_trust,
             cwd,
         } = self;
         let Self {
@@ -60,7 +54,6 @@ impl SharedCliOptions {
             oss: root_oss,
             oss_provider: root_oss_provider,
             config_profile_v2: root_config_profile_v2,
-            bypass_hook_trust: root_bypass_hook_trust,
             cwd: root_cwd,
         } = root;
 
@@ -75,9 +68,6 @@ impl SharedCliOptions {
         }
         if config_profile_v2.is_none() {
             config_profile_v2.clone_from(root_config_profile_v2);
-        }
-        if !*bypass_hook_trust {
-            *bypass_hook_trust = *root_bypass_hook_trust;
         }
         if cwd.is_none() {
             cwd.clone_from(root_cwd);
@@ -96,7 +86,6 @@ impl SharedCliOptions {
             oss,
             oss_provider,
             config_profile_v2,
-            bypass_hook_trust,
             cwd,
         } = subcommand;
 
@@ -111,9 +100,6 @@ impl SharedCliOptions {
         }
         if let Some(config_profile_v2) = config_profile_v2 {
             self.config_profile_v2 = Some(config_profile_v2);
-        }
-        if bypass_hook_trust {
-            self.bypass_hook_trust = true;
         }
         if let Some(cwd) = cwd {
             self.cwd = Some(cwd);

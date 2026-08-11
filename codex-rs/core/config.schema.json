@@ -405,9 +405,6 @@
             "codex_git_commit": {
               "type": "boolean"
             },
-            "codex_hooks": {
-              "type": "boolean"
-            },
             "collab": {
               "type": "boolean"
             },
@@ -453,12 +450,6 @@
             "experimental_windows_sandbox": {
               "type": "boolean"
             },
-            "external_agent_memory_import": {
-              "type": "boolean"
-            },
-            "external_migration": {
-              "type": "boolean"
-            },
             "fast_mode": {
               "type": "boolean"
             },
@@ -469,9 +460,6 @@
               "type": "boolean"
             },
             "guardianv2": {
-              "type": "boolean"
-            },
-            "hooks": {
               "type": "boolean"
             },
             "image_detail_original": {
@@ -528,31 +516,16 @@
             "personality": {
               "type": "boolean"
             },
-            "plugin_hooks": {
-              "type": "boolean"
-            },
-            "plugin_sharing": {
-              "type": "boolean"
-            },
-            "plugins": {
-              "type": "boolean"
-            },
             "prevent_idle_sleep": {
               "type": "boolean"
             },
             "realtime_conversation": {
               "type": "boolean"
             },
-            "recommended_plugins": {
-              "type": "boolean"
-            },
             "remote_compaction_v2": {
               "type": "boolean"
             },
             "remote_models": {
-              "type": "boolean"
-            },
-            "remote_plugin": {
               "type": "boolean"
             },
             "request_permissions": {
@@ -842,39 +815,6 @@
       },
       "type": "object"
     },
-    "ExternalConfigMigrationPrompts": {
-      "additionalProperties": false,
-      "description": "Settings for notices we display to users via the tui and app-server clients (primarily the Codex IDE extension). NOTE: these are different from notifications - notices are warnings, NUX screens, acknowledgements, etc.",
-      "properties": {
-        "home": {
-          "description": "Tracks whether home-level external config migration prompts are hidden.",
-          "type": "boolean"
-        },
-        "home_last_prompted_at": {
-          "description": "Tracks the last time the home-level external config migration prompt was shown.",
-          "format": "int64",
-          "type": "integer"
-        },
-        "project_last_prompted_at": {
-          "additionalProperties": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "default": {},
-          "description": "Tracks the last time a project-level external config migration prompt was shown.",
-          "type": "object"
-        },
-        "projects": {
-          "additionalProperties": {
-            "type": "boolean"
-          },
-          "default": {},
-          "description": "Tracks which project paths have opted out of external config migration prompts.",
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
     "FeatureToml_for_CodeModeConfigToml": {
       "anyOf": [
         {
@@ -1037,179 +977,6 @@
         }
       ]
     },
-    "HookHandlerConfig": {
-      "oneOf": [
-        {
-          "properties": {
-            "additionalContextLimit": {
-              "description": "Approximate token threshold for spilling this hook's `additionalContext` to disk. Unset uses 2,500 tokens; `0` disables spilling for this hook. The threshold is evaluated against the original context; a spilled preview also includes recovery metadata.",
-              "format": "uint",
-              "minimum": 0.0,
-              "type": "integer"
-            },
-            "async": {
-              "default": false,
-              "type": "boolean"
-            },
-            "command": {
-              "type": "string"
-            },
-            "commandWindows": {
-              "default": null,
-              "type": "string"
-            },
-            "statusMessage": {
-              "default": null,
-              "type": "string"
-            },
-            "timeout": {
-              "default": null,
-              "format": "uint64",
-              "minimum": 0.0,
-              "type": "integer"
-            },
-            "type": {
-              "enum": [
-                "command"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "command",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "type": {
-              "enum": [
-                "prompt"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "type": {
-              "enum": [
-                "agent"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "type": "object"
-        }
-      ]
-    },
-    "HookStateToml": {
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "trusted_hash": {
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "HooksToml": {
-      "properties": {
-        "PermissionRequest": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "PostCompact": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "PostToolUse": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "PreCompact": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "PreToolUse": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "SessionEnd": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "SessionStart": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "Stop": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "SubagentStart": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "SubagentStop": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "UserPromptSubmit": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/MatcherGroup"
-          },
-          "type": "array"
-        },
-        "state": {
-          "additionalProperties": {
-            "$ref": "#/definitions/HookStateToml"
-          },
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
     "KeybindingsSpec": {
       "anyOf": [
         {
@@ -1223,72 +990,6 @@
         }
       ],
       "description": "One action binding value in config.\n\nThis accepts either:\n\n1. A single key or chord string (`\"ctrl-a\"` or `\"ctrl-x ctrl-s\"`). 2. A list of alternative bindings (`[\"ctrl-a\", \"ctrl-x ctrl-s\"]`).\n\nAn empty list explicitly unbinds the action in that scope. Because an explicit empty list is still a configured value, runtime resolution must not fall through to global or built-in defaults for that action."
-    },
-    "MarketplaceConfig": {
-      "additionalProperties": false,
-      "properties": {
-        "last_revision": {
-          "default": null,
-          "description": "Git revision Codex last successfully activated for this marketplace.",
-          "type": "string"
-        },
-        "last_updated": {
-          "default": null,
-          "description": "Last time Codex successfully added or refreshed this marketplace.",
-          "type": "string"
-        },
-        "ref": {
-          "default": null,
-          "description": "Git ref to check out when `source_type` is `git`.",
-          "type": "string"
-        },
-        "source": {
-          "default": null,
-          "description": "Source location used when the marketplace was added.",
-          "type": "string"
-        },
-        "source_type": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/MarketplaceSourceType"
-            }
-          ],
-          "default": null,
-          "description": "Source kind used to install this marketplace."
-        },
-        "sparse_paths": {
-          "default": null,
-          "description": "Sparse checkout paths used when `source_type` is `git`.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "MarketplaceSourceType": {
-      "enum": [
-        "git",
-        "local"
-      ],
-      "type": "string"
-    },
-    "MatcherGroup": {
-      "properties": {
-        "hooks": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/HookHandlerConfig"
-          },
-          "type": "array"
-        },
-        "matcher": {
-          "default": null,
-          "type": "string"
-        }
-      },
-      "type": "object"
     },
     "MemoriesToml": {
       "additionalProperties": false,
@@ -1680,21 +1381,8 @@
     },
     "Notice": {
       "additionalProperties": false,
+      "description": "Settings for notices we display to users via the tui and app-server clients (primarily the Codex IDE extension). NOTE: these are different from notifications - notices are warnings, NUX screens, acknowledgements, etc.",
       "properties": {
-        "external_config_migration_prompts": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ExternalConfigMigrationPrompts"
-            }
-          ],
-          "default": {
-            "home": null,
-            "home_last_prompted_at": null,
-            "project_last_prompted_at": {},
-            "projects": {}
-          },
-          "description": "Tracks scopes where external config migration prompts should be suppressed."
-        },
         "fast_default_opt_out": {
           "description": "Tracks whether the user opted out of Codex-managed fast defaults.",
           "type": "boolean"
@@ -1973,16 +1661,6 @@
         "pragmatic"
       ],
       "type": "string"
-    },
-    "PluginConfig": {
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "default": true,
-          "type": "boolean"
-        }
-      },
-      "type": "object"
     },
     "ProfileTui": {
       "additionalProperties": false,
@@ -2441,8 +2119,7 @@
     },
     "ToolSuggestDiscoverableType": {
       "enum": [
-        "connector",
-        "plugin"
+        "connector"
       ],
       "type": "string"
     },
@@ -4153,9 +3830,6 @@
         "codex_git_commit": {
           "type": "boolean"
         },
-        "codex_hooks": {
-          "type": "boolean"
-        },
         "collab": {
           "type": "boolean"
         },
@@ -4201,12 +3875,6 @@
         "experimental_windows_sandbox": {
           "type": "boolean"
         },
-        "external_agent_memory_import": {
-          "type": "boolean"
-        },
-        "external_migration": {
-          "type": "boolean"
-        },
         "fast_mode": {
           "type": "boolean"
         },
@@ -4217,9 +3885,6 @@
           "type": "boolean"
         },
         "guardianv2": {
-          "type": "boolean"
-        },
-        "hooks": {
           "type": "boolean"
         },
         "image_detail_original": {
@@ -4276,31 +3941,16 @@
         "personality": {
           "type": "boolean"
         },
-        "plugin_hooks": {
-          "type": "boolean"
-        },
-        "plugin_sharing": {
-          "type": "boolean"
-        },
-        "plugins": {
-          "type": "boolean"
-        },
         "prevent_idle_sleep": {
           "type": "boolean"
         },
         "realtime_conversation": {
           "type": "boolean"
         },
-        "recommended_plugins": {
-          "type": "boolean"
-        },
         "remote_compaction_v2": {
           "type": "boolean"
         },
         "remote_models": {
-          "type": "boolean"
-        },
-        "remote_plugin": {
           "type": "boolean"
         },
         "request_permissions": {
@@ -4477,14 +4127,6 @@
       },
       "description": "Settings that govern if and what will be written to `~/.codex/history.jsonl`."
     },
-    "hooks": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/HooksToml"
-        }
-      ],
-      "description": "Lifecycle hooks configured inline in TOML plus user-level overrides."
-    },
     "include_apps_instructions": {
       "description": "Whether to inject the `<apps_instructions>` developer block.",
       "type": "boolean"
@@ -4504,14 +4146,6 @@
         }
       ],
       "description": "Directory where Codex writes log files. Setting this value explicitly also enables the TUI text log in this directory. Defaults to `$CODEX_HOME/log`."
-    },
-    "marketplaces": {
-      "additionalProperties": {
-        "$ref": "#/definitions/MarketplaceConfig"
-      },
-      "default": {},
-      "description": "User-level marketplace entries keyed by marketplace name.",
-      "type": "object"
     },
     "memories": {
       "allOf": [
@@ -4632,14 +4266,6 @@
         }
       ],
       "description": "Optionally specify a personality for the model"
-    },
-    "plugins": {
-      "additionalProperties": {
-        "$ref": "#/definitions/PluginConfig"
-      },
-      "default": {},
-      "description": "User-level plugin config entries keyed by plugin name.",
-      "type": "object"
     },
     "profile": {
       "description": "Profile to use from the `profiles` map.",

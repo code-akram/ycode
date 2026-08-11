@@ -180,9 +180,6 @@ impl AccountRequestProcessor {
 
     pub(crate) fn clear_external_auth(&self) {
         self.auth_manager.clear_external_auth();
-        self.thread_manager
-            .plugins_manager()
-            .set_auth_mode(self.auth_manager.get_api_auth_mode());
     }
 
     fn current_account_updated_notification(&self) -> AccountUpdatedNotification {
@@ -208,71 +205,6 @@ impl AccountRequestProcessor {
                 self.config.as_ref().clone()
             }
         }
-    }
-
-    async fn maybe_refresh_plugin_caches_for_current_config(
-        config_manager: &ConfigManager,
-        thread_manager: &Arc<ThreadManager>,
-        auth: Option<CodexAuth>,
-    ) {
-        thread_manager
-            .plugins_manager()
-            .set_auth_mode(auth.as_ref().map(CodexAuth::api_auth_mode));
-        thread_manager
-            .plugins_manager()
-            .clear_recommended_plugins_cache();
-
-        match config_manager
-            .load_latest_config(/*fallback_cwd*/ None)
-            .await
-        {
-            Ok(config) => {
-                Self::spawn_effective_plugins_changed_task(
-                    Arc::clone(thread_manager),
-                    config_manager.clone(),
-                );
-                let plugins_config = config.plugins_config_input();
-                let refresh_thread_manager = Arc::clone(thread_manager);
-                let refresh_config_manager = config_manager.clone();
-                let on_effective_plugins_changed: Arc<
-                    dyn Fn(codex_core_plugins::EffectivePluginsChange) + Send + Sync,
-                > = Arc::new(move |_change| {
-                    Self::spawn_effective_plugins_changed_task(
-                        Arc::clone(&refresh_thread_manager),
-                        refresh_config_manager.clone(),
-                    );
-                });
-                thread_manager
-                    .plugins_manager()
-                    .maybe_start_curated_repo_sync_for_config(
-                        &plugins_config,
-                        Some(Arc::clone(&on_effective_plugins_changed)),
-                    );
-                thread_manager
-                    .plugins_manager()
-                    .maybe_start_remote_plugin_caches_refresh(
-                        &plugins_config,
-                        auth,
-                        Some(on_effective_plugins_changed),
-                    );
-            }
-            Err(err) => {
-                warn!(
-                    "failed to reload config after account changed, skipping remote installed plugins cache refresh: {err}"
-                );
-            }
-        }
-    }
-
-    fn spawn_effective_plugins_changed_task(
-        thread_manager: Arc<ThreadManager>,
-        config_manager: ConfigManager,
-    ) {
-        tokio::spawn(async move {
-            thread_manager.plugins_manager().clear_cache();
-            thread_manager.skills_service().clear_cache();
-            let _ = config_manager;
-        });
     }
 
     async fn login_v2(
@@ -791,13 +723,6 @@ impl AccountRequestProcessor {
     }
 
     async fn send_login_success_notifications(&self, login_id: Option<Uuid>) {
-        Self::maybe_refresh_plugin_caches_for_current_config(
-            &self.config_manager,
-            &self.thread_manager,
-            self.auth_manager.auth_cached(),
-        )
-        .await;
-
         let payload_login_completed = AccountLoginCompletedNotification {
             login_id: login_id.map(|id| id.to_string()),
             success: true,
@@ -842,12 +767,6 @@ impl AccountRequestProcessor {
                 .await;
 
             let auth = auth_manager.auth_cached();
-            Self::maybe_refresh_plugin_caches_for_current_config(
-                &config_manager,
-                &thread_manager,
-                auth.clone(),
-            )
-            .await;
             let payload_v2 = AccountUpdatedNotification {
                 auth_mode: auth
                     .as_ref()
@@ -891,13 +810,6 @@ impl AccountRequestProcessor {
         if managed_bedrock_auth {
             clear_user_model_provider_if_bedrock(&self.config_manager).await?;
         }
-
-        Self::maybe_refresh_plugin_caches_for_current_config(
-            &self.config_manager,
-            &self.thread_manager,
-            self.auth_manager.auth_cached(),
-        )
-        .await;
 
         // Reflect the current auth method after logout (likely None).
         Ok(self

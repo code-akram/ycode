@@ -1,8 +1,6 @@
 use super::*;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::shell_snapshot::ShellSnapshotFile;
-use codex_core_plugins::PluginCommandAttribution;
-use codex_core_plugins::TrustedPluginRoots;
 use codex_model_provider::SharedModelProvider;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
@@ -184,16 +182,6 @@ impl TurnContext {
                 developer_instructions: self.agent_settings_developer_instructions.clone(),
             },
         }
-    }
-
-    pub(crate) fn plugin_attribution_for_command(
-        &self,
-        command: &[String],
-        cwd: &AbsolutePathBuf,
-    ) -> Option<PluginCommandAttribution> {
-        self.extension_data
-            .get::<TrustedPluginRoots>()?
-            .resolve_attribution(command, cwd)
     }
 
     pub(crate) fn approval_policy(&self) -> AskForApproval {
@@ -701,23 +689,7 @@ impl Session {
                     .or(model_info.multi_agent_version),
             ),
         };
-        let plugins_input = per_turn_config.plugins_config_input();
-        let plugin_outcome = self
-            .services
-            .plugins_manager
-            .plugins_for_config(&plugins_input)
-            .await;
-        let trusted_plugin_roots = TrustedPluginRoots::from_plugin_load_outcome(
-            &plugin_outcome,
-            per_turn_config.codex_home.as_path(),
-        );
-        let effective_skill_roots = plugin_outcome.effective_plugin_skill_roots();
-        let plugin_skill_snapshots = self
-            .services
-            .plugins_manager
-            .plugin_skill_snapshots_for_config(&plugins_input);
-        let skills_input = skills_load_input_from_config(&per_turn_config, effective_skill_roots)
-            .with_plugin_skill_snapshots(plugin_skill_snapshots);
+        let skills_input = skills_load_input_from_config(&per_turn_config);
         let fs = primary_turn_environment
             .map(|turn_environment| turn_environment.environment.get_filesystem());
         let skills_snapshot = self
@@ -745,7 +717,6 @@ impl Session {
             skills_snapshot,
         );
         turn_context.code_mode_available = self.services.code_mode_service.is_available();
-        turn_context.extension_data.insert(trusted_plugin_roots);
         turn_context.realtime_active = self.conversation.running_state().await.is_some();
 
         if let Some(final_schema) = final_output_json_schema {

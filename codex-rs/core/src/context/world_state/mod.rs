@@ -6,7 +6,6 @@ mod model;
 mod multi_agent_mode;
 mod multi_agent_usage_hint;
 mod personality;
-mod plugins_instructions;
 mod realtime;
 #[cfg(test)]
 mod test_support;
@@ -36,7 +35,6 @@ pub(crate) use model::ModelInstructionsState;
 pub(crate) use multi_agent_mode::MultiAgentModeState;
 pub(crate) use multi_agent_usage_hint::MultiAgentUsageHintState;
 pub(crate) use personality::PersonalityState;
-pub(crate) use plugins_instructions::PluginsInstructionsState;
 pub(crate) use realtime::RealtimeState;
 pub(crate) use tools::ToolsState;
 

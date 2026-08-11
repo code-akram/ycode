@@ -157,19 +157,11 @@ impl ChatWidget {
             task_complete_pending: false,
             unified_exec_processes: Vec::new(),
             ide_context: IdeContextState::default(),
-            plugins_cache: PluginsCacheState::default(),
-            plugins_fetch_state: PluginListFetchState::default(),
-            plugin_remote_sections_loading: false,
-            plugin_remote_sections_loaded: false,
-            plugin_remote_section_errors: Vec::new(),
-            plugins_active_tab_id: None,
-            newly_installed_marketplace_tab_id: None,
             interrupts: InterruptManager::new(),
             reasoning_buffer: String::new(),
             reasoning_header: None,
             reasoning_summary_parts: Vec::new(),
             status_state: StatusState::default(),
-            active_hook_cell: None,
             pet_http_client,
             ambient_pet: None,
             pet_picker_preview_state: crate::pets::PetPickerPreviewState::default(),
@@ -245,7 +237,6 @@ impl ChatWidget {
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget.sync_service_tier_commands();
         widget.sync_personality_command_enabled();
-        widget.sync_plugins_command_enabled();
         widget.sync_goal_command_enabled();
         widget.sync_mentions_v2_enabled();
         widget

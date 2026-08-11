@@ -3,7 +3,6 @@ pub(crate) mod context;
 pub(crate) mod events;
 mod executed_tool_calls;
 pub(crate) mod handlers;
-pub(crate) mod hook_names;
 pub(crate) mod hosted_spec;
 pub(crate) mod lifecycle;
 pub(crate) mod orchestrator;

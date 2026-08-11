@@ -98,26 +98,6 @@ impl App {
                 );
                 return;
             }
-            ServerNotification::ExternalAgentConfigImportCompleted(notification) => {
-                let should_report_completion =
-                    cli_runtime_client.consume_external_agent_config_import_completion();
-                if let Err(err) = self.refresh_in_memory_config_from_disk().await {
-                    tracing::warn!(
-                        error = %err,
-                        "failed to refresh config after external agent config import"
-                    );
-                }
-                let cwd = self.chat_widget.config_ref().cwd.to_path_buf();
-                self.chat_widget.refresh_plugin_mentions();
-                self.chat_widget.submit_op(AppCommand::reload_user_config());
-                self.fetch_plugins_list(cli_runtime_client, cwd);
-                if should_report_completion {
-                    self.chat_widget.add_plain_history_lines(
-                        crate::external_agent_config_migration::flow::external_agent_config_migration_finished_lines(notification),
-                    );
-                }
-                return;
-            }
             _ => {}
         }
 

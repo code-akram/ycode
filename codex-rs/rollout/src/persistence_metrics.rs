@@ -245,7 +245,6 @@ fn rollout_item_type(item: &RolloutItem) -> String {
 fn turn_item_type(item: &TurnItem) -> &'static str {
     match item {
         TurnItem::UserMessage(_) => "user_message",
-        TurnItem::HookPrompt(_) => "hook_prompt",
         TurnItem::AgentMessage(_) => "agent_message",
         TurnItem::Plan(_) => "plan",
         TurnItem::Reasoning(_) => "reasoning",

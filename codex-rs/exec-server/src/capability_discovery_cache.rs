@@ -17,7 +17,7 @@ use crate::FileSystemSandboxContext;
 ///
 /// A single miss batches every requested root by environment. The cache deliberately has no
 /// invalidation: selected roots are already treated as stable for the lifetime of a thread by the
-/// existing plugin and skill providers.
+/// existing filesystem skill providers.
 pub struct ExecutorCapabilityDiscoveryCache {
     environment_manager: Arc<EnvironmentManager>,
     entries: Mutex<Vec<CachedRoot>>,

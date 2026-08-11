@@ -5,7 +5,6 @@ mod advanced_reasoning_tests;
 #[path = "tests/key_chords.rs"]
 mod key_chords;
 mod model_catalog;
-mod plugin_catalog;
 mod rate_limits;
 mod safety_buffering;
 mod session_summary;
@@ -200,19 +199,6 @@ async fn next_thread_settings_updated(
         }
     }
     panic!("expected ThreadSettingsUpdated for thread {thread_id}");
-}
-
-#[test]
-fn bypass_hook_trust_startup_warning_snapshot() {
-    let rendered = lines_to_single_string(
-        &history_cell::new_warning_event(
-            "`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."
-                .to_string(),
-        )
-        .display_lines(/*width*/ 80),
-    );
-
-    assert_app_snapshot!("bypass_hook_trust_startup_warning", rendered);
 }
 
 #[tokio::test]

@@ -4,7 +4,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::session::TurnInput;
 use crate::session::session::Session;
-use crate::session::turn::run_hooks_and_record_inputs;
+use crate::session::turn::record_inputs;
 use crate::session::turn::run_turn;
 use crate::session::turn_context::TurnContext;
 use crate::session_startup_prewarm::SessionStartupPrewarmResolution;
@@ -61,7 +61,7 @@ impl SessionTask for RegularTask {
         .await;
         let prewarmed_client_session = match prewarmed_client_session {
             SessionStartupPrewarmResolution::Cancelled => {
-                run_hooks_and_record_inputs(&sess, &ctx, &input).await;
+                record_inputs(&sess, &ctx, &input).await;
                 return Ok(None);
             }
             SessionStartupPrewarmResolution::Unavailable { .. } => None,

@@ -40,12 +40,6 @@ pub const GOAL_USAGE_LIMITED_METRIC: &str = "codex.goal.usage_limited";
 pub const GOAL_BLOCKED_METRIC: &str = "codex.goal.blocked";
 pub const GOAL_TOKEN_COUNT_METRIC: &str = "codex.goal.token_count";
 pub const GOAL_DURATION_SECONDS_METRIC: &str = "codex.goal.duration_s";
-pub const PLUGIN_INSTALL_ELICITATION_SENT_METRIC: &str = "codex.plugins.install_elicitation.sent";
-pub const PLUGIN_INSTALL_SUGGESTION_METRIC: &str = "codex.plugins.install_suggestion";
-pub const CURATED_PLUGINS_STARTUP_SYNC_METRIC: &str = "codex.plugins.startup_sync";
-pub const CURATED_PLUGINS_STARTUP_SYNC_FINAL_METRIC: &str = "codex.plugins.startup_sync.final";
-pub const HOOK_RUN_METRIC: &str = "codex.hooks.run";
-pub const HOOK_RUN_DURATION_METRIC: &str = "codex.hooks.run.duration_ms";
 /// Duration for coarse startup phases, tagged by low-cardinality phase and status.
 pub const STARTUP_PHASE_DURATION_METRIC: &str = "codex.startup.phase.duration_ms";
 /// Total runtime of a startup prewarm attempt until it completes, tagged by final status.

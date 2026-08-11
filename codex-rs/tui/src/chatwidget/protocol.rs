@@ -105,12 +105,6 @@ impl ChatWidget {
                         .collect(),
                 })
             }
-            ServerNotification::HookStarted(notification) => {
-                self.on_hook_started(notification.run);
-            }
-            ServerNotification::HookCompleted(notification) => {
-                self.on_hook_completed(notification.run);
-            }
             ServerNotification::Error(notification) => {
                 if notification.will_retry {
                     if !from_replay {
@@ -171,8 +165,6 @@ impl ChatWidget {
             | ServerNotification::FileChangePatchUpdated(_)
             | ServerNotification::EnvironmentConnected(_)
             | ServerNotification::EnvironmentDisconnected(_)
-            | ServerNotification::ExternalAgentConfigImportProgress(_)
-            | ServerNotification::ExternalAgentConfigImportCompleted(_)
             | ServerNotification::FsChanged(_)
             | ServerNotification::TurnModerationMetadata(_)
             | ServerNotification::FuzzyFileSearchSessionUpdated(_)

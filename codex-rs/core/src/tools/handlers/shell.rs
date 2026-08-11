@@ -1,4 +1,3 @@
-use codex_protocol::models::ShellCommandToolCallParams;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -8,7 +7,6 @@ use crate::function_tool::FunctionCallError;
 use crate::session::turn_context::TurnContext;
 use crate::session::turn_context::TurnEnvironment;
 use crate::tools::context::FunctionToolOutput;
-use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::handlers::apply_patch::intercept_apply_patch;
@@ -25,16 +23,6 @@ mod shell_command;
 
 pub use shell_command::ShellCommandHandler;
 pub(crate) use shell_command::ShellCommandHandlerOptions;
-
-fn shell_command_payload_command(payload: &ToolPayload) -> Option<String> {
-    let ToolPayload::Function { arguments } = payload else {
-        return None;
-    };
-
-    parse_arguments::<ShellCommandToolCallParams>(arguments)
-        .ok()
-        .map(|params| params.command)
-}
 
 struct RunExecLikeArgs {
     tool_name: ToolName,
@@ -88,14 +76,7 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
     }
 
     let source = ExecCommandSource::Agent;
-    let plugin_attribution =
-        turn.plugin_attribution_for_command(&exec_params.command, &exec_params.cwd);
-    let emitter = ToolEmitter::shell(
-        exec_params.command.clone(),
-        exec_params.cwd.clone(),
-        source,
-        plugin_attribution,
-    );
+    let emitter = ToolEmitter::shell(exec_params.command.clone(), exec_params.cwd.clone(), source);
     let event_ctx = ToolEventCtx::new(
         session.as_ref(),
         turn.as_ref(),
@@ -129,13 +110,6 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         &call_id,
         /*turn_diff_tracker*/ None,
     );
-    let post_tool_use_response = out
-        .as_ref()
-        .ok()
-        .map(|output| {
-            crate::tools::format_exec_output_str(output, turn.model_info.truncation_policy.into())
-        })
-        .map(JsonValue::String);
     let content = emitter
         .finish(event_ctx, out, /*applied_patch_delta*/ None)
         .await?;
@@ -144,7 +118,6 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
             codex_protocol::models::FunctionCallOutputContentItem::InputText { text: content },
         ],
         success: Some(true),
-        post_tool_use_response,
     })
 }
 

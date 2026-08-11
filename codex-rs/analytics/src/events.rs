@@ -12,11 +12,8 @@ use crate::facts::CompactionStatus;
 use crate::facts::CompactionStrategy;
 use crate::facts::CompactionTrigger;
 use crate::facts::GoalEventKind;
-use crate::facts::HookRunFact;
 use crate::facts::ImagePreparationMetadata;
 use crate::facts::InvocationType;
-use crate::facts::PluginInstallRequested;
-use crate::facts::PluginState;
 use crate::facts::SubAgentThreadStartedInput;
 use crate::facts::ThreadInitializationMode;
 use crate::facts::TrackEventsContext;
@@ -27,9 +24,6 @@ use crate::facts::TurnSubmissionType;
 use crate::now_unix_millis;
 use codex_cli_protocol::CodexErrorInfo;
 use codex_cli_protocol::CommandExecutionSource;
-use codex_login::default_client::originator;
-use codex_plugin::PluginId;
-use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::approvals::NetworkApprovalProtocol;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::SandboxPermissions;
@@ -37,9 +31,6 @@ use codex_protocol::protocol::GuardianAssessmentOutcome;
 use codex_protocol::protocol::GuardianCommandSource;
 use codex_protocol::protocol::GuardianRiskLevel;
 use codex_protocol::protocol::GuardianUserAuthorization;
-use codex_protocol::protocol::HookEventName;
-use codex_protocol::protocol::HookRunStatus;
-use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TokenUsage;
@@ -66,7 +57,6 @@ pub(crate) enum TrackEventRequest {
     GuardianReview(Box<GuardianReviewEventRequest>),
     AppMentioned(CodexAppMentionedEventRequest),
     AppUsed(CodexAppUsedEventRequest),
-    HookRun(CodexHookRunEventRequest),
     Compaction(Box<CodexCompactionEventRequest>),
     Goal(Box<CodexGoalEventRequest>),
     TurnEvent(Box<CodexTurnEventRequest>),
@@ -80,15 +70,6 @@ pub(crate) enum TrackEventRequest {
     AcceptedLineFingerprints(Box<CodexAcceptedLineFingerprintsEventRequest>),
     #[allow(dead_code)]
     ReviewEvent(CodexReviewEventRequest),
-    PluginUsed(CodexPluginUsedEventRequest),
-    PluginInstallRequested(CodexPluginInstallRequestedEventRequest),
-    PluginInstalled(CodexPluginEventRequest),
-    PluginUninstalled(CodexPluginEventRequest),
-    PluginEnabled(CodexPluginEventRequest),
-    PluginDisabled(CodexPluginEventRequest),
-    PluginInstallFailed(CodexPluginInstallFailedEventRequest),
-    ExternalAgentConfigImportCompleted(CodexOnboardingExternalAgentImportCompleteEventRequest),
-    ExternalAgentConfigImportFailure(CodexOnboardingExternalAgentImportFailureEventRequest),
 }
 
 impl TrackEventRequest {
@@ -97,11 +78,7 @@ impl TrackEventRequest {
     }
 
     pub(crate) fn can_send_with_api_key_auth(&self) -> bool {
-        match self {
-            Self::PluginUsed(event) => event.event_params.plugin.plugin_id.is_some(),
-            Self::SkillInvocation(event) => event.event_params.plugin_id.is_some(),
-            _ => false,
-        }
+        false
     }
 }
 
@@ -137,8 +114,6 @@ pub(crate) struct SkillInvocationEventRequest {
 pub(crate) struct SkillInvocationEventParams {
     pub(crate) product_client_id: Option<String>,
     pub(crate) skill_scope: Option<String>,
-    pub(crate) plugin_id: Option<String>,
-    pub(crate) remote_plugin_id: Option<String>,
     pub(crate) repo_url: Option<String>,
     pub(crate) thread_id: Option<String>,
     pub(crate) turn_id: Option<String>,
@@ -645,8 +620,6 @@ pub(crate) enum WebSearchActionKind {
 pub(crate) struct CodexCommandExecutionEventParams {
     #[serde(flatten)]
     pub(crate) base: CodexToolItemEventBase,
-    pub(crate) plugin_id: Option<String>,
-    pub(crate) script_path: Option<String>,
     pub(crate) command_execution_source: CommandExecutionSource,
     pub(crate) exit_code: Option<i32>,
     pub(crate) command_total_action_count: u64,
@@ -767,23 +740,6 @@ pub(crate) struct CodexAppMentionedEventRequest {
 pub(crate) struct CodexAppUsedEventRequest {
     pub(crate) event_type: &'static str,
     pub(crate) event_params: CodexAppMetadata,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexHookRunMetadata {
-    pub(crate) thread_id: Option<String>,
-    pub(crate) turn_id: Option<String>,
-    pub(crate) product_client_id: Option<String>,
-    pub(crate) model_slug: Option<String>,
-    pub(crate) hook_name: Option<String>,
-    pub(crate) hook_source: Option<&'static str>,
-    pub(crate) status: Option<HookRunStatus>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexHookRunEventRequest {
-    pub(crate) event_type: &'static str,
-    pub(crate) event_params: CodexHookRunMetadata,
 }
 
 #[derive(Serialize)]
@@ -937,123 +893,6 @@ pub(crate) struct CodexTurnSteerEventRequest {
     pub(crate) event_params: CodexTurnSteerEventParams,
 }
 
-#[derive(Serialize)]
-pub(crate) struct CodexPluginMetadata {
-    pub(crate) plugin_id: Option<String>,
-    pub(crate) remote_plugin_id: Option<String>,
-    pub(crate) plugin_name: Option<String>,
-    pub(crate) marketplace_name: Option<String>,
-    pub(crate) has_skills: Option<bool>,
-    pub(crate) product_client_id: Option<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexPluginUsedMetadata {
-    #[serde(flatten)]
-    pub(crate) plugin: CodexPluginMetadata,
-    pub(crate) thread_id: Option<String>,
-    pub(crate) turn_id: Option<String>,
-    pub(crate) model_slug: Option<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexPluginInstallRequestedPluginMetadata {
-    pub(crate) plugin_id: String,
-    pub(crate) remote_plugin_id: Option<String>,
-    pub(crate) plugin_name: String,
-    pub(crate) connector_ids: Vec<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexPluginInstallRequestedMetadata {
-    pub(crate) suggestion_id: String,
-    pub(crate) plugins: Vec<CodexPluginInstallRequestedPluginMetadata>,
-    pub(crate) source: crate::facts::PluginInstallRequestSource,
-    pub(crate) thread_id: String,
-    pub(crate) turn_id: String,
-    pub(crate) model_slug: String,
-    pub(crate) product_client_id: Option<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexPluginInstallRequestedEventRequest {
-    pub(crate) event_type: &'static str,
-    pub(crate) event_params: CodexPluginInstallRequestedMetadata,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexPluginEventRequest {
-    pub(crate) event_type: &'static str,
-    pub(crate) event_params: CodexPluginMetadata,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexPluginInstallFailedMetadata {
-    #[serde(flatten)]
-    pub(crate) plugin: CodexPluginMetadata,
-    pub(crate) source: crate::facts::PluginInstallSource,
-    pub(crate) error_type: String,
-    pub(crate) sub_error_type: Option<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexPluginInstallFailedEventRequest {
-    pub(crate) event_type: &'static str,
-    pub(crate) event_params: CodexPluginInstallFailedMetadata,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexOnboardingExternalAgentImportCompleteMetadata {
-    pub(crate) import_id: String,
-    pub(crate) source: String,
-    pub(crate) provider_id: String,
-    #[serde(rename = "type")]
-    pub(crate) item_type: String,
-    pub(crate) success_count: usize,
-    pub(crate) failed_count: usize,
-    pub(crate) product_client_id: Option<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexOnboardingExternalAgentImportCompleteEventRequest {
-    pub(crate) event_type: &'static str,
-    pub(crate) event_params: CodexOnboardingExternalAgentImportCompleteMetadata,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexOnboardingExternalAgentImportFailureMetadata {
-    pub(crate) import_id: String,
-    pub(crate) source: String,
-    pub(crate) provider_id: String,
-    #[serde(rename = "type")]
-    pub(crate) item_type: String,
-    pub(crate) failure_stage: String,
-    pub(crate) error_type: String,
-    pub(crate) sub_error_type: Option<String>,
-    pub(crate) product_client_id: Option<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexOnboardingExternalAgentImportFailureEventRequest {
-    pub(crate) event_type: &'static str,
-    pub(crate) event_params: CodexOnboardingExternalAgentImportFailureMetadata,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CodexPluginUsedEventRequest {
-    pub(crate) event_type: &'static str,
-    pub(crate) event_params: CodexPluginUsedMetadata,
-}
-
-pub(crate) fn plugin_state_event_type(state: PluginState) -> &'static str {
-    match state {
-        PluginState::Installed => "codex_plugin_installed",
-        PluginState::Uninstalled => "codex_plugin_uninstalled",
-        PluginState::Enabled => "codex_plugin_enabled",
-        PluginState::Disabled => "codex_plugin_disabled",
-    }
-}
-
 pub(crate) fn codex_app_metadata(
     tracking: &TrackEventsContext,
     app: AppInvocation,
@@ -1066,57 +905,6 @@ pub(crate) fn codex_app_metadata(
         product_client_id: Some(tracking.product_client_id.clone()),
         invoke_type: app.invocation_type,
         model_slug: Some(tracking.model_slug.clone()),
-    }
-}
-
-pub(crate) fn codex_plugin_metadata(plugin: PluginTelemetryMetadata) -> CodexPluginMetadata {
-    codex_plugin_metadata_with_product_client_id(plugin, originator().value)
-}
-
-fn codex_plugin_metadata_with_product_client_id(
-    plugin: PluginTelemetryMetadata,
-    product_client_id: String,
-) -> CodexPluginMetadata {
-    let PluginTelemetryMetadata {
-        plugin_id,
-        remote_plugin_id,
-        capability_summary,
-    } = plugin;
-    CodexPluginMetadata {
-        plugin_id: plugin_id.as_ref().map(PluginId::as_key),
-        remote_plugin_id,
-        plugin_name: plugin_id
-            .as_ref()
-            .map(|plugin_id| plugin_id.plugin_name.clone()),
-        marketplace_name: plugin_id.map(|plugin_id| plugin_id.marketplace_name),
-        has_skills: capability_summary
-            .as_ref()
-            .map(|summary| summary.has_skills),
-        product_client_id: Some(product_client_id),
-    }
-}
-
-pub(crate) fn codex_plugin_install_requested_metadata(
-    tracking: &TrackEventsContext,
-    request: PluginInstallRequested,
-) -> CodexPluginInstallRequestedMetadata {
-    CodexPluginInstallRequestedMetadata {
-        suggestion_id: request.suggestion_id,
-        plugins: request
-            .plugins
-            .into_iter()
-            .map(|plugin| CodexPluginInstallRequestedPluginMetadata {
-                plugin_id: plugin.plugin_id,
-                remote_plugin_id: plugin.remote_plugin_id,
-                plugin_name: plugin.plugin_name,
-                connector_ids: plugin.connector_ids,
-            })
-            .collect(),
-        source: request.source,
-        thread_id: tracking.thread_id.clone(),
-        turn_id: tracking.turn_id.clone(),
-        model_slug: tracking.model_slug.clone(),
-        product_client_id: Some(originator().value),
     }
 }
 
@@ -1185,68 +973,6 @@ pub(crate) fn codex_goal_event_params(
     }
 }
 
-pub(crate) fn codex_plugin_used_metadata(
-    tracking: &TrackEventsContext,
-    plugin: PluginTelemetryMetadata,
-) -> CodexPluginUsedMetadata {
-    CodexPluginUsedMetadata {
-        plugin: codex_plugin_metadata_with_product_client_id(
-            plugin,
-            tracking.product_client_id.clone(),
-        ),
-        thread_id: Some(tracking.thread_id.clone()),
-        turn_id: Some(tracking.turn_id.clone()),
-        model_slug: Some(tracking.model_slug.clone()),
-    }
-}
-
-pub(crate) fn codex_hook_run_metadata(
-    tracking: &TrackEventsContext,
-    hook: HookRunFact,
-) -> CodexHookRunMetadata {
-    CodexHookRunMetadata {
-        thread_id: Some(tracking.thread_id.clone()),
-        turn_id: Some(tracking.turn_id.clone()),
-        product_client_id: Some(tracking.product_client_id.clone()),
-        model_slug: Some(tracking.model_slug.clone()),
-        hook_name: Some(analytics_hook_event_name(hook.event_name).to_owned()),
-        hook_source: Some(analytics_hook_source(hook.hook_source)),
-        status: Some(analytics_hook_status(hook.status)),
-    }
-}
-
-fn analytics_hook_event_name(event_name: HookEventName) -> &'static str {
-    match event_name {
-        HookEventName::PreToolUse => "PreToolUse",
-        HookEventName::PermissionRequest => "PermissionRequest",
-        HookEventName::PostToolUse => "PostToolUse",
-        HookEventName::PreCompact => "PreCompact",
-        HookEventName::PostCompact => "PostCompact",
-        HookEventName::SessionStart => "SessionStart",
-        HookEventName::SessionEnd => "SessionEnd",
-        HookEventName::UserPromptSubmit => "UserPromptSubmit",
-        HookEventName::SubagentStart => "SubagentStart",
-        HookEventName::SubagentStop => "SubagentStop",
-        HookEventName::Stop => "Stop",
-    }
-}
-
-fn analytics_hook_source(source: HookSource) -> &'static str {
-    match source {
-        HookSource::System => "system",
-        HookSource::User => "user",
-        HookSource::Project => "project",
-        HookSource::Mdm => "mdm",
-        HookSource::SessionFlags => "session_flags",
-        HookSource::Plugin => "plugin",
-        HookSource::CloudRequirements => "cloud_requirements",
-        HookSource::CloudManagedConfig => "cloud_managed_config",
-        HookSource::LegacyManagedConfigFile => "legacy_managed_config_file",
-        HookSource::LegacyManagedConfigMdm => "legacy_managed_config_mdm",
-        HookSource::Unknown => "unknown",
-    }
-}
-
 pub(crate) fn current_runtime_metadata() -> CodexRuntimeMetadata {
     let os_info = os_info::get();
     CodexRuntimeMetadata {
@@ -1288,12 +1014,4 @@ pub(crate) fn subagent_thread_started_event_request(
 
 pub(crate) fn subagent_source_name(subagent_source: &SubAgentSource) -> String {
     subagent_source.kind().to_string()
-}
-
-fn analytics_hook_status(status: HookRunStatus) -> HookRunStatus {
-    match status {
-        // Running is unexpected here and normalized defensively.
-        HookRunStatus::Running => HookRunStatus::Failed,
-        other => other,
-    }
 }

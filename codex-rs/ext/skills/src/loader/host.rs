@@ -11,7 +11,6 @@ use codex_utils_path_uri::PathUri;
 use futures::StreamExt;
 use tracing::error;
 
-use super::MAX_QUALIFIED_NAME_LEN;
 use super::SKILLS_METADATA_DIR;
 use super::SKILLS_METADATA_FILENAME;
 use super::discovery::DirectorySymlinkPolicy;
@@ -25,15 +24,12 @@ use super::discovery::discover_skills;
 use super::metadata::LoadedSkillMetadata;
 use super::metadata::load_host_skill_metadata;
 use super::metadata::sanitize_single_line;
-use super::metadata::validate_len;
-use super::namespace::SkillNamespaceResolver;
 
 /// A resolved host skill root ready for filesystem discovery.
 pub struct HostSkillRoot {
     pub path: AbsolutePathBuf,
     pub scope: SkillScope,
     pub file_system: Arc<dyn ExecutorFileSystem>,
-    pub plugin_root: Option<AbsolutePathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -81,20 +77,11 @@ async fn load_skills_under_root(
     Vec<HostSkillError>,
 ) {
     let file_system = skill_root.file_system.as_ref();
-    let plugin_root = match skill_root.plugin_root.as_ref() {
-        Some(plugin_root) => Some(canonicalize_for_skill_identity(file_system, plugin_root).await),
-        None => None,
-    };
     let directory_symlinks = match skill_root.scope {
         SkillScope::User | SkillScope::Repo | SkillScope::Admin => DirectorySymlinkPolicy::Follow,
         SkillScope::System => DirectorySymlinkPolicy::Ignore,
     };
-    let SkillDiscovery {
-        skills,
-        plugin_roots,
-        mut namespace_roots,
-        warnings,
-    } = discover_skills(
+    let SkillDiscovery { skills, warnings } = discover_skills(
         file_system,
         &PathUri::from_abs_path(root),
         SkillDiscoveryOptions {
@@ -110,7 +97,6 @@ async fn load_skills_under_root(
         return (Vec::new(), Arc::default(), Vec::new());
     }
 
-    let root_uri = PathUri::from_abs_path(root);
     let resolved_skills = futures::stream::iter(skills)
         .map(|skill| async move {
             let path_uri = file_system
@@ -134,59 +120,30 @@ async fn load_skills_under_root(
         .filter_map(futures::future::ready)
         .collect::<Vec<_>>()
         .await;
-    namespace_roots.extend(resolved_skills.iter().filter_map(|skill| {
-        (skill.path_uri != skill.skill.path)
-            .then(|| skill.path_uri.parent())
-            .flatten()
-    }));
-    let skill_paths = resolved_skills
-        .iter()
-        .map(|skill| skill.path_uri.clone())
-        .collect::<Vec<_>>();
-    let namespace_resolver = SkillNamespaceResolver::discover(
-        file_system,
-        &root_uri,
-        &skill_paths,
-        plugin_roots,
-        namespace_roots,
-    );
     let skill_results = futures::stream::iter(resolved_skills)
-        .map(|skill| {
-            let plugin_root = plugin_root.as_ref();
-            async move {
-                let discovery_path = skill
-                    .skill
-                    .path
-                    .to_abs_path()
-                    .unwrap_or_else(|_| skill.path.clone());
-                let result = parse_skill_file(
-                    file_system,
-                    &skill.skill,
-                    &skill.path,
-                    &skill.path_uri,
-                    skill_root.scope,
-                    plugin_root,
-                )
-                .await;
-                (skill.path, skill.path_uri, discovery_path, result)
-            }
+        .map(|skill| async move {
+            let discovery_path = skill
+                .skill
+                .path
+                .to_abs_path()
+                .unwrap_or_else(|_| skill.path.clone());
+            let result = parse_skill_file(
+                file_system,
+                &skill.skill,
+                &skill.path,
+                &skill.path_uri,
+                skill_root.scope,
+            )
+            .await;
+            (skill.path, discovery_path, result)
         })
         .buffered(MAX_CONCURRENT_SKILL_LOADS)
-        .collect::<Vec<_>>();
-    let (namespace_resolver, skill_results) = tokio::join!(namespace_resolver, skill_results);
-
+        .collect::<Vec<_>>()
+        .await;
     let mut loaded_skills = Vec::new();
     let mut skill_discovery_path_by_path = HashMap::new();
     let mut errors = Vec::new();
-    for (path, path_uri, discovery_path, result) in skill_results {
-        let result = result.and_then(|mut skill| {
-            skill.name = namespace_resolver
-                .for_skill(&root_uri, &path_uri)
-                .qualify(&skill.name);
-            validate_len(&skill.name, MAX_QUALIFIED_NAME_LEN, "qualified name")
-                .map_err(|error| error.to_string())?;
-            Ok(skill)
-        });
+    for (path, discovery_path, result) in skill_results {
         match result {
             Ok(skill) => {
                 skill_discovery_path_by_path
@@ -212,7 +169,6 @@ async fn parse_skill_file(
     path: &AbsolutePathBuf,
     path_uri: &PathUri,
     scope: SkillScope,
-    plugin_root: Option<&AbsolutePathBuf>,
 ) -> Result<SkillMetadata, String> {
     let metadata_path = path_uri
         .parent()
@@ -226,7 +182,7 @@ async fn parse_skill_file(
     .unwrap_or(SkillMetadataDiscovery::Absent);
     let (contents, loaded_metadata) = tokio::join!(
         file_system.read_file_text(path_uri, /*sandbox*/ None),
-        load_host_skill_metadata(file_system, path, &metadata, plugin_root),
+        load_host_skill_metadata(file_system, path, &metadata),
     );
     let contents = contents.map_err(|error| format!("failed to read file: {error}"))?;
     let ParsedSkillFrontmatter {
@@ -250,8 +206,6 @@ async fn parse_skill_file(
         policy,
         path_to_skills_md: path.clone(),
         scope,
-        plugin_id: None,
-        remote_plugin_id: None,
     })
 }
 

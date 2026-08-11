@@ -49,16 +49,11 @@ pub mod exec;
 pub mod exec_env;
 #[cfg(test)]
 mod git_info_tests;
-mod hook_runtime;
 mod image_preparation;
 mod installation_id;
-pub(crate) mod mention_syntax;
 mod original_image_detail;
 pub(crate) mod utils;
-pub use mention_syntax::PLUGIN_TEXT_MENTION_SIGIL;
-pub use mention_syntax::TOOL_MENTION_SIGIL;
 pub use utils::path_utils;
-pub(crate) mod plugins;
 #[doc(hidden)]
 pub(crate) mod prompt_debug;
 #[doc(hidden)]

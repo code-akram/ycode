@@ -25,7 +25,6 @@ use codex_cli_protocol::TurnStatus;
 use codex_code_mode::CodeModeSessionProvider;
 use codex_code_mode::DisabledCodeModeSessionProvider;
 use codex_code_mode::ProcessOwnedCodeModeSessionProvider;
-use codex_core_plugins::PluginsManager;
 use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ExtensionRegistry;
@@ -306,7 +305,6 @@ pub(crate) struct ThreadManagerState {
     models_manager: SharedModelsManager,
     environment_manager: Arc<EnvironmentManager>,
     skills_service: Arc<HostSkillsService>,
-    plugins_manager: Arc<PluginsManager>,
     code_mode_session_provider: Arc<dyn CodeModeSessionProvider>,
     extensions: Arc<ExtensionRegistry<Config>>,
     user_instructions_provider: Arc<dyn UserInstructionsProvider>,
@@ -382,11 +380,6 @@ impl ThreadManager {
         let codex_home = config.codex_home.clone();
         let restriction_product = session_source.restriction_product();
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
-        let plugins_manager = Arc::new(PluginsManager::new_with_options(
-            codex_home.to_path_buf(),
-            restriction_product,
-            auth_manager.get_api_auth_mode(),
-        ));
         let skills_service = Arc::new(HostSkillsService::new_with_restriction_product(
             codex_home,
             config.bundled_skills_enabled(),
@@ -407,7 +400,6 @@ impl ThreadManager {
                 models_manager,
                 environment_manager,
                 skills_service,
-                plugins_manager,
                 code_mode_session_provider,
                 extensions,
                 user_instructions_provider,
@@ -508,11 +500,6 @@ impl ThreadManager {
         };
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let restriction_product = SessionSource::Exec.restriction_product();
-        let plugins_manager = Arc::new(PluginsManager::new_with_options(
-            codex_home.clone(),
-            restriction_product,
-            auth_manager.get_api_auth_mode(),
-        ));
         let skills_service = Arc::new(HostSkillsService::new_with_restriction_product(
             absolute_codex_home.clone(),
             /*bundled_skills_enabled*/ true,
@@ -537,7 +524,6 @@ impl ThreadManager {
                     .models_manager(codex_home, /*config_model_catalog*/ None),
                 environment_manager,
                 skills_service,
-                plugins_manager,
                 code_mode_session_provider: Arc::new(DisabledCodeModeSessionProvider),
                 extensions: empty_extension_registry(),
                 user_instructions_provider: Arc::new(
@@ -568,10 +554,6 @@ impl ThreadManager {
 
     pub fn skills_service(&self) -> Arc<HostSkillsService> {
         self.state.skills_service.clone()
-    }
-
-    pub fn plugins_manager(&self) -> Arc<PluginsManager> {
-        self.state.plugins_manager.clone()
     }
 
     pub fn environment_manager(&self) -> Arc<EnvironmentManager> {
@@ -1583,7 +1565,6 @@ impl ThreadManagerState {
             models_manager: Arc::clone(&self.models_manager),
             environment_manager: Arc::clone(&self.environment_manager),
             skills_service: Arc::clone(&self.skills_service),
-            plugins_manager: Arc::clone(&self.plugins_manager),
             code_mode_session_provider: Arc::clone(&self.code_mode_session_provider),
             extensions: Arc::clone(&self.extensions),
             conversation_history: initial_history,

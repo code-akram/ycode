@@ -12,8 +12,6 @@ use crate::error_code::invalid_request;
 use crate::extensions::ThreadExtensionDependencies;
 use crate::extensions::cli_runtime_extension_event_sink;
 use crate::extensions::thread_extensions;
-use crate::external_agent_migration::ExternalAgentConfigRequestProcessor;
-use crate::external_agent_migration::ExternalAgentConfigRequestProcessorArgs;
 use crate::fs_watch::FsWatchManager;
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::ConnectionRequestId;
@@ -28,8 +26,6 @@ use crate::request_processors::FeedbackRequestProcessor;
 use crate::request_processors::FsRequestProcessor;
 use crate::request_processors::GitRequestProcessor;
 use crate::request_processors::InitializeRequestProcessor;
-use crate::request_processors::MarketplaceRequestProcessor;
-use crate::request_processors::PluginRequestProcessor;
 use crate::request_processors::ProcessExecRequestProcessor;
 use crate::request_processors::SearchRequestProcessor;
 use crate::request_processors::ThreadGoalRequestProcessor;
@@ -44,7 +40,6 @@ use crate::thread_state::ThreadStateManager;
 use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::CliRuntimeRpcTransport;
 use codex_arg0::Arg0DispatchPaths;
-use codex_chatgpt::workspace_settings;
 use codex_cli_protocol::ClientNotification;
 use codex_cli_protocol::ClientRequest;
 use codex_cli_protocol::ClientResponsePayload;
@@ -85,13 +80,10 @@ pub(crate) struct MessageProcessor {
     process_exec_processor: ProcessExecRequestProcessor,
     config_processor: ConfigRequestProcessor,
     environment_processor: EnvironmentRequestProcessor,
-    external_agent_config_processor: ExternalAgentConfigRequestProcessor,
     feedback_processor: FeedbackRequestProcessor,
     fs_processor: FsRequestProcessor,
     git_processor: GitRequestProcessor,
     initialize_processor: InitializeRequestProcessor,
-    marketplace_processor: MarketplaceRequestProcessor,
-    plugin_processor: PluginRequestProcessor,
     search_processor: SearchRequestProcessor,
     thread_goal_processor: ThreadGoalRequestProcessor,
     thread_processor: ThreadRequestProcessor,
@@ -183,7 +175,6 @@ pub(crate) struct MessageProcessorArgs {
     pub(crate) installation_id: String,
     pub(crate) code_mode_session_provider: Option<Arc<dyn CodeModeSessionProvider>>,
     pub(crate) rpc_transport: CliRuntimeRpcTransport,
-    pub(crate) plugin_startup_tasks: crate::PluginStartupTasks,
 }
 
 impl MessageProcessor {
@@ -206,7 +197,6 @@ impl MessageProcessor {
             installation_id,
             code_mode_session_provider,
             rpc_transport,
-            plugin_startup_tasks,
         } = args;
         let thread_state_manager = ThreadStateManager::new();
         // The thread store is intentionally process-scoped. Config reloads can
@@ -270,9 +260,6 @@ impl MessageProcessor {
         let models_manager = thread_manager.get_models_manager();
         let models_refresh_worker =
             crate::models_refresh_worker::spawn(&models_manager, config.http_client_factory());
-        thread_manager
-            .plugins_manager()
-            .set_analytics_events_client(analytics_events_client.clone());
         let skills_watcher = SkillsWatcher::new(
             thread_manager.skills_service(),
             &config.codex_home,
@@ -283,23 +270,12 @@ impl MessageProcessor {
         let thread_watch_manager =
             crate::thread_status::ThreadWatchManager::new_with_outgoing(outgoing.clone());
         let thread_list_state_permit = Arc::new(Semaphore::new(/*permits*/ 1));
-        let workspace_settings_cache =
-            Arc::new(workspace_settings::WorkspaceSettingsCache::default());
         let request_serialization_queues = RequestSerializationQueues::default();
         let config_processor = ConfigRequestProcessor::new(
             outgoing.clone(),
             config_manager.clone(),
             thread_manager.clone(),
-            analytics_events_client.clone(),
         );
-        let on_effective_plugins_changed =
-            crate::effective_plugin_change::effective_plugins_changed_callback(
-                auth_manager.clone(),
-                Arc::clone(&thread_manager),
-                config_manager.clone(),
-                config_processor.clone(),
-                request_serialization_queues.clone(),
-            );
         let account_processor = AccountRequestProcessor::new(
             auth_manager.clone(),
             Arc::clone(&thread_manager),
@@ -310,11 +286,9 @@ impl MessageProcessor {
         let catalog_processor = CatalogRequestProcessor::new(
             outgoing.clone(),
             Arc::clone(&skills_watcher),
-            auth_manager.clone(),
             Arc::clone(&thread_manager),
             Arc::clone(&config),
             config_manager.clone(),
-            Arc::clone(&workspace_settings_cache),
         );
         let command_exec_processor = CommandExecRequestProcessor::new(
             arg0_paths.clone(),
@@ -342,20 +316,6 @@ impl MessageProcessor {
             Arc::clone(&config),
             config_warnings.clone(),
             rpc_transport,
-        );
-        let marketplace_processor = MarketplaceRequestProcessor::new(
-            Arc::clone(&config),
-            config_manager.clone(),
-            Arc::clone(&thread_manager),
-        );
-        let plugin_processor = PluginRequestProcessor::new(
-            auth_manager.clone(),
-            Arc::clone(&thread_manager),
-            outgoing.clone(),
-            analytics_events_client.clone(),
-            config_manager.clone(),
-            workspace_settings_cache,
-            on_effective_plugins_changed,
         );
         let search_processor = SearchRequestProcessor::new(outgoing.clone());
         let thread_goal_processor = ThreadGoalRequestProcessor::new(
@@ -398,30 +358,6 @@ impl MessageProcessor {
             thread_list_state_permit,
             Arc::clone(&skills_watcher),
         );
-        if matches!(plugin_startup_tasks, crate::PluginStartupTasks::Start) {
-            // Keep plugin startup warmups aligned at cli-runtime startup.
-            let on_effective_plugins_changed =
-                plugin_processor.effective_plugins_changed_callback();
-            thread_manager
-                .plugins_manager()
-                .maybe_start_plugin_startup_tasks_for_config(
-                    &config.plugins_config_input(),
-                    auth_manager,
-                    Some(on_effective_plugins_changed),
-                );
-        }
-        let external_agent_config_processor =
-            ExternalAgentConfigRequestProcessor::new(ExternalAgentConfigRequestProcessorArgs {
-                outgoing: outgoing.clone(),
-                thread_manager: Arc::clone(&thread_manager),
-                thread_store: Arc::clone(&thread_store),
-                config_manager,
-                config_processor: config_processor.clone(),
-                state_db,
-                analytics_events_client,
-                arg0_paths,
-                codex_home: config.codex_home.to_path_buf(),
-            });
         let environment_processor =
             EnvironmentRequestProcessor::new(thread_manager.environment_manager());
         let fs_processor = FsRequestProcessor::new(
@@ -438,13 +374,10 @@ impl MessageProcessor {
             process_exec_processor,
             config_processor,
             environment_processor,
-            external_agent_config_processor,
             feedback_processor,
             fs_processor,
             git_processor,
             initialize_processor,
-            marketplace_processor,
-            plugin_processor,
             search_processor,
             thread_goal_processor,
             thread_processor,
@@ -724,26 +657,6 @@ impl MessageProcessor {
                 .read(params)
                 .await
                 .map(|response| Some(response.into())),
-            ClientRequest::ExternalAgentConfigDetect { params, .. } => self
-                .external_agent_config_processor
-                .detect(params)
-                .await
-                .map(|response| Some(response.into())),
-            ClientRequest::ExternalAgentConfigImport { params, .. } => self
-                .external_agent_config_processor
-                .import(request_id.clone(), params)
-                .await
-                .map(|()| None),
-            ClientRequest::ExternalAgentConfigImportHistoryRecord { params, .. } => self
-                .external_agent_config_processor
-                .record_import_history(params)
-                .await
-                .map(|response| Some(response.into())),
-            ClientRequest::ExternalAgentConfigImportHistoriesRead { .. } => self
-                .external_agent_config_processor
-                .read_import_histories()
-                .await
-                .map(|response| Some(response.into())),
             ClientRequest::ConfigValueWrite { params, .. } => {
                 self.config_processor.value_write(params).await.map(Some)
             }
@@ -982,58 +895,8 @@ impl MessageProcessor {
             ClientRequest::SkillsExtraRootsSet { params, .. } => {
                 self.catalog_processor.skills_extra_roots_set(params).await
             }
-            ClientRequest::HooksList { params, .. } => {
-                self.catalog_processor.hooks_list(params).await
-            }
-            ClientRequest::MarketplaceAdd { params, .. } => {
-                self.marketplace_processor.marketplace_add(params).await
-            }
-            ClientRequest::MarketplaceRemove { params, .. } => {
-                self.marketplace_processor.marketplace_remove(params).await
-            }
-            ClientRequest::MarketplaceUpgrade { params, .. } => {
-                self.marketplace_processor.marketplace_upgrade(params).await
-            }
-            ClientRequest::PluginList { params, .. } => {
-                self.plugin_processor.plugin_list(params).await
-            }
-            ClientRequest::PluginSearch { params, .. } => {
-                self.plugin_processor.plugin_search(params).await
-            }
-            ClientRequest::PluginInstalled { params, .. } => {
-                self.plugin_processor.plugin_installed(params).await
-            }
-            ClientRequest::PluginRead { params, .. } => {
-                self.plugin_processor.plugin_read(params).await
-            }
-            ClientRequest::PluginSkillRead { params, .. } => {
-                self.plugin_processor.plugin_skill_read(params).await
-            }
-            ClientRequest::PluginShareSave { params, .. } => {
-                self.plugin_processor.plugin_share_save(params).await
-            }
-            ClientRequest::PluginShareUpdateTargets { params, .. } => {
-                self.plugin_processor
-                    .plugin_share_update_targets(params)
-                    .await
-            }
-            ClientRequest::PluginShareList { params, .. } => {
-                self.plugin_processor.plugin_share_list(params).await
-            }
-            ClientRequest::PluginShareCheckout { params, .. } => {
-                self.plugin_processor.plugin_share_checkout(params).await
-            }
-            ClientRequest::PluginShareDelete { params, .. } => {
-                self.plugin_processor.plugin_share_delete(params).await
-            }
             ClientRequest::SkillsConfigWrite { params, .. } => {
                 self.catalog_processor.skills_config_write(params).await
-            }
-            ClientRequest::PluginInstall { params, .. } => {
-                self.plugin_processor.plugin_install(params).await
-            }
-            ClientRequest::PluginUninstall { params, .. } => {
-                self.plugin_processor.plugin_uninstall(params).await
             }
             ClientRequest::ModelList { params, .. } => {
                 self.catalog_processor.model_list(params).await

@@ -137,10 +137,6 @@ impl ChatWidget {
             return;
         }
 
-        if self.handle_plugins_popup_key_event(key_event) {
-            return;
-        }
-
         let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
         let should_pause_active_goal = self.bottom_pane.should_interrupt_running_task(key_event);
         let input_result = self.bottom_pane.handle_key_event(key_event);
