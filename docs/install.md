@@ -35,13 +35,15 @@ cargo run --bin codex -- "explain this codebase to me"
 just fmt
 just fix -p <crate-you-touched>
 
-# Run the relevant tests (project-specific is fastest), for example:
-just test -p codex-tui
-# `just test` runs the test suite via nextest:
-just test
-# Avoid `--all-features` for routine local runs because it increases build
-# time and `target/` disk usage by compiling additional feature combinations.
+# During subtraction work, check and test only the package being changed:
+cargo check -p <crate-you-touched>
+just test -p <crate-you-touched>
 ```
+
+Do not run broad workspace or TUI suites by default during subtraction. They
+compile additional artifact families and can make `target/` unexpectedly large.
+When release builds begin, they must use a separate disposable target directory
+rather than sharing the local development target directory.
 
 ## Tracing / verbose logging
 

@@ -515,15 +515,21 @@ ignored = [
 ]
 
 [profile.dev]
-# Keep line tables/backtraces while avoiding expensive full variable debug info
-# across local dev builds.
-debug = "limited"
+# Keep local development artifacts small and non-incremental.
+debug = "none"
+incremental = false
+split-debuginfo = "off"
 
 [profile.dev-small]
 inherits = "dev"
 opt-level = 0
-debug = "none"
 strip = "symbols"
+
+[profile.test]
+debug = "none"
+incremental = false
+split-debuginfo = "off"
+strip = "debuginfo"
 
 [profile.release]
 lto = "thin"
@@ -543,8 +549,6 @@ lto = false
 strip = false
 
 [profile.ci-test]
-# Reduce binary size to reduce disk pressure.
-debug = "limited"
 inherits = "test"
 opt-level = 0
 
