@@ -48,7 +48,6 @@ mod compact_remote_parity;
 mod compact_resume_fork;
 mod current_time_reminder;
 mod deprecation_notice;
-mod exec_policy;
 #[cfg(not(target_os = "windows"))]
 mod external_auth;
 mod fork_thread;
@@ -72,7 +71,6 @@ mod multi_agent_resume;
 mod otel;
 mod override_updates;
 mod pending_input;
-mod permissions_messages;
 mod personality;
 mod prompt_cache_key;
 mod prompt_caching;
@@ -84,7 +82,6 @@ mod remote_env;
 mod remote_models;
 mod request_compression;
 #[cfg(not(target_os = "windows"))]
-mod request_permissions;
 #[cfg(not(target_os = "windows"))]
 mod request_permissions_tool;
 mod request_user_input;

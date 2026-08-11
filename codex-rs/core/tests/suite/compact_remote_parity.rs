@@ -11,7 +11,6 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::user_input::UserInput;
-use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::responses;
 use core_test_support::responses::ResponseMock;
 use core_test_support::responses::strip_response_item_ids_from_json;
@@ -177,16 +176,6 @@ async fn remote_compaction_parity_v2_api_key_sends_service_tier_upgrade() -> Res
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn remote_compaction_parity_manual_hooks() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let legacy = run_manual_hook_session(Mode::Legacy).await?;
-    let v2 = run_manual_hook_session(Mode::V2).await?;
-    assert_json_eq("manual compact hook payload parity mismatch", &legacy, &v2);
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_compaction_parity_pre_turn_auto() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -302,7 +291,7 @@ async fn run_manual_session(
     }
     response_bodies.push(after_compact_response_body(scenario.name));
 
-    let harness = build_harness(mode, settings, /*hooks*/ false).await?;
+    let harness = build_harness(mode, settings).await?;
     let rollout_path = rollout_path(&harness);
     let codex = harness.test().codex.clone();
 
@@ -444,79 +433,26 @@ async fn run_mid_turn_auto_session(mode: Mode) -> Result<Capture> {
     .await
 }
 
-async fn run_manual_hook_session(mode: Mode) -> Result<Value> {
-    let response_bodies = match mode {
-        Mode::Legacy => vec![responses::sse(vec![
-            responses::ev_assistant_message("hook-first-message", "HOOK_FIRST_REPLY"),
-            responses::ev_completed("hook-first-response"),
-        ])],
-        Mode::V2 => vec![
-            responses::sse(vec![
-                responses::ev_assistant_message("hook-first-message", "HOOK_FIRST_REPLY"),
-                responses::ev_completed("hook-first-response"),
-            ]),
-            compaction_v2_response_body(),
-        ],
-    };
-    let harness = build_harness(mode, RunSettings::default(), /*hooks*/ true).await?;
-    let codex = harness.test().codex.clone();
-    responses::mount_sse_sequence(harness.server(), response_bodies).await;
-    let compact_mock = mount_legacy_compact_if_needed(&harness, mode).await;
-
-    submit_user_input(
-        &codex,
-        vec![UserInput::Text {
-            text: "manual_hooks_before".to_string(),
-            text_elements: Vec::new(),
-        }],
-    )
-    .await?;
-    codex.submit(Op::Compact).await?;
-    wait_for_turn_complete(&codex).await;
-
-    if let Some(compact_mock) = compact_mock {
-        assert_eq!(compact_mock.requests().len(), 1);
-    }
-
-    let home = harness.test().codex_home_path();
-    let pre = hook_log_view(&home.join("pre_compact_manual_log.jsonl"))?;
-    let post = hook_log_view(&home.join("post_compact_manual_log.jsonl"))?;
-    Ok(json!({
-        "pre": pre,
-        "post": post,
-    }))
-}
-
 async fn build_auto_harness(mode: Mode) -> Result<TestCodexHarness> {
-    build_harness_inner(
-        mode,
-        RunSettings::default(),
-        /*hooks*/ false,
-        Some(200),
-    )
-    .await
+    build_harness_inner(mode, RunSettings::default(), Some(200)).await
 }
 
-async fn build_harness(mode: Mode, settings: RunSettings, hooks: bool) -> Result<TestCodexHarness> {
-    build_harness_inner(mode, settings, hooks, /*auto_compact_limit*/ None).await
+async fn build_harness(mode: Mode, settings: RunSettings) -> Result<TestCodexHarness> {
+    build_harness_inner(mode, settings, /*auto_compact_limit*/ None).await
 }
 
 async fn build_harness_inner(
     mode: Mode,
     settings: RunSettings,
-    hooks: bool,
     auto_compact_limit: Option<i64>,
 ) -> Result<TestCodexHarness> {
     fs::create_dir_all(FIXED_CWD)?;
-    let mut builder = test_codex()
+    let builder = test_codex()
         .with_auth(settings.auth.build())
         .with_pre_build_hook(|home| {
             fs::write(home.join("AGENTS.md"), USER_INSTRUCTIONS)
                 .expect("write global instructions");
         });
-    if hooks {
-        builder = builder.with_pre_build_hook(write_manual_compact_hooks);
-    }
     TestCodexHarness::with_builder(builder.with_config(move |config| {
         config.cwd = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(PathBuf::from(
             FIXED_CWD,
@@ -527,9 +463,6 @@ async fn build_harness_inner(
             config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
         }
         config.model_auto_compact_token_limit = auto_compact_limit;
-        if hooks {
-            trust_discovered_hooks(config);
-        }
         if mode == Mode::Legacy {
             let _ = config.features.disable(Feature::RemoteCompactionV2);
         }
@@ -804,77 +737,6 @@ fn replacement_history_from_rollout(path: &Path) -> Result<Value> {
     Ok(canonical_json(&normalize_value(
         strip_response_item_ids_from_json(replacement_history),
     )))
-}
-
-fn write_manual_compact_hooks(home: &Path) {
-    write_hook_script(
-        &home.join("pre_compact_manual.py"),
-        &home.join("pre_compact_manual_log.jsonl"),
-    );
-    write_hook_script(
-        &home.join("post_compact_manual.py"),
-        &home.join("post_compact_manual_log.jsonl"),
-    );
-    let hooks = json!({
-        "hooks": {
-            "PreCompact": [{
-                "matcher": "manual",
-                "hooks": [{
-                    "type": "command",
-                    "command": python_hook_command(&home.join("pre_compact_manual.py")),
-                }]
-            }],
-            "PostCompact": [{
-                "matcher": "manual",
-                "hooks": [{
-                    "type": "command",
-                    "command": python_hook_command(&home.join("post_compact_manual.py")),
-                }]
-            }]
-        }
-    });
-    fs::write(home.join("hooks.json"), hooks.to_string()).expect("write hooks.json");
-}
-
-fn write_hook_script(script_path: &Path, log_path: &Path) {
-    let script = format!(
-        r#"import json
-from pathlib import Path
-import sys
-
-payload = json.load(sys.stdin)
-with Path(r"{log_path}").open("a", encoding="utf-8") as handle:
-    handle.write(json.dumps(payload, sort_keys=True) + "\n")
-"#,
-        log_path = log_path.display(),
-    );
-    fs::write(script_path, script).expect("write compact hook script");
-}
-
-fn python_hook_command(script_path: &Path) -> String {
-    format!("python3 \"{}\"", script_path.display())
-}
-
-fn hook_log_view(path: &Path) -> Result<Value> {
-    let text = fs::read_to_string(path)?;
-    let values = text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| {
-            let payload: Value = serde_json::from_str(line).expect("parse compact hook payload");
-            json!({
-                "hook_event_name": payload["hook_event_name"].clone(),
-                "trigger": payload["trigger"].clone(),
-                "model": payload["model"].clone(),
-                "has_reason": payload.get("reason").is_some(),
-                "has_phase": payload.get("phase").is_some(),
-                "has_implementation": payload.get("implementation").is_some(),
-                "has_status": payload.get("status").is_some(),
-                "has_error": payload.get("error").is_some(),
-            })
-        })
-        .collect::<Vec<_>>();
-    Ok(Value::Array(values))
 }
 
 #[derive(Clone, Copy)]

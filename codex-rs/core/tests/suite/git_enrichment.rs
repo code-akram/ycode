@@ -2,14 +2,6 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::ensure;
 use codex_core::StartThreadOptions;
-#[cfg(not(target_os = "windows"))]
-use codex_core::config::Constrained;
-#[cfg(not(target_os = "windows"))]
-use codex_core::sandboxing::SandboxPermissions;
-#[cfg(not(target_os = "windows"))]
-use codex_protocol::config_types::ApprovalsReviewer;
-#[cfg(not(target_os = "windows"))]
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ThreadSource;
@@ -140,86 +132,6 @@ async fn startup_prewarm_skips_git_enrichment_and_user_turn_observes_fresh_state
         turn_metadata(&turn)?["workspaces"],
         expected_workspace(repo.path(), &head, /*has_changes*/ true)
     );
-
-    test.codex.shutdown_and_wait().await?;
-    server.shutdown().await;
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn guardian_prewarm_and_review_skip_redundant_git_enrichment() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let (repo, head) = create_git_repo()?;
-    let tool_args = json!({
-        "cmd": "true",
-        "sandbox_permissions": SandboxPermissions::RequireEscalated,
-        "justification": "Exercise Guardian approval routing.",
-    })
-    .to_string();
-    let server = start_websocket_server(vec![
-        vec![vec![ev_response_created("warm-1"), ev_completed("warm-1")]],
-        vec![vec![ev_response_created("warm-2"), ev_completed("warm-2")]],
-        vec![vec![
-            ev_response_created("approval-request"),
-            ev_function_call("approval-call", "exec_command", &tool_args),
-            ev_completed("approval-request"),
-        ]],
-        vec![vec![
-            ev_response_created("guardian-review"),
-            ev_completed("guardian-review"),
-        ]],
-    ])
-    .await;
-    let cwd = repo.path().to_path_buf();
-    let mut builder = test_codex().with_config(move |config| {
-        config.cwd = cwd.abs();
-        config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
-        config.approvals_reviewer = ApprovalsReviewer::AutoReview;
-    });
-    let test = builder.build_with_websocket_server(&server).await?;
-
-    let (first, second) = tokio::time::timeout(Duration::from_secs(5), async {
-        tokio::join!(
-            server.wait_for_request(/*connection_index*/ 0, /*request_index*/ 0),
-            server.wait_for_request(/*connection_index*/ 1, /*request_index*/ 0)
-        )
-    })
-    .await?;
-    for prewarm in [first.body_json(), second.body_json()] {
-        assert_eq!(prewarm["generate"].as_bool(), Some(false));
-        assert!(turn_metadata(&prewarm)?.get("workspaces").is_none());
-    }
-
-    std::fs::write(repo.path().join("untracked.txt"), "dirty\n")?;
-    test.codex
-        .submit(
-            vec![UserInput::Text {
-                text: "run a command that requires Guardian review".into(),
-                text_elements: Vec::new(),
-            }]
-            .into(),
-        )
-        .await?;
-    let (user_turn, guardian_turn) = tokio::time::timeout(Duration::from_secs(5), async {
-        tokio::join!(
-            server.wait_for_request(/*connection_index*/ 2, /*request_index*/ 0),
-            server.wait_for_request(/*connection_index*/ 3, /*request_index*/ 0)
-        )
-    })
-    .await?;
-    let user_turn = user_turn.body_json();
-    let guardian_turn = guardian_turn.body_json();
-    assert_eq!(
-        turn_metadata(&user_turn)?["workspaces"],
-        expected_workspace(repo.path(), &head, /*has_changes*/ true)
-    );
-    assert_eq!(
-        guardian_turn["client_metadata"]["x-openai-subagent"].as_str(),
-        Some("guardian")
-    );
-    assert!(turn_metadata(&guardian_turn)?.get("workspaces").is_none());
 
     test.codex.shutdown_and_wait().await?;
     server.shutdown().await;

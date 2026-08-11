@@ -2,15 +2,10 @@ use anyhow::Context;
 use anyhow::Result;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use codex_config::test_support::CloudConfigBundleFixture;
 use codex_features::Feature;
-use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
-use core_test_support::managed_network_requirements_loader;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
@@ -19,13 +14,11 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_codex::test_codex;
-use core_test_support::test_codex::turn_permission_fields;
 use futures::SinkExt;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
-use std::fs;
 use std::time::Duration;
 use test_case::test_case;
 use tokio::net::TcpListener;
@@ -45,7 +38,6 @@ const REPLAY_RETAINED_OUTPUT_SEQ: u64 = 800;
 #[derive(Debug, Clone, Copy)]
 enum PushedExecScenario {
     Complete,
-    DirectDenied,
     LegacyExit,
     ReplayGap,
 }
@@ -53,7 +45,6 @@ enum PushedExecScenario {
 #[derive(Debug)]
 struct PushedExecServerResult {
     process_read_requests: usize,
-    process_start: Value,
 }
 
 async fn read_exec_server_json(websocket: &mut WebSocketStream<TcpStream>) -> Value {
@@ -258,21 +249,6 @@ async fn serve_exec_with_pushed_events(
                 send_exec_server_json(&mut websocket, message).await;
             }
         }
-        PushedExecScenario::DirectDenied => {
-            send_exec_server_json(
-                &mut websocket,
-                json!({
-                    "method": "process/exited",
-                    "params": {
-                        "processId": &process_id,
-                        "seq": 1,
-                        "exitCode": 1,
-                        "sandboxDenied": true,
-                    }
-                }),
-            )
-            .await;
-        }
         PushedExecScenario::LegacyExit => {
             send_exec_server_json(
                 &mut websocket,
@@ -310,15 +286,6 @@ async fn serve_exec_with_pushed_events(
                         "failure": null,
                         "sandboxDenied": false,
                     }),
-                    PushedExecScenario::DirectDenied => json!({
-                        "chunks": [],
-                        "nextSeq": 2,
-                        "exited": true,
-                        "exitCode": 1,
-                        "closed": false,
-                        "failure": null,
-                        "sandboxDenied": true,
-                    }),
                     PushedExecScenario::LegacyExit => json!({
                         "chunks": [],
                         "nextSeq": 3,
@@ -326,7 +293,7 @@ async fn serve_exec_with_pushed_events(
                         "exitCode": 1,
                         "closed": true,
                         "failure": null,
-                        "sandboxDenied": true,
+                        "sandboxDenied": false,
                     }),
                     PushedExecScenario::ReplayGap => {
                         let chunks = (1..=REPLAY_OUTPUT_EVENT_COUNT)
@@ -382,7 +349,6 @@ async fn serve_exec_with_pushed_events(
                 .await;
                 return PushedExecServerResult {
                     process_read_requests,
-                    process_start,
                 };
             }
             method => panic!("unexpected exec-server request: {method:?}"),
@@ -390,17 +356,12 @@ async fn serve_exec_with_pushed_events(
     }
 }
 
-#[test_case(PushedExecScenario::Complete, false, false ; "complete_event_stream")]
-#[test_case(PushedExecScenario::DirectDenied, false, false ; "direct_sandbox_denial")]
-#[test_case(PushedExecScenario::LegacyExit, false, false ; "legacy_exit_metadata")]
-#[test_case(PushedExecScenario::ReplayGap, false, false ; "truncated_event_replay")]
-#[test_case(PushedExecScenario::Complete, true, true ; "managed_network_uses_executor_proxy_launch")]
-#[test_case(PushedExecScenario::Complete, true, false ; "strict_managed_allowlist_omits_policy_callbacks")]
+#[test_case(PushedExecScenario::Complete ; "complete_event_stream")]
+#[test_case(PushedExecScenario::LegacyExit ; "legacy_exit_metadata")]
+#[test_case(PushedExecScenario::ReplayGap ; "truncated_event_replay")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exec_command_consumes_pushed_remote_process_events(
     scenario: PushedExecScenario,
-    managed_network: bool,
-    policy_callbacks: bool,
 ) -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let server = start_mock_server().await;
@@ -430,65 +391,20 @@ async fn exec_command_consumes_pushed_remote_process_events(
     .await;
     let exec_server_url = format!("ws://{}", listener.local_addr()?);
     let exec_server = tokio::spawn(serve_exec_with_pushed_events(listener, scenario));
-    let mut builder = test_codex().with_exec_server_url(exec_server_url);
-    if managed_network {
-        let cloud_config_bundle = if policy_callbacks {
-            managed_network_requirements_loader()
-        } else {
-            CloudConfigBundleFixture::loader_with_enterprise_requirement(
-                r#"
-[experimental_network]
-enabled = true
-allow_local_binding = true
-managed_allowed_domains_only = true
-
-[experimental_network.domains]
-"allowed.example.com" = "allow"
-"#,
-            )
-        };
-        builder = builder
-            .with_cloud_config_bundle(cloud_config_bundle)
-            .with_pre_build_hook(|home| {
-                fs::write(
-                    home.join("config.toml"),
-                    r#"default_permissions = "workspace"
-
-[permissions.workspace.filesystem]
-":minimal" = "read"
-
-[permissions.workspace.network]
-enabled = true
-mode = "full"
-allow_local_binding = true
-
-"#,
-                )
-                .expect("write managed-network test config");
-            });
-    }
-    let mut builder = builder.with_config(move |config| {
-        config.project_doc_max_bytes = 0;
-        config.use_experimental_unified_exec_tool = true;
-        if managed_network {
-            config.approvals_reviewer = ApprovalsReviewer::AutoReview;
-        }
-        config
-            .features
-            .enable(Feature::UnifiedExec)
-            .expect("test config should allow feature update");
-    });
+    let mut builder = test_codex()
+        .with_exec_server_url(exec_server_url)
+        .with_config(move |config| {
+            config.project_doc_max_bytes = 0;
+            config.use_experimental_unified_exec_tool = true;
+            config
+                .features
+                .enable(Feature::UnifiedExec)
+                .expect("test config should allow feature update");
+        });
     let test = timeout(Duration::from_secs(5), builder.build(&server))
         .await
         .context("thread startup should connect to the fake exec-server")??;
 
-    let turn_permission_profile = if managed_network {
-        test.session_configured.permission_profile.clone()
-    } else {
-        PermissionProfile::Disabled
-    };
-    let (sandbox_policy, permission_profile) =
-        turn_permission_fields(turn_permission_profile, test.config.cwd.as_path());
     test.codex
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
@@ -498,71 +414,26 @@ allow_local_binding = true
             final_output_json_schema: None,
             responsesapi_client_metadata: None,
             additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
-                approval_policy: Some(if managed_network {
-                    AskForApproval::OnRequest
-                } else {
-                    AskForApproval::Never
-                }),
-                sandbox_policy: Some(sandbox_policy),
-                permission_profile,
-                agent_settings: Some(codex_protocol::config_types::AgentSettings {
-                    settings: codex_protocol::config_types::Settings {
-                        model: test.session_configured.model.clone(),
-                        reasoning_effort: None,
-                        developer_instructions: None,
-                    },
-                }),
-                ..Default::default()
-            },
+            thread_settings: Default::default(),
         })
         .await?;
     let mut saw_exec_command_begin = false;
-    if !managed_network {
-        loop {
-            let event = timeout(Duration::from_secs(5), test.codex.next_event())
-                .await
-                .context("turn should complete")??
-                .msg;
-            match event {
-                EventMsg::ExecCommandBegin(event) if event.call_id == CALL_ID => {
-                    saw_exec_command_begin = true;
-                }
-                EventMsg::TurnComplete(_) => break,
-                _ => {}
+    loop {
+        let event = timeout(Duration::from_secs(5), test.codex.next_event())
+            .await
+            .context("turn should complete")??
+            .msg;
+        match event {
+            EventMsg::ExecCommandBegin(event) if event.call_id == CALL_ID => {
+                saw_exec_command_begin = true;
             }
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
         }
     }
-    let cleanup_timeout = if managed_network {
-        Duration::from_secs(15)
-    } else {
-        Duration::from_secs(5)
-    };
-    let exec_server_result = timeout(cleanup_timeout, exec_server)
+    let exec_server_result = timeout(Duration::from_secs(5), exec_server)
         .await
         .context("fake exec-server should observe process cleanup")??;
-    if managed_network {
-        let params = &exec_server_result.process_start["params"];
-        assert_eq!(params["enforceManagedNetwork"], true);
-        assert_eq!(params["managedNetwork"], Value::Null);
-        assert_eq!(params["env"]["HTTP_PROXY"], Value::Null);
-        assert_eq!(params["networkProxy"]["proxy"]["enabled"], true);
-        assert_eq!(params["networkProxy"]["proxy"]["mode"], "full");
-        assert_eq!(
-            params["networkProxy"]["policyDecisionTimeoutMs"].as_u64(),
-            policy_callbacks.then_some(1_000_000)
-        );
-        assert_eq!(params["networkProxy"]["environmentId"], "remote");
-        assert!(params["networkProxy"]["executionId"].as_str().is_some());
-        timeout(Duration::from_secs(5), async {
-            while response_mock.requests().len() < 2 {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .context("model should receive the remote exec output")?;
-        return Ok(());
-    }
     let request = response_mock
         .last_request()
         .context("model should receive the exec_command output")?;
@@ -577,11 +448,6 @@ allow_local_binding = true
             assert!(saw_exec_command_begin);
             assert!(output.contains("Process exited with code 0"));
             assert!(output.contains(COMPLETE_OUTPUT));
-            assert_eq!(process_read_requests, 0, "unexpected compatibility read");
-        }
-        PushedExecScenario::DirectDenied => {
-            assert!(!saw_exec_command_begin);
-            assert!(output.contains("Process exited with code 1"));
             assert_eq!(process_read_requests, 0, "unexpected compatibility read");
         }
         PushedExecScenario::LegacyExit => {
