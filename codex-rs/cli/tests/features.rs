@@ -76,21 +76,6 @@ async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
 }
 
 #[tokio::test]
-async fn features_enable_under_development_feature_prints_warning() -> Result<()> {
-    let codex_home = TempDir::new()?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.args(["features", "enable", "runtime_metrics"])
-        .assert()
-        .success()
-        .stderr(contains(
-            "Under-development features enabled: runtime_metrics.",
-        ));
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn features_list_is_sorted_alphabetically_by_feature_name() -> Result<()> {
     let codex_home = TempDir::new()?;
 

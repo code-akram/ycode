@@ -957,9 +957,6 @@ async fn run_debug_prompt_input_command(
             include_instructions: config.include_skill_instructions,
             bundled_skills_enabled: config.bundled_skills_enabled(),
             orchestrator_skills_enabled: config.orchestrator_skills_enabled,
-            shadow_selection_enabled: config
-                .features
-                .enabled(codex_features::Feature::SkillSearch),
         }
     });
     let prompt_input = codex_core::build_prompt_input(

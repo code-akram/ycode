@@ -127,7 +127,6 @@ pub struct TurnContext {
     pub config: Arc<Config>,
     pub(crate) auth_manager: Option<Arc<AuthManager>>,
     pub(crate) model_info: ModelInfo,
-    pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) provider: SharedModelProvider,
     pub(crate) reasoning_effort: Option<ReasoningEffortConfig>,
     pub(crate) reasoning_summary: ReasoningSummaryConfig,
@@ -274,10 +273,6 @@ impl TurnContext {
             config: Arc::new(config),
             auth_manager: self.auth_manager.clone(),
             model_info: model_info.clone(),
-            session_telemetry: self
-                .session_telemetry
-                .clone()
-                .with_model(model.as_str(), model_info.slug.as_str()),
             provider: self.provider.clone(),
             reasoning_effort,
             reasoning_summary: self.reasoning_summary,
@@ -451,7 +446,6 @@ impl Session {
         thread_id: ThreadId,
         session_id: SessionId,
         auth_manager: Option<Arc<AuthManager>>,
-        session_telemetry: &SessionTelemetry,
         provider: SharedModelProvider,
         session_configuration: &SessionConfiguration,
         multi_agent_version: MultiAgentVersion,
@@ -471,12 +465,7 @@ impl Session {
         let reasoning_summary = session_configuration
             .model_reasoning_summary
             .unwrap_or(model_info.default_reasoning_summary);
-        let session_telemetry = session_telemetry.clone().with_model(
-            session_configuration.agent_settings.model(),
-            model_info.slug.as_str(),
-        );
         let session_source = session_configuration.session_source.clone();
-        let session_telemetry_for_context = session_telemetry;
         let available_models = models_manager.try_list_models().unwrap_or_default();
         let unified_exec_shell_mode = UnifiedExecShellMode::for_session(
             codex_tools::unified_exec_feature_mode_for_features(per_turn_config.features.get()),
@@ -508,13 +497,12 @@ impl Session {
         extension_data.insert(skills_snapshot);
         TurnContext {
             sub_id,
-            trace_id: current_span_trace_id(),
+            trace_id: None,
             realtime_active: false,
             code_mode_available: true,
             config: per_turn_config,
             auth_manager,
             model_info,
-            session_telemetry: session_telemetry_for_context,
             provider,
             reasoning_effort,
             reasoning_summary,
@@ -701,7 +689,6 @@ impl Session {
             self.thread_id(),
             self.session_id(),
             Some(Arc::clone(&self.services.auth_manager)),
-            &self.services.session_telemetry,
             session_configuration.provider.clone(),
             &session_configuration,
             multi_agent_version,

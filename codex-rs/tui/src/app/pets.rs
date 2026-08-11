@@ -11,7 +11,7 @@ impl App {
                 crate::pets::PetImageRenderError::Asset(err) => {
                     tracing::warn!(
                         error = %err,
-                        "failed to clear ambient pet image before shutdown feedback"
+                        "failed to clear ambient pet image before shutdown"
                     );
                 }
             }

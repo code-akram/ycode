@@ -17,7 +17,6 @@ chrono = { workspace = true, features = ["serde"] }
 codex-cli-protocol = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-install-context = { workspace = true }
-codex-otel = { workspace = true }
 codex-protocol = { workspace = true }
 codex-rollout = { workspace = true }
 codex-state = { workspace = true }

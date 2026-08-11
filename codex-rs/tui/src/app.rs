@@ -8,11 +8,9 @@ use crate::app_backtrack::BacktrackState;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
-use crate::app_event::FeedbackCategory;
 use crate::app_event::HistoryLookupResponse;
 use crate::app_event::RateLimitRefreshOrigin;
 use crate::app_event_sender::AppEventSender;
-use crate::bottom_pane::FeedbackAudience;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
@@ -69,14 +67,13 @@ use crate::workspace_command::WorkspaceCommandRunner;
 use codex_ansi_escape::ansi_escape_line;
 use codex_cli_protocol::AddCreditsNudgeCreditType;
 use codex_cli_protocol::AskForApproval;
+use codex_cli_protocol::AuthMode;
 use codex_cli_protocol::ClientRequest;
 use codex_cli_protocol::CodexErrorInfo as CliRuntimeCodexErrorInfo;
 use codex_cli_protocol::ConfigBatchWriteParams;
 use codex_cli_protocol::ConfigReadResponse;
 use codex_cli_protocol::ConfigValueWriteParams;
 use codex_cli_protocol::ConfigWriteResponse;
-use codex_cli_protocol::FeedbackUploadParams;
-use codex_cli_protocol::FeedbackUploadResponse;
 use codex_cli_protocol::GetAccountRateLimitsResponse;
 use codex_cli_protocol::MergeStrategy;
 use codex_cli_protocol::SandboxMode as CliRuntimeSandboxMode;
@@ -108,8 +105,6 @@ use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
 use codex_models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
-use codex_otel::SessionTelemetry;
-use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::Personality;
 use codex_protocol::models::ActivePermissionProfile;
@@ -120,7 +115,6 @@ use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_rollout::StateDbHandle;
-use codex_terminal_detection::user_agent;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
@@ -371,7 +365,6 @@ struct InitialHistoryReplayBuffer {
 
 pub(crate) struct App {
     model_catalog: Arc<ModelCatalog>,
-    pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) app_event_tx: AppEventSender,
     pub(crate) chat_widget: ChatWidget,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
@@ -416,8 +409,6 @@ pub(crate) struct App {
     /// This is used after a confirmed thread rollback to ensure scrollback reflects the trimmed
     /// transcript cells.
     pub(crate) backtrack_render_pending: bool,
-    pub(crate) feedback: codex_feedback::CodexFeedback,
-    feedback_audience: FeedbackAudience,
     environment_manager: Arc<EnvironmentManager>,
     cli_runtime_target: CliRuntimeTarget,
     /// Set when the user confirms an update; propagated on exit.
@@ -586,7 +577,6 @@ impl App {
             has_chatgpt_account: self.chat_widget.has_chatgpt_account(),
             has_codex_backend_auth: self.chat_widget.has_codex_backend_auth(),
             model_catalog: self.model_catalog.clone(),
-            feedback: self.feedback.clone(),
             is_first_run: false,
             status_account_display: self.chat_widget.status_account_display().cloned(),
             runtime_model_provider_base_url: self
@@ -598,7 +588,6 @@ impl App {
             startup_tooltip_override: None,
             status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
             terminal_title_invalid_items_warned: self.terminal_title_invalid_items_warned.clone(),
-            session_telemetry: self.session_telemetry.clone(),
         }
     }
 
@@ -615,7 +604,6 @@ impl App {
         initial_prompt: Option<String>,
         initial_images: Vec<PathBuf>,
         session_selection: SessionSelection,
-        feedback: codex_feedback::CodexFeedback,
         is_first_run: bool,
         cli_runtime_target: CliRuntimeTarget,
         state_db: Option<StateDbHandle>,
@@ -668,34 +656,12 @@ impl App {
             model = updated_model;
         }
         let model_catalog = Arc::new(ModelCatalog::new(available_models.clone()));
-        let feedback_audience = bootstrap.feedback_audience;
         let auth_mode = bootstrap.auth_mode;
         let has_chatgpt_account = bootstrap.has_chatgpt_account;
-        let has_codex_backend_auth = matches!(auth_mode, Some(TelemetryAuthMode::Chatgpt));
+        let has_codex_backend_auth = matches!(auth_mode, Some(AuthMode::Chatgpt));
         let requires_openai_auth = bootstrap.requires_openai_auth;
         let status_account_display = bootstrap.status_account_display.clone();
         let initial_plan_type = bootstrap.plan_type;
-        let session_telemetry = SessionTelemetry::new(
-            ThreadId::new(),
-            model.as_str(),
-            model.as_str(),
-            /*account_id*/ None,
-            bootstrap.account_email.clone(),
-            auth_mode,
-            codex_login::default_client::originator().value,
-            config.otel.log_user_prompt,
-            user_agent(),
-            serde_json::from_value(serde_json::json!("cli"))
-                .unwrap_or_else(|err| panic!("cli session source should deserialize: {err}")),
-        );
-        if config
-            .tui_status_line
-            .as_ref()
-            .is_some_and(|cmd| !cmd.is_empty())
-        {
-            session_telemetry.counter("codex.status_line", /*inc*/ 1, &[]);
-        }
-
         let status_line_invalid_items_warned = Arc::new(AtomicBool::new(false));
         let terminal_title_invalid_items_warned = Arc::new(AtomicBool::new(false));
         let workspace_command_runner: WorkspaceCommandRunner = Arc::new(
@@ -742,7 +708,6 @@ impl App {
                     has_chatgpt_account,
                     has_codex_backend_auth,
                     model_catalog: model_catalog.clone(),
-                    feedback: feedback.clone(),
                     is_first_run,
                     status_account_display: status_account_display.clone(),
                     runtime_model_provider_base_url: runtime_model_provider_base_url.clone(),
@@ -752,7 +717,6 @@ impl App {
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
                         .clone(),
-                    session_telemetry: session_telemetry.clone(),
                 };
                 let mut chat_widget = ChatWidget::new_with_app_event(init);
                 chat_widget.set_queue_submissions_until_session_configured(/*queue*/ true);
@@ -782,7 +746,6 @@ impl App {
                     has_chatgpt_account,
                     has_codex_backend_auth,
                     model_catalog: model_catalog.clone(),
-                    feedback: feedback.clone(),
                     is_first_run,
                     status_account_display: status_account_display.clone(),
                     runtime_model_provider_base_url: runtime_model_provider_base_url.clone(),
@@ -792,16 +755,10 @@ impl App {
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
                         .clone(),
-                    session_telemetry: session_telemetry.clone(),
                 };
                 (ChatWidget::new_with_app_event(init), Some(resumed))
             }
             SessionSelection::Fork(target_session) => {
-                session_telemetry.counter(
-                    "codex.thread.fork",
-                    /*inc*/ 1,
-                    &[("source", "cli_subcommand")],
-                );
                 let forked = cli_runtime
                     .fork_thread(config.clone(), target_session.thread_id)
                     .await
@@ -821,7 +778,6 @@ impl App {
                     has_chatgpt_account,
                     has_codex_backend_auth,
                     model_catalog: model_catalog.clone(),
-                    feedback: feedback.clone(),
                     is_first_run,
                     status_account_display: status_account_display.clone(),
                     runtime_model_provider_base_url: runtime_model_provider_base_url.clone(),
@@ -831,7 +787,6 @@ impl App {
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
                     terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
                         .clone(),
-                    session_telemetry: session_telemetry.clone(),
                 };
                 (ChatWidget::new_with_app_event(init), Some(forked))
             }
@@ -851,7 +806,6 @@ See the Codex keymap documentation for supported actions and examples."
 
         let mut app = Self {
             model_catalog,
-            session_telemetry: session_telemetry.clone(),
             app_event_tx,
             chat_widget,
             workspace_command_runner: Some(workspace_command_runner),
@@ -879,8 +833,6 @@ See the Codex keymap documentation for supported actions and examples."
             skill_load_warnings: SkillLoadWarningState::default(),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
-            feedback: feedback.clone(),
-            feedback_audience,
             environment_manager,
             cli_runtime_target,
             pending_update_action: None,
@@ -1156,7 +1108,7 @@ See the Codex keymap documentation for supported actions and examples."
         Ok(AppRunControl::Continue)
     }
 
-    pub(super) fn show_shutdown_feedback(&mut self, tui: &mut tui::Tui) -> Result<()> {
+    pub(super) fn show_shutdown_state(&mut self, tui: &mut tui::Tui) -> Result<()> {
         self.disable_ambient_pet_before_shutdown(tui)?;
         self.chat_widget.show_shutdown_in_progress();
         let screen_size = tui.terminal.last_known_screen_size;

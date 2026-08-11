@@ -91,7 +91,7 @@ pub(crate) struct SessionConfiguration {
 
     // TODO(pakrym): Remove config from here
     pub(super) original_config_do_not_use: Arc<Config>,
-    /// Optional service name tag for session metrics.
+    /// Optional client service name used to derive the Responses request originator.
     pub(super) metrics_service_name: Option<String>,
     pub(super) cli_runtime_client_name: Option<String>,
     pub(super) cli_runtime_client_version: Option<String>,
@@ -103,9 +103,9 @@ pub(crate) struct SessionConfiguration {
     pub(super) forked_from_thread_id: Option<ThreadId>,
     /// Immediate control/spawn parent for this thread, when it has one.
     pub(super) parent_thread_id: Option<ThreadId>,
-    /// Optional analytics source classification for this thread.
+    /// Optional client source classification for this thread.
     pub(super) thread_source: Option<ThreadSource>,
-    /// Effective originator used for this thread's Responses requests and analytics events.
+    /// Effective originator used for this thread's Responses requests.
     pub(super) originator: String,
     pub(super) dynamic_tools: Vec<DynamicToolSpec>,
     pub(super) user_shell_override: Option<shell::Shell>,
@@ -496,7 +496,6 @@ impl Session {
         agent_control: AgentControl,
         environment_manager: Arc<EnvironmentManager>,
         inherited_environments: Option<TurnEnvironmentSnapshot>,
-        analytics_events_client: Option<AnalyticsEventsClient>,
         thread_store: Arc<dyn ThreadStore>,
         parent_rollout_thread_trace: ThreadTraceContext,
         attestation_provider: Option<Arc<dyn AttestationProvider>>,
@@ -781,63 +780,6 @@ impl Session {
             ) {
                 post_session_configured_events.push(event);
             }
-            let telemetry_auth = auth.as_ref();
-            let auth_mode = telemetry_auth
-                .map(CodexAuth::auth_mode)
-                .map(TelemetryAuthMode::from);
-            let account_id = telemetry_auth.and_then(CodexAuth::get_account_id);
-            let account_email = telemetry_auth.and_then(CodexAuth::get_account_email);
-            let originator = session_configuration.originator.clone();
-            let terminal_type = user_agent();
-            let session_model = session_configuration.agent_settings.model().to_string();
-            let auth_env_telemetry = collect_auth_env_telemetry(
-                session_configuration.provider.info(),
-                auth_manager.codex_api_key_env_enabled(),
-            );
-            let mut session_telemetry = SessionTelemetry::new(
-                thread_id,
-                session_model.as_str(),
-                session_model.as_str(),
-                account_id.clone(),
-                account_email.clone(),
-                auth_mode,
-                originator.clone(),
-                config.otel.log_user_prompt,
-                terminal_type.clone(),
-                session_configuration.session_source.clone(),
-            )
-            .with_auth_env(auth_env_telemetry.to_otel_metadata());
-            if let Some(service_name) = session_configuration.metrics_service_name.as_deref() {
-                session_telemetry = session_telemetry.with_metrics_service_name(service_name);
-            }
-            config.features.emit_metrics(&session_telemetry);
-            session_telemetry.counter(
-                THREAD_STARTED_METRIC,
-                /*inc*/ 1,
-                &[(
-                    "is_git",
-                    if get_git_repo_root(session_configuration.cwd()).is_some() {
-                        "true"
-                    } else {
-                        "false"
-                    },
-                )],
-            );
-
-            session_telemetry.conversation_starts(
-                config.model_provider.name.as_str(),
-                session_configuration.agent_settings.reasoning_effort(),
-                config
-                    .model_reasoning_summary
-                    .unwrap_or(ReasoningSummaryConfig::Auto),
-                config.model_context_window,
-                config.model_auto_compact_token_limit,
-                config.permissions.approval_policy.value(),
-                config
-                    .permissions
-                    .legacy_sandbox_policy(session_configuration.cwd().as_path()),
-            );
-
             let use_zsh_fork_shell = config.features.enabled(Feature::ShellZshFork);
             let default_shell = if let Some(user_shell_override) =
                 session_configuration.user_shell_override.clone()
@@ -863,7 +805,6 @@ impl Session {
                 ShellSnapshot::new(
                     config.codex_home.clone(),
                     thread_id,
-                    session_telemetry.clone(),
                     state_db_ctx.clone(),
                 )
             } else {
@@ -918,24 +859,14 @@ impl Session {
                 session_configuration.clone(),
                 initial_auto_compact_window_ids,
             );
-            let analytics_events_client = analytics_events_client.unwrap_or_else(|| {
-                AnalyticsEventsClient::new(
-                    Arc::clone(&auth_manager),
-                    config.chatgpt_base_url.trim_end_matches('/').to_string(),
-                    config.analytics_enabled,
-                )
-            });
             let session_extension_data =
                 codex_extension_api::ExtensionData::new(session_id.to_string());
-            let extension_metrics =
-                extension_metrics::from_session_telemetry(session_telemetry.clone());
             for contributor in extensions.thread_lifecycle_contributors() {
                 contributor.on_thread_start(codex_extension_api::ThreadStartInput {
                     config: config.as_ref(),
                     session_source: &session_configuration.session_source,
                     persistent_thread_state_available: state_db_ctx.is_some(),
                     environments: session_configuration.environment_selections(),
-                    extension_metrics: Some(Arc::clone(&extension_metrics)),
                     session_store: &session_extension_data,
                     thread_store: &thread_extension_data,
                 }).await;
@@ -952,7 +883,6 @@ impl Session {
                 elicitations: crate::elicitation::ElicitationService::new(),
                 shell_zsh_path: config.zsh_path.clone(),
                 main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
-                analytics_events_client,
                 rollout_thread_trace,
                 user_shell: Arc::new(default_shell),
                 show_raw_agent_reasoning: config.show_raw_agent_reasoning,
@@ -962,7 +892,6 @@ impl Session {
                     ClientRouteClass::Api,
                 )
                 .with_legacy_custom_ca_fallback(),
-                session_telemetry,
                 models_manager: Arc::clone(&models_manager),
                 runtime_handle: tokio::runtime::Handle::current(),
                 skills_service,
@@ -991,7 +920,6 @@ impl Session {
                     session_configuration.originator.clone(),
                     config.model_verbosity,
                     config.features.enabled(Feature::EnableRequestCompression),
-                    config.features.enabled(Feature::RuntimeMetrics),
                     Self::build_model_client_beta_features_header(config.as_ref()),
                     /*concurrent_reasoning_summaries_enabled*/ config
                         .features

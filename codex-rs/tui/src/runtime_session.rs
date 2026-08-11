@@ -11,7 +11,6 @@ pub(crate) use history::HISTORY_ITEM_SCAN_LIMIT;
 pub(crate) use history::HistoryHydrationScope;
 pub(crate) use history::thread_items_page_params;
 
-use crate::bottom_pane::FeedbackAudience;
 use crate::legacy_core::config::Config;
 use crate::service_tier_resolution;
 use crate::session_state::MessageHistoryMetadata;
@@ -101,7 +100,6 @@ use codex_cli_runtime_client::CliRuntimeEvent;
 use codex_cli_runtime_client::CliRuntimePath;
 use codex_cli_runtime_client::CliRuntimeRequestHandle;
 use codex_cli_runtime_client::TypedRequestError;
-use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -218,15 +216,14 @@ fn is_thread_settings_update_unsupported(source: &JSONRPCErrorError) -> bool {
 }
 
 /// Data collected during the TUI bootstrap phase that the main event loop
-/// needs to configure the UI, telemetry, and initial rate-limit prefetch.
+/// needs to configure the UI and initial rate-limit prefetch.
 ///
 /// Rate-limit snapshots are intentionally **not** included here; they are
 /// fetched asynchronously after bootstrap returns so that the TUI can render
 /// its first frame without waiting for the rate-limit round-trip.
 pub(crate) struct CliRuntimeBootstrap {
     pub(crate) duration: Duration,
-    pub(crate) account_email: Option<String>,
-    pub(crate) auth_mode: Option<TelemetryAuthMode>,
+    pub(crate) auth_mode: Option<AuthMode>,
     pub(crate) status_account_display: Option<StatusAccountDisplay>,
     pub(crate) plan_type: Option<codex_protocol::account::PlanType>,
     /// Whether the configured model provider needs OpenAI-style auth. Combined
@@ -234,7 +231,6 @@ pub(crate) struct CliRuntimeBootstrap {
     /// should be fired.
     pub(crate) requires_openai_auth: bool,
     pub(crate) default_model: String,
-    pub(crate) feedback_audience: FeedbackAudience,
     pub(crate) has_chatgpt_account: bool,
     pub(crate) available_models: Vec<ModelPreset>,
 }
@@ -369,54 +365,32 @@ impl CliRuntimeSession {
         self.default_model = Some(default_model.clone());
         self.available_models = available_models.clone();
 
-        let (
-            account_email,
-            auth_mode,
-            status_account_display,
-            plan_type,
-            feedback_audience,
-            has_chatgpt_account,
-        ) = match account.account {
-            Some(Account::ApiKey {}) => (
-                None,
-                Some(TelemetryAuthMode::ApiKey),
-                Some(StatusAccountDisplay::ApiKey),
-                None,
-                FeedbackAudience::External,
-                false,
-            ),
-            Some(Account::Chatgpt { email, plan_type }) => {
-                let feedback_audience = if email
-                    .as_deref()
-                    .is_some_and(|email| email.ends_with("@openai.com"))
-                {
-                    FeedbackAudience::OpenAiEmployee
-                } else {
-                    FeedbackAudience::External
-                };
-                (
-                    email.clone(),
-                    Some(TelemetryAuthMode::Chatgpt),
+        let (auth_mode, status_account_display, plan_type, has_chatgpt_account) =
+            match account.account {
+                Some(Account::ApiKey {}) => (
+                    Some(AuthMode::ApiKey),
+                    Some(StatusAccountDisplay::ApiKey),
+                    None,
+                    false,
+                ),
+                Some(Account::Chatgpt { email, plan_type }) => (
+                    Some(AuthMode::Chatgpt),
                     Some(StatusAccountDisplay::ChatGpt {
                         email,
                         plan: Some(plan_type_display_name(plan_type)),
                     }),
                     Some(plan_type),
-                    feedback_audience,
                     true,
-                )
-            }
-            None => (None, None, None, None, FeedbackAudience::External, false),
-        };
+                ),
+                None => (None, None, None, false),
+            };
         Ok(CliRuntimeBootstrap {
             duration: started_at.elapsed(),
-            account_email,
             auth_mode,
             status_account_display,
             plan_type,
             requires_openai_auth: account.requires_openai_auth,
             default_model,
-            feedback_audience,
             has_chatgpt_account,
             available_models,
         })

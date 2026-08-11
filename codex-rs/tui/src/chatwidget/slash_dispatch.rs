@@ -135,19 +135,6 @@ impl ChatWidget {
         }
 
         match cmd {
-            SlashCommand::Feedback => {
-                if !self.config.feedback_enabled {
-                    let params = crate::bottom_pane::feedback_disabled_params();
-                    self.bottom_pane.show_selection_view(params);
-                    self.request_redraw();
-                    return;
-                }
-                // Step 1: pick a category (UI built in feedback_view)
-                let params =
-                    crate::bottom_pane::feedback_selection_params(self.app_event_tx.clone());
-                self.bottom_pane.show_selection_view(params);
-                self.request_redraw();
-            }
             SlashCommand::New => {
                 self.app_event_tx.send(AppEvent::NewSession { name: None });
             }
@@ -245,8 +232,6 @@ impl ChatWidget {
                 self.app_event_tx.compact();
             }
             SlashCommand::Rename => {
-                self.session_telemetry
-                    .counter("codex.thread.rename", /*inc*/ 1, &[]);
                 self.show_rename_prompt();
             }
             SlashCommand::Model => {
@@ -570,8 +555,6 @@ impl ChatWidget {
                 if !self.ensure_thread_rename_allowed() {
                     return;
                 }
-                self.session_telemetry
-                    .counter("codex.thread.rename", /*inc*/ 1, &[]);
                 let Some(name) = normalize_thread_name(&args) else {
                     self.add_error_message("Thread name cannot be empty.".to_string());
                     return;
@@ -884,8 +867,7 @@ impl ChatWidget {
             | SlashCommand::Diff
             | SlashCommand::App
             | SlashCommand::Rename => QueueDrain::Continue,
-            SlashCommand::Feedback
-            | SlashCommand::New
+            SlashCommand::New
             | SlashCommand::Archive
             | SlashCommand::Delete
             | SlashCommand::Clear

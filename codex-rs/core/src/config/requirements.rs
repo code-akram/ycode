@@ -2,7 +2,6 @@ use codex_config::ConfigRequirements;
 use codex_config::RequirementSource;
 use codex_config::Sourced;
 use codex_config::config_toml::ConfigToml;
-use codex_config::types::FeedbackConfigToml;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::path::Path;
 
@@ -31,11 +30,6 @@ pub(super) fn apply_to_config(
     apply_exact!(model_catalog_json);
     apply_exact!(check_for_update_on_startup);
     apply_exact!(allow_login_shell);
-    apply_feedback_requirement(
-        &mut config.feedback,
-        requirements.feedback.as_ref(),
-        startup_warnings,
-    );
     if let Some(requirement) = requirements.windows_sandbox_private_desktop.as_ref() {
         apply_exact_requirement(
             "windows.sandbox_private_desktop",
@@ -74,34 +68,6 @@ fn apply_exact_requirement<T>(
         ));
     }
     *configured_value = Some(value.clone());
-}
-
-fn replace_required_leaf<T: Clone + PartialEq>(
-    configured: &mut Option<T>,
-    required: &Option<T>,
-) -> bool {
-    let Some(required) = required else {
-        return false;
-    };
-    let conflict = configured
-        .as_ref()
-        .is_some_and(|configured| configured != required);
-    *configured = Some(required.clone());
-    conflict
-}
-
-fn apply_feedback_requirement(
-    configured: &mut Option<FeedbackConfigToml>,
-    requirement: Option<&Sourced<FeedbackConfigToml>>,
-    startup_warnings: &mut Vec<String>,
-) {
-    let Some(Sourced { value, source }) = requirement else {
-        return;
-    };
-    let FeedbackConfigToml { enabled } = value;
-    let configured = configured.get_or_insert_default();
-    let conflict = replace_required_leaf(&mut configured.enabled, enabled);
-    push_structured_requirement_override_warning("feedback", conflict, source, startup_warnings);
 }
 
 pub(super) fn push_sqlite_home_env_override_warning(

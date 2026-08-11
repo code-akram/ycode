@@ -112,7 +112,7 @@ pub struct ThreadMetadata {
     pub source: String,
     /// Persisted thread history contract selected when this thread was created.
     pub history_mode: ThreadHistoryMode,
-    /// Optional analytics source classification for this thread.
+    /// Optional client source classification for this thread.
     pub thread_source: Option<ThreadSource>,
     /// Optional random unique nickname assigned to an AgentControl-spawned sub-agent.
     pub agent_nickname: Option<String>,
@@ -177,7 +177,7 @@ pub struct ThreadMetadataBuilder {
     pub source: SessionSource,
     /// Persisted thread history contract selected when this thread was created.
     pub history_mode: ThreadHistoryMode,
-    /// Optional analytics source classification for this thread.
+    /// Optional client source classification for this thread.
     pub thread_source: Option<ThreadSource>,
     /// Optional random unique nickname assigned to the session.
     pub agent_nickname: Option<String>,

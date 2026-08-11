@@ -4,7 +4,6 @@ use crate::realtime_conversation::handle_speech as handle_realtime_conversation_
 use crate::realtime_conversation::handle_start as handle_realtime_conversation_start;
 use crate::realtime_conversation::handle_text as handle_realtime_conversation_text;
 use async_channel::Receiver;
-use codex_otel::set_parent_from_w3c_trace_context;
 use codex_protocol::protocol::Submission;
 use tracing::Instrument;
 use tracing::debug_span;
@@ -223,10 +222,7 @@ pub(super) async fn user_input_or_turn_inner(
         )
         .await
     {
-        Ok(turn_id) => {
-            current_context.session_telemetry.user_prompt(&items);
-            Ok(UserMessageAdmission::Steered { turn_id })
-        }
+        Ok(turn_id) => Ok(UserMessageAdmission::Steered { turn_id }),
         Err(SteerInputError::NoActiveTurn(items)) => {
             if let Some(id) = parent_turn_id {
                 current_context.turn_metadata_state.set_parent_turn_id(id);
@@ -236,7 +232,6 @@ pub(super) async fn user_input_or_turn_inner(
                     .turn_metadata_state
                     .set_responsesapi_client_metadata(responsesapi_client_metadata);
             }
-            current_context.session_telemetry.user_prompt(&items);
             let additional_context_input = {
                 let mut state = sess.state.lock().await;
                 state.additional_context.merge(additional_context)
@@ -561,18 +556,6 @@ async fn emit_thread_stop_lifecycle(sess: &Session) {
 pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
     shutdown_session_runtime(sess).await;
     info!("Shutting down Codex instance");
-    let history = sess.clone_history().await;
-    let turn_count = history
-        .raw_items()
-        .iter()
-        .filter(|item| is_user_turn_boundary(item))
-        .count();
-    sess.services.session_telemetry.counter(
-        "codex.conversation.turn.count",
-        i64::try_from(turn_count).unwrap_or(0),
-        &[],
-    );
-
     emit_thread_stop_lifecycle(sess.as_ref()).await;
 
     // Gracefully flush and shutdown thread persistence on session end so tests
@@ -798,13 +781,5 @@ pub(super) fn submission_dispatch_span(sub: &Submission) -> tracing::Span {
             codex.op = op_name
         ),
     };
-    if let Some(trace) = sub.trace.as_ref()
-        && !set_parent_from_w3c_trace_context(&dispatch_span, trace)
-    {
-        warn!(
-            submission.id = sub.id.as_str(),
-            "ignoring invalid submission trace carrier"
-        );
-    }
     dispatch_span
 }

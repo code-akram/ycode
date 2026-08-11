@@ -101,7 +101,7 @@ impl ToolExposure {
 /// Shared runtime contract for model-visible tools.
 ///
 /// Implementations keep the model-visible spec tied to the executable runtime.
-/// Host crates can layer routing, hooks, telemetry, or other orchestration on
+/// Host crates can layer routing, local diagnostics, or other orchestration on
 /// top without reopening the spec/runtime split.
 pub trait ToolExecutor<Invocation>: Send + Sync {
     /// The concrete tool name handled by this runtime instance.

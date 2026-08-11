@@ -34,7 +34,6 @@ use codex_core_api::NewThread;
 use codex_core_api::Notice;
 use codex_core_api::OPENAI_PROVIDER_ID;
 use codex_core_api::Op;
-use codex_core_api::OtelConfig;
 use codex_core_api::PermissionProfile;
 use codex_core_api::Permissions;
 use codex_core_api::ProjectConfig;
@@ -141,7 +140,6 @@ async fn run_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         environment_manager,
         Arc::new(extensions.build()),
         user_instructions_provider,
-        /*analytics_events_client*/ None,
         Arc::clone(&thread_store),
         local_agent_graph_store_from_state_db(state_db.as_ref()),
         installation_id,
@@ -271,7 +269,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         experimental_realtime_ws_backend_prompt: None,
         experimental_realtime_ws_startup_context: None,
         experimental_realtime_start_instructions: None,
-        experimental_thread_config_endpoint: None,
         experimental_thread_store: ThreadStoreConfig::Local,
         forced_chatgpt_workspace_id: None,
         forced_login_method: None,
@@ -294,10 +291,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         notices: Notice::default(),
         check_for_update_on_startup: false,
         disable_paste_burst: false,
-        analytics_enabled: Some(false),
-        feedback_enabled: false,
         tool_suggest: ToolSuggestConfig::default(),
-        otel: OtelConfig::default(),
     };
     config
         .features

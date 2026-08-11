@@ -233,7 +233,7 @@ pub struct Thread {
     /// `None` means the capability is unavailable, such as for an unloaded stored thread.
     #[experimental("thread.canAcceptDirectInput")]
     pub can_accept_direct_input: Option<bool>,
-    /// Optional analytics source classification for this thread.
+    /// Optional client source classification for this thread.
     pub thread_source: Option<ThreadSource>,
     /// Optional random unique nickname assigned to an AgentControl-spawned sub-agent.
     pub agent_nickname: Option<String>,

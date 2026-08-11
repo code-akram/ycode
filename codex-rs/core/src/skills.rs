@@ -1,13 +1,8 @@
 use crate::config::Config;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use codex_analytics::InvocationType;
-use codex_analytics::SkillInvocation;
-use codex_analytics::build_track_events_context;
 use codex_extension_api::SkillInvocationInput;
 use codex_extension_api::SkillInvocationKind;
-use codex_otel::sanitize_metric_tag_value;
-use codex_protocol::protocol::SkillScope;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashSet;
 use tokio::sync::Mutex;
@@ -55,20 +50,14 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
     ) else {
         return;
     };
-    let invocation = SkillInvocation {
-        skill_name: candidate.name,
-        skill_scope: candidate.scope,
-        skill_path: candidate.path_to_skills_md.to_path_buf(),
-        invocation_type: InvocationType::Implicit,
+    let skill_scope = match candidate.scope {
+        codex_protocol::protocol::SkillScope::User => "user",
+        codex_protocol::protocol::SkillScope::Repo => "repo",
+        codex_protocol::protocol::SkillScope::System => "system",
+        codex_protocol::protocol::SkillScope::Admin => "admin",
     };
-    let skill_scope = match invocation.skill_scope {
-        SkillScope::User => "user",
-        SkillScope::Repo => "repo",
-        SkillScope::System => "system",
-        SkillScope::Admin => "admin",
-    };
-    let skill_path = invocation.skill_path.to_string_lossy();
-    let skill_name = invocation.skill_name.clone();
+    let skill_path = candidate.path_to_skills_md.to_string_lossy();
+    let skill_name = candidate.name;
     let seen_key = format!("{skill_scope}:{skill_path}:{skill_name}");
     let inserted = {
         let skill_invocations = turn_context
@@ -80,8 +69,6 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
     if !inserted {
         return;
     }
-    let skill_name_tag = sanitize_metric_tag_value(skill_name.as_str());
-
     for contributor in sess.services.extensions.skill_invocation_contributors() {
         contributor
             .on_skill_invocation(SkillInvocationInput {
@@ -94,25 +81,4 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
             })
             .await;
     }
-
-    turn_context.session_telemetry.counter(
-        "codex.skill.injected",
-        /*inc*/ 1,
-        &[
-            ("status", "ok"),
-            ("skill", skill_name_tag.as_str()),
-            ("invoke_type", "implicit"),
-        ],
-    );
-    sess.services
-        .analytics_events_client
-        .track_skill_invocations(
-            build_track_events_context(
-                turn_context.model_info.slug.clone(),
-                sess.thread_id.to_string(),
-                turn_context.sub_id.clone(),
-                turn_context.originator.clone(),
-            ),
-            vec![invocation],
-        );
 }

@@ -2,35 +2,26 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 
 use crate::function_tool::FunctionCallError;
-use crate::memory_usage::emit_metric_for_tool_read;
-use crate::memory_usage::shell_script_for_invocation;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
-use crate::tools::flat_tool_name;
 use crate::tools::lifecycle::notify_tool_finish;
 use crate::tools::lifecycle::notify_tool_start;
-use crate::tools::router::tool_log_payload;
 use crate::tools::tool_dispatch_trace::ToolDispatchTrace;
 use crate::util::error_or_panic;
 use codex_extension_api::ToolCallOutcome;
 use codex_protocol::models::ResponseInputItem;
-use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::EventMsg;
 use codex_rollout::state_db;
-use codex_shell_command::parse_command::parse_shell_script;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use futures::future::BoxFuture;
 use indexmap::IndexMap;
 use indexmap::map::Entry;
-
-pub(crate) type ToolTelemetryTags = Vec<(&'static str, String)>;
 
 pub use codex_tools::ToolExecutor;
 pub use codex_tools::ToolExposure;
@@ -56,10 +47,6 @@ pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
     /// host returns an aborted tool response.
     fn waits_for_runtime_cancellation(&self) -> bool {
         false
-    }
-
-    fn telemetry_tags(&self, _invocation: &ToolInvocation) -> ToolTelemetryTags {
-        Vec::new()
     }
 
     /// Creates an optional consumer for streamed tool argument diffs.
@@ -323,11 +310,6 @@ impl ToolRegistry {
         terminal_outcome_reached: Option<Arc<AtomicBool>>,
     ) -> Result<AnyToolResult, FunctionCallError> {
         let tool_name = invocation.tool_name.clone();
-        let tool_name_flat = flat_tool_name(&tool_name);
-        let call_id_owned = invocation.call_id.clone();
-        let otel = invocation.turn.session_telemetry.clone();
-        let base_tool_result_tags = [];
-
         {
             let mut active = invocation.session.active_turn.lock().await;
             if let Some(active_turn) = active.as_mut() {
@@ -341,40 +323,13 @@ impl ToolRegistry {
             Some(tool) => tool,
             None => {
                 let message = unsupported_tool_call_message(&invocation.payload, &tool_name);
-                let log_payload = tool_log_payload(&invocation.payload, &invocation.source);
-                otel.tool_result_with_tags(
-                    tool_name_flat.as_ref(),
-                    &call_id_owned,
-                    log_payload.as_ref(),
-                    Duration::ZERO,
-                    /*success*/ false,
-                    &message,
-                    &base_tool_result_tags,
-                );
                 let err = FunctionCallError::RespondToModel(message);
                 dispatch_trace.record_failed(&err);
                 return Err(err);
             }
         };
-        let telemetry_tags = tool.telemetry_tags(&invocation);
-        let mut tool_result_tags =
-            Vec::with_capacity(base_tool_result_tags.len() + telemetry_tags.len() + 1);
-        tool_result_tags.extend_from_slice(&base_tool_result_tags);
-        for (key, value) in &telemetry_tags {
-            tool_result_tags.push((*key, value.as_str()));
-        }
         if !tool.matches_kind(&invocation.payload) {
             let message = format!("tool {tool_name} invoked with incompatible payload");
-            let log_payload = tool_log_payload(&invocation.payload, &invocation.source);
-            otel.tool_result_with_tags(
-                tool_name_flat.as_ref(),
-                &call_id_owned,
-                log_payload.as_ref(),
-                Duration::ZERO,
-                /*success*/ false,
-                &message,
-                &tool_result_tags,
-            );
             let err = FunctionCallError::Fatal(message);
             dispatch_trace.record_failed(&err);
             return Err(err);
@@ -382,67 +337,12 @@ impl ToolRegistry {
 
         notify_tool_start(&invocation).await;
 
-        if let Some(command) = shell_script_for_invocation(&invocation) {
-            let parsed = parse_shell_script(&command);
-            let mut categories = parsed.iter().map(|command| match command {
-                ParsedCommand::Read { .. } => "read",
-                ParsedCommand::ListFiles { .. } => "list_files",
-                ParsedCommand::Search { .. } => "search",
-                ParsedCommand::Unknown { .. } => "unknown",
-            });
-            let category = match categories.next() {
-                Some(first) if categories.all(|category| category == first) => first,
-                Some(_) => "mixed",
-                None => "unknown",
-            };
-            tool_result_tags.push(("command_category", category));
-        }
-
-        let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
-        let log_payload = tool_log_payload(&invocation.payload, &invocation.source);
-
-        let result = otel
-            .log_tool_result_with_tags(
-                tool_name_flat.as_ref(),
-                &call_id_owned,
-                log_payload.as_ref(),
-                &tool_result_tags,
-                || {
-                    let tool = tool.clone();
-                    let response_cell = &response_cell;
-                    async move {
-                        match handle_any_tool(tool.as_ref(), invocation_for_tool).await {
-                            Ok(result) => {
-                                let preview = result.result.log_preview();
-                                let success = result.result.success_for_logging();
-                                let mut guard = response_cell.lock().await;
-                                *guard = Some(result);
-                                Ok((preview, success))
-                            }
-                            Err(err) => Err(err),
-                        }
-                    }
-                },
-            )
-            .await;
-        let success = match &result {
-            Ok((_, success)) => *success,
-            Err(_) => false,
-        };
-        emit_metric_for_tool_read(&invocation, success);
+        let result = handle_any_tool(tool.as_ref(), invocation_for_tool).await;
         let lifecycle_outcome = match &result {
-            Ok(_) => {
-                let guard = response_cell.lock().await;
-                match guard.as_ref() {
-                    Some(result) => ToolCallOutcome::Completed {
-                        success: result.result.success_for_logging(),
-                    },
-                    None => ToolCallOutcome::Failed {
-                        handler_executed: true,
-                    },
-                }
-            }
+            Ok(result) => ToolCallOutcome::Completed {
+                success: result.result.success_for_logging(),
+            },
             Err(_) => ToolCallOutcome::Failed {
                 handler_executed: true,
             },
@@ -455,11 +355,7 @@ impl ToolRegistry {
         .await;
 
         match result {
-            Ok(_) => {
-                let mut guard = response_cell.lock().await;
-                let result = guard.take().ok_or_else(|| {
-                    FunctionCallError::Fatal("tool produced no output".to_string())
-                })?;
+            Ok(result) => {
                 dispatch_trace.record_completed(
                     &invocation,
                     &result.call_id,

@@ -1814,7 +1814,6 @@ fn config_granular_approval_policy_is_marked_experimental() {
         model_reasoning_summary: None,
         model_verbosity: None,
         service_tier: None,
-        analytics: None,
         apps: None,
         desktop: None,
         additional: HashMap::new(),
@@ -1846,7 +1845,6 @@ fn config_approvals_reviewer_is_marked_experimental() {
         model_reasoning_summary: None,
         model_verbosity: None,
         service_tier: None,
-        analytics: None,
         apps: None,
         desktop: None,
         additional: HashMap::new(),
@@ -1885,7 +1883,6 @@ fn config_requirements_granular_allowed_approval_policy_is_marked_experimental()
             model_catalog_json: None,
             check_for_update_on_startup: None,
             allow_login_shell: None,
-            feedback: None,
         });
 
     assert_eq!(reason, Some("askForApproval.granular"));

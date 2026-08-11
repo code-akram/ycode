@@ -24,7 +24,6 @@ use crate::ManagedAuthPolicy;
 use crate::config_toml::ConfigToml;
 use crate::permissions_toml::PermissionProfileToml;
 use crate::types::AppToolApproval;
-use crate::types::FeedbackConfigToml;
 use crate::types::WindowsSandboxModeToml;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,7 +153,6 @@ pub struct ConfigRequirements {
     pub model_catalog_json: Option<Sourced<AbsolutePathBuf>>,
     pub check_for_update_on_startup: Option<Sourced<bool>>,
     pub allow_login_shell: Option<Sourced<bool>>,
-    pub feedback: Option<Sourced<FeedbackConfigToml>>,
     pub approval_policy: ConstrainedWithSource<AskForApproval>,
     pub approvals_reviewer: ConstrainedWithSource<ApprovalsReviewer>,
     pub permission_profile: ConstrainedWithSource<PermissionProfile>,
@@ -185,7 +183,6 @@ impl Default for ConfigRequirements {
             model_catalog_json: None,
             check_for_update_on_startup: None,
             allow_login_shell: None,
-            feedback: None,
             approval_policy: ConstrainedWithSource::new(
                 Constrained::allow_any_from_default(),
                 /*source*/ None,
@@ -846,7 +843,6 @@ pub struct ConfigRequirementsToml {
     pub model_catalog_json: Option<AbsolutePathBuf>,
     pub check_for_update_on_startup: Option<bool>,
     pub allow_login_shell: Option<bool>,
-    pub feedback: Option<FeedbackConfigToml>,
     pub allowed_approval_policies: Option<Vec<AskForApproval>>,
     pub allowed_approvals_reviewers: Option<Vec<ApprovalsReviewer>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxModeRequirement>>,
@@ -934,7 +930,6 @@ pub struct ConfigRequirementsWithSources {
     pub model_catalog_json: Option<Sourced<AbsolutePathBuf>>,
     pub check_for_update_on_startup: Option<Sourced<bool>>,
     pub allow_login_shell: Option<Sourced<bool>>,
-    pub feedback: Option<Sourced<FeedbackConfigToml>>,
     pub allowed_approval_policies: Option<Sourced<Vec<AskForApproval>>>,
     pub allowed_approvals_reviewers: Option<Sourced<Vec<ApprovalsReviewer>>>,
     pub allowed_sandbox_modes: Option<Sourced<Vec<SandboxModeRequirement>>>,
@@ -982,7 +977,6 @@ impl ConfigRequirementsWithSources {
             model_catalog_json: _,
             check_for_update_on_startup: _,
             allow_login_shell: _,
-            feedback: _,
             allowed_approval_policies: _,
             allowed_approvals_reviewers: _,
             allowed_sandbox_modes: _,
@@ -1025,7 +1019,6 @@ impl ConfigRequirementsWithSources {
                 model_catalog_json,
                 check_for_update_on_startup,
                 allow_login_shell,
-                feedback,
                 allowed_approval_policies,
                 allowed_approvals_reviewers,
                 allowed_sandbox_modes,
@@ -1065,7 +1058,6 @@ impl ConfigRequirementsWithSources {
             model_catalog_json,
             check_for_update_on_startup,
             allow_login_shell,
-            feedback,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1094,7 +1086,6 @@ impl ConfigRequirementsWithSources {
             model_catalog_json: model_catalog_json.map(|sourced| sourced.value),
             check_for_update_on_startup: check_for_update_on_startup.map(|sourced| sourced.value),
             allow_login_shell: allow_login_shell.map(|sourced| sourced.value),
-            feedback: feedback.map(|sourced| sourced.value),
             allowed_approval_policies: allowed_approval_policies.map(|sourced| sourced.value),
             allowed_approvals_reviewers: allowed_approvals_reviewers.map(|sourced| sourced.value),
             allowed_sandbox_modes: allowed_sandbox_modes.map(|sourced| sourced.value),
@@ -1190,10 +1181,6 @@ impl ConfigRequirementsToml {
             && self.model_catalog_json.is_none()
             && self.check_for_update_on_startup.is_none()
             && self.allow_login_shell.is_none()
-            && self
-                .feedback
-                .as_ref()
-                .is_none_or(|feedback| feedback == &FeedbackConfigToml::default())
             && self.allowed_approval_policies.is_none()
             && self.allowed_approvals_reviewers.is_none()
             && self.allowed_sandbox_modes.is_none()
@@ -1256,9 +1243,6 @@ impl ConfigRequirementsToml {
         apply_exact!(check_for_update_on_startup);
         apply_exact!(allow_login_shell);
 
-        if let Some(enabled) = self.feedback.as_ref().and_then(|feedback| feedback.enabled) {
-            config.feedback.get_or_insert_default().enabled = Some(enabled);
-        }
         if let Some(sandbox_private_desktop) = self
             .windows
             .as_ref()
@@ -1273,7 +1257,7 @@ impl ConfigRequirementsToml {
 
     /// Returns the exact managed field affected by editing `segments`.
     pub fn exact_requirement_for_config_path(&self, segments: &[String]) -> Option<&'static str> {
-        let managed_fields: [(bool, &[&str], &'static str); 7] = [
+        let managed_fields: [(bool, &[&str], &'static str); 6] = [
             (self.sqlite_home.is_some(), &["sqlite_home"], "sqlite_home"),
             (self.log_dir.is_some(), &["log_dir"], "log_dir"),
             (
@@ -1290,14 +1274,6 @@ impl ConfigRequirementsToml {
                 self.allow_login_shell.is_some(),
                 &["allow_login_shell"],
                 "allow_login_shell",
-            ),
-            (
-                self.feedback
-                    .as_ref()
-                    .and_then(|feedback| feedback.enabled)
-                    .is_some(),
-                &["feedback", "enabled"],
-                "feedback.enabled",
             ),
             (
                 self.windows
@@ -1340,7 +1316,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             model_catalog_json,
             check_for_update_on_startup,
             allow_login_shell,
-            feedback,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1617,7 +1592,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             model_catalog_json,
             check_for_update_on_startup,
             allow_login_shell,
-            feedback,
             approval_policy,
             approvals_reviewer,
             permission_profile,
@@ -1694,9 +1668,6 @@ mod tests {
             model_catalog_json: Some(managed_path),
             check_for_update_on_startup: Some(false),
             allow_login_shell: Some(false),
-            feedback: Some(FeedbackConfigToml {
-                enabled: Some(false),
-            }),
             windows: Some(WindowsRequirementsToml {
                 sandbox_private_desktop: Some(false),
                 ..Default::default()
@@ -1712,18 +1683,15 @@ mod tests {
                 Some("check_for_update_on_startup"),
             ),
             (&["allow_login_shell"], Some("allow_login_shell")),
-            (&["feedback", "enabled"], Some("feedback.enabled")),
             (
                 &["windows", "sandbox_private_desktop"],
                 Some("windows.sandbox_private_desktop"),
             ),
             (&[], Some("sqlite_home")),
-            (&["feedback"], Some("feedback.enabled")),
             (
                 &["windows", "sandbox_private_desktop", "value"],
                 Some("windows.sandbox_private_desktop"),
             ),
-            (&["feedback", "other"], None),
             (&["windows", "sandbox"], None),
         ];
 
@@ -1765,7 +1733,6 @@ mod tests {
             model_catalog_json,
             check_for_update_on_startup,
             allow_login_shell,
-            feedback,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1800,7 +1767,6 @@ mod tests {
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allow_login_shell: allow_login_shell
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
-            feedback: feedback.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allowed_approval_policies: allowed_approval_policies
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allowed_approvals_reviewers: allowed_approvals_reviewers
@@ -2016,9 +1982,6 @@ mod tests {
         let model_catalog_json =
             AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-models.json"))
                 .expect("managed model catalog path should be absolute");
-        let feedback = FeedbackConfigToml {
-            enabled: Some(false),
-        };
         let windows = WindowsRequirementsToml {
             allowed_sandbox_implementations: None,
             sandbox_private_desktop: Some(true),
@@ -2037,7 +2000,6 @@ mod tests {
             model_catalog_json: Some(model_catalog_json.clone()),
             check_for_update_on_startup: Some(false),
             allow_login_shell: Some(false),
-            feedback: Some(feedback.clone()),
             allowed_approval_policies: Some(allowed_approval_policies.clone()),
             allowed_approvals_reviewers: Some(allowed_approvals_reviewers.clone()),
             allowed_sandbox_modes: Some(allowed_sandbox_modes.clone()),
@@ -2082,7 +2044,6 @@ mod tests {
                     source.clone(),
                 )),
                 allow_login_shell: Some(Sourced::new(/*value*/ false, source.clone())),
-                feedback: Some(Sourced::new(feedback, source.clone())),
                 allowed_approval_policies: Some(Sourced::new(
                     allowed_approval_policies,
                     source.clone()

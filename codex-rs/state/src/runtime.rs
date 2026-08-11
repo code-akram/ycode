@@ -19,8 +19,6 @@ use crate::model::datetime_to_epoch_millis;
 use crate::model::datetime_to_epoch_seconds;
 use crate::model::epoch_millis_to_datetime;
 use crate::paths::file_modified_time_utc;
-use crate::telemetry::DbKind;
-use crate::telemetry::DbTelemetry;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_protocol::ThreadId;
@@ -36,7 +34,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicI64;
-use std::time::Instant;
 use tracing::warn;
 
 mod backfill;
@@ -96,23 +93,6 @@ impl StateRuntime {
     /// Logs and paginated thread history live in dedicated files to reduce
     /// lock contention with the rest of the state store.
     pub async fn init(sqlite: SqliteConfig, default_provider: String) -> anyhow::Result<Arc<Self>> {
-        Self::init_inner(sqlite, default_provider, /*telemetry_override*/ None).await
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn init_with_telemetry_for_tests(
-        sqlite: SqliteConfig,
-        default_provider: String,
-        telemetry_override: &dyn DbTelemetry,
-    ) -> anyhow::Result<Arc<Self>> {
-        Self::init_inner(sqlite, default_provider, Some(telemetry_override)).await
-    }
-
-    async fn init_inner(
-        sqlite: SqliteConfig,
-        default_provider: String,
-        telemetry_override: Option<&dyn DbTelemetry>,
-    ) -> anyhow::Result<Arc<Self>> {
         tokio::fs::create_dir_all(sqlite.home()).await?;
         let state_migrator = runtime_state_migrator();
         let logs_migrator = runtime_logs_migrator();
@@ -124,20 +104,14 @@ impl StateRuntime {
         let goals_path = sqlite.goals_db_path();
         let memories_path = sqlite.memories_db_path();
         let queue_path = sqlite.queue_db_path();
-        let pool = match sqlite
-            .open_state_db(&state_migrator, telemetry_override)
-            .await
-        {
+        let pool = match sqlite.open_state_db(&state_migrator).await {
             Ok(db) => Arc::new(db),
             Err(err) => {
                 warn!("failed to open state db at {}: {err}", state_path.display());
                 return Err(err);
             }
         };
-        let logs_pool = match sqlite
-            .open_logs_db(&logs_migrator, telemetry_override)
-            .await
-        {
+        let logs_pool = match sqlite.open_logs_db(&logs_migrator).await {
             Ok(db) => Arc::new(db),
             Err(err) => {
                 warn!("failed to open logs db at {}: {err}", logs_path.display());
@@ -145,10 +119,7 @@ impl StateRuntime {
                 return Err(err);
             }
         };
-        let goals_pool = match sqlite
-            .open_goals_db(&goals_migrator, telemetry_override)
-            .await
-        {
+        let goals_pool = match sqlite.open_goals_db(&goals_migrator).await {
             Ok(db) => Arc::new(db),
             Err(err) => {
                 warn!("failed to open goals db at {}: {err}", goals_path.display());
@@ -156,10 +127,7 @@ impl StateRuntime {
                 return Err(err);
             }
         };
-        let memories_pool = match sqlite
-            .open_memories_db(&memories_migrator, telemetry_override)
-            .await
-        {
+        let memories_pool = match sqlite.open_memories_db(&memories_migrator).await {
             Ok(db) => Arc::new(db),
             Err(err) => {
                 warn!(
@@ -170,10 +138,7 @@ impl StateRuntime {
                 return Err(err);
             }
         };
-        let queue_pool = match sqlite
-            .open_queue_db(&queue_migrator, telemetry_override)
-            .await
-        {
+        let queue_pool = match sqlite.open_queue_db(&queue_migrator).await {
             Ok(db) => Arc::new(db),
             Err(err) => {
                 warn!("failed to open queue db at {}: {err}", queue_path.display());
@@ -187,15 +152,7 @@ impl StateRuntime {
                 return Err(err);
             }
         };
-        let started = Instant::now();
         let backfill_state_result = ensure_backfill_state_row_in_pool(pool.as_ref()).await;
-        crate::telemetry::record_init_result(
-            telemetry_override,
-            DbKind::State,
-            "ensure_backfill_state",
-            started.elapsed(),
-            &backfill_state_result,
-        );
         if let Err(err) = backfill_state_result {
             close_sqlite_pools(&[
                 pool.as_ref(),
@@ -207,7 +164,6 @@ impl StateRuntime {
             .await;
             return Err(err);
         }
-        let started = Instant::now();
         let thread_timestamp_millis_result: anyhow::Result<(Option<i64>, Option<i64>)> =
             sqlx::query_as(
                 "SELECT MAX(threads.updated_at_ms), MAX(threads.recency_at_ms) FROM threads",
@@ -215,13 +171,6 @@ impl StateRuntime {
             .fetch_one(pool.as_ref())
             .await
             .map_err(anyhow::Error::from);
-        crate::telemetry::record_init_result(
-            telemetry_override,
-            DbKind::State,
-            "post_init_query",
-            started.elapsed(),
-            &thread_timestamp_millis_result,
-        );
         let (thread_updated_at_millis, thread_recency_at_millis) =
             match thread_timestamp_millis_result {
                 Ok(value) => value,
@@ -293,9 +242,7 @@ impl StateRuntime {
         }
 
         let memories_migrator = runtime_memories_migrator();
-        let pool = sqlite
-            .open_memories_db(&memories_migrator, /*telemetry_override*/ None)
-            .await?;
+        let pool = sqlite.open_memories_db(&memories_migrator).await?;
         memories::clear_memory_data_in_pool(&pool).await?;
         pool.close().await;
         Ok(true)
@@ -311,9 +258,7 @@ async fn close_sqlite_pools(pools: &[&SqlitePool]) {
 /// Open and migrate the rebuildable paginated thread-history database.
 pub async fn open_thread_history_db(sqlite: &SqliteConfig) -> anyhow::Result<SqlitePool> {
     let migrator = runtime_thread_history_migrator();
-    sqlite
-        .open_thread_history_db(&migrator, /*telemetry_override*/ None)
-        .await
+    sqlite.open_thread_history_db(&migrator).await
 }
 
 pub(super) async fn ensure_backfill_state_row_in_pool(
@@ -359,72 +304,15 @@ pub async fn sqlite_integrity_check(
 
 #[cfg(test)]
 mod tests {
-    use super::StateRuntime;
     use super::runtime_state_migrator;
     use super::sqlite_integrity_check;
     use super::test_support::unique_temp_dir;
-    use crate::DB_INIT_METRIC;
-    use crate::DbTelemetry;
     use crate::migrations::STATE_MIGRATOR;
     use codex_utils_absolute_path::test_support::PathExt;
     use pretty_assertions::assert_eq;
     use sqlx::SqlitePool;
     use sqlx::migrate::MigrateError;
-    use std::collections::BTreeMap;
-    use std::collections::BTreeSet;
     use std::path::Path;
-    use std::sync::Mutex;
-
-    #[derive(Default)]
-    struct TestTelemetry {
-        counters: Mutex<Vec<MetricEvent>>,
-    }
-
-    #[derive(Debug, Eq, PartialEq)]
-    struct MetricEvent {
-        name: String,
-        tags: BTreeMap<String, String>,
-    }
-
-    impl TestTelemetry {
-        fn counters(&self) -> Vec<MetricEvent> {
-            self.counters
-                .lock()
-                .expect("telemetry lock")
-                .iter()
-                .map(|event| MetricEvent {
-                    name: event.name.clone(),
-                    tags: event.tags.clone(),
-                })
-                .collect()
-        }
-    }
-
-    impl DbTelemetry for TestTelemetry {
-        fn counter(&self, name: &str, _inc: i64, tags: &[(&str, &str)]) {
-            self.counters
-                .lock()
-                .expect("telemetry lock")
-                .push(MetricEvent {
-                    name: name.to_string(),
-                    tags: tags_to_map(tags),
-                });
-        }
-
-        fn record_duration(
-            &self,
-            _name: &str,
-            _duration: std::time::Duration,
-            _tags: &[(&str, &str)],
-        ) {
-        }
-    }
-
-    fn tags_to_map(tags: &[(&str, &str)]) -> BTreeMap<String, String> {
-        tags.iter()
-            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
-            .collect()
-    }
 
     async fn open_db_pool(path: &Path) -> SqlitePool {
         crate::SqliteConfig::new_for_testing(path.parent().unwrap_or(path).abs())
@@ -498,54 +386,11 @@ mod tests {
 
         let tolerant_migrator = runtime_state_migrator();
         let tolerant_pool = sqlite
-            .open_state_db(&tolerant_migrator, /*telemetry_override*/ None)
+            .open_state_db(&tolerant_migrator)
             .await
             .expect("runtime migrator should tolerate newer applied migrations");
         tolerant_pool.close().await;
 
-        let _ = tokio::fs::remove_dir_all(codex_home).await;
-    }
-
-    #[tokio::test]
-    async fn init_records_successful_sqlite_init_phases_to_explicit_telemetry() {
-        let codex_home = unique_temp_dir();
-        let telemetry = TestTelemetry::default();
-
-        let runtime = StateRuntime::init_with_telemetry_for_tests(
-            crate::SqliteConfig::new_for_testing(codex_home.as_path().abs()),
-            "test-provider".to_string(),
-            &telemetry,
-        )
-        .await
-        .expect("state runtime should initialize");
-
-        let phases = telemetry
-            .counters()
-            .into_iter()
-            .filter(|event| event.name == DB_INIT_METRIC)
-            .filter(|event| event.tags.get("status").map(String::as_str) == Some("success"))
-            .filter_map(|event| event.tags.get("phase").cloned())
-            .collect::<BTreeSet<_>>();
-        let expected = [
-            "open_state",
-            "migrate_state",
-            "open_logs",
-            "migrate_logs",
-            "open_goals",
-            "migrate_goals",
-            "open_memories",
-            "migrate_memories",
-            "open_queue",
-            "migrate_queue",
-            "ensure_backfill_state",
-            "post_init_query",
-        ]
-        .into_iter()
-        .map(str::to_string)
-        .collect::<BTreeSet<_>>();
-        assert_eq!(phases, expected);
-
-        runtime.close().await;
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
 }

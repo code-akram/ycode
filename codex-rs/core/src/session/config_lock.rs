@@ -461,9 +461,6 @@ model_catalog_json = {:?}
 check_for_update_on_startup = false
 allow_login_shell = false
 
-[feedback]
-enabled = false
-
 [windows]
 sandbox_private_desktop = false
 "#,
@@ -495,10 +492,6 @@ sandbox_private_desktop = false
         );
         assert_eq!(lock.check_for_update_on_startup, Some(false));
         assert_eq!(lock.allow_login_shell, Some(false));
-        assert_eq!(
-            lock.feedback.as_ref().and_then(|feedback| feedback.enabled),
-            Some(false)
-        );
         assert_eq!(
             lock.windows
                 .as_ref()

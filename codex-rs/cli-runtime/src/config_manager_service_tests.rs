@@ -846,9 +846,6 @@ async fn read_omits_origins_for_exact_managed_values() {
                 r#"model = "user-model"
 sqlite_home = "{}"
 allow_login_shell = true
-
-[feedback]
-enabled = true
 "#,
                 toml_path(tmp.path(), "user-sqlite"),
             )
@@ -860,9 +857,6 @@ enabled = true
         let requirements = format!(
             r#"sqlite_home = "{}"
 allow_login_shell = false
-
-[feedback]
-enabled = false
 "#,
             toml_path(tmp.path(), "managed-sqlite"),
         );
@@ -889,11 +883,7 @@ enabled = false
             response.config.additional.get("allow_login_shell"),
             Some(&serde_json::json!(false))
         );
-        assert_eq!(
-            response.config.additional.get("feedback"),
-            Some(&serde_json::json!({"enabled": false}))
-        );
-        for path in ["sqlite_home", "allow_login_shell", "feedback.enabled"] {
+        for path in ["sqlite_home", "allow_login_shell"] {
             assert!(!response.origins.contains_key(path), "origin for {path}");
         }
         assert!(response.origins.contains_key("model"));

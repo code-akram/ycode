@@ -93,7 +93,7 @@ pub struct ThreadStartParams {
     pub history_mode: Option<ThreadHistoryMode>,
     #[ts(optional = nullable)]
     pub session_start_source: Option<ThreadStartSource>,
-    /// Optional client-supplied analytics source classification for this thread.
+    /// Optional client-supplied source classification for this thread.
     #[ts(optional = nullable)]
     pub thread_source: Option<ThreadSource>,
     /// Optional sticky environments for this thread.
@@ -474,7 +474,7 @@ pub struct ThreadForkParams {
     pub developer_instructions: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ephemeral: bool,
-    /// Optional client-supplied analytics source classification for this forked thread.
+    /// Optional client-supplied source classification for this forked thread.
     #[ts(optional = nullable)]
     pub thread_source: Option<ThreadSource>,
     /// When true, return only thread metadata and live fork state without

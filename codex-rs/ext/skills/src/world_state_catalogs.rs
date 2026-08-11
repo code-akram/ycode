@@ -17,8 +17,6 @@ use crate::render::RenderedSkillCatalogs;
 use crate::render::SkillMetadataBudget;
 use crate::render::render_combined_available_skills;
 use crate::render::skill_metadata_budget;
-use crate::render_observability::CatalogSurface;
-use crate::render_observability::record_catalog_render;
 use crate::sources::SkillProviders;
 use crate::state::EmittedCatalogBudgetWarnings;
 use crate::state::ExecutorSkillsStepState;
@@ -38,15 +36,7 @@ enum CatalogKind {
     Host,
 }
 
-impl CatalogKind {
-    fn metrics_surface(self) -> CatalogSurface {
-        match self {
-            Self::Executor => CatalogSurface::ExecutorWorldState,
-            Self::Orchestrator => CatalogSurface::OrchestratorWorldState,
-            Self::Host => CatalogSurface::HostWorldState,
-        }
-    }
-}
+impl CatalogKind {}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(crate) enum CatalogStatus {
@@ -205,8 +195,7 @@ impl<'a> CatalogContext<'a> {
             return CatalogContribution::unavailable();
         };
 
-        let needs_catalog =
-            self.config.include_instructions || self.config.shadow_selection_enabled;
+        let needs_catalog = self.config.include_instructions;
         let catalog = if needs_catalog {
             let catalog = self
                 .providers
@@ -283,21 +272,13 @@ impl<'a> CatalogContext<'a> {
             .and_then(|rendered| rendered.into_fragment(self.include_usage))
             .map(|fragment| fragment.body());
         let include_instructions = self.config.include_instructions;
-        let metrics = self.input.extension_metrics.clone();
         let warning_emitter = Arc::clone(&self.warning_emitter);
-        let metadata_budget = self.metadata_budget;
         let render_report = report.clone();
         let on_render: CatalogRenderCallback = Box::new(move || {
             if !include_instructions || status != CatalogStatus::Enabled {
                 return;
             }
 
-            record_catalog_render(
-                metrics.as_deref(),
-                kind.metrics_surface(),
-                metadata_budget,
-                &render_report,
-            );
             if let Some(message) = render_report.warning_message() {
                 warning_emitter(message);
             }

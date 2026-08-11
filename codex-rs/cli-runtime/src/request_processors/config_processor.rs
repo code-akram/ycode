@@ -17,9 +17,6 @@ use codex_cli_protocol::ConfigRequirementsReadResponse;
 use codex_cli_protocol::ConfigValueWriteParams;
 use codex_cli_protocol::ConfigWriteErrorCode;
 use codex_cli_protocol::ConfigWriteResponse;
-use codex_cli_protocol::ExperimentalFeatureEnablementSetParams;
-use codex_cli_protocol::ExperimentalFeatureEnablementSetResponse;
-use codex_cli_protocol::FeedbackRequirements;
 use codex_cli_protocol::JSONRPCErrorError;
 use codex_cli_protocol::ModelsRequirements;
 use codex_cli_protocol::NetworkDomainPermission;
@@ -31,7 +28,6 @@ use codex_config::ConfigRequirementsToml;
 use codex_config::ResidencyRequirement as CoreResidencyRequirement;
 use codex_config::SandboxModeRequirement as CoreSandboxModeRequirement;
 use codex_core::ThreadManager;
-use codex_features::canonical_feature_for_key;
 use codex_features::feature_for_key;
 use codex_protocol::config_types::WebSearchMode;
 use serde_json::json;
@@ -125,26 +121,6 @@ impl ConfigRequestProcessor {
         Ok(ClientResponsePayload::ConfigBatchWrite(response))
     }
 
-    pub(crate) async fn experimental_feature_enablement_set(
-        &self,
-        request_id: ConnectionRequestId,
-        params: ExperimentalFeatureEnablementSetParams,
-    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        let response = self
-            .handle_config_mutation_result(self.set_experimental_feature_enablement(params).await)
-            .await?;
-        if !response.enablement.is_empty() {
-            self.reload_user_config().await;
-        }
-        self.outgoing
-            .send_response_as(
-                request_id,
-                ClientResponsePayload::ExperimentalFeatureEnablementSet(response),
-            )
-            .await;
-        Ok(None)
-    }
-
     pub(crate) async fn handle_config_mutation(&self) {
         self.thread_manager.skills_service().clear_cache();
     }
@@ -190,42 +166,6 @@ impl ConfigRequestProcessor {
             .batch_write(params)
             .await
             .map_err(map_error)
-    }
-
-    async fn set_experimental_feature_enablement(
-        &self,
-        params: ExperimentalFeatureEnablementSetParams,
-    ) -> Result<ExperimentalFeatureEnablementSetResponse, JSONRPCErrorError> {
-        let ExperimentalFeatureEnablementSetParams { mut enablement } = params;
-        let mut invalid_keys = Vec::new();
-        enablement.retain(|key, _| {
-            let valid = canonical_feature_for_key(key).is_some()
-                && SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT.contains(&key.as_str());
-            if !valid {
-                invalid_keys.push(key.clone());
-            }
-            valid
-        });
-        if !invalid_keys.is_empty() {
-            let invalid_keys = invalid_keys.join(", ");
-            tracing::warn!("ignoring invalid experimental feature enablement keys: {invalid_keys}");
-        }
-
-        if enablement.is_empty() {
-            return Ok(ExperimentalFeatureEnablementSetResponse { enablement });
-        }
-
-        self.config_manager
-            .extend_runtime_feature_enablement(
-                enablement
-                    .iter()
-                    .map(|(name, enabled)| (name.clone(), *enabled)),
-            )
-            .map_err(|_| internal_error("failed to update feature enablement"))?;
-
-        self.load_latest_config(/*fallback_cwd*/ None).await?;
-
-        Ok(ExperimentalFeatureEnablementSetResponse { enablement })
     }
 
     async fn reload_user_config(&self) {
@@ -320,9 +260,6 @@ fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigR
         model_catalog_json: requirements.model_catalog_json.map(Into::into),
         check_for_update_on_startup: requirements.check_for_update_on_startup,
         allow_login_shell: requirements.allow_login_shell,
-        feedback: requirements.feedback.map(|feedback| FeedbackRequirements {
-            enabled: feedback.enabled,
-        }),
     }
 }
 
@@ -446,12 +383,10 @@ fn config_write_error(code: ConfigWriteErrorCode, message: impl Into<String>) ->
 #[cfg(test)]
 mod tests {
     use super::map_requirements_toml_to_api;
-    use codex_cli_protocol::FeedbackRequirements;
     use codex_config::ComputerUseRequirementsToml;
     use codex_config::ConfigRequirementsToml;
     use codex_config::ModelsRequirementsToml;
     use codex_config::NewThreadModelDefaultsToml;
-    use codex_config::types::FeedbackConfigToml;
     use codex_protocol::openai_models::ReasoningEffort;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use codex_utils_path_uri::PathUri;
@@ -571,9 +506,6 @@ mod tests {
             model_catalog_json: Some(model_catalog_json.clone()),
             check_for_update_on_startup: Some(false),
             allow_login_shell: Some(false),
-            feedback: Some(FeedbackConfigToml {
-                enabled: Some(false),
-            }),
             ..ConfigRequirementsToml::default()
         });
 
@@ -585,11 +517,5 @@ mod tests {
         );
         assert_eq!(mapped.check_for_update_on_startup, Some(false));
         assert_eq!(mapped.allow_login_shell, Some(false));
-        assert_eq!(
-            mapped.feedback,
-            Some(FeedbackRequirements {
-                enabled: Some(false),
-            })
-        );
     }
 }

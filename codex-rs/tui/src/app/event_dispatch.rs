@@ -172,11 +172,6 @@ impl App {
                 return Ok(self.delete_current_thread(cli_runtime).await);
             }
             AppEvent::ForkCurrentSession { name } => {
-                self.session_telemetry.counter(
-                    "codex.thread.fork",
-                    /*inc*/ 1,
-                    &[("source", "slash_command")],
-                );
                 let summary = session_summary(
                     self.chat_widget.token_usage(),
                     self.chat_widget.thread_id(),
@@ -270,11 +265,6 @@ impl App {
                 if self.chat_widget.thread_id() != Some(thread_id) {
                     return Ok(AppRunControl::Continue);
                 }
-                self.session_telemetry.counter(
-                    "codex.thread.fork",
-                    /*inc*/ 1,
-                    &[("source", "transcript")],
-                );
                 self.refresh_in_memory_config_from_disk_best_effort("forking the thread")
                     .await;
                 let config = self.fresh_session_config();
@@ -399,13 +389,13 @@ impl App {
             }
             AppEvent::Exit(mode) => {
                 if mode == ExitMode::ShutdownFirst {
-                    self.show_shutdown_feedback(tui)?;
+                    self.show_shutdown_state(tui)?;
                 }
                 return Ok(self.handle_exit_mode(cli_runtime, mode).await);
             }
             AppEvent::Logout => match cli_runtime.logout_account().await {
                 Ok(()) => {
-                    self.show_shutdown_feedback(tui)?;
+                    self.show_shutdown_state(tui)?;
                     return Ok(self
                         .handle_exit_mode(cli_runtime, ExitMode::ShutdownFirst)
                         .await);
@@ -879,32 +869,6 @@ impl App {
             }
             AppEvent::OpenAllModelsPopup { models } => {
                 self.chat_widget.open_all_models_popup(models);
-            }
-            AppEvent::OpenFeedbackNote {
-                category,
-                include_logs,
-            } => {
-                self.chat_widget.open_feedback_note(category, include_logs);
-            }
-            AppEvent::OpenFeedbackConsent { category } => {
-                self.chat_widget.open_feedback_consent(category);
-            }
-            AppEvent::SubmitFeedback {
-                category,
-                reason,
-                turn_id,
-                include_logs,
-            } => {
-                self.submit_feedback(cli_runtime, category, reason, turn_id, include_logs);
-            }
-            AppEvent::FeedbackSubmitted {
-                origin_thread_id,
-                category,
-                include_logs,
-                result,
-            } => {
-                self.handle_feedback_submitted(origin_thread_id, category, include_logs, result)
-                    .await;
             }
             AppEvent::LaunchExternalEditor => {
                 if self.chat_widget.external_editor_state() == ExternalEditorState::Active {

@@ -3,7 +3,6 @@
 //! This crate defines the feature registry plus the logic used to resolve an
 //! effective feature set from config-like inputs.
 
-use codex_otel::SessionTelemetry;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::WarningEvent;
@@ -133,8 +132,6 @@ pub enum Feature {
     ShellSnapshot,
     /// Allow turns to start while selected executors are still starting.
     DeferredExecutor,
-    /// Enable runtime metrics snapshots via a manual reader.
-    RuntimeMetrics,
     /// Enable startup memory extraction and file-backed memory consolidation.
     MemoryTool,
     /// Compress cold local thread-store rollout files.
@@ -197,7 +194,7 @@ pub enum Feature {
     ItemIds,
     /// Request sequential cutoff reasoning summary delivery.
     ConcurrentReasoningSummaries,
-    /// Run cheap skill-search methods in shadow mode and emit experiment metrics.
+    /// Enable search across retained filesystem-backed skill providers.
     SkillSearch,
     /// Removed compatibility flag for deleted skill env var dependency prompting.
     SkillEnvVarDependencyPrompt,
@@ -389,24 +386,6 @@ impl Features {
 
     pub fn legacy_feature_usages(&self) -> impl Iterator<Item = &LegacyFeatureUsage> + '_ {
         self.legacy_usages.iter()
-    }
-
-    pub fn emit_metrics(&self, otel: &SessionTelemetry) {
-        for feature in FEATURES {
-            if matches!(feature.stage, Stage::Removed) {
-                continue;
-            }
-            if self.enabled(feature.id) != feature.default_enabled {
-                otel.counter(
-                    "codex.feature.state",
-                    /*inc*/ 1,
-                    &[
-                        ("feature", feature.key),
-                        ("value", &self.enabled(feature.id).to_string()),
-                    ],
-                );
-            }
-        }
     }
 
     /// Apply a table of key -> bool toggles (e.g. from TOML).
@@ -867,12 +846,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::CodexGitCommit,
         key: "codex_git_commit",
         stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::RuntimeMetrics,
-        key: "runtime_metrics",
-        stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
     FeatureSpec {

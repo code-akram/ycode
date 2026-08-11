@@ -4,7 +4,6 @@ use std::sync::atomic::Ordering;
 
 use codex_agent_identity::AgentIdentityKey;
 use codex_agent_identity::authorization_header_for_agent_task;
-use codex_api::AgentIdentityTelemetry;
 use codex_api::AuthProvider;
 use codex_api::SharedAuthProvider;
 use codex_login::AuthHeaders;
@@ -41,34 +40,21 @@ impl AgentIdentitySessionFallback {
     }
 }
 
-/// Provider auth resolved for a request, plus metadata describing the effective auth.
+/// Provider auth resolved for a request.
 #[derive(Clone)]
 pub struct ResolvedProviderAuth {
     pub auth: SharedAuthProvider,
-    pub agent_identity_telemetry: Option<AgentIdentityTelemetry>,
 }
 
 impl ResolvedProviderAuth {
     pub(crate) fn new(auth: SharedAuthProvider) -> Self {
-        Self {
-            auth,
-            agent_identity_telemetry: None,
-        }
+        Self { auth }
     }
 
     fn for_agent_identity(auth: AgentIdentityAuth) -> Self {
-        let agent_identity_telemetry = agent_identity_telemetry(&auth);
         Self {
             auth: Arc::new(AgentIdentityAuthProvider { auth }),
-            agent_identity_telemetry: Some(agent_identity_telemetry),
         }
-    }
-}
-
-pub(crate) fn agent_identity_telemetry(auth: &AgentIdentityAuth) -> AgentIdentityTelemetry {
-    AgentIdentityTelemetry {
-        agent_id: auth.record().agent_runtime_id.clone(),
-        task_id: auth.run_task_id().to_string(),
     }
 }
 
@@ -463,7 +449,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn first_party_run_scope_uses_agent_assertion_and_exposes_telemetry() {
+    async fn first_party_run_scope_uses_agent_assertion() {
         let auth = CodexAuth::AgentIdentity(
             agent_identity_auth(/*chatgpt_account_is_fedramp*/ false).await,
         );
@@ -478,13 +464,6 @@ mod tests {
         .await
         .expect("auth should resolve");
 
-        assert_eq!(
-            auth.agent_identity_telemetry,
-            Some(AgentIdentityTelemetry {
-                agent_id: "agent-runtime-1".to_string(),
-                task_id: "task-run-1".to_string(),
-            })
-        );
         let headers = auth.auth.to_auth_headers();
         assert!(
             headers

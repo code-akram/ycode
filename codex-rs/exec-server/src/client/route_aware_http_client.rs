@@ -160,7 +160,6 @@ impl RouteAwareHttpRequestRunner {
             error.type = tracing::field::Empty,
         );
         let mut headers = Self::build_headers(params.headers)?;
-        codex_otel::inject_span_w3c_trace_headers(&request_span, &mut headers);
         let mut request = self.client.request(method.clone(), url).headers(headers);
         if let Some(body) = params.body {
             request = request.body(body.into_inner());

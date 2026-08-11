@@ -29,14 +29,6 @@ use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
-use codex_analytics::TurnProfileFact;
-use codex_analytics::TurnTokenUsageFact;
-use codex_otel::SessionTelemetry;
-use codex_otel::TURN_E2E_DURATION_METRIC;
-use codex_otel::TURN_MEMORY_METRIC;
-use codex_otel::TURN_NETWORK_PROXY_METRIC;
-use codex_otel::TURN_TOKEN_USAGE_METRIC;
-use codex_otel::TURN_TOOL_CALL_METRIC;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::MultiAgentVersion;
@@ -57,7 +49,6 @@ pub(crate) use user_shell::UserShellCommandTask;
 pub(crate) use user_shell::execute_user_shell_command;
 
 const GRACEFULL_INTERRUPTION_TIMEOUT_MS: u64 = 100;
-const TASK_COMPACT_METRIC: &str = "codex.task.compact";
 
 pub(crate) type SessionTaskResult = CodexResult<Option<String>>;
 
@@ -114,59 +105,6 @@ pub(crate) fn interrupted_turn_history_marker(
             })
         }
     }
-}
-
-#[cfg(any())]
-fn emit_turn_network_proxy_metric(
-    session_telemetry: &SessionTelemetry,
-    network_proxy_active: bool,
-    tmp_mem: (&str, &str),
-) {
-    let active = if network_proxy_active {
-        "true"
-    } else {
-        "false"
-    };
-    session_telemetry.counter(
-        TURN_NETWORK_PROXY_METRIC,
-        /*inc*/ 1,
-        &[("active", active), tmp_mem],
-    );
-}
-
-fn emit_turn_memory_metric(
-    session_telemetry: &SessionTelemetry,
-    feature_enabled: bool,
-    config_enabled: bool,
-    has_citations: bool,
-) {
-    let read_allowed = feature_enabled && config_enabled;
-    session_telemetry.counter(
-        TURN_MEMORY_METRIC,
-        /*inc*/ 1,
-        &[
-            ("read_allowed", bool_tag(read_allowed)),
-            ("feature_enabled", bool_tag(feature_enabled)),
-            ("config_use_memories", bool_tag(config_enabled)),
-            ("has_citations", bool_tag(has_citations)),
-        ],
-    );
-}
-
-pub(crate) fn emit_compact_metric(
-    session_telemetry: &SessionTelemetry,
-    compact_type: &'static str,
-    manual: bool,
-) {
-    session_telemetry.counter(
-        TASK_COMPACT_METRIC,
-        /*inc*/ 1,
-        &[("type", compact_type), ("manual", bool_tag(manual))],
-    );
-}
-
-fn bool_tag(value: bool) -> &'static str {
-    if value { "true" } else { "false" }
 }
 
 /// Async task that drives a [`Session`] turn.
@@ -388,10 +326,6 @@ impl Session {
             }
             .instrument(task_span),
         );
-        let timer = turn_context
-            .session_telemetry
-            .start_timer(TURN_E2E_DURATION_METRIC, &[])
-            .ok();
         let running_task = RunningTask {
             done,
             handle: AbortOnDropHandle::new(handle),
@@ -400,7 +334,6 @@ impl Session {
             cancellation_token,
             turn_context: Arc::clone(&turn_context),
             _agent_execution_guard: agent_execution_guard,
-            _timer: timer,
         };
         turn.task = Some(running_task);
     }
@@ -553,7 +486,6 @@ impl Session {
                     err.to_codex_protocol_error(),
                 )
                 .await;
-                self.track_turn_codex_error(turn_context.as_ref(), &err);
                 self.send_event(
                     turn_context.as_ref(),
                     EventMsg::Error(err.to_error_event(/*message_prefix*/ None)),
@@ -581,33 +513,15 @@ impl Session {
             .input_queue
             .take_pending_input_for_turn_state(turn_state.as_ref())
             .await;
-        let (turn_had_memory_citation, turn_tool_calls, token_usage_at_turn_start) = {
+        let token_usage_at_turn_start = {
             let ts = turn_state.lock().await;
-            (
-                ts.has_memory_citation,
-                ts.tool_calls,
-                ts.token_usage_at_turn_start.clone(),
-            )
+            ts.token_usage_at_turn_start.clone()
         };
         if !pending_input.is_empty() {
             crate::session::turn::record_inputs(self, &turn_context, &pending_input).await;
         }
         // Emit token usage metrics.
         {
-            // TODO(jif): drop this
-            let tmp_mem = (
-                "tmp_mem_enabled",
-                if self.enabled(Feature::MemoryTool) {
-                    "true"
-                } else {
-                    "false"
-                },
-            );
-            self.services.session_telemetry.histogram(
-                TURN_TOOL_CALL_METRIC,
-                i64::try_from(turn_tool_calls).unwrap_or(i64::MAX),
-                &[tmp_mem],
-            );
             let total_token_usage = self.total_token_usage().await.unwrap_or_default();
             let turn_token_usage = TokenUsage {
                 input_tokens: (total_token_usage.input_tokens
@@ -659,61 +573,12 @@ impl Session {
                 "codex.turn.token_usage.total_tokens",
                 turn_token_usage.total_tokens,
             );
-            self.services
-                .analytics_events_client
-                .track_turn_token_usage(TurnTokenUsageFact {
-                    turn_id: turn_context.sub_id.clone(),
-                    thread_id: self.thread_id.to_string(),
-                    token_usage: turn_token_usage.clone(),
-                });
-            self.services.session_telemetry.histogram(
-                TURN_TOKEN_USAGE_METRIC,
-                turn_token_usage.total_tokens,
-                &[("token_type", "total"), tmp_mem],
-            );
-            self.services.session_telemetry.histogram(
-                TURN_TOKEN_USAGE_METRIC,
-                turn_token_usage.input_tokens,
-                &[("token_type", "input"), tmp_mem],
-            );
-            self.services.session_telemetry.histogram(
-                TURN_TOKEN_USAGE_METRIC,
-                turn_token_usage.cached_input(),
-                &[("token_type", "cached_input"), tmp_mem],
-            );
-            self.services.session_telemetry.histogram(
-                TURN_TOKEN_USAGE_METRIC,
-                turn_token_usage.cache_write_input_tokens,
-                &[("token_type", "cache_write_input"), tmp_mem],
-            );
-            self.services.session_telemetry.histogram(
-                TURN_TOKEN_USAGE_METRIC,
-                turn_token_usage.output_tokens,
-                &[("token_type", "output"), tmp_mem],
-            );
-            self.services.session_telemetry.histogram(
-                TURN_TOKEN_USAGE_METRIC,
-                turn_token_usage.reasoning_output_tokens,
-                &[("token_type", "reasoning_output"), tmp_mem],
-            );
         }
-        emit_turn_memory_metric(
-            &self.services.session_telemetry,
-            turn_context.config.features.enabled(Feature::MemoryTool),
-            turn_context.config.memories.use_memories,
-            turn_had_memory_citation,
-        );
         let started_at = turn_context.turn_timing_state.started_at_unix_secs().await;
-        let (completed_at, duration_ms, profile) = turn_context
+        let (completed_at, duration_ms, _profile) = turn_context
             .turn_timing_state
             .complete_profile_and_duration_ms()
             .await;
-        self.services
-            .analytics_events_client
-            .track_turn_profile(TurnProfileFact {
-                turn_id: turn_context.sub_id.clone(),
-                profile,
-            });
         let event = if let Some(reason) = abort_reason {
             self.emit_turn_abort_lifecycle(reason.clone(), turn_context.extension_data.as_ref())
                 .await;
@@ -843,17 +708,11 @@ impl Session {
             .turn_timing_state
             .started_at_unix_secs()
             .await;
-        let (completed_at, duration_ms, profile) = task
+        let (completed_at, duration_ms, _profile) = task
             .turn_context
             .turn_timing_state
             .complete_profile_and_duration_ms()
             .await;
-        self.services
-            .analytics_events_client
-            .track_turn_profile(TurnProfileFact {
-                turn_id: task.turn_context.sub_id.clone(),
-                profile,
-            });
         let event = EventMsg::TurnAborted(TurnAbortedEvent {
             turn_id: Some(task.turn_context.sub_id.clone()),
             reason,
@@ -869,7 +728,3 @@ impl Session {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;

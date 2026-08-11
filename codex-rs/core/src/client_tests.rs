@@ -1,9 +1,6 @@
-use super::AuthRequestTelemetryContext;
 use super::CompactConversationRequestSettings;
 use super::ModelClient;
-use super::PendingUnauthorizedRetry;
 use super::Prompt;
-use super::UnauthorizedRecoveryExecution;
 use super::X_CODEX_INSTALLATION_ID_HEADER;
 use super::X_CODEX_PARENT_THREAD_ID_HEADER;
 use super::X_CODEX_TURN_METADATA_HEADER;
@@ -15,10 +12,8 @@ use crate::GenerateAttestationFuture;
 use crate::responses_metadata::CodexResponsesMetadata;
 use crate::test_support::TestCodexResponsesRequestKind;
 use crate::test_support::responses_metadata as test_responses_metadata;
-use codex_api::AgentIdentityTelemetry;
 use codex_api::ApiError;
 use codex_api::ResponseEvent;
-use codex_api::TransportError;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 use codex_login::AuthCredentialsStoreMode;
@@ -26,13 +21,10 @@ use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
-use codex_model_provider::BearerAuthProvider;
 use codex_model_provider::SharedModelProvider;
 use codex_model_provider_info::CHATGPT_CODEX_BASE_URL;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
-use codex_protocol::auth::AuthMode;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -52,11 +44,9 @@ use codex_rollout_trace::replay_bundle;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::task::Context;
@@ -64,14 +54,6 @@ use std::task::Poll;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::Notify;
-use tracing::Event;
-use tracing::Subscriber;
-use tracing::field::Visit;
-use tracing_subscriber::Layer;
-use tracing_subscriber::layer::Context as LayerContext;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::util::SubscriberInitExt;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
@@ -100,7 +82,6 @@ fn test_model_client_with_thread_id(
         "test_originator".to_string(),
         /*model_verbosity*/ None,
         /*enable_request_compression*/ false,
-        /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
         /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
@@ -145,7 +126,6 @@ async fn compact_uses_bearer_after_agent_identity_session_fallback() -> anyhow::
         "test_originator".to_string(),
         /*model_verbosity*/ None,
         /*enable_request_compression*/ false,
-        /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
         /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
@@ -184,7 +164,6 @@ async fn compact_uses_bearer_after_agent_identity_session_fallback() -> anyhow::
                 summary: codex_protocol::config_types::ReasoningSummary::None,
                 service_tier: None,
             },
-            &test_session_telemetry(),
             &CompactionTraceContext::disabled(),
             &responses_metadata,
         )
@@ -270,21 +249,6 @@ fn test_model_info() -> ModelInfo {
     .expect("deserialize test model info")
 }
 
-fn test_session_telemetry() -> SessionTelemetry {
-    SessionTelemetry::new(
-        ThreadId::new(),
-        "gpt-test",
-        "gpt-test",
-        /*account_id*/ None,
-        /*account_email*/ None,
-        /*auth_mode*/ None,
-        "test-originator".to_string(),
-        /*log_user_prompts*/ false,
-        "test-terminal".to_string(),
-        SessionSource::Cli,
-    )
-}
-
 #[test]
 fn ultra_reasoning_uses_max_for_requests() {
     assert_eq!(
@@ -333,42 +297,6 @@ async fn chatgpt_auth_manager(
         auth,
         agent_identity_authapi_base_url,
     )
-}
-
-#[derive(Default)]
-struct TagCollectorVisitor {
-    tags: BTreeMap<String, String>,
-}
-
-impl Visit for TagCollectorVisitor {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        self.tags
-            .insert(field.name().to_string(), value.to_string());
-    }
-
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        self.tags
-            .insert(field.name().to_string(), format!("{value:?}"));
-    }
-}
-
-#[derive(Clone)]
-struct TagCollectorLayer {
-    tags: Arc<Mutex<BTreeMap<String, String>>>,
-}
-
-impl<S> Layer<S> for TagCollectorLayer
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-{
-    fn on_event(&self, event: &Event<'_>, _ctx: LayerContext<'_, S>) {
-        if event.metadata().target() != "feedback_tags" {
-            return;
-        }
-        let mut visitor = TagCollectorVisitor::default();
-        event.record(&mut visitor);
-        self.tags.lock().unwrap().extend(visitor.tags);
-    }
 }
 
 fn started_inference_attempt(temp: &TempDir) -> anyhow::Result<InferenceTraceAttempt> {
@@ -553,15 +481,8 @@ fn build_ws_client_metadata_includes_window_lineage_and_turn_metadata() {
 async fn summarize_memories_returns_empty_for_empty_input() {
     let client = test_model_client(SessionSource::Cli);
     let model_info = test_model_info();
-    let session_telemetry = test_session_telemetry();
-
     let output = client
-        .summarize_memories(
-            Vec::new(),
-            &model_info,
-            /*effort*/ None,
-            &session_telemetry,
-        )
+        .summarize_memories(Vec::new(), &model_info, /*effort*/ None)
         .await
         .expect("empty summarize request should succeed");
     assert_eq!(output.len(), 0);
@@ -582,7 +503,6 @@ async fn dropped_response_stream_traces_cancelled_partial_output() -> anyhow::Re
     let (mut stream, _) = super::map_response_events(
         /*upstream_request_id*/ None,
         api_stream,
-        test_session_telemetry(),
         attempt,
         test_model_provider(),
     );
@@ -615,42 +535,6 @@ async fn dropped_response_stream_traces_cancelled_partial_output() -> anyhow::Re
 }
 
 #[tokio::test]
-async fn response_stream_records_last_model_feedback_ids() {
-    let tags = Arc::new(Mutex::new(BTreeMap::new()));
-    let _guard = tracing_subscriber::registry()
-        .with(TagCollectorLayer { tags: tags.clone() })
-        .set_default();
-
-    let api_stream = futures::stream::iter([
-        Ok(ResponseEvent::Created),
-        Ok(ResponseEvent::Completed {
-            response_id: "resp-123".to_string(),
-            token_usage: None,
-            end_turn: Some(true),
-        }),
-    ]);
-    let (mut stream, _) = super::map_response_events(
-        Some("req-123".to_string()),
-        api_stream,
-        test_session_telemetry(),
-        InferenceTraceAttempt::disabled(),
-        test_model_provider(),
-    );
-
-    while stream.next().await.is_some() {}
-
-    let tags = tags.lock().unwrap().clone();
-    assert_eq!(
-        tags.get("last_model_request_id").map(String::as_str),
-        Some("\"req-123\"")
-    );
-    assert_eq!(
-        tags.get("last_model_response_id").map(String::as_str),
-        Some("\"resp-123\"")
-    );
-}
-
-#[tokio::test]
 async fn dropped_backpressured_response_stream_traces_cancelled_partial_output()
 -> anyhow::Result<()> {
     let temp = TempDir::new()?;
@@ -674,7 +558,6 @@ async fn dropped_backpressured_response_stream_traces_cancelled_partial_output()
     let (stream, _) = super::map_response_events(
         /*upstream_request_id*/ None,
         api_stream,
-        test_session_telemetry(),
         attempt,
         test_model_provider(),
     );
@@ -698,47 +581,6 @@ async fn dropped_backpressured_response_stream_traces_cancelled_partial_output()
     assert_eq!(rollout.raw_payloads.len(), 2);
 
     Ok(())
-}
-
-#[test]
-fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
-    let auth_context = AuthRequestTelemetryContext::new(
-        Some(AuthMode::Chatgpt),
-        &BearerAuthProvider::for_test(Some("access-token"), Some("workspace-123")),
-        /*agent_identity_telemetry*/ None,
-        PendingUnauthorizedRetry::from_recovery(UnauthorizedRecoveryExecution {
-            mode: "managed",
-            phase: "refresh_token",
-        }),
-    );
-
-    assert_eq!(auth_context.auth_mode, Some("Chatgpt"));
-    assert!(auth_context.auth_header_attached);
-    assert_eq!(auth_context.auth_header_name, Some("authorization"));
-    assert!(auth_context.retry_after_unauthorized);
-    assert_eq!(auth_context.recovery_mode, Some("managed"));
-    assert_eq!(auth_context.recovery_phase, Some("refresh_token"));
-}
-
-#[test]
-fn auth_request_telemetry_context_tracks_agent_identity_ids() {
-    let auth_context = AuthRequestTelemetryContext::new(
-        Some(AuthMode::Chatgpt),
-        &BearerAuthProvider::for_test(/*token*/ None, /*account_id*/ None),
-        Some(AgentIdentityTelemetry {
-            agent_id: "agent-runtime-context".to_string(),
-            task_id: "task-run-context".to_string(),
-        }),
-        PendingUnauthorizedRetry::default(),
-    );
-
-    assert_eq!(
-        auth_context.agent_identity_telemetry(),
-        Some(&AgentIdentityTelemetry {
-            agent_id: "agent-runtime-context".to_string(),
-            task_id: "task-run-context".to_string(),
-        })
-    );
 }
 
 fn model_client_with_counting_attestation(
@@ -785,7 +627,6 @@ fn model_client_with_counting_attestation(
         "test_originator".to_string(),
         /*model_verbosity*/ None,
         /*enable_request_compression*/ false,
-        /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
         /*concurrent_reasoning_summaries_enabled*/ false,
         Some(Arc::new(CountingAttestationProvider {

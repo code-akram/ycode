@@ -330,10 +330,7 @@ async fn thread_item_update_ordinals_allow_older_writers() {
         no_tx: THREAD_HISTORY_MIGRATOR.no_tx,
     };
     let pool = sqlite
-        .open_thread_history_db(
-            &pre_update_ordinal_migrator,
-            /*telemetry_override*/ None,
-        )
+        .open_thread_history_db(&pre_update_ordinal_migrator)
         .await
         .expect("pre-update-ordinal migrations should apply");
     sqlx::query(

@@ -2,7 +2,6 @@
 
 #![deny(private_bounds, private_interfaces, unreachable_pub)]
 
-pub use codex_analytics::AnalyticsEventsClient;
 pub use codex_arg0::Arg0DispatchPaths;
 pub use codex_arg0::arg0_dispatch_or_else;
 pub use codex_cli_protocol::ServerNotification;
@@ -17,7 +16,6 @@ pub use codex_config::types::History;
 pub use codex_config::types::MemoriesConfig;
 pub use codex_config::types::ModelAvailabilityNuxConfig;
 pub use codex_config::types::Notice;
-pub use codex_config::types::OtelConfig;
 pub use codex_config::types::SessionPickerViewMode;
 pub use codex_config::types::ToolSuggestConfig;
 pub use codex_config::types::TuiKeymap;

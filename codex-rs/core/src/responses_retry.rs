@@ -29,10 +29,7 @@ pub(crate) async fn handle_retryable_response_stream_error(
     request: ResponsesStreamRequest,
 ) -> Result<(), CodexErr> {
     if *retries >= max_retries
-        && client_session.try_switch_fallback_transport(
-            &turn_context.session_telemetry,
-            &turn_context.model_info,
-        )
+        && client_session.try_switch_fallback_transport(&turn_context.model_info)
     {
         sess.send_event(
             turn_context,

@@ -31,7 +31,6 @@ pub use crate::tui_keymap::TuiPagerKeymap;
 pub use crate::tui_keymap::TuiVimNormalKeymap;
 pub use crate::tui_keymap::TuiVimOperatorKeymap;
 
-pub const DEFAULT_OTEL_ENVIRONMENT: &str = "dev";
 pub const DEFAULT_MEMORIES_MAX_ROLLOUTS_PER_STARTUP: usize = 2;
 pub const DEFAULT_MEMORIES_MAX_ROLLOUT_AGE_DAYS: i64 = 10;
 pub const DEFAULT_MEMORIES_MIN_ROLLOUT_IDLE_HOURS: i64 = 6;
@@ -192,23 +191,6 @@ pub enum HistoryPersistence {
     SaveAll,
     /// Do not write history to disk.
     None,
-}
-
-// ===== Analytics configuration =====
-
-/// Analytics settings loaded from config.toml. Fields are optional so we can apply defaults.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct AnalyticsConfigToml {
-    /// When `false`, disables analytics across Codex product surfaces in this profile.
-    pub enabled: Option<bool>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct FeedbackConfigToml {
-    /// When `false`, disables the feedback flow across Codex product surfaces.
-    pub enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, JsonSchema)]
@@ -471,102 +453,6 @@ pub struct AppsConfigToml {
     /// Per-app settings keyed by app ID (for example `[apps.google_drive]`).
     #[serde(default, flatten)]
     pub apps: HashMap<String, AppConfig>,
-}
-
-// ===== OTEL configuration =====
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum OtelHttpProtocol {
-    /// Binary payload
-    Binary,
-    /// JSON payload
-    Json,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
-pub struct OtelTlsConfig {
-    pub ca_certificate: Option<AbsolutePathBuf>,
-    pub client_certificate: Option<AbsolutePathBuf>,
-    pub client_private_key: Option<AbsolutePathBuf>,
-}
-
-/// Which OTEL exporter to use.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-#[serde(rename_all = "kebab-case")]
-pub enum OtelExporterKind {
-    None,
-    Statsig,
-    OtlpHttp {
-        endpoint: String,
-        #[serde(default)]
-        headers: HashMap<String, String>,
-        protocol: OtelHttpProtocol,
-        #[serde(default)]
-        tls: Option<OtelTlsConfig>,
-    },
-    OtlpGrpc {
-        endpoint: String,
-        #[serde(default)]
-        headers: HashMap<String, String>,
-        #[serde(default)]
-        tls: Option<OtelTlsConfig>,
-    },
-}
-
-/// OTEL settings loaded from config.toml. Fields are optional so we can apply defaults.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct OtelConfigToml {
-    /// Log user prompt in traces
-    pub log_user_prompt: Option<bool>,
-
-    /// Mark traces with environment (dev, staging, prod, test). Defaults to dev.
-    pub environment: Option<String>,
-
-    /// Optional log exporter
-    pub exporter: Option<OtelExporterKind>,
-
-    /// Optional trace exporter
-    pub trace_exporter: Option<OtelExporterKind>,
-
-    /// Optional metrics exporter
-    pub metrics_exporter: Option<OtelExporterKind>,
-
-    /// Attributes to add to every exported trace span.
-    pub span_attributes: Option<BTreeMap<String, String>>,
-
-    /// Semicolon-separated `key:value` fields to upsert into W3C tracestate members.
-    pub tracestate: Option<BTreeMap<String, BTreeMap<String, String>>>,
-}
-
-/// Effective OTEL settings after defaults are applied.
-#[derive(Debug, Clone, PartialEq)]
-pub struct OtelConfig {
-    pub log_user_prompt: bool,
-    pub environment: String,
-    pub exporter: OtelExporterKind,
-    pub trace_exporter: OtelExporterKind,
-    pub metrics_exporter: OtelExporterKind,
-    pub span_attributes: BTreeMap<String, String>,
-    pub tracestate: BTreeMap<String, BTreeMap<String, String>>,
-}
-
-impl Default for OtelConfig {
-    fn default() -> Self {
-        OtelConfig {
-            log_user_prompt: false,
-            environment: DEFAULT_OTEL_ENVIRONMENT.to_owned(),
-            exporter: OtelExporterKind::None,
-            trace_exporter: OtelExporterKind::None,
-            metrics_exporter: OtelExporterKind::Statsig,
-            span_attributes: BTreeMap::new(),
-            tracestate: BTreeMap::new(),
-        }
-    }
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]

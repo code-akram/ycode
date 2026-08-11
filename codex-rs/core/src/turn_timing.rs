@@ -6,38 +6,23 @@ use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-use codex_analytics::TurnProfile;
-use codex_otel::TURN_TTFM_DURATION_METRIC;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use tokio::sync::Mutex;
 
 use crate::ResponseEvent;
-use crate::session::turn_context::TurnContext;
 use crate::stream_events_utils::raw_assistant_output_text_from_item;
 
-pub(crate) async fn record_turn_ttft_metric(turn_context: &TurnContext, event: &ResponseEvent) {
-    let Some(duration) = turn_context
-        .turn_timing_state
-        .record_ttft_for_response_event(event)
-        .await
-    else {
-        return;
-    };
-    turn_context.session_telemetry.record_turn_ttft(duration);
-}
-
-pub(crate) async fn record_turn_ttfm_metric(turn_context: &TurnContext, item: &TurnItem) {
-    let Some(duration) = turn_context
-        .turn_timing_state
-        .record_ttfm_for_turn_item(item)
-        .await
-    else {
-        return;
-    };
-    turn_context
-        .session_telemetry
-        .record_duration(TURN_TTFM_DURATION_METRIC, duration, &[]);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TurnProfile {
+    pub(crate) before_first_sampling_ms: u64,
+    pub(crate) sampling_ms: u64,
+    pub(crate) compaction_ms: u64,
+    pub(crate) between_sampling_overhead_ms: u64,
+    pub(crate) tool_blocking_ms: u64,
+    pub(crate) after_last_sampling_ms: u64,
+    pub(crate) sampling_request_count: u32,
+    pub(crate) sampling_retry_count: u32,
 }
 
 #[derive(Debug, Default)]

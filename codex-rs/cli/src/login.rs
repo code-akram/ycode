@@ -1,7 +1,7 @@
 //! CLI login commands and their direct-user observability surfaces.
 //!
-//! The TUI path already installs a broader tracing stack with feedback, OpenTelemetry, and other
-//! interactive-session layers. Direct `codex login` intentionally does less: it preserves the
+//! The TUI path already installs a broader local tracing stack for interactive sessions. Direct
+//! `codex login` intentionally does less: it preserves the
 //! existing stderr/browser UX and adds only a small file-backed tracing layer for login-specific
 //! targets. Keeping that setup local avoids pulling the TUI's session-oriented logging machinery
 //! into a one-shot CLI command while still producing a durable `codex-login.log` artifact that
@@ -44,7 +44,7 @@ const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
 /// wholesale. The TUI stack includes session-oriented layers that are valuable for interactive
 /// runs but unnecessary for a one-shot login command. Keeping the direct CLI path local lets this
 /// command produce a durable `codex-login.log` artifact without coupling it to the TUI's broader
-/// telemetry and feedback initialization.
+/// session logging initialization.
 fn init_login_file_logging(config: &Config) -> Option<WorkerGuard> {
     let log_dir = match codex_core::config::log_dir(config) {
         Ok(log_dir) => log_dir,

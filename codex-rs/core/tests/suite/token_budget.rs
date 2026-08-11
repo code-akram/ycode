@@ -1324,7 +1324,6 @@ async fn new_context_tool_skips_auto_compact_fallback() -> Result<()> {
         include_instructions: config.include_skill_instructions,
         bundled_skills_enabled: config.bundled_skills_enabled(),
         orchestrator_skills_enabled: config.orchestrator_skills_enabled,
-        shadow_selection_enabled: config.features.enabled(Feature::SkillSearch),
     });
     let test = test_codex()
         .with_extensions(Arc::new(extensions.build()))

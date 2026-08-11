@@ -11,14 +11,12 @@ mod maintenance;
 pub(crate) mod metadata;
 mod model_context;
 mod ordinal;
-mod persistence_metrics;
 pub(crate) mod policy;
 pub(crate) mod recorder;
 mod reverse_jsonl_scanner;
 mod rollout_reference_index;
 pub(crate) mod search;
 pub(crate) mod session_index;
-mod sqlite_metrics;
 pub mod state_db;
 
 pub(crate) use codex_protocol::protocol;
@@ -73,9 +71,6 @@ pub use maintenance::try_acquire_rollout_maintenance_lock;
 pub use metadata::builder_from_items;
 pub use model_context::ModelContextScan;
 pub use model_context::ModelContextScanProgress;
-pub use persistence_metrics::RolloutPersistenceBatchMeasurement;
-pub use persistence_metrics::RolloutPersistenceTelemetry;
-pub use persistence_metrics::measure_and_filter_rollout_items;
 pub use policy::is_persisted_rollout_item;
 pub use policy::persisted_rollout_items;
 pub use policy::should_persist_response_item_for_memories;
@@ -95,7 +90,6 @@ pub use session_index::find_thread_name_by_id;
 pub use session_index::find_thread_names_by_ids;
 pub use session_index::remove_thread_name_entries;
 pub use state_db::StateDbHandle;
-pub use state_db::sqlite_telemetry_recorder;
 
 #[cfg(test)]
 mod tests;

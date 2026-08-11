@@ -5,7 +5,6 @@ use codex_cli_protocol::ConfigWarningNotification;
 use codex_cli_protocol::TextPosition as RuntimeTextPosition;
 use codex_cli_protocol::TextRange as RuntimeTextRange;
 
-mod analytics_utils;
 mod attestation;
 mod auth_mode;
 mod bespoke_event_handling;

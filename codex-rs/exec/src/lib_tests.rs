@@ -1,101 +1,11 @@
 use super::*;
-use codex_otel::set_parent_from_w3c_trace_context;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_utils_absolute_path::test_support::PathBufExt;
 use codex_utils_absolute_path::test_support::test_path_buf;
-use opentelemetry::trace::TraceContextExt;
-use opentelemetry::trace::TraceId;
-use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_sdk::trace::SdkTracerProvider;
 use pretty_assertions::assert_eq;
-use std::io;
-use std::io::Write;
-use std::sync::Arc;
-use std::sync::Mutex;
 use tempfile::tempdir;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
-
-fn test_tracing_subscriber() -> impl tracing::Subscriber + Send + Sync {
-    let provider = SdkTracerProvider::builder().build();
-    let tracer = provider.tracer("codex-exec-tests");
-    tracing_subscriber::registry().with(tracing_opentelemetry::layer().with_tracer(tracer))
-}
-
-#[derive(Clone)]
-struct TestLogWriter {
-    buffer: Arc<Mutex<Vec<u8>>>,
-}
-
-struct TestLogSink {
-    buffer: Arc<Mutex<Vec<u8>>>,
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for TestLogWriter {
-    type Writer = TestLogSink;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        TestLogSink {
-            buffer: Arc::clone(&self.buffer),
-        }
-    }
-}
-
-impl Write for TestLogSink {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.buffer.lock().expect("log buffer lock").extend(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-#[test]
-fn exec_default_stderr_filter_suppresses_otel_self_diagnostics() {
-    let buffer = Arc::new(Mutex::new(Vec::new()));
-    let writer = TestLogWriter {
-        buffer: Arc::clone(&buffer),
-    };
-    let subscriber = tracing_subscriber::registry().with(
-        tracing_subscriber::fmt::layer()
-            .with_ansi(false)
-            .with_writer(writer)
-            .with_filter(EnvFilter::try_new(EXEC_DEFAULT_LOG_FILTER).expect("default filter")),
-    );
-
-    tracing::subscriber::with_default(subscriber, || {
-        tracing::error!(target: "opentelemetry_sdk", "telemetry export failed");
-        tracing::error!(target: "opentelemetry_otlp", "telemetry request failed");
-        tracing::error!(target: "codex_exec_test", "real exec error");
-    });
-
-    let logs = String::from_utf8(buffer.lock().expect("log buffer lock").clone()).expect("utf8");
-    assert!(!logs.contains("telemetry export failed"));
-    assert!(!logs.contains("telemetry request failed"));
-    assert!(logs.contains("real exec error"));
-}
-
-#[test]
-fn exec_root_span_can_be_parented_from_trace_context() {
-    let subscriber = test_tracing_subscriber();
-    let _guard = tracing::subscriber::set_default(subscriber);
-
-    let parent = codex_protocol::protocol::W3cTraceContext {
-        traceparent: Some("00-00000000000000000000000000000077-0000000000000088-01".into()),
-        tracestate: Some("vendor=value".into()),
-    };
-    let exec_span = exec_root_span();
-    assert!(set_parent_from_w3c_trace_context(&exec_span, &parent));
-
-    let trace_id = exec_span.context().span().span_context().trace_id();
-    assert_eq!(
-        trace_id,
-        TraceId::from_hex("00000000000000000000000000000077").expect("trace id")
-    );
-}
 
 fn decode_prompt_bytes_strips_utf8_bom() {
     let input = [0xEF, 0xBB, 0xBF, b'h', b'i', b'\n'];

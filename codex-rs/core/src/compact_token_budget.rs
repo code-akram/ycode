@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::compact::InitialContextInjection;
 use crate::context::world_state::WorldState;
+use crate::responses_metadata::CompactionTrigger;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
-use codex_analytics::CompactionTrigger;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;

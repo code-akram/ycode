@@ -94,8 +94,6 @@ impl PtyCodex {
             .arg("--no-alt-screen")
             .arg("-C")
             .arg(repo_root)
-            .arg("-c")
-            .arg("analytics.enabled=false")
             .env("TERM", "xterm-256color")
             .env("OPENAI_API_KEY", "focus-palette-test")
             .env("CODEX_HOME", codex_home.path())

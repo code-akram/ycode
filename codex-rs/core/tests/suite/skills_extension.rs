@@ -235,7 +235,6 @@ fn catalog_extensions(
             include_instructions: config.include_skill_instructions,
             bundled_skills_enabled: false,
             orchestrator_skills_enabled: false,
-            shadow_selection_enabled: false,
         }
     });
     (Arc::new(extensions.build()), event_rx)
@@ -478,7 +477,6 @@ async fn production_turn_scales_extension_catalog_from_resolved_model_window() -
                 include_instructions: config.include_skill_instructions,
                 bundled_skills_enabled: false,
                 orchestrator_skills_enabled: false,
-                shadow_selection_enabled: false,
             },
         );
         let mut builder = test_codex()
@@ -999,7 +997,6 @@ async fn production_turn_fairly_shortens_extension_catalog_descriptions() -> Res
             include_instructions: config.include_skill_instructions,
             bundled_skills_enabled: false,
             orchestrator_skills_enabled: false,
-            shadow_selection_enabled: false,
         },
     );
     let mut builder = test_codex()

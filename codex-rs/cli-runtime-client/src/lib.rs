@@ -45,13 +45,10 @@ pub use codex_cli_runtime::in_process::StateDbHandle;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
 use codex_config::NoopThreadConfigLoader;
-use codex_config::RemoteThreadConfigLoader;
 use codex_config::ThreadConfigLoader;
 use codex_core::config::Config;
-pub use codex_core::otel_init::build_provider as build_otel_provider;
 pub use codex_exec_server::EnvironmentManager;
 pub use codex_exec_server::ExecServerRuntimePaths;
-use codex_feedback::CodexFeedback;
 use codex_protocol::protocol::SessionSource;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::de::DeserializeOwned;
@@ -78,7 +75,7 @@ pub mod legacy_core {
     }
 }
 
-// Covers the embedded drain, its analytics flush, and final task join.
+// Covers the embedded drain and final task join.
 const IN_PROCESS_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// Raw cli-runtime request result for typed in-process requests.
@@ -298,9 +295,7 @@ pub struct InProcessClientStartArgs {
     pub strict_config: bool,
     /// Preloaded cloud config bundle provider.
     pub cloud_config_bundle: CloudConfigBundleLoader,
-    /// Feedback sink used by cli-runtime/core telemetry and logs.
-    pub feedback: CodexFeedback,
-    /// SQLite tracing layer used to flush recently emitted logs before feedback upload.
+    /// SQLite tracing layer used to retain local logs.
     pub log_db: Option<LogDbLayer>,
     /// Process-wide SQLite state handle shared with the embedded cli-runtime.
     pub state_db: Option<StateDbHandle>,
@@ -325,10 +320,8 @@ pub struct InProcessClientStartArgs {
 }
 
 fn configured_thread_config_loader(config: &Config) -> Arc<dyn ThreadConfigLoader> {
-    match config.experimental_thread_config_endpoint.as_deref() {
-        Some(endpoint) => Arc::new(RemoteThreadConfigLoader::new(endpoint)),
-        None => Arc::new(NoopThreadConfigLoader),
-    }
+    let _ = config;
+    Arc::new(NoopThreadConfigLoader)
 }
 
 impl InProcessClientStartArgs {
@@ -365,7 +358,6 @@ impl InProcessClientStartArgs {
             strict_config: self.strict_config,
             cloud_config_bundle: self.cloud_config_bundle,
             thread_config_loader,
-            feedback: self.feedback,
             log_db: self.log_db,
             state_db: self.state_db,
             environment_manager: self.environment_manager,

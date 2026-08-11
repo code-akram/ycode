@@ -762,11 +762,6 @@ client_request_definitions! {
         serialization: global_shared_read("config"),
         response: v2::PermissionProfileListResponse,
     },
-    ExperimentalFeatureEnablementSet => "experimentalFeature/enablement/set" {
-        params: v2::ExperimentalFeatureEnablementSetParams,
-        serialization: global("config"),
-        response: v2::ExperimentalFeatureEnablementSetResponse,
-    },
     #[experimental("mock/experimentalMethod")]
     /// Test-only method used to validate experimental gating.
     MockExperimentalMethod => "mock/experimentalMethod" {
@@ -843,12 +838,6 @@ client_request_definitions! {
         params: v2::SendAddCreditsNudgeEmailParams,
         serialization: global("account-auth"),
         response: v2::SendAddCreditsNudgeEmailResponse,
-    },
-
-    FeedbackUpload => "feedback/upload" {
-        params: v2::FeedbackUploadParams,
-        serialization: None,
-        response: v2::FeedbackUploadResponse,
     },
 
     /// Execute a standalone command (argv vector) under the server's sandbox.

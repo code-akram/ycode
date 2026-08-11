@@ -2,7 +2,6 @@ use crate::JsonSchema;
 use crate::TS;
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -68,23 +67,4 @@ pub struct ExperimentalFeatureListResponse {
     /// Opaque cursor to pass to the next call to continue after the last item.
     /// If None, there are no more items to return.
     pub next_cursor: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExperimentalFeatureEnablementSetParams {
-    /// Process-wide runtime feature enablement keyed by canonical feature name.
-    ///
-    /// Only named features are updated. Omitted features are left unchanged.
-    /// Send an empty map for a no-op.
-    pub enablement: BTreeMap<String, bool>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ExperimentalFeatureEnablementSetResponse {
-    /// Feature enablement entries updated by this request.
-    pub enablement: BTreeMap<String, bool>,
 }

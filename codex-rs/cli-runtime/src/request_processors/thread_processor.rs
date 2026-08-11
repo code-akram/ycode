@@ -1165,11 +1165,9 @@ impl ThreadRequestProcessor {
                 }
                 _ => internal_error(format!("error creating thread: {err}")),
             })?;
-        let session_telemetry = thread.session_telemetry();
-        session_telemetry.record_startup_phase(
-            "thread_start_create_thread",
-            create_thread_started_at.elapsed(),
-            Some("ready"),
+        tracing::debug!(
+            elapsed_ms = create_thread_started_at.elapsed().as_millis(),
+            "thread created"
         );
 
         Self::set_cli_runtime_client_info(
@@ -1267,10 +1265,9 @@ impl ThreadRequestProcessor {
                 otel.name = "cli_runtime.thread_start.notify_started",
             ))
             .await;
-        session_telemetry.record_startup_phase(
-            "thread_start_total",
-            thread_start_started_at.elapsed(),
-            Some("ready"),
+        tracing::debug!(
+            elapsed_ms = thread_start_started_at.elapsed().as_millis(),
+            "thread start completed"
         );
         Ok(())
     }

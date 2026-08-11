@@ -8,9 +8,9 @@ use serde_json::Value as JsonValue;
 
 use crate::ToolPayload;
 
-const TELEMETRY_PREVIEW_MAX_BYTES: usize = 2 * 1024;
-const TELEMETRY_PREVIEW_MAX_LINES: usize = 64;
-const TELEMETRY_PREVIEW_TRUNCATION_NOTICE: &str = "[... telemetry preview truncated ...]";
+const LOG_PREVIEW_MAX_BYTES: usize = 2 * 1024;
+const LOG_PREVIEW_MAX_LINES: usize = 64;
+const LOG_PREVIEW_TRUNCATION_NOTICE: &str = "[... log preview truncated ...]";
 
 /// Model-facing output contract returned by executable tool runtimes.
 pub trait ToolOutput: Send {
@@ -88,7 +88,7 @@ impl JsonToolOutput {
 
 impl ToolOutput for JsonToolOutput {
     fn log_preview(&self) -> String {
-        telemetry_preview(&self.value.to_string())
+        truncated_log_preview(&self.value.to_string())
     }
 
     fn success_for_logging(&self) -> bool {
@@ -185,13 +185,13 @@ fn content_items_to_code_mode_result(items: &[FunctionCallOutputContentItem]) ->
     )
 }
 
-fn telemetry_preview(content: &str) -> String {
-    let truncated_slice = take_bytes_at_char_boundary(content, TELEMETRY_PREVIEW_MAX_BYTES);
+fn truncated_log_preview(content: &str) -> String {
+    let truncated_slice = take_bytes_at_char_boundary(content, LOG_PREVIEW_MAX_BYTES);
     let truncated_by_bytes = truncated_slice.len() < content.len();
 
     let mut preview = String::new();
     let mut lines_iter = truncated_slice.lines();
-    for idx in 0..TELEMETRY_PREVIEW_MAX_LINES {
+    for idx in 0..LOG_PREVIEW_MAX_LINES {
         match lines_iter.next() {
             Some(line) => {
                 if idx > 0 {
@@ -220,7 +220,7 @@ fn telemetry_preview(content: &str) -> String {
     if !preview.is_empty() && !preview.ends_with('\n') {
         preview.push('\n');
     }
-    preview.push_str(TELEMETRY_PREVIEW_TRUNCATION_NOTICE);
+    preview.push_str(LOG_PREVIEW_TRUNCATION_NOTICE);
 
     preview
 }

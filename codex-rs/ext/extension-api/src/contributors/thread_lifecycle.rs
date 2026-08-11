@@ -1,7 +1,4 @@
-use std::sync::Arc;
-
 use crate::ExtensionData;
-use crate::ExtensionMetrics;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 
@@ -23,8 +20,6 @@ pub struct ThreadStartInput<'a, C> {
     pub persistent_thread_state_available: bool,
     /// Execution environments selected for this thread.
     pub environments: &'a [TurnEnvironmentSelection],
-    /// Session-attributed metrics supplied by the host.
-    pub extension_metrics: Option<Arc<dyn ExtensionMetrics>>,
     /// Store scoped to the host session runtime.
     pub session_store: &'a ExtensionData,
     /// Store scoped to this thread runtime.

@@ -157,10 +157,10 @@ the decider can auto-allow network requests originating from that command.
 **Important:** Explicit deny rules still win. The decider only gets a chance to override
 `not_allowed` (allowlist misses), not `denied` or `not_allowed_local`.
 
-## OTEL Audit Events (embedded/managed)
+## Local Audit Events
 
-When `codex-network-proxy` is embedded in managed Codex runtime, policy decisions emit structured
-OTEL-compatible events with `target=codex_otel.network_proxy`.
+Policy decisions emit structured events through the ordinary local tracing subscriber with
+`target=ycode.network_proxy.audit`. They are not exported or batched for remote reporting.
 
 Event name:
 

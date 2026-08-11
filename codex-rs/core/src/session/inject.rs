@@ -107,9 +107,7 @@ impl Session {
 
         let task_input = if has_user_input {
             for item in &input {
-                if let TurnInput::UserInput { content, .. } = item {
-                    turn_context.session_telemetry.user_prompt(content);
-                }
+                if let TurnInput::UserInput { content, .. } = item {}
             }
             input
         } else {

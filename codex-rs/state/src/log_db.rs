@@ -55,8 +55,6 @@ pub fn default_filter() -> Targets {
         .with_default(LevelFilter::TRACE)
         .with_target("hyper_util", LevelFilter::WARN)
         .with_target("log", LevelFilter::OFF)
-        .with_target("codex_otel.log_only", LevelFilter::OFF)
-        .with_target("codex_otel.trace_safe", LevelFilter::OFF)
         .with_target("codex_api::responses_websocket_timing", LevelFilter::OFF)
         .with_target("codex_core::post_sampling_token_estimate", LevelFilter::OFF)
 }
@@ -206,17 +204,6 @@ where
         // dispatching an event whose tracing target is `log`, so the outer
         // target filter cannot reliably reject these bridged events.
         if metadata.target() == "log" {
-            return;
-        }
-
-        // The SDK emits DEBUG timer meta-events every second per process; these
-        // were over 30% of retained logs in measured high-fanout Codex environments.
-        if metadata.target() == "opentelemetry_sdk"
-            && matches!(
-                *metadata.level(),
-                tracing::Level::TRACE | tracing::Level::DEBUG
-            )
-        {
             return;
         }
 
@@ -481,10 +468,6 @@ impl Visit for MessageVisitor {
         self.record_field(field, format!("{value:?}"));
     }
 }
-
-#[cfg(test)]
-#[path = "log_db_filter_tests.rs"]
-mod filter_tests;
 
 #[cfg(test)]
 mod tests {

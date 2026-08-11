@@ -1,9 +1,9 @@
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
-use crate::tools::TELEMETRY_PREVIEW_MAX_BYTES;
-use crate::tools::TELEMETRY_PREVIEW_MAX_LINES;
-use crate::tools::TELEMETRY_PREVIEW_TRUNCATION_NOTICE;
+use crate::tools::LOG_PREVIEW_MAX_BYTES;
+use crate::tools::LOG_PREVIEW_MAX_LINES;
+use crate::tools::LOG_PREVIEW_TRUNCATION_NOTICE;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use crate::unified_exec::format_output_omission_marker;
 use crate::unified_exec::resolve_max_tokens;
@@ -83,7 +83,7 @@ impl ToolOutput for ToolSearchOutput {
                 })
             })
             .collect();
-        telemetry_preview(&JsonValue::Array(tools).to_string())
+        truncated_log_preview(&JsonValue::Array(tools).to_string())
     }
 
     fn success_for_logging(&self) -> bool {
@@ -138,7 +138,7 @@ impl FunctionToolOutput {
 
 impl ToolOutput for FunctionToolOutput {
     fn log_preview(&self) -> String {
-        telemetry_preview(
+        truncated_log_preview(
             &function_call_output_content_items_to_text(&self.body).unwrap_or_default(),
         )
     }
@@ -164,7 +164,7 @@ impl ApplyPatchToolOutput {
 
 impl ToolOutput for ApplyPatchToolOutput {
     fn log_preview(&self) -> String {
-        telemetry_preview(&self.text)
+        truncated_log_preview(&self.text)
     }
 
     fn success_for_logging(&self) -> bool {
@@ -193,7 +193,7 @@ pub struct AbortedToolOutput {
 
 impl ToolOutput for AbortedToolOutput {
     fn log_preview(&self) -> String {
-        telemetry_preview(&self.message)
+        truncated_log_preview(&self.message)
     }
 
     fn success_for_logging(&self) -> bool {
@@ -238,7 +238,7 @@ pub struct ExecCommandToolOutput {
 
 impl ToolOutput for ExecCommandToolOutput {
     fn log_preview(&self) -> String {
-        telemetry_preview(&self.response_text())
+        truncated_log_preview(&self.response_text())
     }
 
     fn success_for_logging(&self) -> bool {
@@ -380,13 +380,13 @@ fn function_tool_response(
     }
 }
 
-fn telemetry_preview(content: &str) -> String {
-    let truncated_slice = take_bytes_at_char_boundary(content, TELEMETRY_PREVIEW_MAX_BYTES);
+fn truncated_log_preview(content: &str) -> String {
+    let truncated_slice = take_bytes_at_char_boundary(content, LOG_PREVIEW_MAX_BYTES);
     let truncated_by_bytes = truncated_slice.len() < content.len();
 
     let mut preview = String::new();
     let mut lines_iter = truncated_slice.lines();
-    for idx in 0..TELEMETRY_PREVIEW_MAX_LINES {
+    for idx in 0..LOG_PREVIEW_MAX_LINES {
         match lines_iter.next() {
             Some(line) => {
                 if idx > 0 {
@@ -415,7 +415,7 @@ fn telemetry_preview(content: &str) -> String {
     if !preview.is_empty() && !preview.ends_with('\n') {
         preview.push('\n');
     }
-    preview.push_str(TELEMETRY_PREVIEW_TRUNCATION_NOTICE);
+    preview.push_str(LOG_PREVIEW_TRUNCATION_NOTICE);
 
     preview
 }

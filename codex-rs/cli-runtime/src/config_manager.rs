@@ -8,13 +8,10 @@ use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_exec_server::LOCAL_FS;
-use codex_features::feature_for_key;
 use codex_login::AuthManager;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_json_to_toml::json_to_toml;
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
@@ -29,7 +26,6 @@ use tracing::warn;
 pub(crate) struct ConfigManager {
     codex_home: PathBuf,
     cli_overrides: Arc<RwLock<Vec<(String, TomlValue)>>>,
-    runtime_feature_enablement: Arc<RwLock<BTreeMap<String, bool>>>,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
     cloud_config_bundle: Arc<RwLock<CloudConfigBundleLoader>>,
@@ -51,7 +47,6 @@ impl ConfigManager {
         Self {
             codex_home,
             cli_overrides: Arc::new(RwLock::new(cli_overrides)),
-            runtime_feature_enablement: Arc::new(RwLock::new(BTreeMap::new())),
             loader_overrides,
             strict_config,
             cloud_config_bundle: Arc::new(RwLock::new(cloud_config_bundle)),
@@ -81,16 +76,6 @@ impl ConfigManager {
             .read()
             .map(|guard| guard.clone())
             .unwrap_or_default()
-    }
-
-    pub(crate) fn extend_runtime_feature_enablement<I>(&self, enablement: I) -> Result<(), ()>
-    where
-        I: IntoIterator<Item = (String, bool)>,
-    {
-        let mut runtime_feature_enablement =
-            self.runtime_feature_enablement.write().map_err(|_| ())?;
-        runtime_feature_enablement.extend(enablement);
-        Ok(())
     }
 
     pub(crate) fn replace_cloud_config_bundle_loader(
@@ -159,7 +144,6 @@ impl ConfigManager {
         let mut config = thread_config
             .rebuild_preserving_session_layers(&refreshed_config)
             .await?;
-        self.apply_runtime_feature_enablement(&mut config);
         self.apply_arg0_paths(&mut config);
         Ok(config)
     }
@@ -176,7 +160,6 @@ impl ConfigManager {
             .build()
             .await?;
         config.psp = self.psp;
-        self.apply_runtime_feature_enablement(&mut config);
         self.apply_arg0_paths(&mut config);
         Ok(config)
     }
@@ -241,7 +224,6 @@ impl ConfigManager {
             .thread_config_loader(self.current_thread_config_loader())
             .build()
             .await?;
-        self.apply_runtime_feature_enablement(&mut config);
         self.apply_arg0_paths(&mut config);
         Ok(config)
     }
@@ -271,17 +253,6 @@ impl ConfigManager {
             thread_config_loader.as_ref(),
         )
         .await
-    }
-
-    fn apply_runtime_feature_enablement(&self, config: &mut Config) {
-        apply_runtime_feature_enablement(config, &self.current_runtime_feature_enablement());
-    }
-
-    fn current_runtime_feature_enablement(&self) -> BTreeMap<String, bool> {
-        self.runtime_feature_enablement
-            .read()
-            .map(|guard| guard.clone())
-            .unwrap_or_default()
     }
 
     fn apply_arg0_paths(&self, config: &mut Config) {
@@ -315,46 +286,5 @@ impl ConfigManager {
             LoaderOverrides::without_managed_config_for_tests(),
             CloudConfigBundleLoader::default(),
         )
-    }
-}
-
-pub(crate) fn protected_feature_keys(config_layer_stack: &ConfigLayerStack) -> BTreeSet<String> {
-    let mut protected_features = config_layer_stack
-        .effective_config()
-        .get("features")
-        .and_then(toml::Value::as_table)
-        .map(|features| features.keys().cloned().collect::<BTreeSet<_>>())
-        .unwrap_or_default();
-
-    if let Some(feature_requirements) = config_layer_stack
-        .requirements_toml()
-        .feature_requirements
-        .as_ref()
-    {
-        protected_features.extend(feature_requirements.entries.keys().cloned());
-    }
-
-    protected_features
-}
-
-pub(crate) fn apply_runtime_feature_enablement(
-    config: &mut Config,
-    runtime_feature_enablement: &BTreeMap<String, bool>,
-) {
-    let protected_features = protected_feature_keys(&config.config_layer_stack);
-    for (name, enabled) in runtime_feature_enablement {
-        if protected_features.contains(name) {
-            continue;
-        }
-        let Some(feature) = feature_for_key(name) else {
-            continue;
-        };
-        if let Err(err) = config.features.set_enabled(feature, *enabled) {
-            warn!(
-                feature = name,
-                error = %err,
-                "failed to apply runtime feature enablement"
-            );
-        }
     }
 }

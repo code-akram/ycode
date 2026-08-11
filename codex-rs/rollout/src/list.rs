@@ -1349,7 +1349,6 @@ async fn find_thread_path_by_id_str_in_subdir(
     };
     let thread_id = ThreadId::from_string(id_str).ok();
     let mut unverified_db_path = None;
-    let mut fallback_reason = state_db_ctx.is_none().then_some("db_unavailable");
     if let Some(state_db_ctx) = state_db_ctx
         && let Some(thread_id) = thread_id
     {
@@ -1374,11 +1373,6 @@ async fn find_thread_path_by_id_str_in_subdir(
                             tracing::warn!(
                                 "state db discrepancy during find_thread_path_by_id_str_in_subdir: mismatched_db_path"
                             );
-                            codex_state::record_fallback(
-                                "find_thread_path",
-                                "mismatch",
-                                /*telemetry_override*/ None,
-                            );
                         }
                         Err(err) => {
                             tracing::debug!(
@@ -1396,19 +1390,13 @@ async fn find_thread_path_by_id_str_in_subdir(
                     tracing::warn!(
                         "state db discrepancy during find_thread_path_by_id_str_in_subdir: stale_db_path"
                     );
-                    codex_state::record_fallback(
-                        "find_thread_path",
-                        "stale_path",
-                        /*telemetry_override*/ None,
-                    );
                 }
             }
-            Ok(None) => fallback_reason = Some("missing_row"),
+            Ok(None) => {}
             Err(err) => {
                 tracing::warn!(
                     "state db find_rollout_path_by_id failed during find_path_query: {err}"
                 );
-                fallback_reason = Some("db_error");
             }
         }
     }
@@ -1474,13 +1462,6 @@ async fn find_thread_path_by_id_str_in_subdir(
         tracing::warn!(
             "state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back"
         );
-        if let Some(reason) = fallback_reason {
-            codex_state::record_fallback(
-                "find_thread_path",
-                reason,
-                /*telemetry_override*/ None,
-            );
-        }
         state_db::read_repair_rollout_path(
             state_db_ctx,
             thread_id,

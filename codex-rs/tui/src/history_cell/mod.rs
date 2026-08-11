@@ -49,7 +49,6 @@ use crate::wrapping::adaptive_wrap_lines;
 use codex_cli_protocol::ToolRequestUserInputAnswer;
 use codex_cli_protocol::ToolRequestUserInputQuestion;
 use codex_cli_protocol::WebSearchAction;
-use codex_otel::RuntimeMetricsSummary;
 use codex_protocol::account::PlanType;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;

@@ -38,7 +38,6 @@ use codex_config::types::ResumeCwdMode;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecServerRuntimePaths;
 use codex_login::AuthConfig;
-use codex_login::default_client::originator;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::enforce_login_restrictions;
 use codex_protocol::ThreadId;
@@ -62,7 +61,6 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 use std::time::Instant;
 pub use token_usage::TokenUsage;
 use tracing::error;
@@ -197,7 +195,6 @@ pub use public_widgets::composer_input::ComposerInput;
 // (tests access modules directly within the crate)
 
 const TUI_LOG_FILE_NAME: &str = "codex-tui.log";
-const INTERACTIVE_OTEL_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(/*millis*/ 500);
 
 #[allow(clippy::too_many_arguments)]
 async fn start_embedded_cli_runtime(
@@ -207,7 +204,6 @@ async fn start_embedded_cli_runtime(
     loader_overrides: LoaderOverrides,
     strict_config: bool,
     cloud_config_bundle: CloudConfigBundleLoader,
-    feedback: codex_feedback::CodexFeedback,
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
@@ -219,7 +215,6 @@ async fn start_embedded_cli_runtime(
         loader_overrides,
         strict_config,
         cloud_config_bundle,
-        feedback,
         log_db,
         state_db,
         environment_manager,
@@ -286,7 +281,6 @@ async fn start_cli_runtime(
     loader_overrides: LoaderOverrides,
     strict_config: bool,
     cloud_config_bundle: CloudConfigBundleLoader,
-    feedback: codex_feedback::CodexFeedback,
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
@@ -299,7 +293,6 @@ async fn start_cli_runtime(
         loader_overrides,
         strict_config,
         cloud_config_bundle,
-        feedback,
         log_db,
         state_db,
         environment_manager,
@@ -322,7 +315,6 @@ pub(crate) async fn start_cli_runtime_for_picker(
         LoaderOverrides::default(),
         /*strict_config*/ false,
         CloudConfigBundleLoader::default(),
-        codex_feedback::CodexFeedback::new(),
         /*log_db*/ None,
         state_db,
         environment_manager,
@@ -357,7 +349,6 @@ async fn start_embedded_cli_runtime_with<F, Fut>(
     loader_overrides: LoaderOverrides,
     strict_config: bool,
     cloud_config_bundle: CloudConfigBundleLoader,
-    feedback: codex_feedback::CodexFeedback,
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
@@ -384,7 +375,6 @@ where
         loader_overrides,
         strict_config,
         cloud_config_bundle,
-        feedback,
         log_db,
         state_db,
         environment_manager,
@@ -757,37 +747,6 @@ pub async fn run_main(
 
     remove_legacy_tui_log_file(config.codex_home.as_path());
 
-    let otel_originator = originator().value;
-    let otel = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        codex_cli_runtime_client::build_otel_provider(
-            &config,
-            env!("CARGO_PKG_VERSION"),
-            /*service_name_override*/ None,
-            /*default_analytics_enabled*/ true,
-        )
-    })) {
-        Ok(Ok(otel)) => otel,
-        Ok(Err(e)) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!("Could not create otel exporter: {e}");
-            }
-            None
-        }
-        Err(_) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!("Could not create otel exporter: panicked during initialization");
-            }
-            None
-        }
-    };
-    if let Some(metrics) = otel.as_ref().and_then(codex_otel::OtelProvider::metrics) {
-        let _ = codex_otel::record_process_start_once(metrics, otel_originator.as_str());
-        let telemetry =
-            codex_rollout::sqlite_telemetry_recorder(metrics.clone(), otel_originator.as_str());
-        let _ = codex_state::install_process_db_telemetry(telemetry);
-    }
     let state_db = init_state_db_for_cli_runtime_target(&config, &cli_runtime_target).await?;
     let config_toml_log_dir_configured = config
         .config_layer_stack
@@ -843,14 +802,6 @@ pub async fn run_main(
         (None, None)
     };
 
-    let feedback = codex_feedback::CodexFeedback::new();
-    let feedback_layer = feedback.logger_layer();
-    let feedback_metadata_layer = feedback.metadata_layer();
-
-    let otel_logger_layer = otel.as_ref().and_then(|o| o.logger_layer());
-
-    let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
-
     let log_db = state_db.clone().map(log_db::start);
     let log_db_layer = log_db
         .clone()
@@ -858,11 +809,7 @@ pub async fn run_main(
 
     let _ = tracing_subscriber::registry()
         .with(tui_file_layer)
-        .with(feedback_layer)
-        .with(feedback_metadata_layer)
         .with(log_db_layer)
-        .with(otel_logger_layer)
-        .with(otel_tracing_layer)
         .try_init();
 
     let app_result = run_ratatui_app(
@@ -876,21 +823,12 @@ pub async fn run_main(
         overrides,
         cli_kv_overrides,
         cloud_config_bundle,
-        feedback,
         log_db,
         state_db,
         environment_manager,
     )
     .await
     .map_err(|err| std::io::Error::other(err.to_string()));
-
-    if let Some(otel) = otel
-        && let Err(err) = otel
-            .shutdown_with_timeout(INTERACTIVE_OTEL_SHUTDOWN_TIMEOUT)
-            .await
-    {
-        warn!(error = %err, "failed to finish interactive telemetry shutdown");
-    }
 
     app_result
 }
@@ -907,15 +845,12 @@ async fn run_ratatui_app(
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
     mut cloud_config_bundle: CloudConfigBundleLoader,
-    feedback: codex_feedback::CodexFeedback,
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
 ) -> color_eyre::Result<AppExitInfo> {
     let uses_remote_workspace = cli_runtime_target.uses_remote_workspace();
     color_eyre::install()?;
-
-    tooltips::announcement::prewarm(initial_config.http_client_factory());
 
     // Forward panic reports through tracing so they appear in the UI status
     // line, but do not swallow the default/color-eyre panic handler.
@@ -969,7 +904,6 @@ async fn run_ratatui_app(
         loader_overrides.clone(),
         strict_config,
         cloud_config_bundle.clone(),
-        feedback.clone(),
         log_db.clone(),
         state_db.clone(),
         environment_manager.clone(),
@@ -1292,7 +1226,6 @@ async fn run_ratatui_app(
             loader_overrides.clone(),
             strict_config,
             cloud_config_bundle.clone(),
-            feedback.clone(),
             log_db.clone(),
             state_db.clone(),
             environment_manager.clone(),
@@ -1327,7 +1260,6 @@ async fn run_ratatui_app(
         prompt,
         images,
         session_selection,
-        feedback,
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
         cli_runtime_target,
         state_db,
@@ -1723,7 +1655,6 @@ mod tests {
             LoaderOverrides::default(),
             /*strict_config*/ false,
             CloudConfigBundleLoader::default(),
-            codex_feedback::CodexFeedback::new(),
             /*log_db*/ None,
             state_db,
             Arc::new(EnvironmentManager::default_for_tests()),
@@ -2311,7 +2242,6 @@ mod tests {
             LoaderOverrides::default(),
             /*strict_config*/ false,
             CloudConfigBundleLoader::default(),
-            codex_feedback::CodexFeedback::new(),
             /*log_db*/ None,
             /*state_db*/ None,
             Arc::new(EnvironmentManager::default_for_tests()),

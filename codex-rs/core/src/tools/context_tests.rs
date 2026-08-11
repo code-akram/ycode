@@ -162,35 +162,32 @@ fn log_preview_uses_content_items_when_plain_text_is_missing() {
 }
 
 #[test]
-fn telemetry_preview_returns_original_within_limits() {
+fn log_preview_returns_original_within_limits() {
     let content = "short output";
-    assert_eq!(telemetry_preview(content), content);
+    assert_eq!(truncated_log_preview(content), content);
 }
 
 #[test]
-fn telemetry_preview_truncates_by_bytes() {
-    let content = "x".repeat(TELEMETRY_PREVIEW_MAX_BYTES + 8);
-    let preview = telemetry_preview(&content);
+fn log_preview_truncates_by_bytes() {
+    let content = "x".repeat(LOG_PREVIEW_MAX_BYTES + 8);
+    let preview = truncated_log_preview(&content);
 
-    assert!(preview.contains(TELEMETRY_PREVIEW_TRUNCATION_NOTICE));
-    assert!(
-        preview.len()
-            <= TELEMETRY_PREVIEW_MAX_BYTES + TELEMETRY_PREVIEW_TRUNCATION_NOTICE.len() + 1
-    );
+    assert!(preview.contains(LOG_PREVIEW_TRUNCATION_NOTICE));
+    assert!(preview.len() <= LOG_PREVIEW_MAX_BYTES + LOG_PREVIEW_TRUNCATION_NOTICE.len() + 1);
 }
 
 #[test]
-fn telemetry_preview_truncates_by_lines() {
-    let content = (0..(TELEMETRY_PREVIEW_MAX_LINES + 5))
+fn log_preview_truncates_by_lines() {
+    let content = (0..(LOG_PREVIEW_MAX_LINES + 5))
         .map(|idx| format!("line {idx}"))
         .collect::<Vec<_>>()
         .join("\n");
 
-    let preview = telemetry_preview(&content);
+    let preview = truncated_log_preview(&content);
     let lines: Vec<&str> = preview.lines().collect();
 
-    assert!(lines.len() <= TELEMETRY_PREVIEW_MAX_LINES + 1);
-    assert_eq!(lines.last(), Some(&TELEMETRY_PREVIEW_TRUNCATION_NOTICE));
+    assert!(lines.len() <= LOG_PREVIEW_MAX_LINES + 1);
+    assert_eq!(lines.last(), Some(&LOG_PREVIEW_TRUNCATION_NOTICE));
 }
 
 #[test]

@@ -4,7 +4,6 @@ use crate::list::Cursor;
 use crate::list::SortDirection;
 use crate::list::ThreadSortKey;
 use crate::metadata;
-use crate::sqlite_metrics;
 use anyhow::Context;
 use chrono::DateTime;
 use chrono::Utc;
@@ -107,7 +106,6 @@ async fn try_init_with_roots_inner(
                     sqlite.home().display()
                 )
             })?;
-    let backfill_gate_started = Instant::now();
     let backfill_gate_result = wait_for_backfill_gate(
         runtime.as_ref(),
         codex_home.as_path(),
@@ -115,11 +113,6 @@ async fn try_init_with_roots_inner(
         backfill_lease_seconds,
     )
     .await;
-    codex_state::record_backfill_gate(
-        /*telemetry*/ None,
-        backfill_gate_started.elapsed(),
-        &backfill_gate_result,
-    );
     if let Err(err) = backfill_gate_result {
         runtime.close().await;
         return Err(err);
@@ -208,11 +201,6 @@ fn emit_startup_warning(message: &str) {
 pub async fn get_state_db(config: &impl RolloutConfigView) -> Option<StateDbHandle> {
     let state_path = config.sqlite_config().state_db_path();
     if !tokio::fs::try_exists(&state_path).await.unwrap_or(false) {
-        codex_state::record_fallback(
-            "get_state_db",
-            "db_unavailable",
-            /*telemetry_override*/ None,
-        );
         return None;
     }
     let runtime = match codex_state::StateRuntime::init(
@@ -223,23 +211,10 @@ pub async fn get_state_db(config: &impl RolloutConfigView) -> Option<StateDbHand
     {
         Ok(runtime) => runtime,
         Err(_) => {
-            codex_state::record_fallback(
-                "get_state_db",
-                "db_error",
-                /*telemetry_override*/ None,
-            );
             return None;
         }
     };
     require_backfill_complete(runtime, config.sqlite_config().home()).await
-}
-
-/// Build a SQLite telemetry recorder backed by an OTEL metrics client.
-pub fn sqlite_telemetry_recorder(
-    metrics: codex_otel::MetricsClient,
-    originator: &str,
-) -> codex_state::DbTelemetryHandle {
-    sqlite_metrics::recorder(metrics, originator)
 }
 
 async fn require_backfill_complete(
@@ -254,22 +229,12 @@ async fn require_backfill_complete(
                 codex_home.display(),
                 state.status.as_str()
             );
-            codex_state::record_fallback(
-                "get_state_db",
-                "backfill_incomplete",
-                /*telemetry_override*/ None,
-            );
             None
         }
         Err(err) => {
             warn!(
                 "failed to read backfill state at {}: {err}",
                 codex_home.display()
-            );
-            codex_state::record_fallback(
-                "get_state_db",
-                "db_error",
-                /*telemetry_override*/ None,
             );
             None
         }

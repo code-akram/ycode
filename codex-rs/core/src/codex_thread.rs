@@ -9,7 +9,6 @@ use crate::session::session::Session;
 use crate::user_message_admission::UserMessageAdmission;
 use codex_exec_server::SelectedCapabilityRootsStatus;
 use codex_features::Feature;
-use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::ApprovalsReviewer;
@@ -218,11 +217,6 @@ impl CodexThread {
 
     pub async fn submit(&self, op: Op) -> CodexResult<String> {
         self.io.submit(op).await
-    }
-
-    /// Returns the session telemetry handle for thread-scoped production instrumentation.
-    pub fn session_telemetry(&self) -> SessionTelemetry {
-        self.session.services.session_telemetry.clone()
     }
 
     pub async fn shutdown_and_wait(&self) -> CodexResult<()> {

@@ -81,9 +81,9 @@ pub struct CreateThreadParams {
     pub parent_thread_id: Option<ThreadId>,
     /// Runtime source for the thread.
     pub source: SessionSource,
-    /// Optional analytics source classification for this thread.
+    /// Optional client source classification for this thread.
     pub thread_source: Option<ThreadSource>,
-    /// Effective originator used for this thread's Responses requests and analytics events.
+    /// Effective originator used for this thread's Responses requests.
     pub originator: String,
     /// Base instructions persisted in session metadata.
     pub base_instructions: BaseInstructions,
@@ -583,7 +583,7 @@ pub struct StoredThread {
     pub source: SessionSource,
     /// Persisted thread history contract selected when this thread was created.
     pub history_mode: ThreadHistoryMode,
-    /// Optional analytics source classification for this thread.
+    /// Optional client source classification for this thread.
     pub thread_source: Option<ThreadSource>,
     /// Optional random nickname for thread-spawn sub-agents.
     pub agent_nickname: Option<String>,
@@ -691,7 +691,7 @@ pub struct ThreadMetadataPatch {
     pub advance_recency_at: Option<DateTime<Utc>>,
     /// Session source.
     pub source: Option<SessionSource>,
-    /// Optional analytics source classification.
+    /// Optional client source classification.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

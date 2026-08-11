@@ -3,13 +3,7 @@ use std::sync::Arc;
 
 use crate::SkillLoadOutcome;
 use crate::SkillMetadata;
-use codex_analytics::AnalyticsEventsClient;
-use codex_analytics::InvocationType;
-use codex_analytics::SkillInvocation;
-use codex_analytics::TrackEventsContext;
 use codex_exec_server::LOCAL_FS;
-use codex_otel::SessionTelemetry;
-use codex_otel::sanitize_metric_tag_value;
 pub use codex_skills::ToolMentionKind;
 pub use codex_skills::ToolMentions;
 pub use codex_skills::extract_tool_mentions;
@@ -76,9 +70,6 @@ impl InjectedHostSkillPrompts {
 pub async fn build_skill_injections(
     mentioned_skills: &[SkillMetadata],
     loaded_skills: Option<&SkillLoadOutcome>,
-    otel: Option<&SessionTelemetry>,
-    analytics_client: &AnalyticsEventsClient,
-    tracking: TrackEventsContext,
 ) -> SkillInjections {
     if mentioned_skills.is_empty() {
         return SkillInjections::default();
@@ -88,7 +79,6 @@ pub async fn build_skill_injections(
         items: Vec::with_capacity(mentioned_skills.len()),
         warnings: Vec::new(),
     };
-    let mut invocations = Vec::new();
 
     for skill in mentioned_skills {
         let fs = loaded_skills
@@ -104,13 +94,6 @@ pub async fn build_skill_injections(
                         skill.name
                     ));
                 }
-                emit_skill_injected_metric(otel, skill, "ok");
-                invocations.push(SkillInvocation {
-                    skill_name: skill.name.clone(),
-                    skill_scope: skill.scope,
-                    skill_path: skill.path_to_skills_md.to_path_buf(),
-                    invocation_type: InvocationType::Explicit,
-                });
                 result.items.push(SkillInjection {
                     name: skill.name.clone(),
                     path: skill.path_to_skills_md.to_string_lossy().into_owned(),
@@ -118,7 +101,6 @@ pub async fn build_skill_injections(
                 });
             }
             Err(err) => {
-                emit_skill_injected_metric(otel, skill, "error");
                 let message = format!(
                     "Failed to load skill {name} at {path}: {err:#}",
                     name = skill.name,
@@ -128,8 +110,6 @@ pub async fn build_skill_injections(
             }
         }
     }
-
-    analytics_client.track_skill_invocations(tracking, invocations);
 
     result
 }
@@ -141,27 +121,6 @@ fn bounded_skill_prompt_contents(contents: &str) -> (String, bool) {
 
 fn normalize_host_skill_path(path: &str) -> String {
     normalize_skill_path(path).replace('\\', "/")
-}
-
-fn emit_skill_injected_metric(
-    otel: Option<&SessionTelemetry>,
-    skill: &SkillMetadata,
-    status: &str,
-) {
-    let Some(otel) = otel else {
-        return;
-    };
-    let skill_name_tag = sanitize_metric_tag_value(skill.name.as_str());
-
-    otel.counter(
-        "codex.skill.injected",
-        /*inc*/ 1,
-        &[
-            ("status", status),
-            ("skill", skill_name_tag.as_str()),
-            ("invoke_type", "explicit"),
-        ],
-    );
 }
 
 #[cfg(test)]

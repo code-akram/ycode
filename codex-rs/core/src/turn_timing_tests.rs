@@ -1,4 +1,3 @@
-use codex_analytics::TurnProfile;
 use codex_protocol::items::AgentMessageItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ContentItem;
@@ -10,6 +9,7 @@ use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+use super::TurnProfile;
 use super::TurnProfilePhase;
 use super::TurnProfileState;
 use super::TurnTimingState;

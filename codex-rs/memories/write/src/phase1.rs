@@ -1,8 +1,4 @@
 use crate::build_stage_one_input_message;
-use crate::metrics::MEMORY_PHASE_ONE_E2E_MS;
-use crate::metrics::MEMORY_PHASE_ONE_JOBS;
-use crate::metrics::MEMORY_PHASE_ONE_OUTPUT;
-use crate::metrics::MEMORY_PHASE_ONE_TOKEN_USAGE;
 use crate::runtime::MemoryStartupContext;
 use crate::runtime::StageOneRequestContext;
 use codex_config::types::MemoriesConfig;
@@ -29,7 +25,6 @@ use tracing::warn;
 
 struct JobResult {
     outcome: JobOutcome,
-    token_usage: Option<TokenUsage>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,7 +39,6 @@ struct Stats {
     succeeded_with_output: usize,
     succeeded_no_output: usize,
     failed: usize,
-    total_token_usage: Option<TokenUsage>,
 }
 
 /// Phase 1 model output payload.
@@ -66,10 +60,9 @@ struct StageOneOutput {
 /// 1) claim eligible rollout jobs
 /// 2) build one stage-1 request context
 /// 3) run stage-1 extraction jobs in parallel
-/// 4) emit metrics and logs
+/// 4) emit local logs
 pub async fn run(context: Arc<MemoryStartupContext>, config: Arc<Config>) {
     let stage_one_context = build_request_context(context.as_ref(), config.as_ref()).await;
-    let _phase_one_e2e_timer = stage_one_context.start_timer(MEMORY_PHASE_ONE_E2E_MS);
 
     // 1. Claim startup job.
     let Some(claimed_candidates) = claim_startup_jobs(context.as_ref(), &config.memories).await
@@ -77,11 +70,6 @@ pub async fn run(context: Arc<MemoryStartupContext>, config: Arc<Config>) {
         return;
     };
     if claimed_candidates.is_empty() {
-        stage_one_context.counter(
-            MEMORY_PHASE_ONE_JOBS,
-            /*inc*/ 1,
-            &[("status", "skipped_no_candidates")],
-        );
         return;
     }
 
@@ -94,9 +82,8 @@ pub async fn run(context: Arc<MemoryStartupContext>, config: Arc<Config>) {
     )
     .await;
 
-    // 4. Metrics and logs.
+    // 4. Local completion log.
     let counts = aggregate_stats(outcomes);
-    emit_metrics(&stage_one_context, &counts);
     info!(
         "memory stage-1 extraction complete: {} job(s) claimed, {} succeeded ({} with output, {} no output), {} failed",
         counts.claimed,
@@ -231,7 +218,7 @@ mod job {
         stage_one_context: &StageOneRequestContext,
     ) -> JobResult {
         let claimed_thread = claim.thread;
-        let (stage_one_output, token_usage) = match sample(
+        let (stage_one_output, _token_usage) = match sample(
             context,
             config,
             &claimed_thread.rollout_path,
@@ -251,7 +238,6 @@ mod job {
                 .await;
                 return JobResult {
                     outcome: JobOutcome::Failed,
-                    token_usage: None,
                 };
             }
         };
@@ -260,7 +246,6 @@ mod job {
             return JobResult {
                 outcome: result::no_output(context, claimed_thread.id, &claim.ownership_token)
                     .await,
-                token_usage,
             };
         }
 
@@ -275,7 +260,6 @@ mod job {
                 stage_one_output.rollout_slug.as_deref(),
             )
             .await,
-            token_usage,
         }
     }
 
@@ -573,19 +557,11 @@ fn aggregate_stats(outcomes: Vec<JobResult>) -> Stats {
     let mut succeeded_with_output = 0;
     let mut succeeded_no_output = 0;
     let mut failed = 0;
-    let mut total_token_usage = TokenUsage::default();
-    let mut has_token_usage = false;
-
     for outcome in outcomes {
         match outcome.outcome {
             JobOutcome::SucceededWithOutput => succeeded_with_output += 1,
             JobOutcome::SucceededNoOutput => succeeded_no_output += 1,
             JobOutcome::Failed => failed += 1,
-        }
-
-        if let Some(token_usage) = outcome.token_usage {
-            total_token_usage.add_assign(&token_usage);
-            has_token_usage = true;
         }
     }
 
@@ -594,75 +570,6 @@ fn aggregate_stats(outcomes: Vec<JobResult>) -> Stats {
         succeeded_with_output,
         succeeded_no_output,
         failed,
-        total_token_usage: has_token_usage.then_some(total_token_usage),
-    }
-}
-
-fn emit_metrics(context: &StageOneRequestContext, counts: &Stats) {
-    if counts.claimed > 0 {
-        context.counter(
-            MEMORY_PHASE_ONE_JOBS,
-            counts.claimed as i64,
-            &[("status", "claimed")],
-        );
-    }
-    if counts.succeeded_with_output > 0 {
-        context.counter(
-            MEMORY_PHASE_ONE_JOBS,
-            counts.succeeded_with_output as i64,
-            &[("status", "succeeded")],
-        );
-        context.counter(
-            MEMORY_PHASE_ONE_OUTPUT,
-            counts.succeeded_with_output as i64,
-            &[],
-        );
-    }
-    if counts.succeeded_no_output > 0 {
-        context.counter(
-            MEMORY_PHASE_ONE_JOBS,
-            counts.succeeded_no_output as i64,
-            &[("status", "succeeded_no_output")],
-        );
-    }
-    if counts.failed > 0 {
-        context.counter(
-            MEMORY_PHASE_ONE_JOBS,
-            counts.failed as i64,
-            &[("status", "failed")],
-        );
-    }
-    if let Some(token_usage) = counts.total_token_usage.as_ref() {
-        context.histogram(
-            MEMORY_PHASE_ONE_TOKEN_USAGE,
-            token_usage.total_tokens.max(0),
-            &[("token_type", "total")],
-        );
-        context.histogram(
-            MEMORY_PHASE_ONE_TOKEN_USAGE,
-            token_usage.input_tokens.max(0),
-            &[("token_type", "input")],
-        );
-        context.histogram(
-            MEMORY_PHASE_ONE_TOKEN_USAGE,
-            token_usage.cached_input(),
-            &[("token_type", "cached_input")],
-        );
-        context.histogram(
-            MEMORY_PHASE_ONE_TOKEN_USAGE,
-            token_usage.cache_write_input_tokens.max(0),
-            &[("token_type", "cache_write_input")],
-        );
-        context.histogram(
-            MEMORY_PHASE_ONE_TOKEN_USAGE,
-            token_usage.output_tokens.max(0),
-            &[("token_type", "output")],
-        );
-        context.histogram(
-            MEMORY_PHASE_ONE_TOKEN_USAGE,
-            token_usage.reasoning_output_tokens.max(0),
-            &[("token_type", "reasoning_output")],
-        );
     }
 }
 
@@ -816,73 +723,5 @@ mod tests {
         let parsed: Vec<ResponseItem> = serde_json::from_str(&serialized).expect("parse");
 
         assert_eq!(parsed, vec![response_item]);
-    }
-
-    #[test]
-    fn count_outcomes_sums_token_usage_across_all_jobs() {
-        let counts = aggregate_stats(vec![
-            JobResult {
-                outcome: JobOutcome::SucceededWithOutput,
-                token_usage: Some(TokenUsage {
-                    input_tokens: 10,
-                    cached_input_tokens: 2,
-                    cache_write_input_tokens: 0,
-                    output_tokens: 3,
-                    reasoning_output_tokens: 1,
-                    total_tokens: 13,
-                    codex_rollout_budget_units: None,
-                }),
-            },
-            JobResult {
-                outcome: JobOutcome::SucceededNoOutput,
-                token_usage: Some(TokenUsage {
-                    input_tokens: 7,
-                    cached_input_tokens: 1,
-                    cache_write_input_tokens: 0,
-                    output_tokens: 2,
-                    reasoning_output_tokens: 0,
-                    total_tokens: 9,
-                    codex_rollout_budget_units: None,
-                }),
-            },
-            JobResult {
-                outcome: JobOutcome::Failed,
-                token_usage: None,
-            },
-        ]);
-
-        assert_eq!(counts.claimed, 3);
-        assert_eq!(counts.succeeded_with_output, 1);
-        assert_eq!(counts.succeeded_no_output, 1);
-        assert_eq!(counts.failed, 1);
-        assert_eq!(
-            counts.total_token_usage,
-            Some(TokenUsage {
-                input_tokens: 17,
-                cached_input_tokens: 3,
-                cache_write_input_tokens: 0,
-                output_tokens: 5,
-                reasoning_output_tokens: 1,
-                total_tokens: 22,
-                codex_rollout_budget_units: None,
-            })
-        );
-    }
-
-    #[test]
-    fn count_outcomes_keeps_usage_empty_when_no_job_reports_it() {
-        let counts = aggregate_stats(vec![
-            JobResult {
-                outcome: JobOutcome::SucceededWithOutput,
-                token_usage: None,
-            },
-            JobResult {
-                outcome: JobOutcome::Failed,
-                token_usage: None,
-            },
-        ]);
-
-        assert_eq!(counts.claimed, 2);
-        assert_eq!(counts.total_token_usage, None);
     }
 }

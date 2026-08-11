@@ -32,7 +32,6 @@ use codex_config::permissions_toml::PermissionsToml;
 use codex_config::permissions_toml::WorkspaceRootsToml;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::BundledSkillsConfig;
-use codex_config::types::FeedbackConfigToml;
 use codex_config::types::HistoryPersistence;
 use codex_config::types::MemoriesConfig;
 use codex_config::types::MemoriesToml;
@@ -41,8 +40,6 @@ use codex_config::types::Notice;
 use codex_config::types::NotificationCondition;
 use codex_config::types::NotificationMethod;
 use codex_config::types::Notifications;
-use codex_config::types::OtelConfigToml;
-use codex_config::types::OtelExporterKind;
 use codex_config::types::ResumeCwdMode;
 use codex_config::types::SandboxWorkspaceWrite;
 use codex_config::types::SessionPickerViewMode;
@@ -4375,26 +4372,6 @@ fn local_dev_builds_force_file_cli_auth_store_modes() {
     );
 }
 
-#[tokio::test]
-async fn feedback_enabled_defaults_to_true() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        feedback: Some(FeedbackConfigToml::default()),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.abs(),
-    )
-    .await?;
-
-    assert_eq!(config.feedback_enabled, true);
-
-    Ok(())
-}
-
 #[test]
 fn web_search_mode_defaults_to_none_if_unset() {
     let cfg = ConfigToml::default();
@@ -6351,9 +6328,6 @@ fn create_test_fixture() -> std::io::Result<PrecedenceTestFixture> {
 model = "o3"
 approval_policy = "untrusted"
 
-[analytics]
-enabled = true
-
 [profiles.o3]
 model = "o3"
 approval_policy = "never"
@@ -6366,9 +6340,6 @@ model = "gpt-3.5-turbo"
 [profiles.zdr]
 model = "o3"
 approval_policy = "on-request"
-
-[profiles.zdr.analytics]
-enabled = false
 
 [profiles.gpt5]
 model = "gpt-5.4"
@@ -6418,170 +6389,6 @@ async fn legacy_profile_selection_is_rejected() -> std::io::Result<()> {
         err.to_string()
             .contains("legacy `profile = \"gpt3\"` config is no longer supported"),
         "unexpected error: {err}"
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn metrics_exporter_defaults_to_statsig_when_missing() -> std::io::Result<()> {
-    let fixture = create_test_fixture()?;
-
-    let config = Config::load_from_base_config_with_overrides(
-        fixture.cfg.clone(),
-        ConfigOverrides {
-            cwd: Some(fixture.cwd_path()),
-            ..Default::default()
-        },
-        fixture.codex_home(),
-    )
-    .await?;
-
-    assert_eq!(config.otel.metrics_exporter, OtelExporterKind::Statsig);
-    Ok(())
-}
-
-#[tokio::test]
-async fn trace_exporter_defaults_to_none_when_log_exporter_is_set() -> std::io::Result<()> {
-    let fixture = create_test_fixture()?;
-    let mut cfg = fixture.cfg.clone();
-    cfg.otel = Some(OtelConfigToml {
-        exporter: Some(OtelExporterKind::OtlpHttp {
-            endpoint: "http://localhost:14318/v1/logs".to_string(),
-            headers: HashMap::new(),
-            protocol: codex_config::types::OtelHttpProtocol::Binary,
-            tls: None,
-        }),
-        metrics_exporter: Some(OtelExporterKind::None),
-        ..Default::default()
-    });
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(fixture.cwd_path()),
-            ..Default::default()
-        },
-        fixture.codex_home(),
-    )
-    .await?;
-
-    assert!(matches!(
-        config.otel.exporter,
-        OtelExporterKind::OtlpHttp { .. }
-    ));
-    assert_eq!(config.otel.trace_exporter, OtelExporterKind::None);
-    Ok(())
-}
-
-#[tokio::test]
-async fn load_config_applies_otel_trace_metadata() -> std::io::Result<()> {
-    let mut fixture = create_test_fixture()?;
-    fixture.cfg = toml::from_str(
-        r#"
-[otel.span_attributes]
-"example.trace_attr" = "enabled"
-
-[otel.tracestate.example]
-alpha = "one"
-beta = "two"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    let config = Config::load_from_base_config_with_overrides(
-        fixture.cfg.clone(),
-        ConfigOverrides {
-            cwd: Some(fixture.cwd_path()),
-            ..Default::default()
-        },
-        fixture.codex_home(),
-    )
-    .await?;
-
-    assert_eq!(
-        config.otel.span_attributes,
-        BTreeMap::from([("example.trace_attr".to_string(), "enabled".to_string())])
-    );
-    assert_eq!(
-        config.otel.tracestate,
-        BTreeMap::from([(
-            "example".to_string(),
-            BTreeMap::from([
-                ("alpha".to_string(), "one".to_string()),
-                ("beta".to_string(), "two".to_string()),
-            ]),
-        )])
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn load_config_drops_invalid_otel_trace_metadata_entries() -> std::io::Result<()> {
-    let mut fixture = create_test_fixture()?;
-    fixture.cfg = toml::from_str(
-        r#"
-[otel]
-environment = "test"
-
-[otel.span_attributes]
-"" = "missing-key"
-"example.trace_attr" = "enabled"
-
-[otel.tracestate.example]
-alpha = "one"
-beta = "two\ntoo"
-
-[otel.tracestate.bad]
-alpha = "one\ntwo"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    let config = Config::load_from_base_config_with_overrides(
-        fixture.cfg.clone(),
-        ConfigOverrides {
-            cwd: Some(fixture.cwd_path()),
-            ..Default::default()
-        },
-        fixture.codex_home(),
-    )
-    .await?;
-
-    assert_eq!(config.otel.environment, "test");
-    assert_eq!(
-        config.otel.span_attributes,
-        BTreeMap::from([("example.trace_attr".to_string(), "enabled".to_string())])
-    );
-    assert_eq!(
-        config.otel.tracestate,
-        BTreeMap::from([(
-            "example".to_string(),
-            BTreeMap::from([("alpha".to_string(), "one".to_string())]),
-        )])
-    );
-    assert!(
-        config.startup_warnings.iter().any(|warning| {
-            warning.contains("Ignoring invalid `otel.span_attributes` config")
-                && warning.contains("configured span attribute key must not be empty")
-        }),
-        "{:?}",
-        config.startup_warnings
-    );
-    assert!(
-        config.startup_warnings.iter().any(|warning| {
-            warning.contains("Ignoring invalid `otel.tracestate` config")
-                && warning.contains("invalid configured tracestate value for example.beta")
-        }),
-        "{:?}",
-        config.startup_warnings
-    );
-    assert!(
-        config.startup_warnings.iter().any(|warning| {
-            warning.contains("Ignoring invalid `otel.tracestate` config")
-                && warning.contains("invalid configured tracestate value for bad.alpha")
-        }),
-        "{:?}",
-        config.startup_warnings
     );
     Ok(())
 }
@@ -6762,7 +6569,6 @@ async fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() 
         model_catalog_json: None,
         check_for_update_on_startup: None,
         allow_login_shell: None,
-        feedback: None,
         allowed_approval_policies: None,
         allowed_approvals_reviewers: None,
         allowed_sandbox_modes: None,
@@ -8806,35 +8612,6 @@ experimental_realtime_start_instructions = "start instructions from config"
 }
 
 #[tokio::test]
-async fn experimental_thread_config_endpoint_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_thread_config_endpoint = "http://127.0.0.1:8061"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_thread_config_endpoint.as_deref(),
-        Some("http://127.0.0.1:8061")
-    );
-
-    let codex_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.abs(),
-    )
-    .await?;
-
-    assert_eq!(
-        config.experimental_thread_config_endpoint.as_deref(),
-        Some("http://127.0.0.1:8061")
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn experimental_realtime_ws_backend_prompt_loads_from_config_toml() -> std::io::Result<()> {
     let cfg: ConfigToml = toml::from_str(
         r#"
@@ -9148,9 +8925,6 @@ async fn exact_requirements_apply_to_runtime_config() -> std::io::Result<()> {
 check_for_update_on_startup = true
 allow_login_shell = true
 
-[feedback]
-enabled = true
-
 [windows]
 sandbox_private_desktop = true
 "#,
@@ -9166,9 +8940,6 @@ model_catalog_json = {:?}
 check_for_update_on_startup = false
 allow_login_shell = false
 
-[feedback]
-enabled = false
-
 [windows]
 sandbox_private_desktop = false
 "#,
@@ -9183,7 +8954,6 @@ sandbox_private_desktop = false
     assert_eq!(config.model_catalog, Some(catalog));
     assert!(!config.check_for_update_on_startup);
     assert!(!config.permissions.allow_login_shell);
-    assert!(!config.feedback_enabled);
     assert!(!config.permissions.windows_sandbox_private_desktop);
     assert!(config.startup_warnings.iter().any(|warning| {
         warning.contains("Configured value for `check_for_update_on_startup` is overridden")

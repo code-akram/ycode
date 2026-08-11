@@ -659,7 +659,7 @@ fn json_detail_value(key: &str, value: &str) -> String {
     {
         // Editor and pager configuration can contain arbitrary arguments or
         // inline environment assignments. Keep full values local to human output
-        // because the JSON report may be attached to feedback.
+        // because the JSON report may be shared outside the local machine.
         "set".to_string()
     } else {
         value.to_string()

@@ -8,7 +8,6 @@ use std::sync::PoisonError;
 use std::sync::Weak;
 use std::time::Duration;
 
-use codex_analytics::AnalyticsEventsClient;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionEventSink;
 use codex_extension_api::ExtensionRegistryBuilder;
@@ -1061,15 +1060,7 @@ async fn installed_tools_with_start(
 ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>> {
     let mut builder = ExtensionRegistryBuilder::<()>::new();
     let goal_service = Arc::new(GoalService::new());
-    install_with_backend(
-        &mut builder,
-        runtime,
-        AnalyticsEventsClient::disabled(),
-        /*metrics_client*/ None,
-        Weak::new(),
-        goal_service,
-        |_| true,
-    );
+    install_with_backend(&mut builder, runtime, Weak::new(), goal_service, |_| true);
     let registry = builder.build();
     let session_store = ExtensionData::new("session-1");
     let thread_store = ExtensionData::new(thread_id.to_string());
@@ -1080,7 +1071,6 @@ async fn installed_tools_with_start(
                 session_source: &session_source,
                 persistent_thread_state_available,
                 environments: &[],
-                extension_metrics: None,
                 session_store: &session_store,
                 thread_store: &thread_store,
             })
@@ -1117,8 +1107,6 @@ impl GoalExtensionHarness {
         install_with_backend(
             &mut builder,
             runtime,
-            AnalyticsEventsClient::disabled(),
-            /*metrics_client*/ None,
             Weak::new(),
             Arc::clone(&goal_service),
             |_| true,
@@ -1134,7 +1122,6 @@ impl GoalExtensionHarness {
                     session_source: &session_source,
                     persistent_thread_state_available: true,
                     environments: &[],
-                    extension_metrics: None,
                     session_store: &session_store,
                     thread_store: &thread_store,
                 })
