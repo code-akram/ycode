@@ -61,9 +61,7 @@ pub(crate) fn tool_user_shell_type(
     match user_shell.shell_type {
         crate::shell::ShellType::Zsh => codex_tools::ToolUserShellType::Zsh,
         crate::shell::ShellType::Bash => codex_tools::ToolUserShellType::Bash,
-        crate::shell::ShellType::PowerShell => codex_tools::ToolUserShellType::PowerShell,
         crate::shell::ShellType::Sh => codex_tools::ToolUserShellType::Sh,
-        crate::shell::ShellType::Cmd => codex_tools::ToolUserShellType::Cmd,
     }
 }
 

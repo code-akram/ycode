@@ -1,7 +1,6 @@
 use super::ApprovalsReviewer;
 use super::AskForApproval;
 use super::SandboxMode;
-use super::WindowsSandboxSetupMode;
 use super::shared::default_enabled;
 use crate::JsonSchema;
 use crate::TS;
@@ -379,7 +378,6 @@ pub struct ConfigRequirements {
     #[experimental("configRequirements/read.allowedApprovalsReviewers")]
     pub allowed_approvals_reviewers: Option<Vec<ApprovalsReviewer>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxMode>>,
-    pub allowed_windows_sandbox_implementations: Option<Vec<WindowsSandboxSetupMode>>,
     pub allowed_permission_profiles: Option<BTreeMap<String, bool>>,
     pub default_permissions: Option<String>,
     pub allowed_web_search_modes: Option<Vec<WebSearchMode>>,
@@ -404,7 +402,6 @@ pub struct ConfigRequirements {
     pub check_for_update_on_startup: Option<bool>,
     pub allow_login_shell: Option<bool>,
     pub feedback: Option<FeedbackRequirements>,
-    pub windows_sandbox_private_desktop: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]

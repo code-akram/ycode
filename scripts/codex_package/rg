@@ -50,30 +50,6 @@
           "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz"
         }
       ]
-    },
-    "windows-x86_64": {
-      "size": 1789611,
-      "hash": "sha256",
-      "digest": "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5",
-      "format": "zip",
-      "path": "ripgrep-15.2.0-x86_64-pc-windows-msvc/rg.exe",
-      "providers": [
-        {
-          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip"
-        }
-      ]
-    },
-    "windows-aarch64": {
-      "size": 1640124,
-      "hash": "sha256",
-      "digest": "e4abca10c3a64ebea742667dd7009449d49403db5460dd6873e389fa2945360f",
-      "format": "zip",
-      "path": "ripgrep-15.2.0-aarch64-pc-windows-msvc/rg.exe",
-      "providers": [
-        {
-          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-pc-windows-msvc.zip"
-        }
-      ]
     }
   }
 }

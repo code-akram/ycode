@@ -53,14 +53,6 @@ libc = { workspace = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.9"
 
-[target.'cfg(target_os = "windows")'.dependencies]
-winapi-util = { workspace = true }
-windows-sys = { version = "0.52", features = [
-    "Win32_Foundation",
-    "Win32_System_Com",
-    "Win32_UI_Shell",
-] }
-
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }

@@ -22,7 +22,6 @@ use std::time::Duration;
 
 use anyhow::Result;
 use portable_pty::CommandBuilder;
-#[cfg(not(windows))]
 use portable_pty::native_pty_system;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -37,18 +36,6 @@ use crate::process::SpawnedProcess;
 use crate::process::TerminalSize;
 #[cfg(unix)]
 use crate::process::exit_code_from_status;
-
-/// Returns true when ConPTY support is available (Windows only).
-#[cfg(windows)]
-pub fn conpty_supported() -> bool {
-    crate::win::conpty_supported()
-}
-
-/// Returns true when ConPTY support is available (non-Windows always true).
-#[cfg(not(windows))]
-pub fn conpty_supported() -> bool {
-    true
-}
 
 struct PtyChildTerminator {
     killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
@@ -111,15 +98,7 @@ impl ChildTerminator for RawPidTerminator {
 }
 
 fn platform_native_pty_system() -> Box<dyn portable_pty::PtySystem + Send> {
-    #[cfg(windows)]
-    {
-        Box::new(crate::win::ConPtySystem::default())
-    }
-
-    #[cfg(not(windows))]
-    {
-        native_pty_system()
-    }
+    native_pty_system()
 }
 
 /// Spawn a process attached to a PTY, preserving selected inherited file
@@ -205,11 +184,7 @@ async fn spawn_process_portable(
     let writer_handle: JoinHandle<()> = tokio::spawn({
         let writer = Arc::clone(&writer);
         async move {
-            #[cfg(windows)]
-            let mut windows_input = crate::WindowsTtyInputNormalizer::default();
             while let Some(bytes) = writer_rx.recv().await {
-                #[cfg(windows)]
-                let bytes = windows_input.normalize(&bytes);
                 let mut guard = writer.lock().await;
                 use std::io::Write;
                 let _ = guard.write_all(&bytes);
@@ -236,11 +211,7 @@ async fn spawn_process_portable(
     });
 
     let handles = PtyHandles {
-        _slave: if cfg!(windows) {
-            Some(pair.slave)
-        } else {
-            None
-        },
+        _slave: None,
         _master: PtyMasterHandle::Resizable(pair.master),
     };
 

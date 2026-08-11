@@ -48,7 +48,6 @@ pub(crate) struct CommandPopupFlags {
     pub(crate) service_tier_commands_enabled: bool,
     pub(crate) goal_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
-    pub(crate) windows_degraded_sandbox_active: bool,
     pub(crate) side_conversation_active: bool,
 }
 
@@ -62,7 +61,6 @@ impl From<CommandPopupFlags> for BuiltinCommandFlags {
             service_tier_commands_enabled: value.service_tier_commands_enabled,
             goal_command_enabled: value.goal_command_enabled,
             personality_command_enabled: value.personality_command_enabled,
-            allow_elevate_sandbox: value.windows_degraded_sandbox_active,
             side_conversation_active: value.side_conversation_active,
         }
     }
@@ -391,7 +389,7 @@ mod tests {
         );
     }
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     #[test]
     fn app_command_popup_snapshot() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
@@ -535,7 +533,6 @@ mod tests {
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,
                 personality_command_enabled: true,
-                windows_degraded_sandbox_active: false,
                 side_conversation_active: false,
             },
             Vec::new(),
@@ -562,7 +559,6 @@ mod tests {
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,
                 personality_command_enabled: false,
-                windows_degraded_sandbox_active: false,
                 side_conversation_active: false,
             },
             Vec::new(),
@@ -594,7 +590,6 @@ mod tests {
                 service_tier_commands_enabled: false,
                 goal_command_enabled: false,
                 personality_command_enabled: true,
-                windows_degraded_sandbox_active: false,
                 side_conversation_active: false,
             },
             Vec::new(),

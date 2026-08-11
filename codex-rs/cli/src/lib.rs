@@ -11,7 +11,6 @@ use std::path::PathBuf;
 
 pub use debug_sandbox::run_command_under_landlock;
 pub use debug_sandbox::run_command_under_seatbelt;
-pub use debug_sandbox::run_command_under_windows_sandbox;
 pub use login::read_access_token_from_stdin;
 pub use login::read_api_key_from_stdin;
 pub use login::run_login_status;
@@ -142,49 +141,6 @@ pub struct LandlockCommand {
     pub config_overrides: CliConfigOverrides,
 
     /// Full command args to run under the Linux sandbox.
-    #[arg(trailing_var_arg = true)]
-    pub command: Vec<String>,
-}
-
-#[derive(Debug, Parser)]
-pub struct WindowsCommand {
-    #[command(flatten)]
-    pub sandbox_state: SandboxStateArgs,
-
-    /// Named permissions profile to apply from the active configuration stack.
-    #[arg(
-        long = "permission-profile",
-        alias = "permissions-profile",
-        short = 'P',
-        value_name = "NAME"
-    )]
-    pub permissions_profile: Option<String>,
-
-    /// Layer $CODEX_HOME/<name>.config.toml on top of the base user config.
-    #[arg(long = "profile", short = 'p')]
-    pub config_profile: Option<ProfileV2Name>,
-
-    /// Working directory used for profile resolution and command execution.
-    #[arg(
-        short = 'C',
-        long = "cd",
-        value_name = "DIR",
-        requires = "permissions_profile"
-    )]
-    pub cwd: Option<PathBuf>,
-
-    /// Include managed requirements while resolving an explicit permissions profile.
-    #[arg(
-        long = "include-managed-config",
-        default_value_t = false,
-        requires = "permissions_profile"
-    )]
-    pub include_managed_config: bool,
-
-    #[clap(skip)]
-    pub config_overrides: CliConfigOverrides,
-
-    /// Full command args to run under Windows restricted token sandbox.
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
 }

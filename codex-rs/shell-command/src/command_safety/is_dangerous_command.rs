@@ -1,8 +1,5 @@
 use crate::bash::parse_shell_lc_literal_commands;
 use std::path::Path;
-#[cfg(windows)]
-#[path = "windows_dangerous_commands.rs"]
-mod windows_dangerous_commands;
 
 /// Identifies the dangerous-command rule matched by a command invocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,29 +39,7 @@ fn dangerous_command_match_with_depth(
         return Some(dangerous_match);
     }
 
-    #[cfg(windows)]
-    {
-        if windows_dangerous_commands::is_dangerous_command_windows(command) {
-            return Some(DangerousCommandMatch::Other);
-        }
-    }
-
     None
-}
-
-/// Returns the dangerous-command rule matched by tokenized PowerShell words.
-pub fn dangerous_powershell_words_match(command: &[String]) -> Option<DangerousCommandMatch> {
-    #[cfg(windows)]
-    {
-        windows_dangerous_commands::is_dangerous_powershell_words(command)
-            .then_some(DangerousCommandMatch::Other)
-    }
-
-    #[cfg(not(windows))]
-    {
-        let _ = command;
-        None
-    }
 }
 
 fn is_git_global_option_with_value(arg: &str) -> bool {
@@ -93,29 +68,10 @@ fn is_git_global_option_with_inline_value(arg: &str) -> bool {
 }
 
 pub(crate) fn executable_name_lookup_key(raw: &str) -> Option<String> {
-    #[cfg(windows)]
-    {
-        Path::new(raw)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(|name| {
-                let name = name.to_ascii_lowercase();
-                for suffix in [".exe", ".cmd", ".bat", ".com"] {
-                    if let Some(stripped) = name.strip_suffix(suffix) {
-                        return stripped.to_string();
-                    }
-                }
-                name
-            })
-    }
-
-    #[cfg(not(windows))]
-    {
-        Path::new(raw)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(std::borrow::ToOwned::to_owned)
-    }
+    Path::new(raw)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(std::borrow::ToOwned::to_owned)
 }
 
 /// Find the first matching git subcommand, skipping known global options that
@@ -321,20 +277,6 @@ mod tests {
             vec_str(&["bash", "-lc", "trap 'echo rm -rf /tmp/example' EXIT"]),
         ] {
             assert_eq!(dangerous_command_match(&command), None, "{command:?}");
-        }
-    }
-
-    #[test]
-    fn direct_powershell_words_return_other_match_on_windows() {
-        let command = vec_str(&["Remove-Item", "test", "-Force"]);
-
-        if cfg!(windows) {
-            assert_eq!(
-                dangerous_powershell_words_match(&command),
-                Some(DangerousCommandMatch::Other)
-            );
-        } else {
-            assert_eq!(dangerous_powershell_words_match(&command), None);
         }
     }
 }

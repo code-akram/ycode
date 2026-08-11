@@ -4681,30 +4681,18 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
 }
 
 #[tokio::test]
-#[cfg_attr(
-    target_os = "windows",
-    ignore = "snapshot path rendering differs on Windows"
-)]
 async fn clear_ui_after_long_transcript_snapshots_fresh_header_only() {
     let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
     assert_app_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
 }
 
 #[tokio::test]
-#[cfg_attr(
-    target_os = "windows",
-    ignore = "snapshot path rendering differs on Windows"
-)]
 async fn ctrl_l_clear_ui_after_long_transcript_reuses_clear_header_snapshot() {
     let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
     assert_app_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
 }
 
 #[tokio::test]
-#[cfg_attr(
-    target_os = "windows",
-    ignore = "snapshot path rendering differs on Windows"
-)]
 async fn clear_ui_header_shows_fast_status_for_fast_capable_models() {
     let mut app = make_test_app().await;
     app.config.cwd = test_path_buf("/tmp/project").abs();
@@ -4780,7 +4768,6 @@ async fn make_test_app() -> App {
         app_server_target: crate::AppServerTarget::Embedded,
         pending_update_action: None,
         pending_shutdown_exit_thread_id: None,
-        windows_sandbox: WindowsSandboxState::default(),
         thread_event_channels: HashMap::new(),
         thread_event_listener_tasks: HashMap::new(),
         agent_navigation: AgentNavigationState::default(),
@@ -4850,7 +4837,6 @@ async fn make_test_app_with_channels() -> (
             app_server_target: crate::AppServerTarget::Embedded,
             pending_update_action: None,
             pending_shutdown_exit_thread_id: None,
-            windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),

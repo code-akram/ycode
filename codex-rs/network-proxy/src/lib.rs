@@ -19,10 +19,6 @@ mod runtime;
 mod socks5;
 mod state;
 mod upstream;
-#[cfg(target_os = "windows")]
-mod windows_proxy_ingress;
-#[cfg(target_os = "windows")]
-mod windows_tcp_attribution;
 
 pub use attribution::PROXY_ATTRIBUTION_TOKEN_ENV_KEY;
 pub use attribution::write_attribution_frame;

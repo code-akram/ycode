@@ -19,7 +19,6 @@ impl ChatWidget {
         }
     }
 
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(crate) fn set_permission_profile_from_session_snapshot(
         &mut self,
         snapshot: PermissionProfileSnapshot,
@@ -55,18 +54,6 @@ impl ChatWidget {
         self.config.permissions.network = network;
     }
 
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub(crate) fn set_windows_sandbox_mode(&mut self, mode: Option<WindowsSandboxModeToml>) {
-        self.config.permissions.windows_sandbox_mode = mode;
-        #[cfg(target_os = "windows")]
-        self.bottom_pane
-            .set_windows_degraded_sandbox_active(matches!(
-                crate::windows_sandbox::level_from_config(&self.config),
-                WindowsSandboxLevel::RestrictedToken
-            ));
-    }
-
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     pub(crate) fn set_feature_enabled(&mut self, feature: Feature, enabled: bool) -> bool {
         if let Err(err) = self.config.features.set_enabled(feature, enabled) {
             tracing::warn!(
@@ -103,35 +90,12 @@ impl ChatWidget {
         if feature == Feature::PreventIdleSleep {
             self.turn_lifecycle.set_prevent_idle_sleep(enabled);
         }
-        #[cfg(target_os = "windows")]
-        if matches!(
-            feature,
-            Feature::WindowsSandbox | Feature::WindowsSandboxElevated
-        ) {
-            self.bottom_pane
-                .set_windows_degraded_sandbox_active(matches!(
-                    crate::windows_sandbox::level_from_config(&self.config),
-                    WindowsSandboxLevel::RestrictedToken
-                ));
-        }
         enabled
     }
 
     pub(crate) fn set_approvals_reviewer(&mut self, policy: ApprovalsReviewer) {
         self.config.approvals_reviewer = policy;
         self.refresh_status_surfaces();
-    }
-
-    pub(crate) fn set_world_writable_warning_acknowledged(&mut self, acknowledged: bool) {
-        self.config.notices.hide_world_writable_warning = Some(acknowledged);
-    }
-
-    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    pub(crate) fn world_writable_warning_hidden(&self) -> bool {
-        self.config
-            .notices
-            .hide_world_writable_warning
-            .unwrap_or(false)
     }
 
     /// Override the reasoning effort used when Plan mode is active.

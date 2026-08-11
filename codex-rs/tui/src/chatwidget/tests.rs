@@ -120,7 +120,6 @@ pub(super) use codex_config::ConstraintError;
 pub(super) use codex_config::RequirementSource;
 pub(super) use codex_config::types::ApprovalsReviewer;
 pub(super) use codex_config::types::Notifications;
-pub(super) use codex_config::types::WindowsSandboxModeToml;
 pub(super) use codex_core_plugins::OPENAI_CURATED_MARKETPLACE_NAME;
 pub(super) use codex_features::FEATURES;
 pub(super) use codex_features::Feature;
@@ -171,8 +170,6 @@ pub(super) use crossterm::event::KeyEvent;
 pub(super) use crossterm::event::KeyModifiers;
 pub(super) use insta::assert_snapshot;
 pub(super) use serde_json::json;
-#[cfg(target_os = "windows")]
-pub(super) use serial_test::serial;
 pub(super) use std::collections::HashMap;
 pub(super) use std::path::PathBuf;
 pub(super) use tempfile::NamedTempFile;

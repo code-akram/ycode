@@ -2,8 +2,6 @@
 
 mod ipc;
 mod prompt;
-#[cfg(windows)]
-mod windows_pipe;
 
 pub(crate) use ipc::fetch_ide_context;
 pub(crate) use prompt::apply_ide_context_to_user_input;

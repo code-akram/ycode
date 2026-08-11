@@ -38,7 +38,6 @@ use toml::Value as TomlValue;
 
 use crate::LandlockCommand;
 use crate::SeatbeltCommand;
-use crate::WindowsCommand;
 use crate::exit_status::handle_exit_status;
 
 #[cfg(target_os = "macos")]
@@ -128,47 +127,10 @@ pub async fn run_command_under_landlock(
     .await
 }
 
-pub async fn run_command_under_windows_sandbox(
-    command: WindowsCommand,
-    codex_linux_sandbox_exe: Option<PathBuf>,
-    loader_overrides: LoaderOverrides,
-) -> anyhow::Result<()> {
-    let WindowsCommand {
-        sandbox_state,
-        permissions_profile,
-        config_profile: _,
-        cwd,
-        include_managed_config,
-        config_overrides,
-        command,
-    } = command;
-    let managed_requirements_mode = ManagedRequirementsMode::for_profile_invocation(
-        &permissions_profile,
-        include_managed_config,
-    );
-    run_command_under_sandbox(
-        DebugSandboxConfigOptions {
-            sandbox_state,
-            permissions_profile,
-            cwd,
-            managed_requirements_mode,
-            loader_overrides,
-        },
-        command,
-        config_overrides,
-        codex_linux_sandbox_exe,
-        SandboxType::Windows,
-        /*log_denials*/ false,
-        &[],
-    )
-    .await
-}
-
 enum SandboxType {
     #[cfg(target_os = "macos")]
     Seatbelt,
     Landlock,
-    Windows,
 }
 
 #[derive(Debug)]
@@ -250,12 +212,10 @@ async fn run_command_under_sandbox(
     // In practice, this should be `std::env::current_dir()` because this CLI
     // does not support `--cwd`, but let's use the config value for consistency.
     let cwd = config.cwd.clone();
-    // Non-Windows sandbox launchers still use `sandbox_policy_cwd` for any
+    // Sandbox launchers still use `sandbox_policy_cwd` for any
     // remaining cwd-dependent policy resolution. `:workspace_roots` entries in
     // the effective profile have already been materialized from config roots.
     let sandbox_policy_cwd = cwd.clone();
-    #[cfg(target_os = "windows")]
-    let workspace_roots = config.effective_workspace_roots();
 
     let env = create_env(
         &config.permissions.shell_environment_policy,
@@ -314,26 +274,6 @@ async fn run_command_under_sandbox(
             )
             .await?;
             handle_exit_status(child.wait().await?);
-        }
-    }
-
-    // Special-case Windows sandbox: execute and exit the process to emulate inherited stdio.
-    if let SandboxType::Windows = sandbox_type {
-        #[cfg(target_os = "windows")]
-        {
-            run_command_under_windows_session(
-                &config,
-                &permission_profile,
-                command,
-                cwd,
-                workspace_roots,
-                env,
-            )
-            .await;
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            anyhow::bail!("Windows sandbox is only available on Windows");
         }
     }
 
@@ -437,9 +377,6 @@ async fn run_command_under_sandbox(
             )
             .await?
         }
-        SandboxType::Windows => {
-            unreachable!("Windows sandbox should have been handled above");
-        }
     };
 
     #[cfg(target_os = "macos")]
@@ -463,57 +400,6 @@ async fn run_command_under_sandbox(
     }
 
     handle_exit_status(status);
-}
-
-#[cfg(target_os = "windows")]
-async fn run_command_under_windows_session(
-    config: &Config,
-    permission_profile: &PermissionProfile,
-    command: Vec<String>,
-    cwd: AbsolutePathBuf,
-    workspace_roots: Vec<AbsolutePathBuf>,
-    env: std::collections::HashMap<String, String>,
-) -> ! {
-    use codex_core::windows_sandbox::WindowsSandboxLevelExt;
-    use codex_protocol::config_types::WindowsSandboxLevel;
-    use codex_windows_sandbox::WindowsSandboxProxySettingsMode;
-    use codex_windows_sandbox::WindowsSandboxSessionRequest;
-    use codex_windows_sandbox::spawn_windows_sandbox_session_for_level;
-
-    let empty_paths: &[AbsolutePathBuf] = &[];
-    let spawned = spawn_windows_sandbox_session_for_level(WindowsSandboxSessionRequest {
-        permission_profile,
-        workspace_roots: workspace_roots.as_slice(),
-        codex_home: config.codex_home.as_path(),
-        command,
-        cwd: cwd.as_path(),
-        env_map: env,
-        windows_sandbox_level: WindowsSandboxLevel::from_config(config),
-        proxy_settings_mode: WindowsSandboxProxySettingsMode::Reconcile,
-        proxy_enforced: false,
-        network_proxy_restricting_sid: None,
-        timeout_ms: None,
-        read_roots_override: None,
-        read_roots_include_platform_defaults: false,
-        write_roots_override: None,
-        deny_read_paths_override: empty_paths,
-        deny_write_paths_override: empty_paths,
-        tty: false,
-        stdin_open: true,
-        use_private_desktop: config.permissions.windows_sandbox_private_desktop,
-    })
-    .await;
-
-    let spawned = match spawned {
-        Ok(spawned) => spawned,
-        Err(err) => {
-            eprintln!("windows sandbox failed: {err}");
-            std::process::exit(1);
-        }
-    };
-
-    let exit_code = codex_windows_sandbox::forward_sandbox_session_stdio(spawned).await;
-    std::process::exit(exit_code);
 }
 
 async fn spawn_debug_sandbox_child(

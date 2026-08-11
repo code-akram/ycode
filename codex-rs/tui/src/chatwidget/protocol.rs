@@ -225,8 +225,6 @@ impl ChatWidget {
             | ServerNotification::ThreadRealtimeSdp(_)
             | ServerNotification::ThreadRealtimeTranscriptDelta(_)
             | ServerNotification::ThreadRealtimeTranscriptDone(_)
-            | ServerNotification::WindowsWorldWritableWarning(_)
-            | ServerNotification::WindowsSandboxSetupCompleted(_)
             | ServerNotification::AccountLoginCompleted(_) => {}
             ServerNotification::ContextCompacted(_) => {}
         }

@@ -6,14 +6,6 @@
 
 use super::*;
 use codex_config::ConfigLayerSource;
-#[cfg(target_os = "windows")]
-use codex_utils_approval_presets::ApprovalPreset;
-
-#[cfg(target_os = "windows")]
-pub(super) struct WindowsSetupPermissions {
-    pub(super) permission_profile: PermissionProfile,
-    pub(super) workspace_roots: Vec<AbsolutePathBuf>,
-}
 
 async fn build_config_on_runtime_worker(
     builder: ConfigBuilder,
@@ -90,29 +82,6 @@ impl App {
             format!("Failed to rebuild config for permission profile {profile_id}"),
         )
         .await
-    }
-
-    #[cfg(target_os = "windows")]
-    pub(super) async fn windows_setup_permissions(
-        &self,
-        preset: &ApprovalPreset,
-        profile_selection: Option<&PermissionProfileSelection>,
-    ) -> Result<WindowsSetupPermissions> {
-        match profile_selection {
-            Some(selection) => {
-                let selected_config = self
-                    .rebuild_config_for_permission_profile(selection.profile_id.as_str())
-                    .await?;
-                Ok(WindowsSetupPermissions {
-                    permission_profile: selected_config.permissions.permission_profile().clone(),
-                    workspace_roots: selected_config.effective_workspace_roots(),
-                })
-            }
-            None => Ok(WindowsSetupPermissions {
-                permission_profile: preset.permission_profile.clone(),
-                workspace_roots: self.config.effective_workspace_roots(),
-            }),
-        }
     }
 
     pub(super) async fn apply_permission_profile_selection(
@@ -398,12 +367,6 @@ impl App {
 
         let auto_review_preset = auto_review_mode();
         let mut next_config = self.config.clone();
-        let windows_sandbox_changed = updates.iter().any(|(feature, _)| {
-            matches!(
-                feature,
-                Feature::WindowsSandbox | Feature::WindowsSandboxElevated
-            )
-        });
         let mut approval_policy_override = None;
         let mut approvals_reviewer_override = None;
         let mut permission_profile_override = None;
@@ -543,9 +506,6 @@ impl App {
                     &feature_updates_to_apply,
                 )
                 .await;
-                if windows_sandbox_changed {
-                    self.propagate_windows_sandbox_turn_context();
-                }
             }
             return;
         }
@@ -628,10 +588,6 @@ impl App {
                 self.note_active_thread_outbound_op(op).await;
                 self.refresh_pending_thread_approvals().await;
             }
-        }
-
-        if windows_sandbox_changed {
-            self.propagate_windows_sandbox_turn_context();
         }
 
         if let Some(label) = permissions_history_label {
@@ -1038,56 +994,6 @@ impl App {
             .set_memory_settings(use_memories, generate_memories);
         true
     }
-
-    #[cfg(target_os = "windows")]
-    pub(super) async fn sync_windows_sandbox_after_overridden_write(
-        &mut self,
-        app_server: &mut AppServerSession,
-        write_response: &ConfigWriteResponse,
-    ) {
-        let message = overridden_write_message(write_response);
-        tracing::warn!(
-            message,
-            "Windows sandbox config write was overridden by effective config"
-        );
-        self.chat_widget.add_error_message(format!(
-            "Windows sandbox changes were saved but not applied: {message}"
-        ));
-        let Some(effective_config) = self
-            .read_effective_config_after_overridden_write(app_server, "Windows sandbox changes")
-            .await
-        else {
-            return;
-        };
-        let Some(mode) = windows_sandbox_mode_from_effective_config(&effective_config) else {
-            return;
-        };
-        self.config.permissions.windows_sandbox_mode = Some(mode);
-        self.chat_widget.set_windows_sandbox_mode(Some(mode));
-        self.propagate_windows_sandbox_turn_context();
-    }
-
-    fn propagate_windows_sandbox_turn_context(&self) {
-        #[cfg(target_os = "windows")]
-        {
-            let windows_sandbox_level = crate::windows_sandbox::level_from_config(&self.config);
-            self.app_event_tx
-                .send(AppEvent::CodexOp(AppCommand::override_turn_context(
-                    /*cwd*/ None,
-                    /*approval_policy*/ None,
-                    /*approvals_reviewer*/ None,
-                    /*permission_profile*/ None,
-                    /*active_permission_profile*/ None,
-                    Some(windows_sandbox_level),
-                    /*model*/ None,
-                    /*effort*/ None,
-                    /*summary*/ None,
-                    /*service_tier*/ None,
-                    /*collaboration_mode*/ None,
-                    /*personality*/ None,
-                )));
-        }
-    }
 }
 
 fn overridden_write_message(write_response: &ConfigWriteResponse) -> &str {
@@ -1143,23 +1049,6 @@ fn memories_from_effective_config(effective_config: &ConfigReadResponse) -> Opti
 }
 
 fn features_toml_from_json(value: &serde_json::Value) -> Option<FeaturesToml> {
-    serde_json::from_value(value.clone()).ok()
-}
-
-#[cfg(target_os = "windows")]
-fn windows_sandbox_mode_from_effective_config(
-    effective_config: &ConfigReadResponse,
-) -> Option<codex_config::types::WindowsSandboxModeToml> {
-    let root_windows = effective_config
-        .config
-        .additional
-        .get("windows")
-        .and_then(windows_toml_from_json);
-    root_windows.and_then(|windows| windows.sandbox)
-}
-
-#[cfg(target_os = "windows")]
-fn windows_toml_from_json(value: &serde_json::Value) -> Option<WindowsToml> {
     serde_json::from_value(value.clone()).ok()
 }
 

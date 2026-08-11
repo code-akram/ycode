@@ -24,7 +24,6 @@ use super::onboarding_screen::StepState;
 pub(crate) struct TrustDirectoryWidget {
     pub cwd: PathBuf,
     pub trust_target: PathBuf,
-    pub show_windows_create_sandbox_hint: bool,
     pub should_quit: bool,
     pub selection: Option<TrustDirectorySelection>,
     pub highlighted: TrustDirectorySelection,
@@ -110,11 +109,7 @@ impl WidgetRef for &TrustDirectoryWidget {
             Line::from(vec![
                 "Press ".dim(),
                 keys::CONFIRM[0].into(),
-                if self.show_windows_create_sandbox_hint {
-                    " to continue and create a sandbox...".dim()
-                } else {
-                    " to continue".dim()
-                },
+                " to continue".dim(),
             ])
             .inset(Insets::tlbr(
                 /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
@@ -195,7 +190,6 @@ mod tests {
         TrustDirectoryWidget {
             cwd: PathBuf::from("/workspace/project"),
             trust_target: PathBuf::from("/workspace/project"),
-            show_windows_create_sandbox_hint: false,
             should_quit: false,
             selection: None,
             highlighted: TrustDirectorySelection::Trust,
@@ -208,7 +202,6 @@ mod tests {
         let mut widget = TrustDirectoryWidget {
             cwd: PathBuf::from("."),
             trust_target: PathBuf::from("."),
-            show_windows_create_sandbox_hint: false,
             should_quit: false,
             selection: None,
             highlighted: TrustDirectorySelection::Quit,

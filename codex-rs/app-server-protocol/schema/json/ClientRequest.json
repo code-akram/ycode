@@ -5298,34 +5298,6 @@
           "type": "object"
         }
       ]
-    },
-    "WindowsSandboxSetupMode": {
-      "enum": [
-        "elevated",
-        "unelevated"
-      ],
-      "type": "string"
-    },
-    "WindowsSandboxSetupStartParams": {
-      "properties": {
-        "cwd": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "mode": {
-          "$ref": "#/definitions/WindowsSandboxSetupMode"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "type": "object"
     }
   },
   "description": "Request from the client to the server.",
@@ -7009,53 +6981,6 @@
         "params"
       ],
       "title": "McpServer/tool/callRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "windowsSandbox/setupStart"
-          ],
-          "title": "WindowsSandbox/setupStartRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "$ref": "#/definitions/WindowsSandboxSetupStartParams"
-        }
-      },
-      "required": [
-        "id",
-        "method",
-        "params"
-      ],
-      "title": "WindowsSandbox/setupStartRequest",
-      "type": "object"
-    },
-    {
-      "properties": {
-        "id": {
-          "$ref": "#/definitions/RequestId"
-        },
-        "method": {
-          "enum": [
-            "windowsSandbox/readiness"
-          ],
-          "title": "WindowsSandbox/readinessRequestMethod",
-          "type": "string"
-        },
-        "params": {
-          "type": "null"
-        }
-      },
-      "required": [
-        "id",
-        "method"
-      ],
-      "title": "WindowsSandbox/readinessRequest",
       "type": "object"
     },
     {

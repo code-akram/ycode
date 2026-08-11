@@ -27,7 +27,6 @@ async fn approval_key_uses_path_uri_and_includes_environment_id() {
                 ),
             },
         ),
-        shell_type: None,
         hook_command: "echo hello".to_string(),
         cwd: cwd.clone(),
         timeout_ms: None,

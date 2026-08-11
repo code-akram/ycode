@@ -29,22 +29,6 @@ impl Shell {
                     command.to_string(),
                 ]
             }
-            ShellType::PowerShell => {
-                let mut args = vec![self.shell_path.to_string_lossy().to_string()];
-                if !use_login_shell {
-                    args.push("-NoProfile".to_string());
-                }
-
-                args.push("-Command".to_string());
-                args.push(command.to_string());
-                args
-            }
-            ShellType::Cmd => {
-                let mut args = vec![self.shell_path.to_string_lossy().to_string()];
-                args.push("/c".to_string());
-                args.push(command.to_string());
-                args
-            }
         }
     }
 }
@@ -63,9 +47,7 @@ impl Shell {
         let shell_type = match shell_info.name.as_str() {
             "zsh" => ShellType::Zsh,
             "bash" => ShellType::Bash,
-            "powershell" => ShellType::PowerShell,
             "sh" => ShellType::Sh,
-            "cmd" => ShellType::Cmd,
             name => anyhow::bail!("unknown environment shell `{name}`"),
         };
 

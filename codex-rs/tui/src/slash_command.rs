@@ -17,10 +17,6 @@ pub enum SlashCommand {
     Permissions,
     Keymap,
     Vim,
-    #[strum(serialize = "setup-default-sandbox")]
-    ElevateSandbox,
-    #[strum(serialize = "sandbox-add-read-dir")]
-    SandboxReadRoot,
     Experimental,
     #[strum(to_string = "approve")]
     AutoReview,
@@ -127,10 +123,6 @@ impl SlashCommand {
             SlashCommand::Permissions => "choose what Codex is allowed to do",
             SlashCommand::Keymap => "remap TUI shortcuts",
             SlashCommand::Vim => "toggle Vim mode for the composer",
-            SlashCommand::ElevateSandbox => "set up elevated agent sandbox",
-            SlashCommand::SandboxReadRoot => {
-                "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>"
-            }
             SlashCommand::Experimental => "toggle experimental features",
             SlashCommand::AutoReview => "approve one retry of a recent auto-review denial",
             SlashCommand::Memories => "configure memory use and generation",
@@ -169,7 +161,6 @@ impl SlashCommand {
                 | SlashCommand::Side
                 | SlashCommand::Btw
                 | SlashCommand::Resume
-                | SlashCommand::SandboxReadRoot
         )
     }
 
@@ -198,8 +189,6 @@ impl SlashCommand {
             | SlashCommand::Compact
             | SlashCommand::Keymap
             | SlashCommand::Vim
-            | SlashCommand::ElevateSandbox
-            | SlashCommand::SandboxReadRoot
             | SlashCommand::Experimental
             | SlashCommand::Memories
             | SlashCommand::Import
@@ -248,9 +237,8 @@ impl SlashCommand {
 
     fn is_visible(self) -> bool {
         match self {
-            SlashCommand::SandboxReadRoot => cfg!(target_os = "windows"),
             SlashCommand::Copy => !cfg!(target_os = "android"),
-            SlashCommand::App => cfg!(any(target_os = "macos", target_os = "windows")),
+            SlashCommand::App => cfg!(target_os = "macos"),
             SlashCommand::Rollout | SlashCommand::TestApproval => cfg!(debug_assertions),
             _ => true,
         }

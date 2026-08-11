@@ -17,7 +17,6 @@ use crate::legacy_core::config::TerminalResizeReflowConfig;
 use crate::legacy_core::config::TerminalResizeReflowMaxRows;
 
 const VSCODE_RESIZE_REFLOW_MAX_ROWS: usize = 1_000;
-const WINDOWS_TERMINAL_RESIZE_REFLOW_MAX_ROWS: usize = 9_001;
 const WEZTERM_RESIZE_REFLOW_MAX_ROWS: usize = 3_500;
 const ALACRITTY_RESIZE_REFLOW_MAX_ROWS: usize = 10_000;
 
@@ -59,10 +58,10 @@ fn auto_resize_reflow_max_rows(
 
     match terminal_name {
         TerminalName::VsCode => VSCODE_RESIZE_REFLOW_MAX_ROWS,
-        TerminalName::WindowsTerminal => WINDOWS_TERMINAL_RESIZE_REFLOW_MAX_ROWS,
         TerminalName::WezTerm => WEZTERM_RESIZE_REFLOW_MAX_ROWS,
         TerminalName::Alacritty => ALACRITTY_RESIZE_REFLOW_MAX_ROWS,
         TerminalName::AppleTerminal
+        | TerminalName::WindowsTerminal
         | TerminalName::Ghostty
         | TerminalName::Iterm2
         | TerminalName::WarpTerminal
@@ -94,10 +93,6 @@ mod tests {
     fn auto_resize_reflow_max_rows_uses_terminal_defaults() {
         let cases = [
             (TerminalName::VsCode, VSCODE_RESIZE_REFLOW_MAX_ROWS),
-            (
-                TerminalName::WindowsTerminal,
-                WINDOWS_TERMINAL_RESIZE_REFLOW_MAX_ROWS,
-            ),
             (TerminalName::WezTerm, WEZTERM_RESIZE_REFLOW_MAX_ROWS),
             (TerminalName::Alacritty, ALACRITTY_RESIZE_REFLOW_MAX_ROWS),
             (

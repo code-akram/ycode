@@ -43,9 +43,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use supports_color::Stream;
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 mod app_cmd;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 mod desktop_app;
 mod doctor;
 mod exec_server_telemetry;
@@ -53,11 +53,7 @@ mod marketplace_cmd;
 mod mcp_cmd;
 mod plugin_cmd;
 mod remote_control_cmd;
-#[cfg(target_os = "windows")]
-mod sandbox_setup;
 mod state_db_recovery;
-#[cfg(not(windows))]
-mod wsl_paths;
 
 use crate::mcp_cmd::McpCli;
 use crate::plugin_cmd::PluginCli;
@@ -155,7 +151,7 @@ enum Subcommand {
     RemoteControl(RemoteControlCommand),
 
     /// Launch the Desktop app (opens the app installer if missing).
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     App(app_cmd::AppCommand),
 
     /// Generate shell completion scripts.
@@ -426,13 +422,10 @@ impl clap::FromArgMatches for SessionTuiCli {
 type HostSandboxArgs = codex_cli::SeatbeltCommand;
 #[cfg(target_os = "linux")]
 type HostSandboxArgs = codex_cli::LandlockCommand;
-#[cfg(target_os = "windows")]
-type HostSandboxArgs = codex_cli::WindowsCommand;
-
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 type HostSandboxArgs = UnsupportedSandboxArgs;
 
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 #[derive(Debug, Parser)]
 struct UnsupportedSandboxArgs {
     /// Layer $CODEX_HOME/<name>.config.toml on top of the base user config.
@@ -782,36 +775,8 @@ fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
     let cmd_str = action.command_str();
     println!("Updating Codex via `{cmd_str}`...");
 
-    let status = {
-        #[cfg(windows)]
-        {
-            if action == UpdateAction::StandaloneWindows {
-                let (cmd, args) = action.command_args();
-                // Run the standalone PowerShell installer with PowerShell
-                // itself. Routing this through `cmd.exe /C` would parse
-                // PowerShell metacharacters like `|` before PowerShell sees
-                // the installer command.
-                std::process::Command::new(cmd).args(args).status()?
-            } else {
-                // On Windows, run via cmd.exe so .CMD/.BAT are correctly resolved (PATHEXT semantics).
-                std::process::Command::new("cmd")
-                    .args(["/C", &cmd_str])
-                    .status()?
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            let (cmd, args) = action.command_args();
-            let command_path = crate::wsl_paths::normalize_for_wsl(cmd);
-            let normalized_args: Vec<String> = args
-                .iter()
-                .map(crate::wsl_paths::normalize_for_wsl)
-                .collect();
-            std::process::Command::new(&command_path)
-                .args(&normalized_args)
-                .status()?
-        }
-    };
+    let (cmd, args) = action.command_args();
+    let status = std::process::Command::new(cmd).args(args).status()?;
     if !status.success() {
         anyhow::bail!("`{cmd_str}` failed with status {status}");
     }
@@ -1274,7 +1239,7 @@ async fn cli_main(
             )
             .await?;
         }
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         Some(Subcommand::App(app_cli)) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -1487,20 +1452,6 @@ async fn cli_main(
                 &mut sandbox_cli.config_overrides,
                 root_config_overrides.clone(),
             );
-            #[cfg(target_os = "windows")]
-            if let Some(setup_cli) = sandbox_setup::parse_setup_command(&sandbox_cli.command)? {
-                reject_remote_mode_for_subcommand(
-                    root_remote.as_deref(),
-                    root_remote_auth_token_env.as_deref(),
-                    "sandbox setup",
-                )?;
-                let cli_overrides = sandbox_cli
-                    .config_overrides
-                    .parse_overrides()
-                    .map_err(anyhow::Error::msg)?;
-                sandbox_setup::run(setup_cli, config_profile.cloned(), cli_overrides).await?;
-                return Ok(());
-            }
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
                 root_remote_auth_token_env.as_deref(),
@@ -1521,14 +1472,7 @@ async fn cli_main(
                 loader_overrides,
             )
             .await?;
-            #[cfg(target_os = "windows")]
-            codex_cli::run_command_under_windows_sandbox(
-                sandbox_cli,
-                arg0_paths.codex_linux_sandbox_exe.clone(),
-                loader_overrides,
-            )
-            .await?;
-            #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
             {
                 let _ = loader_overrides;
                 anyhow::bail!("`codex sandbox` is not supported on this operating system");
@@ -2245,7 +2189,7 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::RemoteControl(remote_control)) => Some(remote_control.subcommand_name()),
         Some(Subcommand::Mcp(_)) => Some("mcp"),
         Some(Subcommand::Plugin(_)) => Some("plugin"),
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         Some(Subcommand::App(_)) => Some("app"),
         Some(Subcommand::Login(_)) => Some("login"),
         Some(Subcommand::Logout(_)) => Some("logout"),
@@ -3329,7 +3273,7 @@ mod tests {
         );
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_parses_permission_profile() {
         let cli = MultitoolCli::try_parse_from([
@@ -3350,7 +3294,7 @@ mod tests {
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_parses_legacy_permissions_profile_alias() {
         let cli = MultitoolCli::try_parse_from([
@@ -3371,7 +3315,7 @@ mod tests {
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_help_only_shows_singular_permission_profile() {
         let help = help_from_args(&["codex", "sandbox", "--help"]);
@@ -3379,7 +3323,7 @@ mod tests {
         assert!(!help.contains("--permissions-profile"), "{help}");
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_parses_permissions_profile_short_alias() {
         let cli =
@@ -3394,7 +3338,7 @@ mod tests {
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_parses_config_profile() {
         let cli =
@@ -3409,7 +3353,7 @@ mod tests {
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn sandbox_rejects_explicit_profile_controls_without_profile() {
         let err = MultitoolCli::try_parse_from(["codex", "sandbox", "-C", "/tmp"])

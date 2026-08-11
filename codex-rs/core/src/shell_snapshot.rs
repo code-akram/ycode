@@ -126,10 +126,7 @@ impl ShellSnapshot {
         state_db: Option<StateDbHandle>,
     ) -> std::result::Result<ShellSnapshotFile, &'static str> {
         // File to store the snapshot
-        let extension = match shell.shell_type {
-            ShellType::PowerShell => "ps1",
-            _ => "sh",
-        };
+        let extension = "sh";
         let nonce = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
@@ -203,9 +200,6 @@ async fn write_shell_snapshot(
     output_path: &AbsolutePathBuf,
     cwd: &AbsolutePathBuf,
 ) -> Result<()> {
-    if shell_type == ShellType::PowerShell || shell_type == ShellType::Cmd {
-        bail!("Shell snapshot not supported yet for {shell_type:?}");
-    }
     let shell = get_shell(shell_type, /*path*/ None)
         .with_context(|| format!("No available shell for {shell_type:?}"))?;
 
@@ -233,8 +227,6 @@ async fn capture_snapshot(shell: &Shell, cwd: &AbsolutePathBuf) -> Result<String
         ShellType::Zsh => run_shell_script(shell, &zsh_snapshot_script(), cwd).await,
         ShellType::Bash => run_shell_script(shell, &bash_snapshot_script(), cwd).await,
         ShellType::Sh => run_shell_script(shell, &sh_snapshot_script(), cwd).await,
-        ShellType::PowerShell => run_shell_script(shell, powershell_snapshot_script(), cwd).await,
-        ShellType::Cmd => bail!("Shell snapshotting is not yet supported for {shell_type:?}"),
     }
 }
 
@@ -479,31 +471,6 @@ fi
     script.replace("EXCLUDED_EXPORTS", &excluded)
 }
 
-fn powershell_snapshot_script() -> &'static str {
-    r##"$ErrorActionPreference = 'Stop'
-Write-Output '# Snapshot file'
-Write-Output '# Unset all aliases to avoid conflicts with functions'
-Write-Output 'Remove-Item Alias:* -ErrorAction SilentlyContinue'
-Write-Output '# Functions'
-Get-ChildItem Function: | ForEach-Object {
-    "function {0} {{`n{1}`n}}" -f $_.Name, $_.Definition
-}
-Write-Output ''
-$aliases = Get-Alias
-Write-Output ("# aliases " + $aliases.Count)
-$aliases | ForEach-Object {
-    "Set-Alias -Name {0} -Value {1}" -f $_.Name, $_.Definition
-}
-Write-Output ''
-$envVars = Get-ChildItem Env:
-Write-Output ("# exports " + $envVars.Count)
-$envVars | ForEach-Object {
-    $escaped = $_.Value -replace "'", "''"
-    "`$env:{0}='{1}'" -f $_.Name, $escaped
-}
-"##
-}
-
 /// Removes shell snapshots that either lack a matching session rollout file or
 /// whose rollouts have not been updated within the retention window.
 /// The active session id is exempt from cleanup.
@@ -579,7 +546,7 @@ async fn remove_snapshot_file(path: &Path) {
 fn snapshot_session_id_from_file_name(file_name: &str) -> Option<&str> {
     let (stem, extension) = file_name.rsplit_once('.')?;
     match extension {
-        "sh" | "ps1" => Some(
+        "sh" => Some(
             stem.split_once('.')
                 .map_or(stem, |(session_id, _generation)| session_id),
         ),

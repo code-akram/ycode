@@ -74,11 +74,7 @@ fn shell_type_is_derived_from_model_and_feature_gates() {
     );
 
     features.enable(Feature::UnifiedExec);
-    let expected_unified_exec = if codex_utils_pty::conpty_supported() {
-        ConfigShellToolType::UnifiedExec
-    } else {
-        ConfigShellToolType::ShellCommand
-    };
+    let expected_unified_exec = ConfigShellToolType::UnifiedExec;
     assert_eq!(
         shell_type_for_model_and_features(&model, &features),
         expected_unified_exec

@@ -101,7 +101,7 @@ jobs:
       # Speed up repeated builds across CI runs by caching compiled objects, except on
       # arm64 macOS runners cross-targeting x86_64 where ring/cc-rs can produce
       # mixed-architecture archives under sccache.
-      USE_SCCACHE: ${{ (startsWith(matrix.runner, 'windows') || (matrix.runner == 'macos-15-xlarge' && matrix.target == 'x86_64-apple-darwin')) && 'false' || 'true' }}
+      USE_SCCACHE: ${{ (matrix.runner == 'macos-15-xlarge' && matrix.target == 'x86_64-apple-darwin') && 'false' || 'true' }}
       CARGO_INCREMENTAL: "0"
       SCCACHE_CACHE_SIZE: 10G
 
@@ -139,19 +139,6 @@ jobs:
             runs_on:
               group: ${{ github.event.repository.name }}-runners
               labels: ${{ github.event.repository.name }}-linux-arm64
-          - runner: windows-x64
-            target: x86_64-pc-windows-msvc
-            profile: dev
-            runs_on:
-              group: ${{ github.event.repository.name }}-runners
-              labels: ${{ github.event.repository.name }}-windows-x64
-          - runner: windows-arm64
-            target: aarch64-pc-windows-msvc
-            profile: dev
-            runs_on:
-              group: ${{ github.event.repository.name }}-runners
-              labels: ${{ github.event.repository.name }}-windows-arm64
-
           # Also run representative release builds on Mac and Linux because
           # there could be release-only build errors we want to catch.
           # Hopefully this also pre-populates the build cache to speed up
@@ -171,19 +158,6 @@ jobs:
             runs_on:
               group: ${{ github.event.repository.name }}-runners
               labels: ${{ github.event.repository.name }}-linux-arm64
-          - runner: windows-x64
-            target: x86_64-pc-windows-msvc
-            profile: release
-            runs_on:
-              group: ${{ github.event.repository.name }}-runners
-              labels: ${{ github.event.repository.name }}-windows-x64
-          - runner: windows-arm64
-            target: aarch64-pc-windows-msvc
-            profile: release
-            runs_on:
-              group: ${{ github.event.repository.name }}-runners
-              labels: ${{ github.event.repository.name }}-windows-arm64
-
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -435,36 +409,6 @@ jobs:
       use_sccache: true
     secrets: inherit
 
-  tests_windows_x64:
-    name: Tests — windows-x64 - x86_64-pc-windows-msvc
-    uses: ./.github/workflows/rust-ci-full-nextest-platform.yml
-    with:
-      runner: windows-x64
-      runner_group: ${{ github.event.repository.name }}-runners
-      runner_labels: ${{ github.event.repository.name }}-windows-x64
-      target: x86_64-pc-windows-msvc
-      profile: ci-test
-      artifact_id: windows-x64
-      test_threads: 8
-    secrets: inherit
-
-  tests_windows_arm64:
-    name: Tests — windows-arm64 - aarch64-pc-windows-msvc
-    uses: ./.github/workflows/rust-ci-full-nextest-platform.yml
-    with:
-      runner: windows-arm64
-      runner_group: ${{ github.event.repository.name }}-runners
-      runner_labels: ${{ github.event.repository.name }}-windows-arm64
-      archive_runner: windows-x64
-      archive_runner_group: ${{ github.event.repository.name }}-runners
-      archive_runner_labels: ${{ github.event.repository.name }}-windows-x64
-      target: aarch64-pc-windows-msvc
-      profile: ci-test
-      artifact_id: windows-arm64
-      test_threads: 8
-      use_sccache: true
-    secrets: inherit
-
   # --- Gatherer job for the full post-merge workflow --------------------------
   results:
     name: Full CI results
@@ -477,8 +421,6 @@ jobs:
         tests_macos_aarch64,
         tests_linux_x64_remote,
         tests_linux_arm64,
-        tests_windows_x64,
-        tests_windows_arm64,
       ]
     if: always()
     runs-on: ubuntu-24.04
@@ -493,8 +435,6 @@ jobs:
           echo "test macos : ${{ needs.tests_macos_aarch64.result }}"
           echo "test linux : ${{ needs.tests_linux_x64_remote.result }}"
           echo "test arm64 : ${{ needs.tests_linux_arm64.result }}"
-          echo "test winx64: ${{ needs.tests_windows_x64.result }}"
-          echo "test winarm: ${{ needs.tests_windows_arm64.result }}"
           [[ '${{ needs.argument_comment_lint_package.result }}' == 'success' ]] || { echo 'argument_comment_lint_package failed'; exit 1; }
           [[ '${{ needs.general.result }}' == 'success' ]] || { echo 'general failed'; exit 1; }
           [[ '${{ needs.cargo_shear.result }}' == 'success' ]] || { echo 'cargo_shear failed'; exit 1; }
@@ -502,8 +442,6 @@ jobs:
           [[ '${{ needs.tests_macos_aarch64.result }}' == 'success' ]] || { echo 'tests_macos_aarch64 failed'; exit 1; }
           [[ '${{ needs.tests_linux_x64_remote.result }}' == 'success' ]] || { echo 'tests_linux_x64_remote failed'; exit 1; }
           [[ '${{ needs.tests_linux_arm64.result }}' == 'success' ]] || { echo 'tests_linux_arm64 failed'; exit 1; }
-          [[ '${{ needs.tests_windows_x64.result }}' == 'success' ]] || { echo 'tests_windows_x64 failed'; exit 1; }
-          [[ '${{ needs.tests_windows_arm64.result }}' == 'success' ]] || { echo 'tests_windows_arm64 failed'; exit 1; }
 
       - name: sccache summary note
         if: always()

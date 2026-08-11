@@ -46,41 +46,21 @@ def build_package_dir(
     path_dir.mkdir()
 
     entrypoint_name = variant.entrypoint_name(spec)
-    copy_executable(
-        inputs.entrypoint_bin,
-        bin_dir / entrypoint_name,
-        is_windows=spec.is_windows,
-    )
+    copy_executable(inputs.entrypoint_bin, bin_dir / entrypoint_name)
     copy_executable(
         inputs.code_mode_host_bin,
-        bin_dir / f"codex-code-mode-host{spec.exe_suffix}",
-        is_windows=spec.is_windows,
+        bin_dir / "codex-code-mode-host",
     )
-    copy_executable(inputs.rg_bin, path_dir / spec.rg_name, is_windows=spec.is_windows)
+    copy_executable(inputs.rg_bin, path_dir / spec.rg_name)
 
     if inputs.zsh_bin is not None:
         copy_executable(
             inputs.zsh_bin,
             resources_dir / ZSH_RESOURCE_PATH,
-            is_windows=False,
         )
 
     if inputs.bwrap_bin is not None:
-        copy_executable(inputs.bwrap_bin, resources_dir / "bwrap", is_windows=False)
-
-    if inputs.codex_command_runner_bin is not None:
-        copy_executable(
-            inputs.codex_command_runner_bin,
-            resources_dir / "codex-command-runner.exe",
-            is_windows=True,
-        )
-
-    if inputs.codex_windows_sandbox_setup_bin is not None:
-        copy_executable(
-            inputs.codex_windows_sandbox_setup_bin,
-            resources_dir / "codex-windows-sandbox-setup.exe",
-            is_windows=True,
-        )
+        copy_executable(inputs.bwrap_bin, resources_dir / "bwrap")
 
     metadata = {
         "layoutVersion": LAYOUT_VERSION,
@@ -135,7 +115,7 @@ def validate_package_dir(
 
     required_files = [
         Path("bin") / variant.entrypoint_name(spec),
-        Path("bin") / f"codex-code-mode-host{spec.exe_suffix}",
+        Path("bin") / "codex-code-mode-host",
         Path("codex-path") / spec.rg_name,
     ]
     executable_files = list(required_files)
@@ -149,32 +129,22 @@ def validate_package_dir(
         required_files.append(Path("codex-resources") / "bwrap")
         executable_files.append(Path("codex-resources") / "bwrap")
 
-    if spec.is_windows:
-        required_files.extend(
-            [
-                Path("codex-resources") / "codex-command-runner.exe",
-                Path("codex-resources") / "codex-windows-sandbox-setup.exe",
-            ]
-        )
-
     for relative_file in required_files:
         path = package_dir / relative_file
         if not path.is_file():
             raise RuntimeError(f"Missing package file: {relative_file}")
 
-    if not spec.is_windows:
-        for relative_file in executable_files:
-            path = package_dir / relative_file
-            if not is_executable(path):
-                raise RuntimeError(f"Package file is not executable: {relative_file}")
+    for relative_file in executable_files:
+        path = package_dir / relative_file
+        if not is_executable(path):
+            raise RuntimeError(f"Package file is not executable: {relative_file}")
 
 
-def copy_executable(src: Path, dest: Path, *, is_windows: bool) -> None:
+def copy_executable(src: Path, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, dest)
-    if not is_windows:
-        mode = dest.stat().st_mode
-        dest.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    mode = dest.stat().st_mode
+    dest.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
 def write_json(path: Path, value: object) -> None:

@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 use serde_json::Value;
-#[cfg(any(unix, windows, test))]
+#[cfg(any(unix, test))]
 use serde_json::json;
 use thiserror::Error;
 
@@ -17,45 +17,45 @@ use super::IdeContext;
 // fetching IDE context includes router discovery and extension event-loop work, so a shorter TUI
 // deadline can incorrectly skip context even though the IDE answers normally.
 const IDE_CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 const MAX_IPC_FRAME_BYTES: usize = 256 * 1024 * 1024;
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 const TUI_SOURCE_CLIENT_ID: &str = "codex-tui";
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 const OPEN_IDE_HINT: &str =
     "Open this project in VS Code or Cursor with the Codex extension active.";
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 const IDE_DID_NOT_PROVIDE_CONTEXT_HINT: &str = "The IDE extension did not provide context.";
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 const KEEP_TRYING_HINT: &str = "Codex will keep trying on future messages.";
 
 #[derive(Debug, Error)]
 pub(crate) enum IdeContextError {
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     #[error("failed to connect to IDE context provider: {0}")]
     Connect(std::io::Error),
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     #[error("failed to request IDE context: {0}")]
     Send(std::io::Error),
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     #[error("failed to read IDE context: {0}")]
     Read(std::io::Error),
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     #[error("invalid IDE context response: {0}")]
     InvalidResponse(String),
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     #[error("IDE context response exceeded maximum size")]
     ResponseTooLarge,
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     #[error("IDE context request failed")]
     RequestFailed(String),
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(unix))]
     #[error("IDE context is not supported on this platform")]
     UnsupportedPlatform,
 }
 
 impl IdeContextError {
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     pub(crate) fn user_facing_hint(&self) -> String {
         match self {
             IdeContextError::Connect(_) => OPEN_IDE_HINT.to_string(),
@@ -77,7 +77,7 @@ impl IdeContextError {
         }
     }
 
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     pub(crate) fn prompt_skip_hint(&self) -> String {
         match self {
             IdeContextError::ResponseTooLarge => {
@@ -116,27 +116,24 @@ impl IdeContextError {
         }
     }
 
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(unix))]
     pub(crate) fn user_facing_hint(&self) -> String {
         self.to_string()
     }
 
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(unix))]
     pub(crate) fn prompt_skip_hint(&self) -> String {
         self.to_string()
     }
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn hint_with_retry(message: &str) -> String {
     format!("{message} {KEEP_TRYING_HINT}")
 }
 
 #[cfg(unix)]
 type IdeContextStream = UnixDeadlineStream;
-
-#[cfg(windows)]
-type IdeContextStream = super::windows_pipe::WindowsPipeStream;
 
 #[cfg(unix)]
 pub(crate) fn fetch_ide_context(
@@ -155,19 +152,7 @@ pub(crate) fn fetch_ide_context(
     )
 }
 
-#[cfg(windows)]
-pub(crate) fn fetch_ide_context(
-    workspace_root: &Path,
-    _codex_home: &Path,
-) -> Result<IdeContext, IdeContextError> {
-    fetch_ide_context_from_socket(
-        default_ipc_socket_path(),
-        workspace_root,
-        IDE_CONTEXT_REQUEST_TIMEOUT,
-    )
-}
-
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(unix))]
 pub(crate) fn fetch_ide_context(
     _workspace_root: &Path,
     _codex_home: &Path,
@@ -190,25 +175,9 @@ fn legacy_ipc_socket_paths(temp_dir: &Path, uid: libc::uid_t) -> Vec<PathBuf> {
     }
 }
 
-#[cfg(windows)]
-fn default_ipc_socket_path() -> PathBuf {
-    PathBuf::from(r"\\.\pipe\codex-ipc")
-}
-
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(unix))]
 fn default_ipc_socket_path() -> PathBuf {
     PathBuf::new()
-}
-
-#[cfg(windows)]
-fn fetch_ide_context_from_socket(
-    socket_path: PathBuf,
-    workspace_root: &Path,
-    timeout: Duration,
-) -> Result<IdeContext, IdeContextError> {
-    let deadline = Instant::now() + timeout;
-    let mut stream = connect_stream(socket_path, deadline)?;
-    fetch_ide_context_from_stream(&mut stream, workspace_root, deadline)
 }
 
 #[cfg(unix)]
@@ -637,16 +606,7 @@ fn ensure_peer_uid_matches_current_user(peer_uid: libc::uid_t) -> std::io::Resul
     Ok(())
 }
 
-#[cfg(windows)]
-fn connect_stream(
-    socket_path: PathBuf,
-    deadline: Instant,
-) -> Result<IdeContextStream, IdeContextError> {
-    super::windows_pipe::WindowsPipeStream::connect(socket_path, deadline)
-        .map_err(IdeContextError::Connect)
-}
-
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn answer_unsupported_request<T: std::io::Write + ?Sized>(
     stream: &mut T,
     message: &Value,
@@ -663,7 +623,7 @@ fn answer_unsupported_request<T: std::io::Write + ?Sized>(
     Ok(())
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn fetch_ide_context_from_stream(
     stream: &mut IdeContextStream,
     workspace_root: &Path,
@@ -676,7 +636,7 @@ fn fetch_ide_context_from_stream(
     extract_ide_context(response)
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn write_ide_context_request<T: std::io::Write + ?Sized>(
     stream: &mut T,
     request_id: &str,
@@ -695,7 +655,7 @@ fn write_ide_context_request<T: std::io::Write + ?Sized>(
     write_frame(stream, &ide_context_request)
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn write_frame<T: std::io::Write + ?Sized>(stream: &mut T, message: &Value) -> std::io::Result<()> {
     let payload = serde_json::to_vec(message).map_err(|err| {
         std::io::Error::new(
@@ -714,7 +674,7 @@ fn write_frame<T: std::io::Write + ?Sized>(stream: &mut T, message: &Value) -> s
     stream.flush()
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn read_frame<T: std::io::Read + ?Sized>(
     stream: &mut T,
     deadline: Instant,
@@ -732,7 +692,7 @@ fn read_frame<T: std::io::Read + ?Sized>(
         .map_err(|err| IdeContextError::InvalidResponse(format!("invalid JSON payload: {err}")))
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn read_exact_before_deadline<T: std::io::Read + ?Sized>(
     stream: &mut T,
     buf: &mut [u8],
@@ -761,7 +721,7 @@ fn read_exact_before_deadline<T: std::io::Read + ?Sized>(
     ensure_deadline_not_expired(deadline)
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn read_response_frame(
     stream: &mut IdeContextStream,
     request_id: &str,
@@ -809,7 +769,7 @@ fn read_response_frame(
     }
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn ensure_deadline_not_expired(deadline: Instant) -> Result<(), IdeContextError> {
     if Instant::now() >= deadline {
         return Err(timeout_error());
@@ -818,12 +778,12 @@ fn ensure_deadline_not_expired(deadline: Instant) -> Result<(), IdeContextError>
     Ok(())
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn timeout_error() -> IdeContextError {
     IdeContextError::Read(deadline_timeout_io_error())
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn deadline_timeout_io_error() -> std::io::Error {
     std::io::Error::new(
         std::io::ErrorKind::TimedOut,
@@ -836,7 +796,7 @@ fn permission_denied_io_error(message: &'static str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::PermissionDenied, message)
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn extract_ide_context(response: Value) -> Result<IdeContext, IdeContextError> {
     ensure_success_response(&response)?;
     let ide_context = response
@@ -852,7 +812,7 @@ fn extract_ide_context(response: Value) -> Result<IdeContext, IdeContextError> {
         .map_err(|err| IdeContextError::InvalidResponse(err.to_string()))
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(unix)]
 fn ensure_success_response(response: &Value) -> Result<(), IdeContextError> {
     match response.get("resultType").and_then(Value::as_str) {
         Some("success") => Ok(()),

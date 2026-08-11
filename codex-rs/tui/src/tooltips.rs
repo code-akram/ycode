@@ -7,7 +7,6 @@ const ANNOUNCEMENT_TIP_URL: &str =
     "https://raw.githubusercontent.com/openai/codex/main/announcement_tip.toml";
 
 const IS_MACOS: bool = cfg!(target_os = "macos");
-const IS_WINDOWS: bool = cfg!(target_os = "windows");
 
 const APP_TOOLTIP: &str = "Try the **Desktop app**. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
 const FAST_TOOLTIP: &str =
@@ -27,7 +26,7 @@ lazy_static! {
             if line.is_empty() || line.starts_with('#') {
                 return false;
             }
-            if !IS_MACOS && !IS_WINDOWS && line.contains("codex app") {
+            if !IS_MACOS && line.contains("codex app") {
                 return false;
             }
             true
@@ -88,11 +87,7 @@ pub(crate) fn get_tooltip(plan: Option<PlanType>, fast_mode_enabled: bool) -> Op
 }
 
 fn paid_app_tooltip() -> Option<&'static str> {
-    if IS_MACOS || IS_WINDOWS {
-        Some(APP_TOOLTIP)
-    } else {
-        None
-    }
+    if IS_MACOS { Some(APP_TOOLTIP) } else { None }
 }
 
 /// Paid users spend most startup sessions in a dedicated promo slot rather than the
@@ -189,7 +184,6 @@ pub(crate) mod announcement {
     enum TargetOs {
         Linux,
         Macos,
-        Windows,
         #[serde(other)]
         Unknown,
     }
@@ -198,10 +192,8 @@ pub(crate) mod announcement {
         const fn current() -> Self {
             if cfg!(target_os = "macos") {
                 Self::Macos
-            } else if cfg!(target_os = "windows") {
-                Self::Windows
             } else {
-                // Codex currently publishes CLI builds for macOS, Windows, and Linux.
+                // ycode supports macOS and Linux.
                 Self::Linux
             }
         }
@@ -541,8 +533,6 @@ target_oses = ["windows"]
 
         let expected = if cfg!(target_os = "macos") {
             "macos announcement"
-        } else if cfg!(target_os = "windows") {
-            "windows announcement"
         } else {
             "linux announcement"
         };

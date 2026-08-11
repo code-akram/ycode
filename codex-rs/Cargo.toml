@@ -269,7 +269,6 @@ codex-utils-stream-parser = { path = "utils/stream-parser" }
 codex-utils-string = { path = "utils/string" }
 codex-utils-template = { path = "utils/template" }
 codex-v8-poc = { path = "v8-poc" }
-codex-windows-sandbox = { path = "windows-sandbox-rs" }
 core_test_support = { path = "core/tests/common" }
 mcp_test_support = { path = "mcp-server/tests/common" }
 
@@ -468,7 +467,6 @@ tree-sitter = "0.25.10"
 tree-sitter-bash = "0.25"
 ts-rs = "11"
 tungstenite = { version = "0.27.0", features = ["deflate", "proxy"] }
-uds_windows = "1.1.0"
 unicode-segmentation = "1.12.0"
 unicode-width = "0.2"
 url = "2"
@@ -481,7 +479,6 @@ webbrowser = "1.0"
 which = "8"
 whoami = "1.6.1"
 wildmatch = "2.6.1"
-winapi-util = "0.1.11"
 zip = "2.4.2"
 zstd = "0.13"
 

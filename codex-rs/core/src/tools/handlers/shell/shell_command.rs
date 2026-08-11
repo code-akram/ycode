@@ -215,18 +215,11 @@ impl ShellCommandHandler {
             &turn_environment,
             cwd,
         )?;
-        let shell_type = Some(
-            turn_environment
-                .shell
-                .as_ref()
-                .map_or_else(|| session.user_shell().shell_type, |shell| shell.shell_type),
-        );
         run_exec_like(RunExecLikeArgs {
             tool_name,
             exec_params,
             cancellation_token,
             hook_command: params.command,
-            shell_type,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
             session,

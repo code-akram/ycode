@@ -174,7 +174,7 @@ impl CommandExecRequestProcessor {
             },
             None => None,
         };
-        let windows_sandbox_level = WindowsSandboxLevel::from_config(&self.config);
+        let windows_sandbox_level = WindowsSandboxLevel::Disabled;
         let output_bytes_cap = if disable_output_cap {
             None
         } else {

@@ -4095,7 +4095,7 @@ async fn set_rate_limits_retains_previous_credits() {
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
         permission_profile_state: config.permissions.permission_profile_state().clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         environments: TurnEnvironmentSelections::new(config.cwd.clone(), Vec::new()),
         codex_home: config.codex_home.clone(),
         thread_name: None,
@@ -4204,7 +4204,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
         permission_profile_state: config.permissions.permission_profile_state().clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         environments: TurnEnvironmentSelections::new(config.cwd.clone(), Vec::new()),
         codex_home: config.codex_home.clone(),
         thread_name: None,
@@ -4750,7 +4750,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
         permission_profile_state: config.permissions.permission_profile_state().clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         environments: TurnEnvironmentSelections::new(config.cwd.clone(), Vec::new()),
         codex_home: config.codex_home.clone(),
         thread_name: None,
@@ -5545,7 +5545,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
         permission_profile_state: config.permissions.permission_profile_state().clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         environments: TurnEnvironmentSelections::new(config.cwd.clone(), Vec::new()),
         codex_home: config.codex_home.clone(),
         thread_name: None,
@@ -5605,7 +5605,6 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         /*external_time_provider*/ None,
         Some(config.multi_agent_version_from_features()),
         GitEnrichmentPolicy::Fresh,
-        codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
     )
     .await;
 
@@ -5685,7 +5684,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
         permission_profile_state: config.permissions.permission_profile_state().clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         environments: TurnEnvironmentSelections::new(config.cwd.clone(), default_environments),
         codex_home: config.codex_home.clone(),
         thread_name: None,
@@ -5874,8 +5873,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
-        windows_sandbox_proxy_settings_mode:
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         mcp_refresh: McpRefresh::new(),
         mcp_elicitation_reviewer_handle: OnceLock::new(),
@@ -5958,7 +5955,7 @@ async fn make_session_with_config_and_rx(
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
         permission_profile_state: config.permissions.permission_profile_state().clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         environments: TurnEnvironmentSelections::new(config.cwd.clone(), default_environments),
         codex_home: config.codex_home.clone(),
         thread_name: None,
@@ -6019,7 +6016,6 @@ async fn make_session_with_config_and_rx(
         /*external_time_provider*/ None,
         Some(config.multi_agent_version_from_features()),
         GitEnrichmentPolicy::Fresh,
-        codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
     )
     .await?;
 
@@ -6071,7 +6067,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
         permission_profile_state: config.permissions.permission_profile_state().clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         environments: TurnEnvironmentSelections::new(config.cwd.clone(), default_environments),
         codex_home: config.codex_home.clone(),
         thread_name: None,
@@ -6139,7 +6135,6 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         /*external_time_provider*/ None,
         Some(config.multi_agent_version_from_features()),
         GitEnrichmentPolicy::Fresh,
-        codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
     )
     .await?;
 
@@ -7902,7 +7897,7 @@ where
         approval_policy: config.permissions.approval_policy.clone(),
         approvals_reviewer: config.approvals_reviewer,
         permission_profile_state: config.permissions.permission_profile_state().clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         environments: TurnEnvironmentSelections::new(config.cwd.clone(), default_environments),
         codex_home: config.codex_home.clone(),
         thread_name: None,
@@ -8090,8 +8085,6 @@ where
         state: Mutex::new(state),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
-        windows_sandbox_proxy_settings_mode:
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         mcp_refresh: McpRefresh::new(),
         mcp_elicitation_reviewer_handle: OnceLock::new(),

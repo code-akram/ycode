@@ -228,7 +228,6 @@ pub enum ProcessSandboxType {
     None,
     MacosSeatbelt,
     LinuxSeccomp,
-    WindowsRestrictedToken,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

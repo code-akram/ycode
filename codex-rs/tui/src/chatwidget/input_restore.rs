@@ -15,10 +15,6 @@ impl ChatWidget {
         if self.suppress_initial_user_message_submit {
             return;
         }
-        #[cfg(any(target_os = "windows", test))]
-        if self.elevated_windows_sandbox_setup_required() {
-            return;
-        }
         if self.blocks_direct_input {
             if let Some(user_message) = self.initial_user_message.take() {
                 self.restore_user_message_to_composer(user_message);

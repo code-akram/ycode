@@ -1,8 +1,6 @@
 //! Permission and approval popup flows for `ChatWidget`.
 //!
-//! This module owns the generic permission pickers and confirmation surfaces;
-//! Windows-specific sandbox prompting lives beside it in
-//! `windows_sandbox_prompts`.
+//! This module owns the generic permission pickers and confirmation surfaces.
 
 use super::*;
 
@@ -19,7 +17,7 @@ impl ChatWidget {
             return;
         }
 
-        let include_read_only = cfg!(target_os = "windows");
+        let include_read_only = false;
         let current_approval =
             AskForApproval::from(self.config.permissions.approval_policy.value());
         let current_permission_profile = self.config.permissions.permission_profile().clone();
@@ -28,16 +26,7 @@ impl ChatWidget {
         let mut items: Vec<SelectionItem> = Vec::new();
         let presets: Vec<ApprovalPreset> = builtin_approval_presets();
 
-        #[cfg(target_os = "windows")]
-        let windows_sandbox_level = crate::windows_sandbox::level_from_config(&self.config);
-        #[cfg(target_os = "windows")]
-        let windows_degraded_sandbox_enabled =
-            matches!(windows_sandbox_level, WindowsSandboxLevel::RestrictedToken);
-        #[cfg(not(target_os = "windows"))]
         let windows_degraded_sandbox_enabled = false;
-
-        let show_elevate_sandbox_hint =
-            windows_degraded_sandbox_enabled && presets.iter().any(|preset| preset.id == "auto");
 
         let guardian_disabled_reason = |enabled: bool| {
             let mut next_features = self.config.features.get().clone();
@@ -140,18 +129,9 @@ impl ChatWidget {
             }
         }
 
-        let footer_note = show_elevate_sandbox_hint.then(|| {
-            vec![
-                "The non-admin sandbox protects your files and prevents network access under most circumstances. However, it carries greater risk if prompt injected. To upgrade to the default sandbox, run ".dim(),
-                "/setup-default-sandbox".cyan(),
-                ".".dim(),
-            ]
-            .into()
-        });
-
         self.bottom_pane.show_selection_view(SelectionViewParams {
             title: Some("Update Model Permissions".to_string()),
-            footer_note,
+            footer_note: None,
             footer_hint: Some(standard_popup_hint_line()),
             items,
             header: Box::new(()),
@@ -315,47 +295,6 @@ impl ChatWidget {
                     profile_selection: profile_selection.clone(),
                 });
             })];
-        }
-        if approvals_reviewer == ApprovalsReviewer::User && preset.id == "auto" {
-            #[cfg(target_os = "windows")]
-            {
-                if crate::windows_sandbox::level_from_config(&self.config)
-                    == WindowsSandboxLevel::Disabled
-                {
-                    let preset = preset.clone();
-                    if crate::windows_sandbox::sandbox_setup_is_complete(
-                        self.config.codex_home.as_path(),
-                    ) {
-                        return vec![Box::new(move |tx| {
-                            tx.send(AppEvent::EnableWindowsSandboxForAgentMode {
-                                preset: preset.clone(),
-                                mode: WindowsSandboxEnableMode::Elevated,
-                                profile_selection: profile_selection.clone(),
-                            });
-                        })];
-                    }
-                    return vec![Box::new(move |tx| {
-                        tx.send(AppEvent::OpenWindowsSandboxEnablePrompt {
-                            preset: preset.clone(),
-                            profile_selection: profile_selection.clone(),
-                        });
-                    })];
-                }
-                if let Some((sample_paths, extra_count, failed_scan)) =
-                    self.world_writable_warning_details()
-                {
-                    let preset = preset.clone();
-                    return vec![Box::new(move |tx| {
-                        tx.send(AppEvent::OpenWorldWritableWarningConfirmation {
-                            preset: Some(preset.clone()),
-                            profile_selection: profile_selection.clone(),
-                            sample_paths: sample_paths.clone(),
-                            extra_count,
-                            failed_scan,
-                        });
-                    })];
-                }
-            }
         }
         apply_actions()
     }

@@ -8,16 +8,7 @@ outputs:
 runs:
   using: composite
   steps:
-    # setup-ci expects either this step or the Unix fallback below to define
-    # CI_BUILD_ROOT. Windows puts it on a Dev Drive because Cargo spends
-    # significant time reading and writing build/cache trees.
-    - name: Configure Dev Drive (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: ./.github/scripts/setup-dev-drive.ps1
-
-    - name: Configure CI build root (Unix)
-      if: runner.os != 'Windows'
+    - name: Configure CI build root
       shell: bash
       run: echo "CI_BUILD_ROOT=$HOME/.cache/codex-ci" >> "$GITHUB_ENV"
 
@@ -56,8 +47,7 @@ runs:
 
     # Some integration tests spawn DotSlash from a stable system path rather
     # than inheriting the action-local PATH entry.
-    - name: Make DotSlash available in PATH (Unix)
-      if: runner.os != 'Windows'
+    - name: Make DotSlash available in PATH
       shell: bash
       run: |
         if [[ -w /usr/local/bin ]]; then
@@ -65,13 +55,3 @@ runs:
         else
           sudo cp "$(which dotslash)" /usr/local/bin
         fi
-
-    - name: Make DotSlash available in PATH (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: Copy-Item (Get-Command dotslash).Source -Destination "$env:LOCALAPPDATA\Microsoft\WindowsApps\dotslash.exe"
-
-    - name: Enable Git long paths (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: git config --global core.longpaths true

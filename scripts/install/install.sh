@@ -1078,7 +1078,7 @@ case "$(uname -s)" in
     os="linux"
     ;;
   *)
-    echo "install.sh supports macOS and Linux. Use install.ps1 on Windows." >&2
+    echo "install.sh supports macOS and Linux." >&2
     exit 1
     ;;
 esac

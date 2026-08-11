@@ -58,9 +58,8 @@ def fetch_dotslash_executable(
 
     dest = cache_dir / dest_name
     extract_archive_member(archive_path, artifact, dest, artifact_label)
-    if not spec.is_windows:
-        mode = dest.stat().st_mode
-        dest.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    mode = dest.stat().st_mode
+    dest.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return dest
 
 

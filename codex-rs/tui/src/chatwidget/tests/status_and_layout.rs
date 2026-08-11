@@ -459,7 +459,6 @@ async fn completed_plan_table_tail_skips_provisional_history_insert() {
 }
 
 #[tokio::test]
-#[cfg_attr(target_os = "windows", ignore = "disabled on windows")]
 async fn configured_pet_load_is_deferred_until_after_construction() {
     let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
     let tx = AppEventSender::new(tx_raw);
@@ -2076,11 +2075,6 @@ async fn esc_interrupt_pauses_active_goal_turn() {
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw goal paused footer");
     let snapshot = normalized_backend_snapshot(terminal.backend());
-    #[cfg(target_os = "windows")]
-    insta::with_settings!({ snapshot_suffix => "windows" }, {
-        assert_chatwidget_snapshot!("esc_interrupt_goal_paused_footer", snapshot);
-    });
-    #[cfg(not(target_os = "windows"))]
     assert_chatwidget_snapshot!("esc_interrupt_goal_paused_footer", snapshot);
 }
 

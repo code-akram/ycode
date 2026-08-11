@@ -276,13 +276,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_queued_message_edit_binding(widget.queued_message_edit_hint_binding);
-        #[cfg(target_os = "windows")]
-        widget
-            .bottom_pane
-            .set_windows_degraded_sandbox_active(matches!(
-                crate::windows_sandbox::level_from_config(&widget.config),
-                WindowsSandboxLevel::RestrictedToken
-            ));
         widget.update_collaboration_mode_indicator();
 
         widget

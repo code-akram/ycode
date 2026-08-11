@@ -24,7 +24,7 @@ use codex_core::exec::ExecExpirationOutcome;
 use codex_core::exec::IO_DRAIN_TIMEOUT_MS;
 use codex_core::sandboxing::ExecRequest;
 use codex_protocol::exec_output::bytes_to_string_smart;
-use codex_sandboxing::SandboxType;
+#[cfg(test)]
 use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
 use codex_utils_pty::ProcessHandle;
 use codex_utils_pty::SpawnedProcess;
@@ -70,7 +70,6 @@ enum CommandExecSession {
     Active {
         control_tx: mpsc::Sender<CommandControlRequest>,
     },
-    UnsupportedWindowsSandbox,
 }
 
 enum CommandControl {
@@ -174,59 +173,6 @@ impl CommandExecManager {
             connection_id: request_id.connection_id,
             process_id: process_id.clone(),
         };
-
-        if matches!(exec_request.sandbox, SandboxType::WindowsRestrictedToken) {
-            if tty || stream_stdin || stream_stdout_stderr {
-                return Err(invalid_request(
-                    "streaming command/exec is not supported with windows sandbox",
-                ));
-            }
-            if output_bytes_cap != Some(DEFAULT_OUTPUT_BYTES_CAP) {
-                return Err(invalid_request(
-                    "custom outputBytesCap is not supported with windows sandbox",
-                ));
-            }
-            if let InternalProcessId::Client(_) = &process_id {
-                let mut sessions = self.sessions.lock().await;
-                if sessions.contains_key(&process_key) {
-                    return Err(invalid_request(format!(
-                        "duplicate active command/exec process id: {}",
-                        process_key.process_id.error_repr(),
-                    )));
-                }
-                sessions.insert(
-                    process_key.clone(),
-                    CommandExecSession::UnsupportedWindowsSandbox,
-                );
-            }
-            let sessions = Arc::clone(&self.sessions);
-            tokio::spawn(async move {
-                let _started_network_proxy = started_network_proxy;
-                match codex_core::sandboxing::execute_env(exec_request, /*stdout_stream*/ None)
-                    .await
-                {
-                    Ok(output) => {
-                        outgoing
-                            .send_response(
-                                request_id,
-                                CommandExecResponse {
-                                    exit_code: output.exit_code,
-                                    stdout: output.stdout.text,
-                                    stderr: output.stderr.text,
-                                },
-                            )
-                            .await;
-                    }
-                    Err(err) => {
-                        outgoing
-                            .send_error(request_id, internal_error(format!("exec failed: {err}")))
-                            .await;
-                    }
-                }
-                sessions.lock().await.remove(&process_key);
-            });
-            return Ok(());
-        }
 
         let ExecRequest {
             command,
@@ -402,15 +348,13 @@ impl CommandExecManager {
             controls
         };
 
-        for control in controls {
-            if let CommandExecSession::Active { control_tx } = control {
-                let _ = control_tx
-                    .send(CommandControlRequest {
-                        control: CommandControl::Terminate,
-                        response_tx: None,
-                    })
-                    .await;
-            }
+        for CommandExecSession::Active { control_tx } in controls {
+            let _ = control_tx
+                .send(CommandControlRequest {
+                    control: CommandControl::Terminate,
+                    response_tx: None,
+                })
+                .await;
         }
     }
 
@@ -432,11 +376,7 @@ impl CommandExecManager {
                     ))
                 })?
         };
-        let CommandExecSession::Active { control_tx } = session else {
-            return Err(invalid_request(
-                "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes",
-            ));
-        };
+        let CommandExecSession::Active { control_tx } = session;
         let (response_tx, response_rx) = oneshot::channel();
         let request = CommandControlRequest {
             control,
@@ -691,6 +631,7 @@ mod tests {
     use crate::error_code::INVALID_REQUEST_ERROR_CODE;
     use codex_protocol::config_types::WindowsSandboxLevel;
     use codex_protocol::models::PermissionProfile;
+    use codex_sandboxing::SandboxType;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     #[cfg(not(target_os = "windows"))]
@@ -705,107 +646,6 @@ mod tests {
     use crate::outgoing_message::OutgoingEnvelope;
     #[cfg(not(target_os = "windows"))]
     use crate::outgoing_message::OutgoingMessage;
-
-    fn windows_sandbox_exec_request() -> ExecRequest {
-        let cwd = AbsolutePathBuf::current_dir().expect("current dir");
-        ExecRequest::new(
-            vec!["cmd".to_string()],
-            cwd.clone(),
-            HashMap::new(),
-            /*network*/ None,
-            /*network_environment_id*/ None,
-            ExecExpiration::DefaultTimeout,
-            codex_core::exec::ExecCapturePolicy::ShellTool,
-            SandboxType::WindowsRestrictedToken,
-            vec![cwd],
-            WindowsSandboxLevel::Disabled,
-            /*windows_sandbox_private_desktop*/ false,
-            PermissionProfile::read_only(),
-            /*arg0*/ None,
-        )
-    }
-
-    #[tokio::test]
-    async fn windows_sandbox_streaming_exec_is_rejected() {
-        let (tx, _rx) = mpsc::channel(1);
-        let manager = CommandExecManager::default();
-        let err = manager
-            .start(StartCommandExecParams {
-                outgoing: Arc::new(OutgoingMessageSender::new(
-                    tx,
-                    codex_analytics::AnalyticsEventsClient::disabled(),
-                )),
-                request_id: ConnectionRequestId {
-                    connection_id: ConnectionId(1),
-                    request_id: codex_app_server_protocol::RequestId::Integer(42),
-                },
-                process_id: Some("proc-42".to_string()),
-                exec_request: windows_sandbox_exec_request(),
-                started_network_proxy: None,
-                tty: false,
-                stream_stdin: false,
-                stream_stdout_stderr: true,
-                output_bytes_cap: None,
-                size: None,
-            })
-            .await
-            .expect_err("streaming windows sandbox exec should be rejected");
-
-        assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
-        assert_eq!(
-            err.message,
-            "streaming command/exec is not supported with windows sandbox"
-        );
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    #[tokio::test]
-    async fn windows_sandbox_non_streaming_exec_uses_execution_path() {
-        let (tx, mut rx) = mpsc::channel(1);
-        let manager = CommandExecManager::default();
-        let request_id = ConnectionRequestId {
-            connection_id: ConnectionId(7),
-            request_id: codex_app_server_protocol::RequestId::Integer(99),
-        };
-
-        manager
-            .start(StartCommandExecParams {
-                outgoing: Arc::new(OutgoingMessageSender::new(
-                    tx,
-                    codex_analytics::AnalyticsEventsClient::disabled(),
-                )),
-                request_id: request_id.clone(),
-                process_id: Some("proc-99".to_string()),
-                exec_request: windows_sandbox_exec_request(),
-                started_network_proxy: None,
-                tty: false,
-                stream_stdin: false,
-                stream_stdout_stderr: false,
-                output_bytes_cap: Some(DEFAULT_OUTPUT_BYTES_CAP),
-                size: None,
-            })
-            .await
-            .expect("non-streaming windows sandbox exec should start");
-
-        let envelope = timeout(Duration::from_secs(1), rx.recv())
-            .await
-            .expect("timed out waiting for outgoing message")
-            .expect("channel closed before outgoing message");
-        let OutgoingEnvelope::ToConnection {
-            connection_id,
-            message,
-            ..
-        } = envelope
-        else {
-            panic!("expected connection-scoped outgoing message");
-        };
-        assert_eq!(connection_id, request_id.connection_id);
-        let OutgoingMessage::Error(error) = message else {
-            panic!("expected execution failure to be reported as an error");
-        };
-        assert_eq!(error.id, request_id.request_id);
-        assert!(error.error.message.starts_with("exec failed:"));
-    }
 
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
@@ -970,76 +810,6 @@ mod tests {
             panic!("expected command/exec response");
         };
         assert_ne!(response.exit_code, EXEC_TIMEOUT_EXIT_CODE);
-    }
-
-    #[tokio::test]
-    async fn windows_sandbox_process_ids_reject_write_requests() {
-        let manager = CommandExecManager::default();
-        let request_id = ConnectionRequestId {
-            connection_id: ConnectionId(11),
-            request_id: codex_app_server_protocol::RequestId::Integer(1),
-        };
-        let process_id = ConnectionProcessId {
-            connection_id: request_id.connection_id,
-            process_id: InternalProcessId::Client("proc-11".to_string()),
-        };
-        manager
-            .sessions
-            .lock()
-            .await
-            .insert(process_id, CommandExecSession::UnsupportedWindowsSandbox);
-
-        let err = manager
-            .write(
-                request_id,
-                CommandExecWriteParams {
-                    process_id: "proc-11".to_string(),
-                    delta_base64: Some(STANDARD.encode("hello")),
-                    close_stdin: false,
-                },
-            )
-            .await
-            .expect_err("windows sandbox process ids should reject command/exec/write");
-
-        assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
-        assert_eq!(
-            err.message,
-            "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes"
-        );
-    }
-
-    #[tokio::test]
-    async fn windows_sandbox_process_ids_reject_terminate_requests() {
-        let manager = CommandExecManager::default();
-        let request_id = ConnectionRequestId {
-            connection_id: ConnectionId(12),
-            request_id: codex_app_server_protocol::RequestId::Integer(2),
-        };
-        let process_id = ConnectionProcessId {
-            connection_id: request_id.connection_id,
-            process_id: InternalProcessId::Client("proc-12".to_string()),
-        };
-        manager
-            .sessions
-            .lock()
-            .await
-            .insert(process_id, CommandExecSession::UnsupportedWindowsSandbox);
-
-        let err = manager
-            .terminate(
-                request_id,
-                CommandExecTerminateParams {
-                    process_id: "proc-12".to_string(),
-                },
-            )
-            .await
-            .expect_err("windows sandbox process ids should reject command/exec/terminate");
-
-        assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
-        assert_eq!(
-            err.message,
-            "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes"
-        );
     }
 
     #[tokio::test]

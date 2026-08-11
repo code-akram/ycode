@@ -165,7 +165,6 @@ fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
         windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel::Disabled,
         windows_sandbox_private_desktop: false,
         permission_profile: permission_profile.clone(),
-        windows_sandbox_filesystem_overrides: None,
         arg0: None,
         exec_server_sandbox: None,
         exec_server_enforce_managed_network: true,
@@ -173,14 +172,8 @@ fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
         exec_server_network_proxy: None,
     };
 
-    let proxy_settings_mode = codex_sandboxing::WindowsSandboxProxySettingsMode::Preserve;
     let params_for_request = |request: &ExecRequest| {
-        exec_server_params_for_request(
-            /*process_id*/ 123,
-            request,
-            proxy_settings_mode,
-            /*tty*/ true,
-        )
+        exec_server_params_for_request(/*process_id*/ 123, request, /*tty*/ true)
     };
     let params = params_for_request(&request);
 
@@ -206,43 +199,11 @@ fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
     );
     let first = params_for_request(&request);
     let second = params_for_request(&request);
-    assert_eq!(
-        first
-            .sandbox
-            .as_ref()
-            .and_then(|sandbox| sandbox.windows_sandbox_proxy_settings_mode),
-        Some(codex_sandboxing::WindowsSandboxProxySettingsMode::Preserve)
-    );
     assert!(first.process_id.as_str().starts_with("123-"));
     assert!(second.process_id.as_str().starts_with("123-"));
     assert_ne!(first.process_id, second.process_id);
 }
 
-#[cfg(windows)]
-#[test]
-fn initial_exec_yield_time_uses_windows_floor() {
-    let above_max_yield_time_ms = crate::unified_exec::MAX_YIELD_TIME_MS + 1;
-
-    assert_eq!(
-        clamp_yield_time(/*yield_time_ms*/ 1_000),
-        crate::unified_exec::WINDOWS_INITIAL_EXEC_YIELD_TIME_FLOOR_MS
-    );
-    assert_eq!(
-        clamp_yield_time(/*yield_time_ms*/ 2_000),
-        crate::unified_exec::WINDOWS_INITIAL_EXEC_YIELD_TIME_FLOOR_MS
-    );
-    assert_eq!(
-        clamp_yield_time(/*yield_time_ms*/ 5_000),
-        crate::unified_exec::WINDOWS_INITIAL_EXEC_YIELD_TIME_FLOOR_MS
-    );
-    assert_eq!(clamp_yield_time(/*yield_time_ms*/ 10_000), 10_000);
-    assert_eq!(
-        clamp_yield_time(/*yield_time_ms*/ above_max_yield_time_ms),
-        crate::unified_exec::MAX_YIELD_TIME_MS
-    );
-}
-
-#[cfg(not(windows))]
 #[test]
 fn initial_exec_yield_time_has_no_platform_floor() {
     assert_eq!(clamp_yield_time(/*yield_time_ms*/ 1_000), 1_000);
@@ -273,7 +234,7 @@ async fn output_collection_stays_bounded_across_repeated_drains() {
         Instant::now() + Duration::from_secs(5),
     );
     let produce = async {
-        for byte in [b'a', b'b', b'c'] {
+        for byte in *b"abc" {
             output_buffer.lock().await.push_chunk(
                 vec![byte; crate::unified_exec::UNIFIED_EXEC_OUTPUT_MAX_BYTES],
             );
@@ -298,7 +259,7 @@ async fn output_collection_stays_bounded_across_repeated_drains() {
 
     let (collected, ()) = tokio::join!(collect, produce);
     let mut expected = HeadTailBuffer::default();
-    for byte in [b'a', b'b', b'c'] {
+    for byte in *b"abc" {
         expected.push_chunk(vec![
             byte;
             crate::unified_exec::UNIFIED_EXEC_OUTPUT_MAX_BYTES
@@ -381,7 +342,6 @@ async fn failed_initial_end_for_unstored_process_uses_fallback_output() {
             "-lc".to_string(),
             "echo before".to_string(),
         ],
-        shell_type: crate::shell::ShellType::Sh,
         hook_command: "echo before".to_string(),
         process_id: 123,
         yield_time_ms: 1000,

@@ -1,6 +1,5 @@
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
-use crate::shell::ShellType;
 use crate::shell::get_shell_by_model_provided_path;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
@@ -72,7 +71,6 @@ fn default_tty() -> bool {
 #[derive(Debug)]
 pub(crate) struct ResolvedCommand {
     pub(crate) command: Vec<String>,
-    pub(crate) shell_type: ShellType,
 }
 
 fn post_unified_exec_tool_use_payload(
@@ -119,7 +117,6 @@ pub(crate) fn get_command(
             let shell = model_shell.as_ref().unwrap_or(session_shell.as_ref());
             Ok(ResolvedCommand {
                 command: shell.derive_exec_args(&args.cmd, use_login_shell),
-                shell_type: shell.shell_type,
             })
         }
         UnifiedExecShellMode::ZshFork(zsh_fork_config) => {
@@ -135,7 +132,6 @@ pub(crate) fn get_command(
                     if use_login_shell { "-lc" } else { "-c" }.to_string(),
                     args.cmd.clone(),
                 ],
-                shell_type: ShellType::Zsh,
             })
         }
     }

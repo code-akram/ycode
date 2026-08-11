@@ -3,8 +3,6 @@ use std::os::unix::process::ExitStatusExt;
 
 use std::collections::HashMap;
 use std::io;
-#[cfg(target_os = "windows")]
-use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::time::Duration;
@@ -40,16 +38,8 @@ use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxTransformRequest;
 use codex_sandboxing::SandboxType;
 use codex_sandboxing::SandboxablePreference;
-use codex_sandboxing::WindowsSandboxFilesystemOverrides;
 pub(crate) use codex_sandboxing::is_likely_sandbox_denied;
-#[cfg(test)]
-use codex_sandboxing::permission_profile_supports_windows_restricted_token_sandbox;
 use codex_sandboxing::record_filesystem_sandbox_violation;
-use codex_sandboxing::resolve_windows_elevated_filesystem_overrides;
-use codex_sandboxing::resolve_windows_restricted_token_filesystem_overrides;
-#[cfg(test)]
-use codex_sandboxing::unsupported_windows_restricted_token_sandbox_reason;
-use codex_sandboxing::windows_sandbox_uses_elevated_backend;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
@@ -379,7 +369,7 @@ pub fn build_exec_request(
         expiration,
         capture_policy,
     };
-    let mut exec_req = manager
+    let exec_req = manager
         .transform(SandboxTransformRequest {
             command,
             permissions: permission_profile,
@@ -406,26 +396,6 @@ pub fn build_exec_request(
             )
         })
         .map_err(CodexErr::from)?;
-    let use_windows_elevated_backend = windows_sandbox_uses_elevated_backend(
-        exec_req.windows_sandbox_level,
-        exec_req.network.is_some(),
-    );
-    exec_req.windows_sandbox_filesystem_overrides = if use_windows_elevated_backend {
-        resolve_windows_elevated_filesystem_overrides(
-            exec_req.sandbox,
-            &exec_req.permission_profile,
-            sandbox_cwd,
-            use_windows_elevated_backend,
-        )
-    } else {
-        resolve_windows_restricted_token_filesystem_overrides(
-            exec_req.sandbox,
-            &exec_req.permission_profile,
-            sandbox_cwd,
-            exec_req.windows_sandbox_level,
-        )
-    }
-    .map_err(CodexErr::UnsupportedOperation)?;
     Ok(exec_req)
 }
 
@@ -443,12 +413,11 @@ pub(crate) async fn execute_exec_request(
         expiration,
         capture_policy,
         sandbox,
-        windows_sandbox_policy_cwd,
-        windows_sandbox_workspace_roots,
+        windows_sandbox_policy_cwd: _,
+        windows_sandbox_workspace_roots: _,
         windows_sandbox_level,
         windows_sandbox_private_desktop,
         permission_profile,
-        windows_sandbox_filesystem_overrides,
         network_environment_id,
         arg0,
         exec_server_sandbox: _,
@@ -462,11 +431,6 @@ pub(crate) async fn execute_exec_request(
     let cwd = cwd
         .to_abs_path()
         .map_err(|err| CodexErr::InvalidRequest(format!("invalid exec cwd: {err}")))?;
-    // TODO(anp): Keep PathUri through the Windows sandbox launch boundary.
-    let windows_sandbox_policy_cwd = windows_sandbox_policy_cwd
-        .to_abs_path()
-        .map_err(|err| CodexErr::InvalidRequest(format!("invalid sandbox cwd: {err}")))?;
-
     let params = ExecParams {
         command,
         cwd,
@@ -483,18 +447,8 @@ pub(crate) async fn execute_exec_request(
     };
 
     let start = Instant::now();
-    let raw_output_result = get_raw_output_result(
-        params,
-        network_sandbox_policy,
-        stdout_stream,
-        after_spawn,
-        sandbox,
-        &permission_profile,
-        &windows_sandbox_policy_cwd,
-        &windows_sandbox_workspace_roots,
-        windows_sandbox_filesystem_overrides.as_ref(),
-    )
-    .await;
+    let raw_output_result =
+        get_raw_output_result(params, network_sandbox_policy, stdout_stream, after_spawn).await;
     let duration = start.elapsed();
     finalize_exec_result(raw_output_result, sandbox, duration)
 }
@@ -505,269 +459,8 @@ async fn get_raw_output_result(
     network_sandbox_policy: NetworkSandboxPolicy,
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
-    #[cfg_attr(not(windows), allow(unused_variables))] sandbox: SandboxType,
-    #[cfg_attr(not(windows), allow(unused_variables))] permission_profile: &PermissionProfile,
-    #[cfg_attr(not(windows), allow(unused_variables))] windows_sandbox_policy_cwd: &AbsolutePathBuf,
-    #[cfg_attr(not(windows), allow(unused_variables))]
-    windows_sandbox_workspace_roots: &[AbsolutePathBuf],
-    #[cfg_attr(not(windows), allow(unused_variables))] windows_sandbox_filesystem_overrides: Option<
-        &WindowsSandboxFilesystemOverrides,
-    >,
 ) -> Result<RawExecToolCallOutput> {
-    #[cfg(target_os = "windows")]
-    if sandbox == SandboxType::WindowsRestrictedToken {
-        return exec_windows_sandbox(
-            params,
-            permission_profile,
-            windows_sandbox_policy_cwd,
-            windows_sandbox_workspace_roots,
-            windows_sandbox_filesystem_overrides,
-        )
-        .await;
-    }
-
     exec(params, network_sandbox_policy, stdout_stream, after_spawn).await
-}
-
-#[cfg(target_os = "windows")]
-fn extract_create_process_as_user_error_code(err: &str) -> Option<String> {
-    let marker = "CreateProcessAsUserW failed: ";
-    let start = err.find(marker)? + marker.len();
-    let tail = &err[start..];
-    let digits: String = tail.chars().take_while(char::is_ascii_digit).collect();
-    if digits.is_empty() {
-        None
-    } else {
-        Some(digits)
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn windowsapps_path_kind(path: &str) -> &'static str {
-    let lower = path.to_ascii_lowercase();
-    if lower.contains("\\program files\\windowsapps\\") {
-        return "windowsapps_package";
-    }
-    if lower.contains("\\appdata\\local\\microsoft\\windowsapps\\") {
-        return "windowsapps_alias";
-    }
-    if lower.contains("\\windowsapps\\") {
-        return "windowsapps_other";
-    }
-    "other"
-}
-
-#[cfg(target_os = "windows")]
-fn record_windows_sandbox_spawn_failure(
-    command_path: Option<&str>,
-    windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel,
-    err: &str,
-) {
-    let Some(error_code) = extract_create_process_as_user_error_code(err) else {
-        return;
-    };
-    let path = command_path.unwrap_or("unknown");
-    let exe = Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("unknown")
-        .to_ascii_lowercase();
-    let path_kind = windowsapps_path_kind(path);
-    let level = if matches!(
-        windows_sandbox_level,
-        codex_protocol::config_types::WindowsSandboxLevel::Elevated
-    ) {
-        "elevated"
-    } else {
-        "legacy"
-    };
-    if let Some(metrics) = codex_otel::global() {
-        let _ = metrics.counter(
-            "codex.windows_sandbox.createprocessasuserw_failed",
-            /*inc*/ 1,
-            &[
-                ("error_code", error_code.as_str()),
-                ("path_kind", path_kind),
-                ("exe", exe.as_str()),
-                ("level", level),
-            ],
-        );
-    }
-}
-
-#[cfg(target_os = "windows")]
-async fn exec_windows_sandbox(
-    params: ExecParams,
-    permission_profile: &PermissionProfile,
-    windows_sandbox_policy_cwd: &AbsolutePathBuf,
-    windows_sandbox_workspace_roots: &[AbsolutePathBuf],
-    windows_sandbox_filesystem_overrides: Option<&WindowsSandboxFilesystemOverrides>,
-) -> Result<RawExecToolCallOutput> {
-    use crate::config::find_codex_home;
-    use codex_windows_sandbox::run_windows_sandbox_capture_for_permission_profile_elevated;
-    use codex_windows_sandbox::run_windows_sandbox_capture_with_filesystem_overrides;
-
-    let ExecParams {
-        command,
-        cwd,
-        mut env,
-        network,
-        network_environment_id,
-        expiration,
-        capture_policy,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop,
-        ..
-    } = params;
-    if let Some(network) = network.as_ref() {
-        network
-            .apply_to_env_for_optional_environment(&mut env, network_environment_id.as_deref())
-            .map_err(|err| {
-                network_proxy_environment_error(network_environment_id.as_deref(), err)
-            })?;
-    }
-    let network_proxy_restricting_sid = network
-        .as_ref()
-        .map(|network| {
-            network
-                .network_proxy_restricting_sid(network_environment_id.as_deref())
-                .ok_or_else(|| {
-                    CodexErr::Io(io::Error::other(
-                        "managed Windows proxy route is missing its restricting SID",
-                    ))
-                })
-        })
-        .transpose()?;
-
-    // Windows sandbox capture still receives timeout and cancellation separately.
-    let (cancellation, timeout_ms) = if capture_policy.uses_expiration() {
-        let cancellation = expiration.cancellation_token().map(|token| {
-            codex_windows_sandbox::WindowsSandboxCancellationToken::new(move || {
-                token.is_cancelled()
-            })
-        });
-        (cancellation, expiration.timeout_ms())
-    } else {
-        (None, None)
-    };
-
-    let workspace_roots = if windows_sandbox_workspace_roots.is_empty() {
-        vec![windows_sandbox_policy_cwd.clone()]
-    } else {
-        windows_sandbox_workspace_roots.to_vec()
-    };
-    let permission_profile = permission_profile.clone();
-    let codex_home = find_codex_home().map_err(|err| {
-        CodexErr::Io(io::Error::other(format!(
-            "windows sandbox: failed to resolve codex_home: {err}"
-        )))
-    })?;
-    let command_path = command.first().cloned();
-    let sandbox_level = windows_sandbox_level;
-    let proxy_enforced = network.is_some();
-    let use_elevated = windows_sandbox_uses_elevated_backend(sandbox_level, proxy_enforced);
-    let additional_deny_write_paths = windows_sandbox_filesystem_overrides
-        .map(|overrides| overrides.additional_deny_write_paths.clone())
-        .unwrap_or_default();
-    let additional_deny_read_paths = windows_sandbox_filesystem_overrides
-        .map(|overrides| overrides.additional_deny_read_paths.clone())
-        .unwrap_or_default();
-    let elevated_read_roots_override = windows_sandbox_filesystem_overrides
-        .and_then(|overrides| overrides.read_roots_override.clone());
-    let elevated_read_roots_include_platform_defaults = windows_sandbox_filesystem_overrides
-        .is_some_and(|overrides| overrides.read_roots_include_platform_defaults);
-    let elevated_write_roots_override = windows_sandbox_filesystem_overrides
-        .and_then(|overrides| overrides.write_roots_override.clone());
-    let spawn_res = tokio::task::spawn_blocking(move || {
-        if use_elevated {
-            run_windows_sandbox_capture_for_permission_profile_elevated(
-                codex_windows_sandbox::ElevatedSandboxProfileCaptureRequest {
-                    permission_profile: &permission_profile,
-                    workspace_roots: workspace_roots.as_slice(),
-                    codex_home: codex_home.as_ref(),
-                    command,
-                    cwd: &cwd,
-                    env_map: env,
-                    timeout_ms,
-                    cancellation,
-                    use_private_desktop: windows_sandbox_private_desktop,
-                    proxy_enforced,
-                    network_proxy_restricting_sid,
-                    read_roots_override: elevated_read_roots_override.as_deref(),
-                    read_roots_include_platform_defaults:
-                        elevated_read_roots_include_platform_defaults,
-                    write_roots_override: elevated_write_roots_override.as_deref(),
-                    deny_read_paths_override: &additional_deny_read_paths,
-                    deny_write_paths_override: &additional_deny_write_paths,
-                },
-            )
-        } else {
-            run_windows_sandbox_capture_with_filesystem_overrides(
-                &permission_profile,
-                workspace_roots.as_slice(),
-                codex_home.as_ref(),
-                command,
-                &cwd,
-                env,
-                timeout_ms,
-                cancellation,
-                &additional_deny_read_paths,
-                &additional_deny_write_paths,
-                windows_sandbox_private_desktop,
-            )
-        }
-    })
-    .await;
-
-    let capture = match spawn_res {
-        Ok(Ok(v)) => v,
-        Ok(Err(err)) => {
-            record_windows_sandbox_spawn_failure(
-                command_path.as_deref(),
-                sandbox_level,
-                &err.to_string(),
-            );
-            return Err(CodexErr::Io(io::Error::other(format!(
-                "windows sandbox: {err}"
-            ))));
-        }
-        Err(join_err) => {
-            return Err(CodexErr::Io(io::Error::other(format!(
-                "windows sandbox join error: {join_err}"
-            ))));
-        }
-    };
-
-    let exit_status = synthetic_exit_status(capture.exit_code);
-    let mut stdout_text = capture.stdout;
-    if let Some(max_bytes) = capture_policy.retained_bytes_cap()
-        && stdout_text.len() > max_bytes
-    {
-        stdout_text.truncate(max_bytes);
-    }
-    let mut stderr_text = capture.stderr;
-    if let Some(max_bytes) = capture_policy.retained_bytes_cap()
-        && stderr_text.len() > max_bytes
-    {
-        stderr_text.truncate(max_bytes);
-    }
-    let stdout = StreamOutput {
-        text: stdout_text,
-        truncated_after_lines: None,
-    };
-    let stderr = StreamOutput {
-        text: stderr_text,
-        truncated_after_lines: None,
-    };
-    let aggregated_output = aggregate_output(&stdout, &stderr, capture_policy.retained_bytes_cap());
-
-    Ok(RawExecToolCallOutput {
-        exit_status,
-        stdout,
-        stderr,
-        aggregated_output,
-        timed_out: capture.timed_out,
-    })
 }
 
 fn finalize_exec_result(

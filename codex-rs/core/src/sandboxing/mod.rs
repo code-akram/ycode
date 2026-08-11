@@ -24,7 +24,6 @@ use codex_protocol::models::PermissionProfile;
 pub use codex_protocol::models::SandboxPermissions;
 use codex_sandboxing::SandboxExecRequest;
 use codex_sandboxing::SandboxType;
-use codex_sandboxing::WindowsSandboxFilesystemOverrides;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
@@ -57,7 +56,6 @@ pub struct ExecRequest {
     pub windows_sandbox_level: WindowsSandboxLevel,
     pub windows_sandbox_private_desktop: bool,
     pub permission_profile: PermissionProfile,
-    pub(crate) windows_sandbox_filesystem_overrides: Option<WindowsSandboxFilesystemOverrides>,
     pub arg0: Option<String>,
     pub(crate) exec_server_sandbox: Option<FileSystemSandboxContext>,
     pub(crate) exec_server_enforce_managed_network: bool,
@@ -99,7 +97,6 @@ impl ExecRequest {
             windows_sandbox_level,
             windows_sandbox_private_desktop,
             permission_profile,
-            windows_sandbox_filesystem_overrides: None,
             arg0,
             exec_server_sandbox: None,
             exec_server_enforce_managed_network: false,
@@ -157,7 +154,6 @@ impl ExecRequest {
             windows_sandbox_level,
             windows_sandbox_private_desktop,
             permission_profile,
-            windows_sandbox_filesystem_overrides: None,
             arg0,
             exec_server_sandbox: None,
             exec_server_enforce_managed_network: false,

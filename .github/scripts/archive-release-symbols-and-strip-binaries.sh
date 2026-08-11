@@ -98,17 +98,6 @@ case "$target" in
       "$objcopy_bin" --add-gnu-debuglink="$debug_path" "$binary_path"
     done
     ;;
-  *windows*)
-    for binary in "${binary_names[@]}"; do
-      pdb_path="${release_dir%/}/${binary}.pdb"
-      if [[ ! -f "$pdb_path" ]]; then
-        echo "PDB $pdb_path not found" >&2
-        exit 1
-      fi
-
-      cp "$pdb_path" "${symbols_dir}/${binary}.pdb"
-    done
-    ;;
   *)
     echo "No symbols packaging support for target: $target" >&2
     exit 1

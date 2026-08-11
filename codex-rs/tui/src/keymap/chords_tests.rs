@@ -241,18 +241,6 @@ fn rejects_unix_suspend_key_in_any_chord_stroke() {
     }
 }
 
-#[cfg(windows)]
-#[test]
-fn rejects_windows_altgr_prefixes_outside_vim() {
-    let mut config = TuiKeymap::default();
-    config.composer.submit = Some(binding("ctrl-alt-x enter"));
-
-    let error =
-        RuntimeKeymap::from_config(&config).expect_err("AltGr may be ordinary Windows text input");
-
-    assert!(error.contains("AltGr"), "{error}");
-}
-
 #[test]
 fn dispatch_tokens_are_unique_and_cover_the_action_inventory() {
     let mut tokens = HashSet::new();

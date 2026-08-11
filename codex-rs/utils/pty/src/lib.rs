@@ -4,10 +4,6 @@ pub mod process_group;
 pub mod pty;
 #[cfg(test)]
 mod tests;
-#[cfg(windows)]
-mod win;
-#[cfg(windows)]
-mod windows_input;
 
 pub const DEFAULT_OUTPUT_BYTES_CAP: usize = 1024 * 1024;
 
@@ -33,15 +29,5 @@ pub use process::spawn_from_driver;
 pub type ExecCommandSession = ProcessHandle;
 /// Backwards-compatible alias for SpawnedProcess.
 pub type SpawnedPty = SpawnedProcess;
-/// Report whether ConPTY is available on this platform (Windows only).
-pub use pty::conpty_supported;
 /// Spawn a process attached to a PTY for interactive use.
 pub use pty::spawn_process as spawn_pty_process;
-#[cfg(windows)]
-pub use win::JobObject;
-#[cfg(windows)]
-pub use win::PsuedoCon;
-#[cfg(windows)]
-pub use win::conpty::RawConPty;
-#[cfg(windows)]
-pub use windows_input::WindowsTtyInputNormalizer;

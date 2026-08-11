@@ -836,23 +836,14 @@ async fn shell_zsh_fork_stays_standalone_until_unified_exec_composition_is_enabl
     })
     .await;
 
-    if codex_utils_pty::conpty_supported() {
-        composed.assert_visible_contains(&["exec_command", "write_stdin"]);
-        composed.assert_visible_lacks(&["shell_command"]);
-        composed.assert_registered_contains(&["exec_command", "write_stdin", "shell_command"]);
-        assert_eq!(composed.exposure("shell_command"), ToolExposure::Hidden);
-    } else {
-        composed.assert_visible_contains(&["shell_command"]);
-        composed.assert_visible_lacks(&["exec_command", "write_stdin"]);
-    }
+    composed.assert_visible_contains(&["exec_command", "write_stdin"]);
+    composed.assert_visible_lacks(&["shell_command"]);
+    composed.assert_registered_contains(&["exec_command", "write_stdin", "shell_command"]);
+    assert_eq!(composed.exposure("shell_command"), ToolExposure::Hidden);
 }
 
 #[tokio::test]
 async fn zsh_fork_unified_exec_hides_shell_parameter() {
-    if !codex_utils_pty::conpty_supported() {
-        return;
-    }
-
     let plan = probe(|turn| {
         set_features(
             turn,
@@ -874,10 +865,6 @@ async fn zsh_fork_unified_exec_hides_shell_parameter() {
 
 #[tokio::test]
 async fn zsh_fork_unified_exec_keeps_shell_parameter_when_remote_environment_available() {
-    if !codex_utils_pty::conpty_supported() {
-        return;
-    }
-
     let plan = probe(|turn| {
         set_features(
             turn,

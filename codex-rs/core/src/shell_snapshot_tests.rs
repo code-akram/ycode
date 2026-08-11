@@ -485,17 +485,6 @@ async fn linux_sh_snapshot_includes_sections() -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
-#[ignore]
-#[tokio::test]
-async fn windows_powershell_snapshot_includes_sections() -> Result<()> {
-    let snapshot = get_snapshot(ShellType::PowerShell).await?;
-    assert!(snapshot.contains("# Snapshot file"));
-    assert!(snapshot.contains("aliases "));
-    assert!(snapshot.contains("exports "));
-    Ok(())
-}
-
 async fn write_rollout_stub(codex_home: &Path, session_id: ThreadId) -> Result<PathBuf> {
     let dir = codex_home
         .join("sessions")

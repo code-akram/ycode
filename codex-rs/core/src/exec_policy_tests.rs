@@ -16,10 +16,15 @@ use codex_config::config_toml::ProjectConfig;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
+#[cfg(target_os = "windows")]
 use codex_protocol::permissions::FileSystemAccessMode;
+#[cfg(target_os = "windows")]
 use codex_protocol::permissions::FileSystemPath;
+#[cfg(target_os = "windows")]
 use codex_protocol::permissions::FileSystemSandboxEntry;
+#[cfg(target_os = "windows")]
 use codex_protocol::permissions::FileSystemSandboxPolicy;
+#[cfg(target_os = "windows")]
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
@@ -33,10 +38,6 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
-
-#[cfg(windows)]
-#[path = "exec_policy_windows_tests.rs"]
-mod windows_tests;
 
 fn config_stack_for_dot_codex_folder(dot_codex_folder: &Path) -> ConfigLayerStack {
     let dot_codex_folder =
@@ -1166,6 +1167,7 @@ fn known_safe_on_request_still_prompts_for_restricted_sandbox_escalation() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn managed_cwd_write_profile_has_filesystem_restrictions() {
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry {
@@ -1194,6 +1196,7 @@ fn managed_cwd_write_profile_has_filesystem_restrictions() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn managed_unresolvable_write_profile_has_filesystem_restrictions() {
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry {
@@ -1225,6 +1228,7 @@ fn managed_unresolvable_write_profile_has_filesystem_restrictions() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn managed_full_disk_write_profile_has_no_filesystem_restrictions() {
     let file_system_sandbox_policy =
         FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
@@ -2110,63 +2114,6 @@ async fn forced_rm_requires_approval_or_specific_rejection_on_all_platforms() {
             .await,
         r#"On all platforms, a forbidden command should require approval
             (unless AskForApproval::Never is specified)."#
-    );
-}
-
-/// Note this test behaves differently on Windows because it exercises an
-/// `if cfg!(windows)` code path in render_decision_for_unmatched_command().
-#[tokio::test]
-async fn verify_approval_requirement_for_unsafe_powershell_command() {
-    // `brew install powershell` to run this test on a Mac!
-    // Note `pwsh` is required to parse a PowerShell command to see if it
-    // is safe.
-    if which::which("pwsh").is_err() {
-        return;
-    }
-
-    let policy = ExecPolicyManager::new(Arc::new(Policy::empty()));
-    let permissions = SandboxPermissions::UseDefault;
-
-    // This command should not be run without user approval unless there is
-    // a proper sandbox in place to ensure safety.
-    let sneaky_command = vec_str(&["pwsh", "-Command", "echo hi @(calc)"]);
-    let expected_amendment = Some(ExecPolicyAmendment::new(vec_str(&[
-        "pwsh",
-        "-Command",
-        "echo hi @(calc)",
-    ])));
-    let (pwsh_approval_reason, expected_req) = if cfg!(windows) {
-        (
-            r#"On Windows, SandboxPolicy::ReadOnly should be assumed to mean
-                that no sandbox is present, so anything that is not "provably
-                safe" should require approval."#,
-            ExecApprovalRequirement::NeedsApproval {
-                reason: None,
-                proposed_execpolicy_amendment: expected_amendment.clone(),
-            },
-        )
-    } else {
-        (
-            "On non-Windows, rely on the read-only sandbox to prevent harm.",
-            ExecApprovalRequirement::Skip {
-                bypass_sandbox: false,
-                proposed_execpolicy_amendment: expected_amendment.clone(),
-            },
-        )
-    };
-    assert_eq!(
-        expected_req,
-        policy
-            .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-                command: &sneaky_command,
-                approval_policy: AskForApproval::OnRequest,
-                permission_profile: PermissionProfile::read_only(),
-                windows_sandbox_level: WindowsSandboxLevel::Disabled,
-                sandbox_permissions: permissions,
-                prefix_rule: None,
-            })
-            .await,
-        "{pwsh_approval_reason}"
     );
 }
 

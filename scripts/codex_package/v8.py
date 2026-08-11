@@ -62,10 +62,7 @@ def fetch_codex_v8_artifacts(
     target = spec.target
     cache_dir = (cache_root or default_cache_root()) / f"rusty-v8-{version}-{target}"
 
-    if spec.is_windows:
-        archive_name = f"rusty_v8_{V8_ARTIFACT_PROFILE}_{target}.lib.gz"
-    else:
-        archive_name = f"librusty_v8_{V8_ARTIFACT_PROFILE}_{target}.a.gz"
+    archive_name = f"librusty_v8_{V8_ARTIFACT_PROFILE}_{target}.a.gz"
     binding_name = f"src_binding_{V8_ARTIFACT_PROFILE}_{target}.rs"
     checksums_name = f"rusty_v8_{V8_ARTIFACT_PROFILE}_{target}.sha256"
 

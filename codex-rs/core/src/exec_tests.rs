@@ -382,6 +382,7 @@ async fn process_exec_tool_call_preserves_full_buffer_capture_policy() -> Result
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_skips_external_sandbox_policies() {
     let permission_profile = PermissionProfile::External {
         network: NetworkSandboxPolicy::Restricted,
@@ -391,6 +392,7 @@ fn windows_restricted_token_skips_external_sandbox_policies() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_supports_read_only_profiles() {
     let permission_profile = PermissionProfile::read_only();
 
@@ -398,6 +400,7 @@ fn windows_restricted_token_supports_read_only_profiles() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_proxy_enforcement_uses_elevated_backend() {
     assert!(!windows_sandbox_uses_elevated_backend(
         WindowsSandboxLevel::RestrictedToken,
@@ -414,6 +417,7 @@ fn windows_proxy_enforcement_uses_elevated_backend() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_rejects_network_only_restrictions() {
     let permission_profile = PermissionProfile::from_runtime_permissions(
         &FileSystemSandboxPolicy::unrestricted(),
@@ -435,6 +439,7 @@ fn windows_restricted_token_rejects_network_only_restrictions() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_rejects_managed_root_write_profiles() {
     let file_system_policy = FileSystemSandboxPolicy::restricted(vec![
         codex_protocol::permissions::FileSystemSandboxEntry {
@@ -466,6 +471,7 @@ fn windows_restricted_token_rejects_managed_root_write_profiles() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_allows_read_only_profiles() {
     let permission_profile = PermissionProfile::read_only();
     let sandbox_policy_cwd = AbsolutePathBuf::current_dir().expect("cwd");
@@ -482,6 +488,7 @@ fn windows_restricted_token_allows_read_only_profiles() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_allows_workspace_write_profiles() {
     let permission_profile = PermissionProfile::workspace_write_with(
         &[],
@@ -503,6 +510,7 @@ fn windows_restricted_token_allows_workspace_write_profiles() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_elevated_allows_split_restricted_read_policies() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let docs = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
@@ -534,6 +542,7 @@ fn windows_elevated_allows_split_restricted_read_policies() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_rejects_split_only_filesystem_policies() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let docs = temp_dir.path().join("docs");
@@ -577,6 +586,7 @@ fn windows_restricted_token_rejects_split_only_filesystem_policies() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_rejects_root_write_read_only_carveouts() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let docs = temp_dir.path().join("docs");
@@ -618,6 +628,7 @@ fn windows_restricted_token_rejects_root_write_read_only_carveouts() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_supports_full_read_split_write_read_carveouts() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let cwd = dunce::canonicalize(temp_dir.path())
@@ -676,6 +687,7 @@ fn windows_restricted_token_supports_full_read_split_write_read_carveouts() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_restricted_token_rejects_unreadable_split_carveouts() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let cwd = dunce::canonicalize(temp_dir.path())
@@ -726,6 +738,7 @@ fn windows_restricted_token_rejects_unreadable_split_carveouts() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_elevated_supports_split_restricted_read_roots() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let docs = temp_dir.path().join("docs");
@@ -764,6 +777,7 @@ fn windows_elevated_supports_split_restricted_read_roots() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_elevated_supports_split_write_read_carveouts() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let docs = temp_dir.path().join("docs");
@@ -867,6 +881,7 @@ fn windows_workspace_defaults_do_not_hide_explicit_metadata_carveouts() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_elevated_supports_unreadable_split_carveouts() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let blocked = temp_dir.path().join("blocked");
@@ -929,6 +944,7 @@ fn windows_elevated_supports_unreadable_split_carveouts() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_elevated_supports_unreadable_globs() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let secret = temp_dir.path().join("app").join(".env");
@@ -985,6 +1001,7 @@ fn windows_elevated_supports_unreadable_globs() {
 }
 
 #[test]
+#[cfg(target_os = "windows")]
 fn windows_elevated_rejects_reopened_writable_descendants() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let docs = temp_dir.path().join("docs");

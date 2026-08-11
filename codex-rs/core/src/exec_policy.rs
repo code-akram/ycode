@@ -144,19 +144,11 @@ pub(crate) static BANNED_PREFIX_SUGGESTIONS: &[&[&str]] = &[
 /// words being evaluated by exec-policy.
 ///
 /// The command tokens may be the original argv or a shell-specific lowering of
-/// a wrapper such as `bash -lc ...` or `powershell.exe -Command ...`. We only
-/// need to distinguish the PowerShell case because its safelist and dangerous
-/// heuristics operate on PowerShell-flavored inner command words rather than
-/// the generic command classifier.
+/// a wrapper such as `bash -lc ...`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ExecPolicyCommandOrigin {
     /// Use the generic unmatched-command heuristics.
     Generic,
-    #[cfg(windows)]
-    /// The command words came from the `-Command` body of a top-level
-    /// PowerShell wrapper, so use PowerShell-specific unmatched-command
-    /// heuristics for the lowered words.
-    PowerShell,
 }
 
 #[derive(Clone, Copy)]
@@ -689,10 +681,6 @@ fn dangerous_command_match_for_origin(
 ) -> Option<DangerousCommandMatch> {
     match command_origin {
         ExecPolicyCommandOrigin::Generic => dangerous_command_match(command),
-        #[cfg(windows)]
-        ExecPolicyCommandOrigin::PowerShell => {
-            codex_shell_command::is_dangerous_command::dangerous_powershell_words_match(command)
-        }
     }
 }
 
@@ -726,7 +714,7 @@ pub(crate) fn render_decision_for_unmatched_command(
     let UnmatchedCommandContext {
         approval_policy,
         permission_profile,
-        windows_sandbox_level,
+        windows_sandbox_level: _,
         sandbox_permissions,
         used_complex_parsing,
         command_origin,
@@ -734,25 +722,9 @@ pub(crate) fn render_decision_for_unmatched_command(
     let file_system_sandbox_policy = permission_profile.file_system_sandbox_policy();
     let is_known_safe = match command_origin {
         ExecPolicyCommandOrigin::Generic => is_known_safe_command(command),
-        #[cfg(windows)]
-        ExecPolicyCommandOrigin::PowerShell => {
-            codex_shell_command::is_safe_command::is_safe_powershell_words(command)
-        }
     };
 
-    // When the Windows sandbox backend is disabled, managed filesystem
-    // restrictions are only a policy shape; there is no platform sandbox to
-    // enforce the boundary. Keep that legacy case conservative while still
-    // relying on the real Windows sandbox when it is enabled.
-    let windows_managed_fs_restrictions_without_sandbox_backend = cfg!(windows)
-        && windows_sandbox_level == WindowsSandboxLevel::Disabled
-        && profile_has_managed_filesystem_restrictions(permission_profile);
-
-    if is_known_safe
-        && !used_complex_parsing
-        && (approval_policy == AskForApproval::UnlessTrusted
-            || windows_managed_fs_restrictions_without_sandbox_backend)
-    {
+    if is_known_safe && !used_complex_parsing && approval_policy == AskForApproval::UnlessTrusted {
         return Decision::Allow;
     }
 
@@ -762,8 +734,7 @@ pub(crate) fn render_decision_for_unmatched_command(
     // We prefer to prompt the user rather than outright forbid the command,
     // but if the user has explicitly disabled prompts, we must
     // forbid the command.
-    if dangerous_command_match.is_some() || windows_managed_fs_restrictions_without_sandbox_backend
-    {
+    if dangerous_command_match.is_some() {
         return match approval_policy {
             AskForApproval::Never => Decision::Forbidden,
             AskForApproval::OnRequest
@@ -820,16 +791,6 @@ pub(crate) fn render_decision_for_unmatched_command(
     }
 }
 
-fn profile_has_managed_filesystem_restrictions(permission_profile: &PermissionProfile) -> bool {
-    let file_system_sandbox_policy = permission_profile.file_system_sandbox_policy();
-    matches!(permission_profile, PermissionProfile::Managed { .. })
-        && matches!(
-            file_system_sandbox_policy.kind,
-            FileSystemSandboxKind::Restricted
-        )
-        && !file_system_sandbox_policy.has_full_disk_write_access()
-}
-
 pub(crate) fn default_policy_path(codex_home: &Path) -> PathBuf {
     codex_home.join(RULES_DIR_NAME).join(DEFAULT_POLICY_FILE)
 }
@@ -843,20 +804,6 @@ fn commands_for_exec_policy(command: &[String]) -> ExecPolicyCommands {
             used_complex_parsing: false,
             command_origin: ExecPolicyCommandOrigin::Generic,
         };
-    }
-
-    #[cfg(windows)]
-    {
-        if let Some(commands) =
-            codex_shell_command::powershell::parse_powershell_command_into_plain_commands(command)
-            && !commands.is_empty()
-        {
-            return ExecPolicyCommands {
-                commands,
-                used_complex_parsing: false,
-                command_origin: ExecPolicyCommandOrigin::PowerShell,
-            };
-        }
     }
 
     if let Some(single_command) = parse_shell_lc_single_command_prefix(command) {

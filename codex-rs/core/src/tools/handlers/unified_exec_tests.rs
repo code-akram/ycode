@@ -1,5 +1,4 @@
 use super::*;
-use crate::shell::ShellType;
 use crate::shell::default_user_shell;
 use codex_exec_server::Environment;
 use codex_tools::UnifiedExecShellMode;
@@ -91,63 +90,6 @@ fn test_get_command_respects_explicit_bash_shell() -> anyhow::Result<()> {
     {
         assert!(command.contains(&"-NoProfile".to_string()));
     }
-    Ok(())
-}
-
-#[test]
-fn test_get_command_respects_explicit_powershell_shell() -> anyhow::Result<()> {
-    let temp_dir = tempfile::tempdir()?;
-    let powershell_path = temp_dir.path().join(if cfg!(windows) {
-        "powershell.exe"
-    } else {
-        "powershell"
-    });
-    std::fs::write(&powershell_path, "")?;
-    let json = serde_json::json!({
-        "cmd": "echo hello",
-        "shell": powershell_path,
-    })
-    .to_string();
-
-    let args: ExecCommandArgs = parse_arguments(&json)?;
-
-    assert_eq!(
-        args.shell.as_deref(),
-        Some(powershell_path.to_string_lossy().as_ref())
-    );
-
-    let resolved = get_command(
-        &args,
-        Arc::new(default_user_shell()),
-        &UnifiedExecShellMode::Direct,
-        /*allow_login_shell*/ true,
-    )
-    .map_err(anyhow::Error::msg)?;
-    let command = resolved.command;
-
-    assert_eq!(command[2], "echo hello");
-    assert_eq!(resolved.shell_type, ShellType::PowerShell);
-    Ok(())
-}
-
-#[test]
-fn test_get_command_respects_explicit_cmd_shell() -> anyhow::Result<()> {
-    let json = r#"{"cmd": "echo hello", "shell": "cmd"}"#;
-
-    let args: ExecCommandArgs = parse_arguments(json)?;
-
-    assert_eq!(args.shell.as_deref(), Some("cmd"));
-
-    let resolved = get_command(
-        &args,
-        Arc::new(default_user_shell()),
-        &UnifiedExecShellMode::Direct,
-        /*allow_login_shell*/ true,
-    )
-    .map_err(anyhow::Error::msg)?;
-    let command = resolved.command;
-
-    assert_eq!(command[2], "echo hello");
     Ok(())
 }
 

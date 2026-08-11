@@ -328,7 +328,6 @@ use crate::tools::sandboxing::ApprovalStore;
 use crate::turn_timing::TurnTimingState;
 use crate::turn_timing::record_turn_ttfm_metric;
 use crate::unified_exec::UnifiedExecProcessManager;
-use crate::windows_sandbox::WindowsSandboxLevelExt;
 use codex_core_plugins::PluginCommandAttribution;
 use codex_core_plugins::PluginsManager;
 use codex_core_plugins::RecommendedPluginCandidatesInput;
@@ -459,8 +458,6 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) external_time_provider: Option<Arc<dyn TimeProvider>>,
     pub(crate) inherited_multi_agent_version: Option<MultiAgentVersion>,
     pub(crate) git_enrichment_policy: GitEnrichmentPolicy,
-    pub(crate) windows_sandbox_proxy_settings_mode:
-        codex_sandboxing::WindowsSandboxProxySettingsMode,
 }
 
 pub(crate) fn resolve_multi_agent_version(
@@ -551,7 +548,6 @@ impl Session {
             external_time_provider,
             inherited_multi_agent_version,
             git_enrichment_policy,
-            windows_sandbox_proxy_settings_mode,
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
@@ -695,7 +691,7 @@ impl Session {
             approval_policy: config.permissions.approval_policy.clone(),
             approvals_reviewer: config.approvals_reviewer,
             permission_profile_state: session_permission_profile_state_from_config(&config)?,
-            windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
+            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             environments: TurnEnvironmentSelections::new(
                 config.cwd.clone(),
                 environment_selections,
@@ -750,7 +746,6 @@ impl Session {
             external_time_provider,
             multi_agent_version,
             git_enrichment_policy,
-            windows_sandbox_proxy_settings_mode,
         ))
         .await
         .map_err(|e| {
