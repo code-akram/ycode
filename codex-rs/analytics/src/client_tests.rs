@@ -10,11 +10,11 @@ use super::send_track_events;
 use super::send_track_events_request;
 use super::track_event_request_batches;
 #[cfg(debug_assertions)]
-use crate::events::AppServerRpcTransport;
+use crate::events::CliRuntimeRpcTransport;
 use crate::events::CodexAcceptedLineFingerprintsEventParams;
 use crate::events::CodexAcceptedLineFingerprintsEventRequest;
 #[cfg(debug_assertions)]
-use crate::events::CodexAppServerClientMetadata;
+use crate::events::CodexCliRuntimeClientMetadata;
 #[cfg(debug_assertions)]
 use crate::events::CodexPluginMetadata;
 #[cfg(debug_assertions)]
@@ -30,31 +30,31 @@ use crate::events::SkillInvocationEventRequest;
 use crate::events::TrackEventRequest;
 use crate::facts::AnalyticsFact;
 use crate::facts::InvocationType;
-use codex_app_server_protocol::ApprovalsReviewer as AppServerApprovalsReviewer;
-use codex_app_server_protocol::AskForApproval as AppServerAskForApproval;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ClientResponsePayload;
-use codex_app_server_protocol::CommandExecutionOutputDeltaNotification;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::SandboxPolicy as AppServerSandboxPolicy;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::SessionSource as AppServerSessionSource;
-use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadArchiveParams;
-use codex_app_server_protocol::ThreadArchiveResponse;
-use codex_app_server_protocol::ThreadForkResponse;
-use codex_app_server_protocol::ThreadResumeResponse;
-use codex_app_server_protocol::ThreadStartResponse;
-use codex_app_server_protocol::ThreadStatus as AppServerThreadStatus;
-use codex_app_server_protocol::Turn;
-use codex_app_server_protocol::TurnDiffUpdatedNotification;
-use codex_app_server_protocol::TurnInterruptParams;
-use codex_app_server_protocol::TurnInterruptResponse;
-use codex_app_server_protocol::TurnStartParams;
-use codex_app_server_protocol::TurnStartResponse;
-use codex_app_server_protocol::TurnStatus as AppServerTurnStatus;
-use codex_app_server_protocol::TurnSteerParams;
-use codex_app_server_protocol::TurnSteerResponse;
+use codex_cli_protocol::ApprovalsReviewer as CliRuntimeApprovalsReviewer;
+use codex_cli_protocol::AskForApproval as CliRuntimeAskForApproval;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ClientResponsePayload;
+use codex_cli_protocol::CommandExecutionOutputDeltaNotification;
+use codex_cli_protocol::RequestId;
+use codex_cli_protocol::SandboxPolicy as CliRuntimeSandboxPolicy;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::SessionSource as CliRuntimeSessionSource;
+use codex_cli_protocol::Thread;
+use codex_cli_protocol::ThreadArchiveParams;
+use codex_cli_protocol::ThreadArchiveResponse;
+use codex_cli_protocol::ThreadForkResponse;
+use codex_cli_protocol::ThreadResumeResponse;
+use codex_cli_protocol::ThreadStartResponse;
+use codex_cli_protocol::ThreadStatus as CliRuntimeThreadStatus;
+use codex_cli_protocol::Turn;
+use codex_cli_protocol::TurnDiffUpdatedNotification;
+use codex_cli_protocol::TurnInterruptParams;
+use codex_cli_protocol::TurnInterruptResponse;
+use codex_cli_protocol::TurnStartParams;
+use codex_cli_protocol::TurnStartResponse;
+use codex_cli_protocol::TurnStatus as CliRuntimeTurnStatus;
+use codex_cli_protocol::TurnSteerParams;
+use codex_cli_protocol::TurnSteerResponse;
 #[cfg(debug_assertions)]
 use codex_login::AuthManager;
 use codex_utils_absolute_path::test_support::PathBufExt;
@@ -439,11 +439,11 @@ fn sample_thread(thread_id: &str) -> Thread {
         created_at: 1,
         updated_at: 2,
         recency_at: Some(2),
-        status: AppServerThreadStatus::Idle,
+        status: CliRuntimeThreadStatus::Idle,
         path: None,
         cwd: test_path_buf("/tmp").abs(),
         cli_version: "0.0.0".to_string(),
-        source: AppServerSessionSource::Exec,
+        source: CliRuntimeSessionSource::Exec,
         can_accept_direct_input: None,
         thread_source: None,
         agent_nickname: None,
@@ -463,9 +463,9 @@ fn sample_thread_start_response() -> ClientResponsePayload {
         cwd: test_path_buf("/tmp").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
-        approval_policy: AppServerAskForApproval::OnRequest,
-        approvals_reviewer: AppServerApprovalsReviewer::User,
-        sandbox: AppServerSandboxPolicy::DangerFullAccess,
+        approval_policy: CliRuntimeAskForApproval::OnRequest,
+        approvals_reviewer: CliRuntimeApprovalsReviewer::User,
+        sandbox: CliRuntimeSandboxPolicy::DangerFullAccess,
         active_permission_profile: None,
         reasoning_effort: None,
         multi_agent_mode: Default::default(),
@@ -481,9 +481,9 @@ fn sample_thread_resume_response() -> ClientResponsePayload {
         cwd: test_path_buf("/tmp").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
-        approval_policy: AppServerAskForApproval::OnRequest,
-        approvals_reviewer: AppServerApprovalsReviewer::User,
-        sandbox: AppServerSandboxPolicy::DangerFullAccess,
+        approval_policy: CliRuntimeAskForApproval::OnRequest,
+        approvals_reviewer: CliRuntimeApprovalsReviewer::User,
+        sandbox: CliRuntimeSandboxPolicy::DangerFullAccess,
         active_permission_profile: None,
         reasoning_effort: None,
         multi_agent_mode: Default::default(),
@@ -502,9 +502,9 @@ fn sample_thread_fork_response() -> ClientResponsePayload {
         cwd: test_path_buf("/tmp").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
-        approval_policy: AppServerAskForApproval::OnRequest,
-        approvals_reviewer: AppServerApprovalsReviewer::User,
-        sandbox: AppServerSandboxPolicy::DangerFullAccess,
+        approval_policy: CliRuntimeAskForApproval::OnRequest,
+        approvals_reviewer: CliRuntimeApprovalsReviewer::User,
+        sandbox: CliRuntimeSandboxPolicy::DangerFullAccess,
         active_permission_profile: None,
         reasoning_effort: None,
         multi_agent_mode: Default::default(),
@@ -515,9 +515,9 @@ fn sample_turn_start_response() -> ClientResponsePayload {
     ClientResponsePayload::TurnStart(TurnStartResponse {
         turn: Turn {
             id: "turn-1".to_string(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
+            items_view: codex_cli_protocol::TurnItemsView::Full,
             items: Vec::new(),
-            status: AppServerTurnStatus::InProgress,
+            status: CliRuntimeTurnStatus::InProgress,
             error: None,
             started_at: None,
             completed_at: None,

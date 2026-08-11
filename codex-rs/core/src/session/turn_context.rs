@@ -148,7 +148,7 @@ pub struct TurnContext {
     pub(crate) cwd: AbsolutePathBuf,
     pub(crate) current_date: Option<String>,
     pub(crate) timezone: Option<String>,
-    pub(crate) app_server_client_name: Option<String>,
+    pub(crate) cli_runtime_client_name: Option<String>,
     pub(crate) developer_instructions: Option<String>,
     pub(crate) mode: ModeKind,
     pub(crate) collaboration_mode_developer_instructions: Option<String>,
@@ -308,7 +308,7 @@ impl TurnContext {
             cwd: self.cwd.clone(),
             current_date: self.current_date.clone(),
             timezone: self.timezone.clone(),
-            app_server_client_name: self.app_server_client_name.clone(),
+            cli_runtime_client_name: self.cli_runtime_client_name.clone(),
             developer_instructions: self.developer_instructions.clone(),
             mode: self.mode,
             collaboration_mode_developer_instructions: self
@@ -575,7 +575,7 @@ impl Session {
             cwd,
             current_date: Some(current_date),
             timezone: Some(timezone),
-            app_server_client_name: session_configuration.app_server_client_name.clone(),
+            cli_runtime_client_name: session_configuration.cli_runtime_client_name.clone(),
             developer_instructions: session_configuration.developer_instructions.clone(),
             mode: collaboration_mode.mode,
             collaboration_mode_developer_instructions: collaboration_mode

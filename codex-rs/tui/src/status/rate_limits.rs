@@ -14,10 +14,10 @@ use chrono::DateTime;
 use chrono::Duration as ChronoDuration;
 use chrono::Local;
 use chrono::Utc;
-use codex_app_server_protocol::CreditsSnapshot as CoreCreditsSnapshot;
-use codex_app_server_protocol::RateLimitSnapshot;
-use codex_app_server_protocol::RateLimitWindow;
-use codex_app_server_protocol::SpendControlLimitSnapshot as CoreSpendControlLimitSnapshot;
+use codex_cli_protocol::CreditsSnapshot as CoreCreditsSnapshot;
+use codex_cli_protocol::RateLimitSnapshot;
+use codex_cli_protocol::RateLimitWindow;
+use codex_cli_protocol::SpendControlLimitSnapshot as CoreSpendControlLimitSnapshot;
 use codex_protocol::num_format::format_with_separators;
 
 const STATUS_LIMIT_BAR_SEGMENTS: usize = 20;

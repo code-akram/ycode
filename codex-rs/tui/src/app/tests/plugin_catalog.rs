@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use codex_app_server_protocol::PluginUninstallResponse;
+use codex_cli_protocol::PluginUninstallResponse;
 
 use super::*;
 
@@ -11,13 +11,13 @@ async fn successful_plugin_uninstall_dispatches_plugin_list_refresh() -> Result<
     while app_event_rx.try_recv().is_ok() {}
 
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await?;
     let control = Box::pin(app.handle_event(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         AppEvent::PluginUninstallLoaded {
             cwd: cwd.clone(),
             plugin_id: "plugin-docs".to_string(),
@@ -44,6 +44,6 @@ async fn successful_plugin_uninstall_dispatches_plugin_list_refresh() -> Result<
     .expect("dispatcher should initiate a plugin list refresh");
     refresh_result.expect("plugin list refresh should succeed");
 
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }

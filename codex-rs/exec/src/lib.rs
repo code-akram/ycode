@@ -13,42 +13,42 @@ pub(crate) mod exec_events;
 pub use cli::Cli;
 pub use cli::Command;
 pub use cli::ReviewArgs;
-use codex_app_server_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
-use codex_app_server_client::EnvironmentManager;
-use codex_app_server_client::ExecServerRuntimePaths;
-use codex_app_server_client::InProcessAppServerClient;
-use codex_app_server_client::InProcessClientStartArgs;
-use codex_app_server_client::InProcessServerEvent;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ConfigWarningNotification;
-use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ReviewStartParams;
-use codex_app_server_protocol::ReviewStartResponse;
-use codex_app_server_protocol::ReviewTarget as ApiReviewTarget;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::Thread as AppServerThread;
-use codex_app_server_protocol::ThreadItem as AppServerThreadItem;
-use codex_app_server_protocol::ThreadListParams;
-use codex_app_server_protocol::ThreadListResponse;
-use codex_app_server_protocol::ThreadReadParams;
-use codex_app_server_protocol::ThreadReadResponse;
-use codex_app_server_protocol::ThreadResumeParams;
-use codex_app_server_protocol::ThreadResumeResponse;
-use codex_app_server_protocol::ThreadSortKey;
-use codex_app_server_protocol::ThreadSource;
-use codex_app_server_protocol::ThreadSourceKind;
-use codex_app_server_protocol::ThreadStartParams;
-use codex_app_server_protocol::ThreadStartResponse;
-use codex_app_server_protocol::ThreadUnsubscribeParams;
-use codex_app_server_protocol::ThreadUnsubscribeResponse;
-use codex_app_server_protocol::TurnInterruptParams;
-use codex_app_server_protocol::TurnInterruptResponse;
-use codex_app_server_protocol::TurnStartParams;
-use codex_app_server_protocol::TurnStartResponse;
-use codex_app_server_protocol::TurnStartedNotification;
 use codex_arg0::Arg0DispatchPaths;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ConfigWarningNotification;
+use codex_cli_protocol::JSONRPCErrorError;
+use codex_cli_protocol::RequestId;
+use codex_cli_protocol::ReviewStartParams;
+use codex_cli_protocol::ReviewStartResponse;
+use codex_cli_protocol::ReviewTarget as ApiReviewTarget;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::Thread as CliRuntimeThread;
+use codex_cli_protocol::ThreadItem as CliRuntimeThreadItem;
+use codex_cli_protocol::ThreadListParams;
+use codex_cli_protocol::ThreadListResponse;
+use codex_cli_protocol::ThreadReadParams;
+use codex_cli_protocol::ThreadReadResponse;
+use codex_cli_protocol::ThreadResumeParams;
+use codex_cli_protocol::ThreadResumeResponse;
+use codex_cli_protocol::ThreadSortKey;
+use codex_cli_protocol::ThreadSource;
+use codex_cli_protocol::ThreadSourceKind;
+use codex_cli_protocol::ThreadStartParams;
+use codex_cli_protocol::ThreadStartResponse;
+use codex_cli_protocol::ThreadUnsubscribeParams;
+use codex_cli_protocol::ThreadUnsubscribeResponse;
+use codex_cli_protocol::TurnInterruptParams;
+use codex_cli_protocol::TurnInterruptResponse;
+use codex_cli_protocol::TurnStartParams;
+use codex_cli_protocol::TurnStartResponse;
+use codex_cli_protocol::TurnStartedNotification;
+use codex_cli_runtime_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
+use codex_cli_runtime_client::EnvironmentManager;
+use codex_cli_runtime_client::ExecServerRuntimePaths;
+use codex_cli_runtime_client::InProcessCliRuntimeClient;
+use codex_cli_runtime_client::InProcessClientStartArgs;
+use codex_cli_runtime_client::InProcessServerEvent;
 use codex_cloud_config::cloud_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadError;
@@ -199,7 +199,7 @@ struct ExecRunArgs {
     state_db: Option<StateDbHandle>,
     command: Option<ExecCommand>,
     config: Config,
-    resume_approvals_reviewer_override: Option<codex_app_server_protocol::ApprovalsReviewer>,
+    resume_approvals_reviewer_override: Option<codex_cli_protocol::ApprovalsReviewer>,
     dangerously_bypass_approvals_and_sandbox: bool,
     exec_span: tracing::Span,
     images: Vec<PathBuf>,
@@ -756,10 +756,10 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     }
 
     let mut request_ids = RequestIdSequencer::new();
-    let mut client = InProcessAppServerClient::start(in_process_start_args)
+    let mut client = InProcessCliRuntimeClient::start(in_process_start_args)
         .await
         .map_err(|err| {
-            anyhow::anyhow!("failed to initialize in-process app-server client: {err}")
+            anyhow::anyhow!("failed to initialize in-process cli-runtime client: {err}")
         })?;
 
     // Handle resume subcommand through existing `thread/list` + `thread/resume`
@@ -971,8 +971,8 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                     && payload.turn.id == task_id
                     && matches!(
                         payload.turn.status,
-                        codex_app_server_protocol::TurnStatus::Failed
-                            | codex_app_server_protocol::TurnStatus::Interrupted
+                        codex_cli_protocol::TurnStatus::Failed
+                            | codex_cli_protocol::TurnStatus::Interrupted
                     )
                 {
                     error_seen = true;
@@ -1017,7 +1017,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     }
 
     if let Err(err) = client.shutdown().await {
-        warn!("in-process app-server shutdown failed: {err}");
+        warn!("in-process cli-runtime shutdown failed: {err}");
     }
     event_processor.print_final_output();
     if error_seen {
@@ -1054,7 +1054,7 @@ fn thread_start_params_from_config(config: &Config) -> ThreadStartParams {
 fn thread_resume_params_from_config(
     config: &Config,
     thread_id: String,
-    approvals_reviewer_override: Option<codex_app_server_protocol::ApprovalsReviewer>,
+    approvals_reviewer_override: Option<codex_cli_protocol::ApprovalsReviewer>,
 ) -> ThreadResumeParams {
     let permissions = permissions_selection_from_config(config);
     let sandbox = permissions.is_none().then(|| {
@@ -1099,11 +1099,9 @@ fn permission_profile_id_from_active_profile(active: ActivePermissionProfile) ->
 fn sandbox_mode_from_permission_profile(
     permission_profile: &PermissionProfile,
     cwd: &Path,
-) -> Option<codex_app_server_protocol::SandboxMode> {
+) -> Option<codex_cli_protocol::SandboxMode> {
     match permission_profile {
-        PermissionProfile::Disabled => {
-            Some(codex_app_server_protocol::SandboxMode::DangerFullAccess)
-        }
+        PermissionProfile::Disabled => Some(codex_cli_protocol::SandboxMode::DangerFullAccess),
         PermissionProfile::External { .. } => None,
         PermissionProfile::Managed { .. } => {
             let file_system_policy = permission_profile.file_system_sandbox_policy();
@@ -1111,18 +1109,18 @@ fn sandbox_mode_from_permission_profile(
                 permission_profile
                     .network_sandbox_policy()
                     .is_enabled()
-                    .then_some(codex_app_server_protocol::SandboxMode::DangerFullAccess)
+                    .then_some(codex_cli_protocol::SandboxMode::DangerFullAccess)
             } else if file_system_policy.can_write_path_with_cwd(cwd, cwd) {
-                Some(codex_app_server_protocol::SandboxMode::WorkspaceWrite)
+                Some(codex_cli_protocol::SandboxMode::WorkspaceWrite)
             } else {
-                Some(codex_app_server_protocol::SandboxMode::ReadOnly)
+                Some(codex_cli_protocol::SandboxMode::ReadOnly)
             }
         }
     }
 }
 
 async fn send_request_with_response<T>(
-    client: &InProcessAppServerClient,
+    client: &InProcessCliRuntimeClient,
     request: ClientRequest,
     method: &str,
 ) -> Result<T, String>
@@ -1246,7 +1244,7 @@ fn session_configured_from_thread_response(
 }
 
 fn lagged_event_warning_message(skipped: usize) -> String {
-    format!("in-process app-server event stream lagged; dropped {skipped} events")
+    format!("in-process cli-runtime event stream lagged; dropped {skipped} events")
 }
 
 fn should_process_notification(
@@ -1311,12 +1309,12 @@ fn should_process_notification(
 
 async fn maybe_backfill_turn_completed_items(
     thread_ephemeral: bool,
-    client: &InProcessAppServerClient,
+    client: &InProcessCliRuntimeClient,
     request_ids: &mut RequestIdSequencer,
     notification: &mut ServerNotification,
 ) {
     // In-process delivery may drop non-terminal item notifications under backpressure while still
-    // guaranteeing `turn/completed`. Because app-server currently emits that completion with an
+    // guaranteeing `turn/completed`. Because cli-runtime currently emits that completion with an
     // empty `turn.items`, exec does one last `thread/read` here so human/json output can recover
     // the final message and reconcile any still-running items before shutdown.
     if !should_backfill_turn_completed_items(thread_ephemeral, notification) {
@@ -1362,13 +1360,13 @@ fn should_backfill_turn_completed_items(
         return false;
     };
 
-    !thread_ephemeral && payload.turn.items_view != codex_app_server_protocol::TurnItemsView::Full
+    !thread_ephemeral && payload.turn.items_view != codex_cli_protocol::TurnItemsView::Full
 }
 
 fn turn_items_for_thread(
-    thread: &AppServerThread,
+    thread: &CliRuntimeThread,
     turn_id: &str,
-) -> Option<Vec<AppServerThreadItem>> {
+) -> Option<Vec<CliRuntimeThreadItem>> {
     thread
         .turns
         .iter()
@@ -1381,7 +1379,7 @@ fn all_thread_source_kinds() -> Vec<ThreadSourceKind> {
         ThreadSourceKind::Cli,
         ThreadSourceKind::VsCode,
         ThreadSourceKind::Exec,
-        ThreadSourceKind::AppServer,
+        ThreadSourceKind::CliRuntime,
         ThreadSourceKind::SubAgent,
         ThreadSourceKind::SubAgentReview,
         ThreadSourceKind::SubAgentCompact,
@@ -1391,7 +1389,7 @@ fn all_thread_source_kinds() -> Vec<ThreadSourceKind> {
     ]
 }
 
-async fn latest_thread_cwd(thread: &AppServerThread) -> PathBuf {
+async fn latest_thread_cwd(thread: &CliRuntimeThread) -> PathBuf {
     if let Some(path) = thread.path.as_deref()
         && let Some(cwd) = parse_latest_turn_context_cwd(path).await
     {
@@ -1422,7 +1420,7 @@ fn cwds_match(current_cwd: &Path, session_cwd: &Path) -> bool {
 }
 
 async fn resolve_resume_thread_id(
-    client: &InProcessAppServerClient,
+    client: &InProcessCliRuntimeClient,
     config: &Config,
     state_db: Option<&StateDbHandle>,
     args: &crate::cli::ResumeArgs,
@@ -1569,7 +1567,7 @@ fn resume_lookup_model_providers(
 }
 
 async fn request_shutdown(
-    client: &InProcessAppServerClient,
+    client: &InProcessCliRuntimeClient,
     request_ids: &mut RequestIdSequencer,
     thread_id: &str,
 ) -> Result<(), String> {
@@ -1585,7 +1583,7 @@ async fn request_shutdown(
 }
 
 async fn resolve_server_request(
-    client: &InProcessAppServerClient,
+    client: &InProcessCliRuntimeClient,
     request_id: RequestId,
     value: serde_json::Value,
     method: &str,
@@ -1597,7 +1595,7 @@ async fn resolve_server_request(
 }
 
 async fn reject_server_request(
-    client: &InProcessAppServerClient,
+    client: &InProcessCliRuntimeClient,
     request_id: RequestId,
     method: &str,
     reason: String,
@@ -1628,7 +1626,7 @@ fn server_request_method_name(request: &ServerRequest) -> String {
 }
 
 async fn handle_server_request(
-    client: &InProcessAppServerClient,
+    client: &InProcessCliRuntimeClient,
     request: ServerRequest,
     error_seen: &mut bool,
 ) {

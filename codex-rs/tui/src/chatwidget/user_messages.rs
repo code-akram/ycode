@@ -1,6 +1,6 @@
 //! User-message models and helpers for the chat widget.
 //!
-//! The app-server preserves user input as structured chunks, while chat history
+//! The cli-runtime preserves user input as structured chunks, while chat history
 //! renders a single prompt row. This module owns the draft/message data models,
 //! merge/remap behavior, display projection, and the small compare key used to
 //! suppress duplicate rows for pending steers.
@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::MentionBinding;
 use crate::bottom_pane::QueuedInputAction;
-use codex_app_server_protocol::TextElement as AppServerTextElement;
-use codex_app_server_protocol::UserInput;
+use codex_cli_protocol::TextElement as CliRuntimeTextElement;
+use codex_cli_protocol::UserInput;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::models::local_image_label_text;
@@ -31,7 +31,7 @@ pub(crate) struct UserMessage {
     pub(crate) text: String,
     pub(crate) local_images: Vec<LocalImageAttachment>,
     /// Remote image attachments represented as URLs (for example data URLs)
-    /// provided by app-server clients.
+    /// provided by cli-runtime clients.
     ///
     /// Unlike `local_images`, these are not created by TUI image attach/paste
     /// flows. The TUI can restore and remove them while editing/backtracking.
@@ -219,7 +219,7 @@ fn append_text_with_rebased_elements(
     }));
 }
 
-pub(super) fn app_server_text_elements(elements: &[TextElement]) -> Vec<AppServerTextElement> {
+pub(super) fn cli_runtime_text_elements(elements: &[TextElement]) -> Vec<CliRuntimeTextElement> {
     elements.iter().cloned().map(Into::into).collect()
 }
 
@@ -645,7 +645,7 @@ impl ChatWidget {
 
     /// Build the compare key for a submitted pending steer without invoking the
     /// expensive request-serialization path. Pending steers only need to match the
-    /// committed app-server `UserMessage` item emitted after input drains, which
+    /// committed cli-runtime `UserMessage` item emitted after input drains, which
     /// preserves flattened text and total image count.
     pub(super) fn pending_steer_compare_key_from_items(
         items: &[UserInput],

@@ -12,7 +12,7 @@ use std::time::UNIX_EPOCH;
 pub use accepted_lines::accepted_line_fingerprints_from_unified_diff;
 pub use accepted_lines::fingerprint_hash;
 pub use client::AnalyticsEventsClient;
-pub use events::AppServerRpcTransport;
+pub use events::CliRuntimeRpcTransport;
 pub use events::GuardianApprovalRequestSource;
 pub use events::GuardianReviewAnalyticsResult;
 pub use events::GuardianReviewDecision;

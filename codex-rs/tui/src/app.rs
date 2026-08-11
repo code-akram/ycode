@@ -3,7 +3,7 @@
 //! This module owns the `App` struct, shared imports, and the high-level run loop that coordinates
 //! the focused app submodules.
 
-use crate::AppServerTarget;
+use crate::CliRuntimeTarget;
 use crate::app_backtrack::BacktrackState;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
@@ -15,11 +15,6 @@ use crate::app_event::PluginLocation;
 use crate::app_event::PluginRemoteSectionError;
 use crate::app_event::RateLimitRefreshOrigin;
 use crate::app_event_sender::AppEventSender;
-use crate::app_server_session::AppServerBootstrap;
-use crate::app_server_session::AppServerSession;
-use crate::app_server_session::AppServerStartedThread;
-use crate::app_server_session::TurnPermissionsOverride;
-use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::bottom_pane::ApplyPatchApprovalRequest;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::ExecApprovalRequest;
@@ -66,6 +61,11 @@ use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::Renderable;
 use crate::resume_picker::SessionSelection;
 use crate::resume_picker::SessionTarget;
+use crate::runtime_session::CliRuntimeBootstrap;
+use crate::runtime_session::CliRuntimeSession;
+use crate::runtime_session::CliRuntimeStartedThread;
+use crate::runtime_session::TurnPermissionsOverride;
+use crate::runtime_session::cli_runtime_rate_limit_snapshots;
 use crate::session_state::ThreadSessionState;
 #[cfg(test)]
 use crate::test_support::PathBufExt;
@@ -79,49 +79,49 @@ use crate::tui;
 use crate::tui::TuiEvent;
 use crate::update_action::UpdateAction;
 use crate::version::CODEX_CLI_VERSION;
-use crate::workspace_command::AppServerWorkspaceCommandRunner;
+use crate::workspace_command::CliRuntimeWorkspaceCommandRunner;
 use crate::workspace_command::WorkspaceCommandRunner;
 use codex_ansi_escape::ansi_escape_line;
-use codex_app_server_client::AppServerRequestHandle;
-use codex_app_server_client::TypedRequestError;
-use codex_app_server_protocol::AddCreditsNudgeCreditType;
-use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
-use codex_app_server_protocol::ConfigBatchWriteParams;
-use codex_app_server_protocol::ConfigReadResponse;
-use codex_app_server_protocol::ConfigValueWriteParams;
-use codex_app_server_protocol::ConfigWriteResponse;
-use codex_app_server_protocol::FeedbackUploadParams;
-use codex_app_server_protocol::FeedbackUploadResponse;
-use codex_app_server_protocol::GetAccountRateLimitsResponse;
-use codex_app_server_protocol::HooksListEntry;
-use codex_app_server_protocol::MergeStrategy;
-use codex_app_server_protocol::PluginInstallParams;
-use codex_app_server_protocol::PluginInstallResponse;
-use codex_app_server_protocol::PluginListMarketplaceKind;
-use codex_app_server_protocol::PluginListParams;
-use codex_app_server_protocol::PluginListResponse;
-use codex_app_server_protocol::PluginMarketplaceEntry;
-use codex_app_server_protocol::PluginReadParams;
-use codex_app_server_protocol::PluginReadResponse;
-use codex_app_server_protocol::PluginUninstallParams;
-use codex_app_server_protocol::PluginUninstallResponse;
-use codex_app_server_protocol::SandboxMode as AppServerSandboxMode;
-use codex_app_server_protocol::SendAddCreditsNudgeEmailParams;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::SkillErrorInfo;
-use codex_app_server_protocol::SkillsListParams;
-use codex_app_server_protocol::SkillsListResponse;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::ThreadLoadedListParams;
-use codex_app_server_protocol::ThreadMemoryMode;
-use codex_app_server_protocol::ThreadStartSource;
-use codex_app_server_protocol::Turn;
-use codex_app_server_protocol::TurnError as AppServerTurnError;
-use codex_app_server_protocol::TurnStatus;
-use codex_app_server_protocol::WriteStatus;
+use codex_cli_protocol::AddCreditsNudgeCreditType;
+use codex_cli_protocol::AskForApproval;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::CodexErrorInfo as CliRuntimeCodexErrorInfo;
+use codex_cli_protocol::ConfigBatchWriteParams;
+use codex_cli_protocol::ConfigReadResponse;
+use codex_cli_protocol::ConfigValueWriteParams;
+use codex_cli_protocol::ConfigWriteResponse;
+use codex_cli_protocol::FeedbackUploadParams;
+use codex_cli_protocol::FeedbackUploadResponse;
+use codex_cli_protocol::GetAccountRateLimitsResponse;
+use codex_cli_protocol::HooksListEntry;
+use codex_cli_protocol::MergeStrategy;
+use codex_cli_protocol::PluginInstallParams;
+use codex_cli_protocol::PluginInstallResponse;
+use codex_cli_protocol::PluginListMarketplaceKind;
+use codex_cli_protocol::PluginListParams;
+use codex_cli_protocol::PluginListResponse;
+use codex_cli_protocol::PluginMarketplaceEntry;
+use codex_cli_protocol::PluginReadParams;
+use codex_cli_protocol::PluginReadResponse;
+use codex_cli_protocol::PluginUninstallParams;
+use codex_cli_protocol::PluginUninstallResponse;
+use codex_cli_protocol::SandboxMode as CliRuntimeSandboxMode;
+use codex_cli_protocol::SendAddCreditsNudgeEmailParams;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::SkillErrorInfo;
+use codex_cli_protocol::SkillsListParams;
+use codex_cli_protocol::SkillsListResponse;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::ThreadLoadedListParams;
+use codex_cli_protocol::ThreadMemoryMode;
+use codex_cli_protocol::ThreadStartSource;
+use codex_cli_protocol::Turn;
+use codex_cli_protocol::TurnError as CliRuntimeTurnError;
+use codex_cli_protocol::TurnStatus;
+use codex_cli_protocol::WriteStatus;
+use codex_cli_runtime_client::CliRuntimeRequestHandle;
+use codex_cli_runtime_client::TypedRequestError;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
 use codex_config::types::ApprovalsReviewer;
@@ -188,9 +188,6 @@ mod agent_message_consolidation;
 mod agent_navigation;
 mod agent_picker;
 mod agent_status_feed;
-mod app_server_event_targets;
-mod app_server_events;
-pub(crate) mod app_server_requests;
 mod background_requests;
 mod config_persistence;
 mod event_dispatch;
@@ -204,6 +201,9 @@ mod platform_actions;
 mod plugin_mentions;
 mod replay_filter;
 mod resize_reflow;
+mod runtime_event_targets;
+mod runtime_events;
+pub(crate) mod runtime_requests;
 mod safety_buffering;
 mod session_lifecycle;
 mod side;
@@ -216,10 +216,10 @@ mod thread_settings;
 
 use self::agent_navigation::AgentNavigationDirection;
 use self::agent_navigation::AgentNavigationState;
-use self::app_server_requests::PendingAppServerRequests;
 use self::loaded_threads::find_loaded_subagent_threads_for_primary;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
 use self::platform_actions::*;
+use self::runtime_requests::PendingCliRuntimeRequests;
 use self::side::SideParentStatus;
 use self::side::SideParentStatusChange;
 use self::side::SideThreadState;
@@ -281,7 +281,7 @@ fn collab_receiver_is_not_found(
                 agents_states.get(receiver_thread_id).is_some_and(|state| {
                     matches!(
                         &state.status,
-                        codex_app_server_protocol::CollabAgentStatus::NotFound
+                        codex_cli_protocol::CollabAgentStatus::NotFound
                     )
                 })
             }
@@ -292,15 +292,13 @@ fn collab_receiver_is_not_found(
 }
 
 fn default_exec_approval_decisions(
-    network_approval_context: Option<&codex_app_server_protocol::NetworkApprovalContext>,
-    proposed_execpolicy_amendment: Option<&codex_app_server_protocol::ExecPolicyAmendment>,
-    proposed_network_policy_amendments: Option<
-        &[codex_app_server_protocol::NetworkPolicyAmendment],
-    >,
-    additional_permissions: Option<&codex_app_server_protocol::AdditionalPermissionProfile>,
-) -> Vec<codex_app_server_protocol::CommandExecutionApprovalDecision> {
-    use codex_app_server_protocol::CommandExecutionApprovalDecision;
-    use codex_app_server_protocol::NetworkPolicyRuleAction;
+    network_approval_context: Option<&codex_cli_protocol::NetworkApprovalContext>,
+    proposed_execpolicy_amendment: Option<&codex_cli_protocol::ExecPolicyAmendment>,
+    proposed_network_policy_amendments: Option<&[codex_cli_protocol::NetworkPolicyAmendment]>,
+    additional_permissions: Option<&codex_cli_protocol::AdditionalPermissionProfile>,
+) -> Vec<codex_cli_protocol::CommandExecutionApprovalDecision> {
+    use codex_cli_protocol::CommandExecutionApprovalDecision;
+    use codex_cli_protocol::NetworkPolicyRuleAction;
 
     if network_approval_context.is_some() {
         let mut decisions = vec![
@@ -534,7 +532,7 @@ pub(crate) struct App {
     pub(crate) feedback: codex_feedback::CodexFeedback,
     feedback_audience: FeedbackAudience,
     environment_manager: Arc<EnvironmentManager>,
-    app_server_target: AppServerTarget,
+    cli_runtime_target: CliRuntimeTarget,
     /// Set when the user confirms an update; propagated on exit.
     pub(crate) pending_update_action: Option<UpdateAction>,
 
@@ -559,7 +557,7 @@ pub(crate) struct App {
     last_subagent_backfill_attempt: Option<ThreadId>,
     primary_session_configured: Option<ThreadSessionState>,
     pending_primary_events: VecDeque<ThreadBufferedEvent>,
-    pending_app_server_requests: PendingAppServerRequests,
+    pending_runtime_requests: PendingCliRuntimeRequests,
     pending_startup_thread_start: bool,
     /// Invalidates in-flight full rate-limit reads when a newer rolling hard stop arrives.
     rate_limit_hard_stop_generation: u64,
@@ -589,14 +587,14 @@ impl RuntimePermissionProfileOverride {
     }
 }
 
-fn active_turn_not_steerable_turn_error(error: &TypedRequestError) -> Option<AppServerTurnError> {
+fn active_turn_not_steerable_turn_error(error: &TypedRequestError) -> Option<CliRuntimeTurnError> {
     let TypedRequestError::Server { source, .. } = error else {
         return None;
     };
-    let turn_error: AppServerTurnError = serde_json::from_value(source.data.clone()?).ok()?;
+    let turn_error: CliRuntimeTurnError = serde_json::from_value(source.data.clone()?).ok()?;
     matches!(
         turn_error.codex_error_info,
-        Some(AppServerCodexErrorInfo::ActiveTurnNotSteerable { .. })
+        Some(CliRuntimeCodexErrorInfo::ActiveTurnNotSteerable { .. })
     )
     .then_some(turn_error)
 }
@@ -613,15 +611,15 @@ async fn resolve_runtime_model_provider_base_url(provider: &ModelProviderInfo) -
 }
 
 fn spawn_startup_thread_start(
-    app_server: &AppServerSession,
+    cli_runtime: &CliRuntimeSession,
     config: Config,
     app_event_tx: AppEventSender,
 ) {
-    let request_handle = app_server.request_handle();
-    let thread_params_mode = app_server.thread_params_mode();
-    let remote_cwd_override = app_server.remote_cwd_override().map(Path::to_path_buf);
+    let request_handle = cli_runtime.request_handle();
+    let thread_params_mode = cli_runtime.thread_params_mode();
+    let remote_cwd_override = cli_runtime.remote_cwd_override().map(Path::to_path_buf);
     tokio::spawn(async move {
-        let result = crate::app_server_session::start_thread_with_request_handle(
+        let result = crate::runtime_session::start_thread_with_request_handle(
             request_handle,
             config,
             thread_params_mode,
@@ -744,7 +742,7 @@ impl App {
     #[allow(clippy::too_many_arguments)]
     pub async fn run(
         tui: &mut tui::Tui,
-        mut app_server: AppServerSession,
+        mut cli_runtime: CliRuntimeSession,
         mut config: Config,
         launch_cwd: PathBuf,
         cli_kv_overrides: Vec<(String, TomlValue)>,
@@ -756,11 +754,11 @@ impl App {
         session_selection: SessionSelection,
         feedback: codex_feedback::CodexFeedback,
         is_first_run: bool,
-        app_server_target: AppServerTarget,
+        cli_runtime_target: CliRuntimeTarget,
         state_db: Option<StateDbHandle>,
         environment_manager: Arc<EnvironmentManager>,
         startup_elapsed_before_app: Duration,
-        startup_bootstrap: Option<AppServerBootstrap>,
+        startup_bootstrap: Option<CliRuntimeBootstrap>,
         startup_hooks_browser: Option<HooksListEntry>,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
@@ -778,7 +776,7 @@ impl App {
             normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd)?;
         let bootstrap = match startup_bootstrap {
             Some(bootstrap) => bootstrap,
-            None => app_server.bootstrap(&config).await?,
+            None => cli_runtime.bootstrap(&config).await?,
         };
         let bootstrap_ms = bootstrap.duration.as_millis();
         if matches!(
@@ -787,7 +785,7 @@ impl App {
         ) {
             apply_managed_new_thread_defaults(
                 &mut config,
-                app_server.managed_new_thread_defaults(),
+                cli_runtime.managed_new_thread_defaults(),
                 &cli_kv_overrides,
                 &harness_overrides,
             );
@@ -795,8 +793,8 @@ impl App {
         let mut model = config.model.clone().unwrap_or(bootstrap.default_model);
         let available_models = bootstrap.available_models;
         let remote_connection = crate::status::remote_connection::remote_connection_status_value(
-            &app_server_target,
-            app_server.server_version(),
+            &cli_runtime_target,
+            cli_runtime.server_version(),
         );
         let exit_info = handle_model_migration_prompt_if_needed(
             tui,
@@ -807,11 +805,11 @@ impl App {
         )
         .await;
         if let Some(exit_info) = exit_info {
-            app_server
+            cli_runtime
                 .shutdown()
                 .await
                 .inspect_err(|err| {
-                    tracing::warn!("app-server shutdown failed: {err}");
+                    tracing::warn!("cli-runtime shutdown failed: {err}");
                 })
                 .ok();
             return Ok(exit_info);
@@ -851,7 +849,7 @@ impl App {
         let status_line_invalid_items_warned = Arc::new(AtomicBool::new(false));
         let terminal_title_invalid_items_warned = Arc::new(AtomicBool::new(false));
         let workspace_command_runner: WorkspaceCommandRunner = Arc::new(
-            AppServerWorkspaceCommandRunner::new(app_server.request_handle()),
+            CliRuntimeWorkspaceCommandRunner::new(cli_runtime.request_handle()),
         );
         let runtime_model_provider_started_at = Instant::now();
         let runtime_model_provider_base_url =
@@ -874,7 +872,7 @@ impl App {
         );
         let (mut chat_widget, initial_started_thread) = match session_selection {
             SessionSelection::StartFresh | SessionSelection::Exit => {
-                spawn_startup_thread_start(&app_server, config.clone(), app_event_tx.clone());
+                spawn_startup_thread_start(&cli_runtime, config.clone(), app_event_tx.clone());
                 // Count a startup tooltip once the initial chat widget can render it.
                 let startup_tooltip_override =
                     prepare_startup_tooltip_override(&mut config, &available_models, is_first_run)
@@ -915,7 +913,7 @@ impl App {
                     &config,
                     &harness_overrides,
                 );
-                let resumed = app_server
+                let resumed = cli_runtime
                     .resume_thread(config.clone(), target_session.thread_id, model_settings)
                     .await
                     .map_err(|err| session_start_error("resume", &target_session, err))?;
@@ -954,7 +952,7 @@ impl App {
                     /*inc*/ 1,
                     &[("source", "cli_subcommand")],
                 );
-                let forked = app_server
+                let forked = cli_runtime
                     .fork_thread(config.clone(), target_session.thread_id)
                     .await
                     .map_err(|err| session_start_error("fork", &target_session, err))?;
@@ -1036,7 +1034,7 @@ See the Codex keymap documentation for supported actions and examples."
             feedback: feedback.clone(),
             feedback_audience,
             environment_manager,
-            app_server_target,
+            cli_runtime_target,
             pending_update_action: None,
             pending_shutdown_exit_thread_id: None,
             thread_event_channels: HashMap::new(),
@@ -1050,7 +1048,7 @@ See the Codex keymap documentation for supported actions and examples."
             last_subagent_backfill_attempt: None,
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
-            pending_app_server_requests: PendingAppServerRequests::default(),
+            pending_runtime_requests: PendingCliRuntimeRequests::default(),
             pending_startup_thread_start,
             rate_limit_hard_stop_generation: 0,
             pending_plugin_enabled_writes: HashMap::new(),
@@ -1069,7 +1067,7 @@ See the Codex keymap documentation for supported actions and examples."
             app.enqueue_primary_thread_session(started.session, started.turns)
                 .await?;
             if should_prompt_for_paused_goal_after_startup_resume {
-                app.maybe_prompt_resume_paused_goal_after_resume(&mut app_server, thread_id)
+                app.maybe_prompt_resume_paused_goal_after_resume(&mut cli_runtime, thread_id)
                     .await;
             }
         }
@@ -1089,28 +1087,28 @@ See the Codex keymap documentation for supported actions and examples."
             event_stream_ms = %event_stream_started_at.elapsed().as_millis(),
             "tui startup initial frame scheduled"
         );
-        app.refresh_startup_skills(&app_server);
+        app.refresh_startup_skills(&cli_runtime);
         // Kick off a non-blocking rate-limit prefetch so the first `/status`
         // already has data and available reset credits can be surfaced, without
         // delaying the initial frame render.
         if requires_openai_auth && has_chatgpt_account {
             let reset_hint_request_id = app.chat_widget.start_rate_limit_reset_startup_check();
             app.refresh_rate_limits(
-                &app_server,
+                &cli_runtime,
                 RateLimitRefreshOrigin::StartupPrefetch {
                     reset_hint_request_id,
                 },
             );
         }
 
-        let mut listen_for_app_server_events = true;
+        let mut listen_for_runtime_events = true;
         let mut waiting_for_initial_session_configured = wait_for_initial_session_configured;
 
         #[cfg(not(debug_assertions))]
         let pre_loop_exit_reason = if let Some(latest_version) = upgrade_version {
             let control = Box::pin(app.handle_event(
                 tui,
-                &mut app_server,
+                &mut cli_runtime,
                 AppEvent::InsertHistoryCell(Box::new(UpdateAvailableHistoryCell::new(
                     latest_version,
                     crate::update_action::get_update_action(),
@@ -1133,7 +1131,7 @@ See the Codex keymap documentation for supported actions and examples."
             loop {
                 let control = select! {
                     Some(event) = app_event_rx.recv() => {
-                        match Box::pin(app.handle_event(tui, &mut app_server, event)).await {
+                        match Box::pin(app.handle_event(tui, &mut cli_runtime, event)).await {
                             Ok(control) => control,
                             Err(err) => break Err(err),
                         }
@@ -1149,7 +1147,7 @@ See the Codex keymap documentation for supported actions and examples."
                         app.active_thread_rx.is_some()
                     ) => {
                         if let Some(event) = active {
-                            if let Err(err) = app.handle_active_thread_event(tui, &mut app_server, event).await {
+                            if let Err(err) = app.handle_active_thread_event(tui, &mut cli_runtime, event).await {
                                 break Err(err);
                             }
                         } else {
@@ -1159,21 +1157,21 @@ See the Codex keymap documentation for supported actions and examples."
                     }
                     event = tui_events.next() => {
                         if let Some(event) = event {
-                            match app.handle_tui_event(tui, &mut app_server, event).await {
+                            match app.handle_tui_event(tui, &mut cli_runtime, event).await {
                                 Ok(control) => control,
                                 Err(err) => break Err(err),
                             }
                         } else {
                             tracing::warn!("terminal input stream closed; shutting down active thread");
-                            app.handle_exit_mode(&mut app_server, ExitMode::ShutdownFirst).await
+                            app.handle_exit_mode(&mut cli_runtime, ExitMode::ShutdownFirst).await
                         }
                     }
-                    app_server_event = app_server.next_event(), if listen_for_app_server_events => {
-                        match app_server_event {
-                            Some(event) => app.handle_app_server_event(&app_server, event).await,
+                    cli_runtime_event = cli_runtime.next_event(), if listen_for_runtime_events => {
+                        match cli_runtime_event {
+                            Some(event) => app.handle_cli_runtime_event(&cli_runtime, event).await,
                             None => {
-                                listen_for_app_server_events = false;
-                                tracing::warn!("app-server event stream closed");
+                                listen_for_runtime_events = false;
+                                tracing::warn!("cli-runtime event stream closed");
                             }
                         }
                         AppRunControl::Continue
@@ -1191,7 +1189,7 @@ See the Codex keymap documentation for supported actions and examples."
                 }
             }
         };
-        if let Err(err) = app_server.shutdown().await {
+        if let Err(err) = cli_runtime.shutdown().await {
             tracing::warn!(error = %err, "failed to shut down embedded app server");
         }
         let clear_pet_result = tui.clear_ambient_pet_image();
@@ -1230,7 +1228,7 @@ See the Codex keymap documentation for supported actions and examples."
     pub(crate) async fn handle_tui_event(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         event: TuiEvent,
     ) -> Result<AppRunControl> {
         let screen_size = tui.screen_size_for_event(&event)?;
@@ -1250,12 +1248,12 @@ See the Codex keymap documentation for supported actions and examples."
 
         if self.overlay.is_some() {
             let _ = self
-                .handle_backtrack_overlay_event(tui, app_server, event)
+                .handle_backtrack_overlay_event(tui, cli_runtime, event)
                 .await?;
         } else {
             match event {
                 TuiEvent::Key(key_event) => {
-                    self.handle_key_event(tui, app_server, key_event).await;
+                    self.handle_key_event(tui, cli_runtime, key_event).await;
                 }
                 TuiEvent::Paste(pasted) => {
                     // Many terminals convert newlines to \r when pasting (e.g., iTerm2),

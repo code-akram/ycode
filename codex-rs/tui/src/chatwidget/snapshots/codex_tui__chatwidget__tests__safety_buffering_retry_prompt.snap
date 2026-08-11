@@ -1,5 +1,5 @@
 ---
-source: tui/src/chatwidget/tests/app_server.rs
+source: tui/src/chatwidget/tests/runtime.rs
 expression: popup
 ---
   Our systems are thinking a bit more about this request before responding.

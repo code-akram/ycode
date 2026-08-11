@@ -4,9 +4,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::app_server_session::AppServerSession;
-use crate::app_server_session::HISTORY_ITEM_PAGE_LIMIT;
-use crate::app_server_session::HISTORY_ITEM_SCAN_LIMIT;
 use crate::clipboard_paste::normalize_pasted_search_query;
 use crate::color::blend;
 use crate::color::is_light;
@@ -23,6 +20,9 @@ use crate::legacy_core::config::Config;
 use crate::legacy_core::config::edit::ConfigEditsBuilder;
 use crate::markdown::append_markdown;
 use crate::pager_overlay::Overlay;
+use crate::runtime_session::CliRuntimeSession;
+use crate::runtime_session::HISTORY_ITEM_PAGE_LIMIT;
+use crate::runtime_session::HISTORY_ITEM_SCAN_LIMIT;
 use crate::session_resume::resolve_session_thread_id;
 use crate::status::format_directory_display;
 use crate::terminal_palette::best_color;
@@ -38,12 +38,12 @@ use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_lines;
 use chrono::DateTime;
 use chrono::Utc;
-use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadHistoryMode;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::ThreadListCwdFilter;
-use codex_app_server_protocol::ThreadListParams;
-use codex_app_server_protocol::ThreadSortKey;
+use codex_cli_protocol::Thread;
+use codex_cli_protocol::ThreadHistoryMode;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::ThreadListCwdFilter;
+use codex_cli_protocol::ThreadListParams;
+use codex_cli_protocol::ThreadSortKey;
 use codex_config::types::SessionPickerViewMode;
 use codex_protocol::ThreadId;
 use codex_utils_path as path_utils;
@@ -276,7 +276,7 @@ enum BackgroundEvent {
 
 #[derive(Clone)]
 enum PageCursor {
-    AppServer(String),
+    CliRuntime(String),
 }
 
 struct PickerPage {
@@ -306,7 +306,7 @@ struct SessionPickerRunOptions {
     chord_keymap: Arc<RuntimeChordKeymap>,
 }
 
-/// Interactive session picker that lists app-server threads with simple search,
+/// Interactive session picker that lists cli-runtime threads with simple search,
 /// lazy transcript previews, and pagination.
 ///
 /// Sessions render as compact multi-line records with stable metadata first and
@@ -322,37 +322,37 @@ struct SessionPickerRunOptions {
 /// Filtering happens in two layers:
 /// 1. Provider, source, and eligible working-directory filtering at the backend.
 /// 2. Typed search filtering over loaded rows in the picker.
-pub async fn run_resume_picker_with_app_server(
+pub async fn run_resume_picker_with_cli_runtime(
     tui: &mut Tui,
     config: &Config,
     show_all: bool,
     include_non_interactive: bool,
-    app_server: AppServerSession,
+    cli_runtime: CliRuntimeSession,
 ) -> Result<SessionSelection> {
     run_resume_picker_with_launch_context(
         tui,
         config,
         show_all,
         include_non_interactive,
-        app_server,
+        cli_runtime,
         SessionPickerLaunchContext::Startup,
     )
     .await
 }
 
-pub async fn run_resume_picker_from_existing_session_with_app_server(
+pub async fn run_resume_picker_from_existing_session_with_cli_runtime(
     tui: &mut Tui,
     config: &Config,
     show_all: bool,
     include_non_interactive: bool,
-    app_server: AppServerSession,
+    cli_runtime: CliRuntimeSession,
 ) -> Result<SessionSelection> {
     run_resume_picker_with_launch_context(
         tui,
         config,
         show_all,
         include_non_interactive,
-        app_server,
+        cli_runtime,
         SessionPickerLaunchContext::ExistingSession,
     )
     .await
@@ -363,16 +363,16 @@ async fn run_resume_picker_with_launch_context(
     config: &Config,
     show_all: bool,
     include_non_interactive: bool,
-    app_server: AppServerSession,
+    cli_runtime: CliRuntimeSession,
     launch_context: SessionPickerLaunchContext,
 ) -> Result<SessionSelection> {
     let (bg_tx, bg_rx) = mpsc::unbounded_channel();
-    let uses_remote_workspace = app_server.uses_remote_workspace();
+    let uses_remote_workspace = cli_runtime.uses_remote_workspace();
     let cwd_filter = picker_cwd_filter(
         config.cwd.as_path(),
         /*show_all*/ false,
         uses_remote_workspace,
-        app_server.remote_cwd_override(),
+        cli_runtime.remote_cwd_override(),
     );
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_workspace);
     let provider_filter = picker_provider_filter(config, uses_remote_workspace);
@@ -400,8 +400,8 @@ async fn run_resume_picker_with_launch_context(
     run_session_picker_with_loader(
         tui,
         options,
-        spawn_app_server_page_loader(
-            app_server,
+        spawn_cli_runtime_page_loader(
+            cli_runtime,
             include_non_interactive,
             raw_reasoning_visibility(config),
             (!uses_remote_workspace).then(|| config.codex_home.to_path_buf()),
@@ -412,19 +412,19 @@ async fn run_resume_picker_with_launch_context(
     .await
 }
 
-pub async fn run_fork_picker_with_app_server(
+pub async fn run_fork_picker_with_cli_runtime(
     tui: &mut Tui,
     config: &Config,
     show_all: bool,
-    app_server: AppServerSession,
+    cli_runtime: CliRuntimeSession,
 ) -> Result<SessionSelection> {
     let (bg_tx, bg_rx) = mpsc::unbounded_channel();
-    let uses_remote_workspace = app_server.uses_remote_workspace();
+    let uses_remote_workspace = cli_runtime.uses_remote_workspace();
     let cwd_filter = picker_cwd_filter(
         config.cwd.as_path(),
         /*show_all*/ false,
         uses_remote_workspace,
-        app_server.remote_cwd_override(),
+        cli_runtime.remote_cwd_override(),
     );
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_workspace);
     let provider_filter = picker_provider_filter(config, uses_remote_workspace);
@@ -452,8 +452,8 @@ pub async fn run_fork_picker_with_app_server(
     run_session_picker_with_loader(
         tui,
         options,
-        spawn_app_server_page_loader(
-            app_server,
+        spawn_cli_runtime_page_loader(
+            cli_runtime,
             /*include_non_interactive*/ false,
             raw_reasoning_visibility(config),
             (!uses_remote_workspace).then(|| config.codex_home.to_path_buf()),
@@ -592,8 +592,8 @@ fn picker_cwd_filter(
     }
 }
 
-fn spawn_app_server_page_loader(
-    app_server: AppServerSession,
+fn spawn_cli_runtime_page_loader(
+    cli_runtime: CliRuntimeSession,
     include_non_interactive: bool,
     raw_reasoning_visibility: RawReasoningVisibility,
     codex_home: Option<PathBuf>,
@@ -602,13 +602,13 @@ fn spawn_app_server_page_loader(
     let (request_tx, mut request_rx) = mpsc::unbounded_channel::<PickerLoadRequest>();
 
     tokio::spawn(async move {
-        let mut app_server = app_server;
+        let mut cli_runtime = cli_runtime;
         while let Some(request) = request_rx.recv().await {
             match request {
                 PickerLoadRequest::Page(request) => {
-                    let cursor = request.cursor.map(|PageCursor::AppServer(cursor)| cursor);
-                    let page = load_app_server_page(
-                        &mut app_server,
+                    let cursor = request.cursor.map(|PageCursor::CliRuntime(cursor)| cursor);
+                    let page = load_cli_runtime_page(
+                        &mut cli_runtime,
                         cursor,
                         request.cwd_filter.as_deref(),
                         request.provider_filter,
@@ -625,7 +625,7 @@ fn spawn_app_server_page_loader(
                 }
                 PickerLoadRequest::Preview { thread_id } => {
                     let preview =
-                        load_transcript_preview(&mut app_server, thread_id, codex_home.as_deref())
+                        load_transcript_preview(&mut cli_runtime, thread_id, codex_home.as_deref())
                             .await;
                     let _ = bg_tx.send(BackgroundEvent::Preview { thread_id, preview });
                 }
@@ -635,7 +635,7 @@ fn spawn_app_server_page_loader(
                 } => {
                     tokio::select! {
                         transcript = load_session_transcript(
-                            &mut app_server,
+                            &mut cli_runtime,
                             thread_id,
                             raw_reasoning_visibility,
                             codex_home.as_deref(),
@@ -650,8 +650,8 @@ fn spawn_app_server_page_loader(
                 }
             }
         }
-        if let Err(err) = app_server.shutdown().await {
-            warn!(%err, "Failed to shut down app-server picker session");
+        if let Err(err) = cli_runtime.shutdown().await {
+            warn!(%err, "Failed to shut down cli-runtime picker session");
         }
     });
 
@@ -767,8 +767,8 @@ enum LoadTrigger {
     Search { token: usize },
 }
 
-async fn load_app_server_page(
-    app_server: &mut AppServerSession,
+async fn load_cli_runtime_page(
+    cli_runtime: &mut CliRuntimeSession,
     cursor: Option<String>,
     cwd_filter: Option<&Path>,
     provider_filter: ProviderFilter,
@@ -776,7 +776,7 @@ async fn load_app_server_page(
     include_non_interactive: bool,
     use_state_db_only: bool,
 ) -> std::io::Result<PickerPage> {
-    let response = app_server
+    let response = cli_runtime
         .thread_list(thread_list_params(
             cursor,
             cwd_filter,
@@ -793,33 +793,33 @@ async fn load_app_server_page(
         rows: response
             .data
             .into_iter()
-            .filter_map(row_from_app_server_thread)
+            .filter_map(row_from_cli_runtime_thread)
             .collect(),
-        next_cursor: response.next_cursor.map(PageCursor::AppServer),
+        next_cursor: response.next_cursor.map(PageCursor::CliRuntime),
         num_scanned_files,
         reached_scan_cap: false,
     })
 }
 
 pub(crate) async fn load_transcript_preview(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     thread_id: ThreadId,
     codex_home: Option<&Path>,
 ) -> std::io::Result<Vec<TranscriptPreviewLine>> {
     const MAX_PREVIEW_LINES: usize = 6;
 
-    let mut thread = app_server
+    let mut thread = cli_runtime
         .thread_read(thread_id, /*include_turns*/ false)
         .await
         .map_err(std::io::Error::other)?;
     if thread.history_mode == ThreadHistoryMode::Legacy {
-        app_server
+        cli_runtime
             .hydrate_initial_thread_history(
                 &mut thread,
                 /*turn_cursor*/ None,
                 /*item_cursor*/ None,
                 /*config*/ None,
-                crate::app_server_session::HistoryHydrationScope::Initial,
+                crate::runtime_session::HistoryHydrationScope::Initial,
             )
             .await
             .map_err(std::io::Error::other)?;
@@ -837,7 +837,7 @@ pub(crate) async fn load_transcript_preview(
         let mut cursor = None;
         let mut seen_cursors = HashSet::new();
         loop {
-            let page = app_server
+            let page = cli_runtime
                 .thread_items_page(
                     thread_id,
                     /*turn_id*/ None,
@@ -900,7 +900,7 @@ fn transcript_preview_lines_for_item(
             text: content
                 .iter()
                 .filter_map(|input| match input {
-                    codex_app_server_protocol::UserInput::Text { text, .. } => Some(text.as_str()),
+                    codex_cli_protocol::UserInput::Text { text, .. } => Some(text.as_str()),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -1953,11 +1953,11 @@ impl PickerState {
     }
 }
 
-fn row_from_app_server_thread(thread: Thread) -> Option<Row> {
+fn row_from_cli_runtime_thread(thread: Thread) -> Option<Row> {
     let thread_id = match ThreadId::from_string(&thread.id) {
         Ok(thread_id) => thread_id,
         Err(err) => {
-            warn!(thread_id = thread.id, %err, "Skipping app-server picker row with invalid id");
+            warn!(thread_id = thread.id, %err, "Skipping cli-runtime picker row with invalid id");
             return None;
         }
     };
@@ -3399,7 +3399,7 @@ fn render_empty_state_line(state: &PickerState) -> Line<'static> {
 mod tests {
     use super::*;
     use chrono::Duration;
-    use codex_app_server_protocol::ThreadSourceKind;
+    use codex_cli_protocol::ThreadSourceKind;
     use codex_config::CONFIG_TOML_FILE;
     use codex_protocol::ThreadId;
     use codex_utils_absolute_path::test_support::PathBufExt;
@@ -3424,7 +3424,7 @@ mod tests {
     ) -> PickerPage {
         PickerPage {
             rows,
-            next_cursor: next_cursor.map(|cursor| PageCursor::AppServer(cursor.to_string())),
+            next_cursor: next_cursor.map(|cursor| PageCursor::CliRuntime(cursor.to_string())),
             num_scanned_files,
             reached_scan_cap,
         }
@@ -4401,7 +4401,7 @@ mod tests {
             })
             .collect();
         state.selected = 2;
-        state.pagination.next_cursor = Some(PageCursor::AppServer(String::from("cursor-1")));
+        state.pagination.next_cursor = Some(PageCursor::CliRuntime(String::from("cursor-1")));
 
         let label = picker_footer_progress_label(&state, /*list_height*/ 6, /*width*/ 80);
 
@@ -4430,7 +4430,7 @@ mod tests {
             .collect();
         state.selected = 9;
         state.scroll_top = 9;
-        state.pagination.next_cursor = Some(PageCursor::AppServer(String::from("cursor-1")));
+        state.pagination.next_cursor = Some(PageCursor::CliRuntime(String::from("cursor-1")));
         state.pagination.start_load(
             /*request_token*/ 1,
             /*search_token*/ None,
@@ -6178,7 +6178,7 @@ session_picker_view = "dense"
     }
 
     #[test]
-    fn app_server_row_keeps_pathless_threads() {
+    fn cli_runtime_row_keeps_pathless_threads() {
         let thread_id = ThreadId::new();
         let thread = Thread {
             id: thread_id.to_string(),
@@ -6195,11 +6195,11 @@ session_picker_view = "dense"
             created_at: 1,
             updated_at: 2,
             recency_at: Some(2),
-            status: codex_app_server_protocol::ThreadStatus::Idle,
+            status: codex_cli_protocol::ThreadStatus::Idle,
             path: None,
             cwd: test_path_buf("/tmp").abs(),
             cli_version: String::from("0.0.0"),
-            source: codex_app_server_protocol::SessionSource::Cli,
+            source: codex_cli_protocol::SessionSource::Cli,
             can_accept_direct_input: None,
             thread_source: None,
             agent_nickname: None,
@@ -6209,7 +6209,7 @@ session_picker_view = "dense"
             turns: Vec::new(),
         };
 
-        let row = row_from_app_server_thread(thread).expect("row should be preserved");
+        let row = row_from_cli_runtime_thread(thread).expect("row should be preserved");
 
         assert_eq!(row.path, None);
         assert_eq!(row.thread_id, Some(thread_id));
@@ -6236,25 +6236,25 @@ session_picker_view = "dense"
             created_at: 1,
             updated_at: 2,
             recency_at: Some(2),
-            status: codex_app_server_protocol::ThreadStatus::Idle,
+            status: codex_cli_protocol::ThreadStatus::Idle,
             path: None,
             cwd: test_path_buf("/tmp").abs(),
             cli_version: String::from("0.0.0"),
-            source: codex_app_server_protocol::SessionSource::Cli,
+            source: codex_cli_protocol::SessionSource::Cli,
             can_accept_direct_input: None,
             thread_source: None,
             agent_nickname: None,
             agent_role: None,
             git_info: None,
             name: None,
-            turns: vec![codex_app_server_protocol::Turn {
+            turns: vec![codex_cli_protocol::Turn {
                 id: String::from("turn-1"),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: vec![
                     ThreadItem::UserMessage {
                         id: String::from("user-1"),
                         client_id: None,
-                        content: vec![codex_app_server_protocol::UserInput::Text {
+                        content: vec![codex_cli_protocol::UserInput::Text {
                             text: String::from("hello from user"),
                             text_elements: Vec::new(),
                         }],
@@ -6270,7 +6270,7 @@ session_picker_view = "dense"
                         text: String::from("1. Do the thing"),
                     },
                 ],
-                status: codex_app_server_protocol::TurnStatus::Completed,
+                status: codex_cli_protocol::TurnStatus::Completed,
                 error: None,
                 started_at: None,
                 completed_at: None,
@@ -6315,26 +6315,26 @@ session_picker_view = "dense"
             created_at: 1,
             updated_at: 2,
             recency_at: Some(2),
-            status: codex_app_server_protocol::ThreadStatus::Idle,
+            status: codex_cli_protocol::ThreadStatus::Idle,
             path: None,
             cwd: test_path_buf("/tmp").abs(),
             cli_version: String::from("0.0.0"),
-            source: codex_app_server_protocol::SessionSource::Cli,
+            source: codex_cli_protocol::SessionSource::Cli,
             can_accept_direct_input: None,
             thread_source: None,
             agent_nickname: None,
             agent_role: None,
             git_info: None,
             name: None,
-            turns: vec![codex_app_server_protocol::Turn {
+            turns: vec![codex_cli_protocol::Turn {
                 id: String::from("turn-1"),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: vec![ThreadItem::Reasoning {
                     id: String::from("reasoning-1"),
                     summary: Vec::new(),
                     content: vec![String::from("private raw chain of thought")],
                 }],
-                status: codex_app_server_protocol::TurnStatus::Completed,
+                status: codex_cli_protocol::TurnStatus::Completed,
                 error: None,
                 started_at: None,
                 completed_at: None,
@@ -6387,26 +6387,26 @@ session_picker_view = "dense"
             created_at: 1,
             updated_at: 2,
             recency_at: Some(2),
-            status: codex_app_server_protocol::ThreadStatus::Idle,
+            status: codex_cli_protocol::ThreadStatus::Idle,
             path: None,
             cwd: test_path_buf("/tmp").abs(),
             cli_version: String::from("0.0.0"),
-            source: codex_app_server_protocol::SessionSource::Cli,
+            source: codex_cli_protocol::SessionSource::Cli,
             can_accept_direct_input: None,
             thread_source: None,
             agent_nickname: None,
             agent_role: None,
             git_info: None,
             name: None,
-            turns: vec![codex_app_server_protocol::Turn {
+            turns: vec![codex_cli_protocol::Turn {
                 id: String::from("turn-1"),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: vec![ThreadItem::Reasoning {
                     id: String::from("reasoning-1"),
                     summary: vec![String::from("public summary")],
                     content: vec![String::from("raw reasoning content")],
                 }],
-                status: codex_app_server_protocol::TurnStatus::Completed,
+                status: codex_cli_protocol::TurnStatus::Completed,
                 error: None,
                 started_at: None,
                 completed_at: None,

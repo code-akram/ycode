@@ -151,15 +151,15 @@ async fn startup_thread_started_submits_queued_startup_input() {
         vec!["queued before startup completes".to_string()]
     );
 
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
     .expect("embedded app server");
     let thread_id = ThreadId::new();
     app.handle_startup_thread_started(
-        &mut app_server,
-        Ok(AppServerStartedThread {
+        &mut cli_runtime,
+        Ok(CliRuntimeStartedThread {
             session: test_thread_session(thread_id, test_path_buf("/tmp/project")),
             turns: Vec::new(),
             blocks_direct_input: false,
@@ -185,13 +185,13 @@ async fn startup_thread_start_failure_returns_error() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     app.pending_startup_thread_start = true;
 
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
     .expect("embedded app server");
     let err = app
-        .handle_startup_thread_started(&mut app_server, Err("boom".to_string()))
+        .handle_startup_thread_started(&mut cli_runtime, Err("boom".to_string()))
         .await
         .expect_err("startup thread failure should exit instead of leaving chat unconfigured");
 
@@ -212,8 +212,8 @@ fn stale_startup_thread_started_removes_local_routing_state() -> Result<()> {
         .build()?
         .block_on(async {
             let mut app = make_test_app().await;
-            let mut app_server =
-                crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
+            let mut cli_runtime =
+                crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
             let primary_thread_id = ThreadId::new();
             let stale_thread_id = ThreadId::new();
             app.primary_thread_id = Some(primary_thread_id);
@@ -236,8 +236,8 @@ fn stale_startup_thread_started_removes_local_routing_state() -> Result<()> {
             assert!(app.agent_navigation.get(&stale_thread_id).is_some());
 
             app.handle_startup_thread_started(
-                &mut app_server,
-                Ok(AppServerStartedThread {
+                &mut cli_runtime,
+                Ok(CliRuntimeStartedThread {
                     session: test_thread_session(stale_thread_id, test_path_buf("/tmp/project")),
                     turns: Vec::new(),
                     blocks_direct_input: false,

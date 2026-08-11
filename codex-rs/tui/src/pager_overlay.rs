@@ -1086,7 +1086,7 @@ fn render_offset_content(
 mod tests {
     use super::*;
     use crate::history_cell::ReviewDecision;
-    use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
+    use codex_cli_protocol::CommandExecutionSource as ExecCommandSource;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;

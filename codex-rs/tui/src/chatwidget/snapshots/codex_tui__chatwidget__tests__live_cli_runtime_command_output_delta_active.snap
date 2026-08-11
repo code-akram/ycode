@@ -1,0 +1,7 @@
+---
+source: tui/src/chatwidget/tests/runtime.rs
+expression: active
+---
+• Running printf 'stdout\nstderr\n'
+  └ stdout
+    stderr

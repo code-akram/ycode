@@ -2,8 +2,8 @@ use super::*;
 use crate::app::safety_buffering::SafetyBufferedRetry;
 use crate::app::session_lifecycle::ThreadAttachPresentation;
 use crate::chatwidget::UserMessage;
-use codex_app_server_client::AppServerEvent;
-use codex_app_server_protocol::ModelSafetyBufferingUpdatedNotification;
+use codex_cli_protocol::ModelSafetyBufferingUpdatedNotification;
+use codex_cli_runtime_client::CliRuntimeEvent;
 use codex_utils_absolute_path::test_support::PathExt;
 use core_test_support::responses;
 use core_test_support::responses::ev_assistant_message;
@@ -96,18 +96,18 @@ fn drain_active_thread_events(app: &mut App) {
 
 async fn next_turn_started(
     app: &mut App,
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     thread_id: ThreadId,
 ) -> String {
     loop {
         let event = tokio::time::timeout(
             std::time::Duration::from_secs(/*secs*/ 5),
-            app_server.next_event(),
+            cli_runtime.next_event(),
         )
         .await
-        .expect("app-server should emit a turn/start event")
-        .expect("app-server event stream should remain open");
-        let started_turn_id = if let AppServerEvent::ServerNotification(notification) = &event
+        .expect("cli-runtime should emit a turn/start event")
+        .expect("cli-runtime event stream should remain open");
+        let started_turn_id = if let CliRuntimeEvent::ServerNotification(notification) = &event
             && let ServerNotification::TurnStarted(notification) = notification.as_ref()
             && notification.thread_id == thread_id.to_string()
         {
@@ -115,7 +115,7 @@ async fn next_turn_started(
         } else {
             None
         };
-        app.handle_app_server_event(app_server, event).await;
+        app.handle_cli_runtime_event(cli_runtime, event).await;
         drain_active_thread_events(app);
         if let Some(turn_id) = started_turn_id {
             return turn_id;
@@ -125,27 +125,27 @@ async fn next_turn_started(
 
 async fn wait_for_turn_completed(
     app: &mut App,
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     thread_id: ThreadId,
 ) {
     loop {
         let event = tokio::time::timeout(
             std::time::Duration::from_secs(/*secs*/ 5),
-            app_server.next_event(),
+            cli_runtime.next_event(),
         )
         .await
-        .expect("app-server should emit a turn/completed event")
-        .expect("app-server event stream should remain open");
+        .expect("cli-runtime should emit a turn/completed event")
+        .expect("cli-runtime event stream should remain open");
         let completed = matches!(
             &event,
-            AppServerEvent::ServerNotification(notification)
+            CliRuntimeEvent::ServerNotification(notification)
                 if matches!(
                     notification.as_ref(),
                     ServerNotification::TurnCompleted(notification)
                         if notification.thread_id == thread_id.to_string()
                 )
         );
-        app.handle_app_server_event(app_server, event).await;
+        app.handle_cli_runtime_event(cli_runtime, event).await;
         drain_active_thread_events(app);
         if completed {
             return;
@@ -190,10 +190,11 @@ stream_max_retries = 0
     };
 
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-    let started = app_server.start_thread(&app.config).await?;
+    let mut cli_runtime =
+        Box::pin(crate::start_embedded_cli_runtime_for_picker(&app.config)).await?;
+    let started = cli_runtime.start_thread(&app.config).await?;
     let thread_id = started.session.thread_id;
-    app.replace_chat_widget_with_app_server_thread(
+    app.replace_chat_widget_with_cli_runtime_thread(
         &mut tui,
         started,
         ThreadAttachPresentation::SessionLineage,
@@ -204,12 +205,12 @@ stream_max_retries = 0
 
     submit_prompt(&mut app, "Keep this turn running until interrupted");
     let turn = next_user_turn_event(&mut app_event_rx);
-    app.submit_thread_op(&mut app_server, thread_id, turn)
+    app.submit_thread_op(&mut cli_runtime, thread_id, turn)
         .await?;
-    let turn_id = next_turn_started(&mut app, &mut app_server, thread_id).await;
+    let turn_id = next_turn_started(&mut app, &mut cli_runtime, thread_id).await;
     drive_until_request_count(
         &mut app,
-        &mut app_server,
+        &mut cli_runtime,
         &server,
         /*expected_request_count*/ 1,
     )
@@ -217,19 +218,19 @@ stream_max_retries = 0
 
     let interrupt = AppCommand::interrupt();
     assert!(
-        app.try_submit_active_thread_op_via_app_server(&mut app_server, thread_id, &interrupt)
+        app.try_submit_active_thread_op_via_cli_runtime(&mut cli_runtime, thread_id, &interrupt)
             .await?
     );
-    let AppServerRequestId::Integer(next_request_id) = app_server.next_request_id() else {
-        unreachable!("embedded app-server request IDs are integers");
+    let CliRuntimeRequestId::Integer(next_request_id) = cli_runtime.next_request_id() else {
+        unreachable!("embedded cli-runtime request IDs are integers");
     };
     assert!(
-        app.try_submit_active_thread_op_via_app_server(&mut app_server, thread_id, &interrupt)
+        app.try_submit_active_thread_op_via_cli_runtime(&mut cli_runtime, thread_id, &interrupt)
             .await?
     );
     assert_eq!(
-        app_server.next_request_id(),
-        AppServerRequestId::Integer(next_request_id + 1)
+        cli_runtime.next_request_id(),
+        CliRuntimeRequestId::Integer(next_request_id + 1)
     );
     {
         let store = app.thread_event_channels[&thread_id].store.lock().await;
@@ -252,7 +253,7 @@ stream_max_retries = 0
         Ok(AppEvent::InsertHistoryCell(_))
     ));
 
-    wait_for_turn_completed(&mut app, &mut app_server, thread_id).await;
+    wait_for_turn_completed(&mut app, &mut cli_runtime, thread_id).await;
     assert_eq!(
         app.thread_event_channels[&thread_id]
             .store
@@ -263,14 +264,14 @@ stream_max_retries = 0
     );
 
     let _ = release_response.send(());
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     server.shutdown().await;
     Ok(())
 }
 
 async fn drive_until_request_count(
     app: &mut App,
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     server: &StreamingSseServer,
     expected_request_count: usize,
 ) {
@@ -279,9 +280,9 @@ async fn drive_until_request_count(
     loop {
         tokio::select! {
             () = server.wait_for_request_count(expected_request_count) => return,
-            event = app_server.next_event() => {
-                let event = event.expect("app-server event stream should remain open");
-                app.handle_app_server_event(app_server, event).await;
+            event = cli_runtime.next_event() => {
+                let event = event.expect("cli-runtime event stream should remain open");
+                app.handle_cli_runtime_event(cli_runtime, event).await;
                 drain_active_thread_events(app);
             }
             () = &mut timeout => {
@@ -318,7 +319,7 @@ fn user_message_count(thread: &Thread, prompt: &str) -> usize {
             content
                 .iter()
                 .filter_map(|item| match item {
-                    AppServerUserInput::Text { text, .. } => Some(text.as_str()),
+                    CliRuntimeUserInput::Text { text, .. } => Some(text.as_str()),
                     _ => None,
                 })
                 .collect::<String>()
@@ -412,10 +413,11 @@ goals = true
         .expect("test config should allow goals");
 
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-    let started = app_server.start_thread(&app.config).await?;
+    let mut cli_runtime =
+        Box::pin(crate::start_embedded_cli_runtime_for_picker(&app.config)).await?;
+    let started = cli_runtime.start_thread(&app.config).await?;
     let source_thread_id = started.session.thread_id;
-    app.replace_chat_widget_with_app_server_thread(
+    app.replace_chat_widget_with_cli_runtime_thread(
         &mut tui,
         started,
         ThreadAttachPresentation::SessionLineage,
@@ -427,23 +429,23 @@ goals = true
     if let Some(previous_prompt) = previous_prompt {
         submit_prompt(&mut app, previous_prompt);
         let previous_turn = next_user_turn_event(&mut app_event_rx);
-        app.submit_thread_op(&mut app_server, source_thread_id, previous_turn)
+        app.submit_thread_op(&mut cli_runtime, source_thread_id, previous_turn)
             .await?;
         if scenario == SafetyRetryScenario::InterruptedPrevious {
             let previous_turn_id =
-                next_turn_started(&mut app, &mut app_server, source_thread_id).await;
+                next_turn_started(&mut app, &mut cli_runtime, source_thread_id).await;
             drive_until_request_count(
                 &mut app,
-                &mut app_server,
+                &mut cli_runtime,
                 &server,
                 /*expected_request_count*/ 1,
             )
             .await;
-            app_server
+            cli_runtime
                 .turn_interrupt(source_thread_id, previous_turn_id)
                 .await?;
         } else {
-            wait_for_turn_completed(&mut app, &mut app_server, source_thread_id).await;
+            wait_for_turn_completed(&mut app, &mut cli_runtime, source_thread_id).await;
         }
     }
 
@@ -484,12 +486,12 @@ goals = true
 
     submit_prompt(&mut app, RETRY_PROMPT);
     let active_turn = next_user_turn_event(&mut app_event_rx);
-    app.submit_thread_op(&mut app_server, source_thread_id, active_turn.clone())
+    app.submit_thread_op(&mut cli_runtime, source_thread_id, active_turn.clone())
         .await?;
-    let active_turn_id = next_turn_started(&mut app, &mut app_server, source_thread_id).await;
+    let active_turn_id = next_turn_started(&mut app, &mut cli_runtime, source_thread_id).await;
     drive_until_request_count(
         &mut app,
-        &mut app_server,
+        &mut cli_runtime,
         &server,
         usize::from(previous_prompt.is_some()) + 1,
     )
@@ -498,7 +500,7 @@ goals = true
     if let Some(committed_steer) = committed_steer {
         submit_prompt(&mut app, committed_steer);
         let steer = next_user_turn_event(&mut app_event_rx);
-        app.submit_thread_op(&mut app_server, source_thread_id, steer)
+        app.submit_thread_op(&mut cli_runtime, source_thread_id, steer)
             .await?;
         let _ = release_active_response
             .take()
@@ -506,20 +508,20 @@ goals = true
             .send(());
         drive_until_request_count(
             &mut app,
-            &mut app_server,
+            &mut cli_runtime,
             &server,
             usize::from(previous_prompt.is_some()) + 2,
         )
         .await;
-        let source = app_server
+        let source = cli_runtime
             .thread_read(source_thread_id, /*include_turns*/ true)
             .await?;
         assert_eq!(user_message_count(&source, committed_steer), 1);
     }
 
-    app.handle_app_server_event(
-        &app_server,
-        AppServerEvent::ServerNotification(Box::new(
+    app.handle_cli_runtime_event(
+        &cli_runtime,
+        CliRuntimeEvent::ServerNotification(Box::new(
             ServerNotification::ModelSafetyBufferingUpdated(
                 ModelSafetyBufferingUpdatedNotification {
                     thread_id: source_thread_id.to_string(),
@@ -541,7 +543,7 @@ goals = true
     );
     if let Some(draft) = failing_draft {
         app.chat_widget.apply_external_edit(draft.to_string());
-        let source = app_server
+        let source = cli_runtime
             .thread_read(source_thread_id, /*include_turns*/ true)
             .await?;
         std::fs::remove_file(
@@ -555,7 +557,7 @@ goals = true
     app.primary_thread_id = Some(primary_thread_id);
     Box::pin(app.retry_safety_buffered_turn(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         SafetyBufferedRetry {
             thread_id: source_thread_id,
             turn_id: active_turn_id.clone(),
@@ -574,7 +576,7 @@ goals = true
 
     Box::pin(app.retry_safety_buffered_turn(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         SafetyBufferedRetry {
             thread_id: source_thread_id,
             turn_id: active_turn_id,
@@ -588,17 +590,17 @@ goals = true
     let first_retry_thread_id = app.chat_widget.thread_id().expect("first retry thread id");
     if scenario == SafetyRetryScenario::RetryTwice {
         let first_retry_turn_id =
-            next_turn_started(&mut app, &mut app_server, first_retry_thread_id).await;
+            next_turn_started(&mut app, &mut cli_runtime, first_retry_thread_id).await;
         drive_until_request_count(
             &mut app,
-            &mut app_server,
+            &mut cli_runtime,
             &server,
             /*expected_request_count*/ 2,
         )
         .await;
-        app.handle_app_server_event(
-            &app_server,
-            AppServerEvent::ServerNotification(Box::new(
+        app.handle_cli_runtime_event(
+            &cli_runtime,
+            CliRuntimeEvent::ServerNotification(Box::new(
                 ServerNotification::ModelSafetyBufferingUpdated(
                     ModelSafetyBufferingUpdatedNotification {
                         thread_id: first_retry_thread_id.to_string(),
@@ -645,9 +647,9 @@ goals = true
             panic!("second safety-buffering retry should retain the user turn");
         };
         assert!(items.iter().any(
-            |item| matches!(item, AppServerUserInput::Text { text, .. } if text == RETRY_PROMPT)
+            |item| matches!(item, CliRuntimeUserInput::Text { text, .. } if text == RETRY_PROMPT)
         ));
-        Box::pin(app.retry_safety_buffered_turn(&mut tui, &mut app_server, second_retry)).await;
+        Box::pin(app.retry_safety_buffered_turn(&mut tui, &mut cli_runtime, second_retry)).await;
     }
 
     if let Some(draft) = failing_draft {
@@ -660,12 +662,12 @@ goals = true
             let _ = release_active_response.send(());
         }
         let _ = release_steered_response.send(());
-        app_server.shutdown().await?;
+        cli_runtime.shutdown().await?;
         server.shutdown().await;
         return Ok(());
     }
 
-    drive_until_request_count(&mut app, &mut app_server, &server, expected_request_count).await;
+    drive_until_request_count(&mut app, &mut cli_runtime, &server, expected_request_count).await;
     let mut replayed_history = String::new();
     while let Ok(event) = app_event_rx.try_recv() {
         if let AppEvent::InsertHistoryCell(cell) = event {
@@ -697,10 +699,10 @@ goals = true
     }
 
     let retry_thread_id = app.chat_widget.thread_id().expect("retry thread id");
-    let source = app_server
+    let source = cli_runtime
         .thread_read(source_thread_id, /*include_turns*/ true)
         .await?;
-    let retry = app_server
+    let retry = cli_runtime
         .thread_read(retry_thread_id, /*include_turns*/ true)
         .await?;
     assert_ne!(retry_thread_id, source_thread_id);
@@ -734,12 +736,12 @@ goals = true
         assert_eq!(user_message_count(&retry, previous_prompt), 1);
     }
 
-    let source_goal = app_server
+    let source_goal = cli_runtime
         .thread_goal_get(source_thread_id)
         .await?
         .goal
         .expect("source goal");
-    let retry_goal = app_server
+    let retry_goal = cli_runtime
         .thread_goal_get(retry_thread_id)
         .await?
         .goal
@@ -820,7 +822,7 @@ goals = true
     let _ = release_steered_response.send(());
     let _ = release_previous_response.send(());
     let _ = release_retry_response.send(());
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     server.shutdown().await;
     Ok(())
 }

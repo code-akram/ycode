@@ -10,7 +10,7 @@ use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use pretty_assertions::assert_eq;
 
-fn app_server_workspace_write_profile(extra_root: AbsolutePathBuf) -> PermissionProfile {
+fn cli_runtime_workspace_write_profile(extra_root: AbsolutePathBuf) -> PermissionProfile {
     PermissionProfile::Managed {
         network: NetworkSandboxPolicy::Restricted,
         file_system: ManagedFileSystemPermissions::Restricted {
@@ -274,7 +274,7 @@ async fn preset_matching_accepts_workspace_write_with_extra_roots() {
         .into_iter()
         .find(|p| p.id == "auto")
         .expect("auto preset exists");
-    let current_profile = app_server_workspace_write_profile(test_path_buf("/tmp/extra").abs());
+    let current_profile = cli_runtime_workspace_write_profile(test_path_buf("/tmp/extra").abs());
     let cwd = test_path_buf("/tmp/project").abs();
 
     assert!(
@@ -686,7 +686,7 @@ async fn permissions_selection_marks_auto_review_current_with_custom_workspace_w
 
     let extra_root = test_path_buf("/tmp/guardian-approvals-extra").abs();
     let cwd = test_project_path().abs();
-    let permission_profile = app_server_workspace_write_profile(extra_root);
+    let permission_profile = cli_runtime_workspace_write_profile(extra_root);
 
     chat.handle_thread_session(crate::session_state::ThreadSessionState {
         thread_id: ThreadId::new(),

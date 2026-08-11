@@ -1,13 +1,13 @@
 use super::*;
-use codex_app_server_protocol::HookErrorInfo;
-use codex_app_server_protocol::HooksListEntry;
-use codex_app_server_protocol::HooksListResponse;
-use codex_app_server_protocol::MarketplaceLoadErrorInfo;
-use codex_app_server_protocol::MarketplaceRemoveResponse;
-use codex_app_server_protocol::PluginAvailability;
-use codex_app_server_protocol::PluginShareContext;
-use codex_app_server_protocol::PluginShareDiscoverability;
-use codex_app_server_protocol::PluginSource;
+use codex_cli_protocol::HookErrorInfo;
+use codex_cli_protocol::HooksListEntry;
+use codex_cli_protocol::HooksListResponse;
+use codex_cli_protocol::MarketplaceLoadErrorInfo;
+use codex_cli_protocol::MarketplaceRemoveResponse;
+use codex_cli_protocol::PluginAvailability;
+use codex_cli_protocol::PluginShareContext;
+use codex_cli_protocol::PluginShareDiscoverability;
+use codex_cli_protocol::PluginSource;
 use codex_features::Stage;
 use pretty_assertions::assert_eq;
 
@@ -647,8 +647,8 @@ async fn plugin_detail_popup_snapshot_labels_personal_marketplace_as_local() {
         Some("Turn Figma files into implementation context."),
         &["design-review", "extract-copy"],
         &[
-            (codex_app_server_protocol::HookEventName::PreToolUse, 1),
-            (codex_app_server_protocol::HookEventName::Stop, 2),
+            (codex_cli_protocol::HookEventName::PreToolUse, 1),
+            (codex_cli_protocol::HookEventName::Stop, 2),
         ],
     );
     plugin.marketplace_name = marketplace_name.to_string();
@@ -692,8 +692,8 @@ async fn plugin_detail_popup_snapshot_shows_npm_source() {
         Some("Turn Figma files into implementation context."),
         &["design-review", "extract-copy"],
         &[
-            (codex_app_server_protocol::HookEventName::PreToolUse, 1),
-            (codex_app_server_protocol::HookEventName::Stop, 2),
+            (codex_cli_protocol::HookEventName::PreToolUse, 1),
+            (codex_cli_protocol::HookEventName::Stop, 2),
         ],
     );
     chat.on_plugin_detail_loaded(cwd.to_path_buf(), Ok(PluginReadResponse { plugin }));
@@ -729,8 +729,8 @@ async fn plugin_detail_popup_distinguishes_admin_installed_from_enabled() {
         Some("Turn Figma files into implementation context."),
         &["design-review", "extract-copy"],
         &[
-            (codex_app_server_protocol::HookEventName::PreToolUse, 1),
-            (codex_app_server_protocol::HookEventName::Stop, 2),
+            (codex_cli_protocol::HookEventName::PreToolUse, 1),
+            (codex_cli_protocol::HookEventName::Stop, 2),
         ],
     );
     chat.on_plugin_detail_loaded(

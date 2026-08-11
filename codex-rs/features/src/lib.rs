@@ -288,13 +288,9 @@ pub enum Feature {
     /// Enable collaboration modes (Plan, Default).
     /// Kept for config backward compatibility; behavior is always collaboration-modes-enabled.
     CollaborationModes,
-    /// Removed compatibility flag for the deleted remote control feature.
-    RemoteControl,
     /// Removed compatibility flag retained as a no-op so old wrappers can
     /// still pass `--enable image_detail_original`.
     ImageDetailOriginal,
-    /// Removed compatibility flag. The TUI now always uses the app-server implementation.
-    TuiAppServer,
     /// Removed compatibility flag retained as a no-op now that workspace owner
     /// usage nudges are always enabled.
     WorkspaceOwnerUsageNudge,
@@ -460,9 +456,6 @@ impl Features {
                         Feature::WebSearchCached,
                     );
                 }
-                "tui_app_server" => {
-                    continue;
-                }
                 "undo" => {
                     continue;
                 }
@@ -470,9 +463,6 @@ impl Features {
                     continue;
                 }
                 "js_repl_tools_only" => {
-                    continue;
-                }
-                "remote_control" => {
                     continue;
                 }
                 "apply_patch_freeform" => {
@@ -507,9 +497,6 @@ impl Features {
             }
             match feature_for_key(k) {
                 Some(feat) => {
-                    if matches!(feat, Feature::TuiAppServer) {
-                        continue;
-                    }
                     if k != feat.key() {
                         self.record_legacy_usage(k.as_str(), feat);
                     }
@@ -1318,22 +1305,10 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::RemoteControl,
-        key: "remote_control",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::ImageDetailOriginal,
         key: "image_detail_original",
         stage: Stage::Removed,
         default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::TuiAppServer,
-        key: "tui_app_server",
-        stage: Stage::Removed,
-        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::PreventIdleSleep,

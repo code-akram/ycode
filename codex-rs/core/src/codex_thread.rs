@@ -160,7 +160,7 @@ impl ThreadConfigSnapshot {
     }
 }
 
-/// Thread settings overrides that app-server validates before starting a turn.
+/// Thread settings overrides that cli-runtime validates before starting a turn.
 #[derive(Clone, Default)]
 pub struct CodexThreadSettingsOverrides {
     pub environments: Option<TurnEnvironmentSelections>,
@@ -390,13 +390,13 @@ impl CodexThread {
         self.session.try_start_turn_if_idle(items).await
     }
 
-    pub async fn set_app_server_client_info(
+    pub async fn set_cli_runtime_client_info(
         &self,
-        app_server_client_name: Option<String>,
-        app_server_client_version: Option<String>,
+        cli_runtime_client_name: Option<String>,
+        cli_runtime_client_version: Option<String>,
     ) -> ConstraintResult<()> {
         self.session
-            .set_app_server_client_info(app_server_client_name, app_server_client_version)
+            .set_cli_runtime_client_info(cli_runtime_client_name, cli_runtime_client_version)
             .await
     }
 
@@ -484,7 +484,7 @@ impl CodexThread {
     /// Returns the complete token usage snapshot currently cached for this thread.
     ///
     /// This accessor is intentionally narrower than direct session access: it lets
-    /// app-server lifecycle paths replay restored usage after resume or fork without
+    /// cli-runtime lifecycle paths replay restored usage after resume or fork without
     /// exposing broader session mutation authority. A caller that only reads
     /// `total_token_usage` would drop last-turn usage and make the v2
     /// `thread/tokenUsage/updated` payload incomplete.
@@ -618,7 +618,7 @@ impl CodexThread {
         self.session.instruction_sources().await
     }
 
-    /// Returns loaded instruction sources rendered as legacy app-server path strings.
+    /// Returns loaded instruction sources rendered as legacy cli-runtime path strings.
     pub async fn legacy_instruction_sources(&self) -> Vec<LegacyAppPathString> {
         self.instruction_sources()
             .await

@@ -88,7 +88,7 @@ async fn ignores_unrelated_turn_completion_before_backfilling_primary_turn() -> 
         .cmd()
         .env(
             "RUST_LOG",
-            "codex_app_server::message_processor=trace,codex_app_server::outgoing_message=trace",
+            "codex_cli_runtime::message_processor=trace,codex_cli_runtime::outgoing_message=trace",
         )
         .arg("--skip-git-repo-check")
         .arg("--json")
@@ -119,7 +119,7 @@ async fn ignores_unrelated_turn_completion_before_backfilling_primary_turn() -> 
         .iter()
         .enumerate()
         .filter_map(|(index, line)| {
-            line.contains("app-server event: turn/completed")
+            line.contains("cli-runtime event: turn/completed")
                 .then_some(index)
         })
         .collect::<Vec<_>>();
@@ -135,7 +135,7 @@ async fn ignores_unrelated_turn_completion_before_backfilling_primary_turn() -> 
     assert_eq!(
         lines[*child_completion + 1..*primary_completion]
             .iter()
-            .filter(|line| line.contains("app-server typed request"))
+            .filter(|line| line.contains("cli-runtime typed request"))
             .count(),
         0,
         "the unrelated completion must not issue thread/read: {stderr}"
@@ -143,7 +143,7 @@ async fn ignores_unrelated_turn_completion_before_backfilling_primary_turn() -> 
     assert_eq!(
         lines[*primary_completion + 1..]
             .iter()
-            .filter(|line| line.contains("app-server typed request"))
+            .filter(|line| line.contains("cli-runtime typed request"))
             .count(),
         2,
         "the primary completion should issue thread/read and thread/unsubscribe: {stderr}"
@@ -152,7 +152,7 @@ async fn ignores_unrelated_turn_completion_before_backfilling_primary_turn() -> 
     assert_eq!(
         lines
             .iter()
-            .filter(|line| line.contains("app-server typed request"))
+            .filter(|line| line.contains("cli-runtime typed request"))
             .count(),
         5,
         "only the primary completion should issue an extra request: {stderr}"

@@ -1,13 +1,13 @@
 use super::*;
-use codex_app_server_protocol::AccountRateLimitsUpdatedNotification;
-use codex_app_server_protocol::CodexErrorInfo;
-use codex_app_server_protocol::CreditsSnapshot;
-use codex_app_server_protocol::ErrorNotification;
-use codex_app_server_protocol::GetAccountRateLimitsResponse;
-use codex_app_server_protocol::RateLimitReachedType;
-use codex_app_server_protocol::RateLimitResetCreditsSummary;
-use codex_app_server_protocol::RateLimitSnapshot;
-use codex_app_server_protocol::RateLimitWindow;
+use codex_cli_protocol::AccountRateLimitsUpdatedNotification;
+use codex_cli_protocol::CodexErrorInfo;
+use codex_cli_protocol::CreditsSnapshot;
+use codex_cli_protocol::ErrorNotification;
+use codex_cli_protocol::GetAccountRateLimitsResponse;
+use codex_cli_protocol::RateLimitReachedType;
+use codex_cli_protocol::RateLimitResetCreditsSummary;
+use codex_cli_protocol::RateLimitSnapshot;
+use codex_cli_protocol::RateLimitWindow;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use pretty_assertions::assert_eq;
@@ -51,12 +51,12 @@ fn account_rate_limits_response(snapshot: RateLimitSnapshot) -> GetAccountRateLi
 
 async fn deliver_rolling_rate_limit_snapshot(
     app: &mut App,
-    app_server: &AppServerSession,
+    cli_runtime: &CliRuntimeSession,
     snapshot: RateLimitSnapshot,
 ) {
-    app.handle_app_server_event(
-        app_server,
-        codex_app_server_client::AppServerEvent::ServerNotification(Box::new(
+    app.handle_cli_runtime_event(
+        cli_runtime,
+        codex_cli_runtime_client::CliRuntimeEvent::ServerNotification(Box::new(
             ServerNotification::AccountRateLimitsUpdated(AccountRateLimitsUpdatedNotification {
                 rate_limits: snapshot,
             }),
@@ -87,7 +87,7 @@ fn render_status_output(
 fn deliver_usage_limit_error(app: &mut App) {
     app.chat_widget.handle_server_notification(
         ServerNotification::Error(ErrorNotification {
-            error: AppServerTurnError {
+            error: CliRuntimeTurnError {
                 message: "Usage limit reached.".to_string(),
                 codex_error_info: Some(CodexErrorInfo::UsageLimitExceeded),
                 additional_details: None,
@@ -103,7 +103,7 @@ fn deliver_usage_limit_error(app: &mut App) {
 #[tokio::test]
 async fn rolling_workspace_hard_stops_invalidate_older_rate_limit_reads() -> Result<()> {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let app_server = crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref())
+    let cli_runtime = crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref())
         .await
         .expect("embedded app server");
 
@@ -137,7 +137,7 @@ async fn rolling_workspace_hard_stops_invalidate_older_rate_limit_reads() -> Res
     for (reached_type, spend_control_reached, invalidates) in cases {
         deliver_rolling_rate_limit_snapshot(
             &mut app,
-            &app_server,
+            &cli_runtime,
             rate_limit_snapshot(
                 /*used_percent*/ 95,
                 reached_type,
@@ -154,7 +154,7 @@ async fn rolling_workspace_hard_stops_invalidate_older_rate_limit_reads() -> Res
         );
     }
 
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
@@ -171,7 +171,7 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
         set_chatgpt_auth(&mut app.chat_widget);
         let mut tui = crate::tui::test_support::make_test_tui()?;
-        let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+        let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
             app.chat_widget.config_ref(),
         ))
         .await?;
@@ -226,12 +226,12 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
         if origin_name == "reset-picker" {
             rolling_snapshot.limit_id = Some("codex_other".to_string());
         }
-        deliver_rolling_rate_limit_snapshot(&mut app, &app_server, rolling_snapshot).await;
+        deliver_rolling_rate_limit_snapshot(&mut app, &cli_runtime, rolling_snapshot).await;
         assert_ne!(read_generation, app.rate_limit_hard_stop_generation);
 
         let control = Box::pin(app.handle_event(
             &mut tui,
-            &mut app_server,
+            &mut cli_runtime,
             AppEvent::RateLimitsLoaded {
                 origin,
                 hard_stop_generation: read_generation,
@@ -270,7 +270,7 @@ async fn stale_rate_limit_reads_preserve_newer_workspace_hard_stop_for_every_ori
             "expected {origin_name} to preserve workspace error routing, got: {popup}"
         );
 
-        app_server.shutdown().await?;
+        cli_runtime.shutdown().await?;
     }
 
     Ok(())
@@ -281,7 +281,7 @@ async fn stale_rate_limit_read_does_not_dismiss_visible_workspace_advisory() -> 
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     set_chatgpt_auth(&mut app.chat_widget);
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await?;
@@ -292,7 +292,7 @@ async fn stale_rate_limit_read_does_not_dismiss_visible_workspace_advisory() -> 
 
     deliver_rolling_rate_limit_snapshot(
         &mut app,
-        &app_server,
+        &cli_runtime,
         rate_limit_snapshot(
             /*used_percent*/ 95,
             Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached),
@@ -310,7 +310,7 @@ async fn stale_rate_limit_read_does_not_dismiss_visible_workspace_advisory() -> 
 
     Box::pin(app.handle_event(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         AppEvent::RateLimitsLoaded {
             origin: RateLimitRefreshOrigin::StatusCommand { request_id },
             hard_stop_generation: read_generation,
@@ -326,7 +326,7 @@ async fn stale_rate_limit_read_does_not_dismiss_visible_workspace_advisory() -> 
     assert!(
         render_bottom_popup(&app.chat_widget, /*width*/ 100).contains("Approaching rate limits")
     );
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
@@ -335,13 +335,13 @@ async fn post_hard_stop_rate_limit_read_clears_recovered_workspace_limit() -> Re
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     set_chatgpt_auth(&mut app.chat_widget);
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await?;
     deliver_rolling_rate_limit_snapshot(
         &mut app,
-        &app_server,
+        &cli_runtime,
         rate_limit_snapshot(
             /*used_percent*/ 95,
             Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached),
@@ -356,7 +356,7 @@ async fn post_hard_stop_rate_limit_read_clears_recovered_workspace_limit() -> Re
 
     let control = Box::pin(app.handle_event(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         AppEvent::RateLimitsLoaded {
             origin: RateLimitRefreshOrigin::StatusCommand { request_id },
             hard_stop_generation: read_generation,
@@ -382,6 +382,6 @@ async fn post_hard_stop_rate_limit_read_clears_recovered_workspace_limit() -> Re
         "expected recovered state to clear workspace error routing, got: {popup}"
     );
 
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }

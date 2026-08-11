@@ -1,15 +1,15 @@
-//! Thread settings sync between TUI-local state and app-server thread state.
+//! Thread settings sync between TUI-local state and cli-runtime thread state.
 
 use super::App;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
-use crate::app_server_session::AppServerSession;
 use crate::chatwidget::cyber_model_approval_reviewer;
+use crate::runtime_session::CliRuntimeSession;
 use crate::session_state::ThreadSessionState;
-use codex_app_server_protocol::ApprovalsReviewer as AppServerApprovalsReviewer;
-use codex_app_server_protocol::AskForApproval as AppServerAskForApproval;
-use codex_app_server_protocol::ThreadSettings;
-use codex_app_server_protocol::ThreadSettingsUpdateParams;
+use codex_cli_protocol::ApprovalsReviewer as CliRuntimeApprovalsReviewer;
+use codex_cli_protocol::AskForApproval as CliRuntimeAskForApproval;
+use codex_cli_protocol::ThreadSettings;
+use codex_cli_protocol::ThreadSettingsUpdateParams;
 use codex_config::types::ApprovalsReviewer;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ModeKind;
@@ -19,7 +19,7 @@ use codex_protocol::models::PermissionProfile;
 impl App {
     pub(super) async fn sync_active_thread_model_setting(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         model: String,
         effort: Option<codex_protocol::openai_models::ReasoningEffort>,
     ) {
@@ -28,16 +28,16 @@ impl App {
         };
         params.effort = effort;
         let defaulted_to_auto_review = params.approvals_reviewer
-            == Some(AppServerApprovalsReviewer::AutoReview)
+            == Some(CliRuntimeApprovalsReviewer::AutoReview)
             && (self.chat_widget.config_ref().approvals_reviewer != ApprovalsReviewer::AutoReview
-                || AppServerAskForApproval::from(
+                || CliRuntimeAskForApproval::from(
                     self.chat_widget
                         .config_ref()
                         .permissions
                         .approval_policy
                         .value(),
-                ) != AppServerAskForApproval::OnRequest);
-        let settings_updated = self.send_thread_settings_update(app_server, params).await;
+                ) != CliRuntimeAskForApproval::OnRequest);
+        let settings_updated = self.send_thread_settings_update(cli_runtime, params).await;
         if defaulted_to_auto_review && settings_updated {
             self.app_event_tx.send(AppEvent::CyberModelAutoReviewNotice);
         }
@@ -76,7 +76,7 @@ impl App {
             if workspace_allowed && let Some(reviewer) = cyber_model_approval_reviewer(&self.config)
             {
                 params.permissions = Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string());
-                params.approval_policy = Some(AppServerAskForApproval::OnRequest);
+                params.approval_policy = Some(CliRuntimeAskForApproval::OnRequest);
                 params.approvals_reviewer = Some(reviewer.into());
             }
         }
@@ -86,13 +86,13 @@ impl App {
 
     pub(super) async fn sync_active_thread_reasoning_setting(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         effort: Option<codex_protocol::openai_models::ReasoningEffort>,
     ) {
         let Some(params) = self.active_thread_reasoning_setting_update_params(effort) else {
             return;
         };
-        self.send_thread_settings_update(app_server, params).await;
+        self.send_thread_settings_update(cli_runtime, params).await;
     }
 
     pub(super) fn active_thread_reasoning_setting_update_params(
@@ -110,7 +110,7 @@ impl App {
 
     pub(super) async fn sync_active_thread_plan_mode_reasoning_setting(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
     ) {
         let Some(thread_id) = self.active_thread_id else {
             return;
@@ -120,12 +120,12 @@ impl App {
             collaboration_mode: Some(self.chat_widget.effective_collaboration_mode()),
             ..ThreadSettingsUpdateParams::default()
         };
-        self.send_thread_settings_update(app_server, params).await;
+        self.send_thread_settings_update(cli_runtime, params).await;
     }
 
     pub(super) async fn sync_active_thread_personality_setting(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         personality: codex_protocol::config_types::Personality,
     ) {
         let Some(thread_id) = self.active_thread_id else {
@@ -136,12 +136,12 @@ impl App {
             personality: Some(personality),
             ..ThreadSettingsUpdateParams::default()
         };
-        self.send_thread_settings_update(app_server, params).await;
+        self.send_thread_settings_update(cli_runtime, params).await;
     }
 
     pub(super) async fn sync_override_turn_context_settings(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
         op: &AppCommand,
     ) {
@@ -167,7 +167,7 @@ impl App {
             thread_id: thread_id.to_string(),
             cwd: cwd.clone(),
             approval_policy: *approval_policy,
-            approvals_reviewer: approvals_reviewer.map(AppServerApprovalsReviewer::from),
+            approvals_reviewer: approvals_reviewer.map(CliRuntimeApprovalsReviewer::from),
             permissions: active_permission_profile
                 .as_ref()
                 .map(|profile| profile.id.clone()),
@@ -179,7 +179,7 @@ impl App {
             personality: *personality,
             ..ThreadSettingsUpdateParams::default()
         };
-        self.send_thread_settings_update(app_server, params).await;
+        self.send_thread_settings_update(cli_runtime, params).await;
     }
 
     pub(super) async fn apply_thread_settings_to_cached_session(
@@ -203,16 +203,16 @@ impl App {
 
     pub(super) async fn send_thread_settings_update(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         params: ThreadSettingsUpdateParams,
     ) -> bool {
         if !thread_settings_update_has_changes(&params) {
             return false;
         }
-        match app_server.thread_settings_update(params).await {
+        match cli_runtime.thread_settings_update(params).await {
             Ok(settings_updated) => settings_updated,
             Err(err) => {
-                tracing::warn!("failed to update app-server thread settings from TUI: {err}");
+                tracing::warn!("failed to update cli-runtime thread settings from TUI: {err}");
                 self.chat_widget
                     .add_error_message(format!("Failed to update thread settings: {err}"));
                 false

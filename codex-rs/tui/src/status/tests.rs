@@ -27,11 +27,11 @@ use chrono::Duration as ChronoDuration;
 use chrono::Local;
 use chrono::TimeZone;
 use chrono::Utc;
-use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::CreditsSnapshot;
-use codex_app_server_protocol::RateLimitSnapshot;
-use codex_app_server_protocol::RateLimitWindow;
-use codex_app_server_protocol::SpendControlLimitSnapshot;
+use codex_cli_protocol::AskForApproval;
+use codex_cli_protocol::CreditsSnapshot;
+use codex_cli_protocol::RateLimitSnapshot;
+use codex_cli_protocol::RateLimitWindow;
+use codex_cli_protocol::SpendControlLimitSnapshot;
 use codex_config::LoaderOverrides;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_model_provider_info::ModelProviderAwsAuthInfo;
@@ -87,7 +87,7 @@ fn stale_monthly_limit_marks_fresh_rolling_snapshot_stale() {
     ));
 }
 
-fn app_server_workspace_write_profile(network_enabled: bool) -> PermissionProfile {
+fn cli_runtime_workspace_write_profile(network_enabled: bool) -> PermissionProfile {
     PermissionProfile::Managed {
         network: if network_enabled {
             NetworkSandboxPolicy::Enabled
@@ -140,7 +140,7 @@ async fn test_config(temp_home: &TempDir) -> Config {
     config.approvals_reviewer = ApprovalsReviewer::User;
     config
         .permissions
-        .set_permission_profile(app_server_workspace_write_profile(
+        .set_permission_profile(cli_runtime_workspace_write_profile(
             /*network_enabled*/ true,
         ))
         .expect("set permission profile");
@@ -369,14 +369,14 @@ async fn status_snapshot_shows_chatgpt_plan_without_email() {
         AuthCredentialsStoreMode::File,
     )
     .expect("write email-less ChatGPT auth");
-    let mut app_server = crate::start_embedded_app_server_for_picker(&config)
+    let mut cli_runtime = crate::start_embedded_cli_runtime_for_picker(&config)
         .await
         .expect("start embedded app server");
-    let bootstrap = app_server
+    let bootstrap = cli_runtime
         .bootstrap(&config)
         .await
         .expect("bootstrap app server session");
-    app_server.shutdown().await.expect("shut down app server");
+    cli_runtime.shutdown().await.expect("shut down app server");
     let account_display = bootstrap
         .status_account_display
         .expect("bootstrap should return ChatGPT account display");
@@ -428,7 +428,7 @@ async fn status_permissions_non_default_workspace_write_uses_workspace_label() {
     set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
     config
         .permissions
-        .set_permission_profile(app_server_workspace_write_profile(
+        .set_permission_profile(cli_runtime_workspace_write_profile(
             /*network_enabled*/ true,
         ))
         .expect("set permission profile");
@@ -1561,7 +1561,7 @@ async fn status_snapshot_uses_default_reasoning_when_config_empty() {
         .single()
         .expect("timestamp");
     let remote_connection = RemoteConnectionStatus {
-        address: "unix:///tmp/codex-home/app-server-control/app-server-control.sock".to_string(),
+        address: "unix:///tmp/codex-home/cli-runtime-control/cli-runtime-control.sock".to_string(),
         version: "v0.133.0".to_string(),
     };
 

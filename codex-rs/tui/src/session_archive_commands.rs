@@ -1,7 +1,7 @@
 //! Shared implementation for `codex archive`, `codex delete`, and `codex unarchive`.
 //!
-//! The CLI commands are thin app-server clients: resolve a user-provided UUID or exact session
-//! name, then call the corresponding app-server RPC.
+//! The CLI commands are thin cli-runtime clients: resolve a user-provided UUID or exact session
+//! name, then call the corresponding cli-runtime RPC.
 
 use std::io::IsTerminal;
 use std::io::Write;
@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::Cli;
-use crate::app_server_session::AppServerSession;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::bootstrap_auth_config;
@@ -20,8 +19,9 @@ use crate::legacy_core::config::resolve_profile_v2_config_path;
 use crate::named_session_lookup::NamedSessionCandidates;
 use crate::named_session_lookup::SessionCollection;
 use crate::named_session_lookup::SessionNameLookupMode;
-use codex_app_server_protocol::Thread as AppServerThread;
+use crate::runtime_session::CliRuntimeSession;
 use codex_arg0::Arg0DispatchPaths;
+use codex_cli_protocol::Thread as CliRuntimeThread;
 use codex_cloud_config::cloud_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadOptions;
@@ -35,8 +35,6 @@ use codex_utils_oss::get_default_model_for_oss_provider;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::eyre;
-
-use super::RemoteAppServerEndpoint;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeleteConfirmation {
@@ -54,7 +52,6 @@ pub enum SessionArchiveAction {
 pub struct SessionArchiveCommandOptions {
     pub cli: Cli,
     pub arg0_paths: Arg0DispatchPaths,
-    pub explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
 }
 
 fn success_message(
@@ -84,10 +81,10 @@ pub async fn run_session_archive_command(
     options: SessionArchiveCommandOptions,
 ) -> Result<String> {
     let codex_home = find_codex_home().wrap_err("failed to find Codex home")?;
-    let mut app_server =
-        start_app_server_for_archive_command(options, codex_home.to_path_buf()).await?;
-    run_session_archive_action_with_app_server(
-        &mut app_server,
+    let mut cli_runtime =
+        start_cli_runtime_for_archive_command(options, codex_home.to_path_buf()).await?;
+    run_session_archive_action_with_cli_runtime(
+        &mut cli_runtime,
         codex_home.as_path(),
         action,
         &target,
@@ -95,16 +92,16 @@ pub async fn run_session_archive_command(
     .await
 }
 
-async fn run_session_archive_action_with_app_server(
-    app_server: &mut AppServerSession,
+async fn run_session_archive_action_with_cli_runtime(
+    cli_runtime: &mut CliRuntimeSession,
     codex_home: &Path,
     action: SessionArchiveAction,
     target: &str,
 ) -> Result<String> {
-    let resolved = resolve_session_target(app_server, codex_home, action, target).await?;
+    let resolved = resolve_session_target(cli_runtime, codex_home, action, target).await?;
     let session_name = match action {
         SessionArchiveAction::Archive => {
-            app_server.thread_archive(resolved.session_id).await?;
+            cli_runtime.thread_archive(resolved.session_id).await?;
             resolved.session_name
         }
         SessionArchiveAction::Delete(confirmation) => {
@@ -113,11 +110,11 @@ async fn run_session_archive_action_with_app_server(
             {
                 return Ok("Delete cancelled.".to_string());
             }
-            app_server.thread_delete(resolved.session_id).await?;
+            cli_runtime.thread_delete(resolved.session_id).await?;
             resolved.session_name
         }
         SessionArchiveAction::Unarchive => {
-            let thread = app_server.thread_unarchive(resolved.session_id).await?;
+            let thread = cli_runtime.thread_unarchive(resolved.session_id).await?;
             thread.name.or(resolved.session_name)
         }
     };
@@ -129,7 +126,7 @@ async fn run_session_archive_action_with_app_server(
 }
 
 async fn resolve_session_target(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     codex_home: &Path,
     action: SessionArchiveAction,
     target: &str,
@@ -139,7 +136,7 @@ async fn resolve_session_target(
             action,
             SessionArchiveAction::Delete(DeleteConfirmation::Prompt)
         ) {
-            let thread = app_server
+            let thread = cli_runtime
                 .thread_read(session_id, /*include_turns*/ false)
                 .await
                 .with_context(|| {
@@ -163,9 +160,9 @@ async fn resolve_session_target(
     };
     for &archived in archived_values {
         if let Some(thread) =
-            lookup_session_by_exact_name(app_server, codex_home, target, archived).await?
+            lookup_session_by_exact_name(cli_runtime, codex_home, target, archived).await?
         {
-            return session_target_from_app_server_thread(thread);
+            return session_target_from_cli_runtime_thread(thread);
         }
     }
     Err(eyre!(
@@ -174,14 +171,14 @@ async fn resolve_session_target(
 }
 
 async fn lookup_session_by_exact_name(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     codex_home: &Path,
     name: &str,
     archived: bool,
-) -> Result<Option<AppServerThread>> {
+) -> Result<Option<CliRuntimeThread>> {
     // Remote workspaces stay on their existing server-side path. Local workspaces trust SQLite
     // names, then scan and repair only after a miss or an unusable rollout path.
-    let lookup_modes = if app_server.uses_remote_workspace() {
+    let lookup_modes = if cli_runtime.uses_remote_workspace() {
         &[SessionNameLookupMode::ScanAndRepair][..]
     } else {
         &[
@@ -204,7 +201,7 @@ async fn lookup_session_by_exact_name(
                 search_term,
             );
             if let Some(candidate) = candidates
-                .next(app_server)
+                .next(cli_runtime)
                 .await
                 .wrap_err("failed to list sessions while resolving session name")?
             {
@@ -215,7 +212,9 @@ async fn lookup_session_by_exact_name(
     Ok(None)
 }
 
-fn session_target_from_app_server_thread(thread: AppServerThread) -> Result<ResolvedSessionTarget> {
+fn session_target_from_cli_runtime_thread(
+    thread: CliRuntimeThread,
+) -> Result<ResolvedSessionTarget> {
     let session_id = ThreadId::from_string(&thread.id)
         .wrap_err_with(|| format!("app server returned invalid session id `{}`", thread.id))?;
     Ok(ResolvedSessionTarget {
@@ -253,15 +252,11 @@ fn confirm_session_delete(target: &ResolvedSessionTarget) -> Result<bool> {
     Ok(answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"))
 }
 
-async fn start_app_server_for_archive_command(
+async fn start_cli_runtime_for_archive_command(
     options: SessionArchiveCommandOptions,
     codex_home: PathBuf,
-) -> Result<AppServerSession> {
-    let SessionArchiveCommandOptions {
-        cli,
-        arg0_paths,
-        explicit_remote_endpoint,
-    } = options;
+) -> Result<CliRuntimeSession> {
+    let SessionArchiveCommandOptions { cli, arg0_paths } = options;
     let loader_overrides = LoaderOverrides::default();
     let strict_config = cli.strict_config;
     let raw_overrides = cli.config_overrides.raw_overrides.clone();
@@ -269,35 +264,7 @@ async fn start_app_server_for_archive_command(
     let cli_kv_overrides = overrides_cli
         .parse_overrides()
         .map_err(|err| eyre!("failed to parse -c overrides: {err}"))?;
-    let mut launch_loader_overrides = loader_overrides.clone();
-    if let Some(profile_v2) = cli.config_profile_v2.as_ref() {
-        launch_loader_overrides.user_config_path = Some(resolve_profile_v2_config_path(
-            codex_home.as_path(),
-            profile_v2,
-        ));
-        launch_loader_overrides.user_config_profile = Some(profile_v2.clone());
-    }
-
-    let reuse_implicit_local_daemon = super::can_reuse_implicit_local_daemon(
-        &cli_kv_overrides,
-        &launch_loader_overrides,
-        strict_config,
-        cli.bypass_hook_trust || cli.psp,
-    );
-    let default_daemon = if explicit_remote_endpoint.is_none() && reuse_implicit_local_daemon {
-        super::maybe_probe_default_daemon_socket(codex_home.as_path()).await
-    } else {
-        None
-    };
-    let app_server_target = super::app_server_target_for_launch(
-        explicit_remote_endpoint,
-        default_daemon,
-        reuse_implicit_local_daemon,
-    );
-    let remote_cwd_override = cli
-        .cwd
-        .clone()
-        .filter(|_| app_server_target.uses_remote_workspace());
+    let cli_runtime_target = super::CliRuntimeTarget::Embedded;
 
     let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
         arg0_paths.codex_self_exe.clone(),
@@ -307,9 +274,9 @@ async fn start_app_server_for_archive_command(
     let prepared_environment_manager = EnvironmentManager::prepare_from_env()
         .await
         .wrap_err("failed to discover execution environments")?;
-    let config_cwd = super::config_cwd_for_app_server_target(
+    let config_cwd = super::config_cwd_for_cli_runtime_target(
         cli.cwd.as_deref(),
-        &app_server_target,
+        &cli_runtime_target,
         prepared_environment_manager.default_environment_is_remote(),
     )
     .wrap_err("failed to resolve config cwd")?;
@@ -322,7 +289,7 @@ async fn start_app_server_for_archive_command(
         ));
         loader_overrides.user_config_profile = Some(profile_v2.clone());
     }
-    loader_overrides.ignore_login_requirements = app_server_target.uses_remote_workspace();
+    loader_overrides.ignore_login_requirements = cli_runtime_target.uses_remote_workspace();
 
     let bootstrap_config = load_config_toml_with_layer_stack(
         codex_home.as_path(),
@@ -338,7 +305,7 @@ async fn start_app_server_for_archive_command(
     .wrap_err("failed to load config.toml")?;
     let config_toml = &bootstrap_config.config_toml;
     let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        app_server_target.auth_config_for_cloud_loader(bootstrap_auth_config(
+        cli_runtime_target.auth_config_for_cloud_loader(bootstrap_auth_config(
             codex_home.as_path(),
             &bootstrap_config,
         )?),
@@ -362,7 +329,7 @@ async fn start_app_server_for_archive_command(
         .cli_overrides(cli_kv_overrides.clone())
         .harness_overrides(ConfigOverrides {
             model,
-            cwd: if app_server_target.uses_remote_workspace() {
+            cwd: if cli_runtime_target.uses_remote_workspace() {
                 None
             } else {
                 cwd
@@ -387,11 +354,11 @@ async fn start_app_server_for_archive_command(
             .build(Some(local_runtime_paths), config.http_client_factory())
             .wrap_err("failed to initialize environment manager")?,
     );
-    let state_db = super::init_state_db_for_app_server_target(&config, &app_server_target)
+    let state_db = super::init_state_db_for_cli_runtime_target(&config, &cli_runtime_target)
         .await
         .wrap_err("failed to initialize state database")?;
-    let app_server = super::start_app_server(
-        &app_server_target,
+    let cli_runtime = super::start_cli_runtime(
+        &cli_runtime_target,
         arg0_paths,
         config,
         cli_kv_overrides,
@@ -404,10 +371,10 @@ async fn start_app_server_for_archive_command(
         environment_manager,
     )
     .await?;
-    Ok(
-        AppServerSession::new(app_server, app_server_target.thread_params_mode())
-            .with_remote_cwd_override(remote_cwd_override),
-    )
+    Ok(CliRuntimeSession::new(
+        cli_runtime,
+        cli_runtime_target.thread_params_mode(),
+    ))
 }
 
 #[cfg(test)]

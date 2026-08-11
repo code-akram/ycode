@@ -1,12 +1,12 @@
 use std::path::Path;
 
-use crate::app_server_session::AppServerSession;
 use crate::legacy_core::config::Config;
 use crate::resume_picker::SessionTarget;
-use codex_app_server_protocol::Thread as AppServerThread;
-use codex_app_server_protocol::ThreadHistoryMode;
-use codex_app_server_protocol::ThreadListParams;
-use codex_app_server_protocol::ThreadSortKey;
+use crate::runtime_session::CliRuntimeSession;
+use codex_cli_protocol::Thread as CliRuntimeThread;
+use codex_cli_protocol::ThreadHistoryMode;
+use codex_cli_protocol::ThreadListParams;
+use codex_cli_protocol::ThreadSortKey;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionSource;
@@ -30,7 +30,7 @@ pub(super) enum SessionCollection {
 
 /// An exact-name match and the rollout metadata verified for local candidates.
 pub(super) struct NamedSessionCandidate {
-    pub(super) thread: AppServerThread,
+    pub(super) thread: CliRuntimeThread,
     /// Remote candidates never inspect local rollout files and therefore have no session metadata.
     pub(super) session_meta: Option<SessionMeta>,
 }
@@ -43,7 +43,7 @@ pub(super) struct NamedSessionCandidates<'a> {
     mode: SessionNameLookupMode,
     search_term: Option<&'a str>,
     cursor: Option<String>,
-    pending: std::vec::IntoIter<AppServerThread>,
+    pending: std::vec::IntoIter<CliRuntimeThread>,
     has_more: bool,
 }
 
@@ -52,46 +52,51 @@ pub(super) struct NamedSessionCandidates<'a> {
 /// Local lookups treat a usable SQLite match as authoritative and consult legacy rollout metadata
 /// only to recover a missing or unusable row. Remote workspaces retain the backend's scan behavior.
 pub(super) async fn lookup(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     config: &Config,
     name: &str,
 ) -> color_eyre::Result<Option<SessionTarget>> {
-    if app_server.uses_remote_workspace() {
-        return Ok(lookup_from_app_server(
-            app_server,
+    if cli_runtime.uses_remote_workspace() {
+        return Ok(lookup_from_cli_runtime(
+            cli_runtime,
             config,
             name,
             SessionNameLookupMode::ScanAndRepair,
         )
         .await?
-        .and_then(super::session_target_from_app_server_thread));
+        .and_then(super::session_target_from_cli_runtime_thread));
     }
 
-    if let Some(thread) =
-        lookup_from_app_server(app_server, config, name, SessionNameLookupMode::StateDbOnly).await?
+    if let Some(thread) = lookup_from_cli_runtime(
+        cli_runtime,
+        config,
+        name,
+        SessionNameLookupMode::StateDbOnly,
+    )
+    .await?
     {
-        return Ok(super::session_target_from_app_server_thread(thread));
+        return Ok(super::session_target_from_cli_runtime_thread(thread));
     }
 
-    if let Some(target) = lookup_legacy_index_target(app_server, config, name).await? {
+    if let Some(target) = lookup_legacy_index_target(cli_runtime, config, name).await? {
         return Ok(Some(target));
     }
 
-    Ok(lookup_from_app_server(
-        app_server,
+    Ok(lookup_from_cli_runtime(
+        cli_runtime,
         config,
         name,
         SessionNameLookupMode::ScanAndRepair,
     )
     .await?
-    .and_then(super::session_target_from_app_server_thread))
+    .and_then(super::session_target_from_cli_runtime_thread))
 }
 
 /// Recovers a local target from legacy metadata without overriding an explicit SQLite name.
 ///
 /// Rewriting the recovered name into SQLite is best effort and cannot invalidate a usable target.
 async fn lookup_legacy_index_target(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     config: &Config,
     name: &str,
 ) -> color_eyre::Result<Option<SessionTarget>> {
@@ -112,13 +117,13 @@ async fn lookup_legacy_index_target(
 
         // `thread/read` resolves the candidate's current SQLite title. A conflicting title means
         // the sidecar is stale, while a missing legacy title is the partial-write case it recovers.
-        let thread = app_server
+        let thread = cli_runtime
             .thread_read(session_meta.meta.id, /*include_turns*/ false)
             .await?;
         if !current_name_is_compatible(&thread, name) {
             continue;
         }
-        if let Err(err) = app_server
+        if let Err(err) = cli_runtime
             .thread_set_name(session_meta.meta.id, name.to_string())
             .await
         {
@@ -137,7 +142,7 @@ async fn lookup_legacy_index_target(
 }
 
 /// Allows a missing SQLite name only for legacy threads, whose name may exist only in the index.
-fn current_name_is_compatible(thread: &AppServerThread, name: &str) -> bool {
+fn current_name_is_compatible(thread: &CliRuntimeThread, name: &str) -> bool {
     match thread.history_mode {
         ThreadHistoryMode::Legacy => thread.name.as_deref().is_none_or(|current| current == name),
         ThreadHistoryMode::Paginated => thread.name.as_deref() == Some(name),
@@ -147,12 +152,12 @@ fn current_name_is_compatible(thread: &AppServerThread, name: &str) -> bool {
 /// Returns an eligible active thread for one SQLite-only or scan-and-repair lookup pass.
 ///
 /// Local resume candidates also honor source/provider filters and reject stale scanned titles.
-async fn lookup_from_app_server(
-    app_server: &mut AppServerSession,
+async fn lookup_from_cli_runtime(
+    cli_runtime: &mut CliRuntimeSession,
     config: &Config,
     name: &str,
     mode: SessionNameLookupMode,
-) -> color_eyre::Result<Option<AppServerThread>> {
+) -> color_eyre::Result<Option<CliRuntimeThread>> {
     let mut candidates = NamedSessionCandidates::new(
         name,
         config.codex_home.as_path(),
@@ -160,7 +165,7 @@ async fn lookup_from_app_server(
         mode,
         Some(name),
     );
-    while let Some(candidate) = candidates.next(app_server).await? {
+    while let Some(candidate) = candidates.next(cli_runtime).await? {
         if let Some(session_meta) = candidate.session_meta
             && (!RESUME_SESSION_SOURCES.contains(&session_meta.source)
                 || session_meta
@@ -170,9 +175,9 @@ async fn lookup_from_app_server(
         {
             continue;
         }
-        if mode == SessionNameLookupMode::ScanAndRepair && !app_server.uses_remote_workspace() {
+        if mode == SessionNameLookupMode::ScanAndRepair && !cli_runtime.uses_remote_workspace() {
             // Scans can surface stale sidecar names, so verify the candidate's current title.
-            let thread = app_server
+            let thread = cli_runtime
                 .thread_read(
                     ThreadId::from_string(&candidate.thread.id)?,
                     /*include_turns*/ false,
@@ -214,14 +219,14 @@ impl<'a> NamedSessionCandidates<'a> {
     /// header; remote candidates preserve server-side lookup without touching local files.
     pub(super) async fn next(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
     ) -> color_eyre::Result<Option<NamedSessionCandidate>> {
         loop {
             if let Some(thread) = self.pending.next() {
                 if thread.name.as_deref() != Some(self.name) {
                     continue;
                 }
-                let session_meta = if app_server.uses_remote_workspace() {
+                let session_meta = if cli_runtime.uses_remote_workspace() {
                     None
                 } else {
                     let (Ok(thread_id), Some(path)) =
@@ -260,13 +265,13 @@ impl<'a> NamedSessionCandidates<'a> {
             }
             // Only embedded SQLite supports recency sorting; scanners and older daemons use mtime.
             let sort_key = if self.mode == SessionNameLookupMode::StateDbOnly
-                && app_server.uses_embedded_app_server()
+                && cli_runtime.uses_embedded_cli_runtime()
             {
                 ThreadSortKey::RecencyAt
             } else {
                 ThreadSortKey::UpdatedAt
             };
-            let response = app_server
+            let response = cli_runtime
                 .thread_list(ThreadListParams {
                     cursor: self.cursor.clone(),
                     limit: Some(100),

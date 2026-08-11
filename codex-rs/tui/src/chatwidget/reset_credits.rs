@@ -1,8 +1,8 @@
 use chrono::DateTime;
 use chrono::Local;
 use chrono::Utc;
-use codex_app_server_protocol::RateLimitResetCreditStatus;
-use codex_app_server_protocol::RateLimitResetCreditsSummary;
+use codex_cli_protocol::RateLimitResetCreditStatus;
+use codex_cli_protocol::RateLimitResetCreditsSummary;
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct ResetCreditOption {

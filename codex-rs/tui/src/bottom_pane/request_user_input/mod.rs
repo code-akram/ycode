@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
@@ -42,12 +42,12 @@ use crate::render::renderable::Renderable;
 
 #[cfg(test)]
 use crate::app_command::AppCommand as Op;
-use codex_app_server_protocol::ToolRequestUserInputAnswer;
+use codex_cli_protocol::ToolRequestUserInputAnswer;
 #[cfg(test)]
-use codex_app_server_protocol::ToolRequestUserInputOption;
-use codex_app_server_protocol::ToolRequestUserInputParams;
-use codex_app_server_protocol::ToolRequestUserInputQuestion;
-use codex_app_server_protocol::ToolRequestUserInputResponse;
+use codex_cli_protocol::ToolRequestUserInputOption;
+use codex_cli_protocol::ToolRequestUserInputParams;
+use codex_cli_protocol::ToolRequestUserInputQuestion;
+use codex_cli_protocol::ToolRequestUserInputResponse;
 use codex_protocol::user_input::TextElement;
 use unicode_width::UnicodeWidthStr;
 
@@ -952,8 +952,8 @@ impl RequestUserInputOverlay {
         self.advance_queue_or_complete_at(now);
     }
 
-    fn dismiss_resolved_request(&mut self, request: &ResolvedAppServerRequest) -> bool {
-        let ResolvedAppServerRequest::UserInput { call_id } = request else {
+    fn dismiss_resolved_request(&mut self, request: &ResolvedCliRuntimeRequest) -> bool {
+        let ResolvedCliRuntimeRequest::UserInput { call_id } = request else {
             return false;
         };
 
@@ -1525,7 +1525,7 @@ impl BottomPaneView for RequestUserInputOverlay {
         None
     }
 
-    fn dismiss_app_server_request(&mut self, request: &ResolvedAppServerRequest) -> bool {
+    fn dismiss_cli_runtime_request(&mut self, request: &ResolvedCliRuntimeRequest) -> bool {
         self.dismiss_resolved_request(request)
     }
 }
@@ -2105,7 +2105,7 @@ mod tests {
         );
 
         assert!(
-            overlay.dismiss_app_server_request(&ResolvedAppServerRequest::UserInput {
+            overlay.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::UserInput {
                 call_id: "call-1".to_string(),
             })
         );
@@ -2143,7 +2143,7 @@ mod tests {
         });
 
         assert!(
-            overlay.dismiss_app_server_request(&ResolvedAppServerRequest::UserInput {
+            overlay.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::UserInput {
                 call_id: "call-1".to_string(),
             })
         );
@@ -2193,7 +2193,7 @@ mod tests {
         });
 
         assert!(
-            overlay.dismiss_app_server_request(&ResolvedAppServerRequest::UserInput {
+            overlay.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::UserInput {
                 call_id: "call-2".to_string(),
             })
         );

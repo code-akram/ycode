@@ -4,17 +4,17 @@
 //! when a config mutation must be owned by the app server rather than written
 //! to the local `config.toml` directly.
 
-use codex_app_server_client::AppServerRequestHandle;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ConfigBatchWriteParams;
-use codex_app_server_protocol::ConfigEdit;
-use codex_app_server_protocol::ConfigReadParams;
-use codex_app_server_protocol::ConfigReadResponse;
-use codex_app_server_protocol::ConfigWriteResponse;
-use codex_app_server_protocol::MergeStrategy;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::SkillsConfigWriteParams;
-use codex_app_server_protocol::SkillsConfigWriteResponse;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ConfigBatchWriteParams;
+use codex_cli_protocol::ConfigEdit;
+use codex_cli_protocol::ConfigReadParams;
+use codex_cli_protocol::ConfigReadResponse;
+use codex_cli_protocol::ConfigWriteResponse;
+use codex_cli_protocol::MergeStrategy;
+use codex_cli_protocol::RequestId;
+use codex_cli_protocol::SkillsConfigWriteParams;
+use codex_cli_protocol::SkillsConfigWriteResponse;
+use codex_cli_runtime_client::CliRuntimeRequestHandle;
 use codex_config::loader::project_trust_key;
 use codex_features::FEATURES;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -122,7 +122,7 @@ pub(crate) fn build_oss_provider_edit(provider: &str) -> ConfigEdit {
 }
 
 pub(crate) async fn write_config_batch(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     edits: Vec<ConfigEdit>,
 ) -> Result<ConfigWriteResponse> {
     let request_id = RequestId::String(format!("tui-config-write-{}", Uuid::new_v4()));
@@ -141,14 +141,14 @@ pub(crate) async fn write_config_batch(
 }
 
 pub(crate) async fn write_trusted_project(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     project_path: &Path,
 ) -> Result<ConfigWriteResponse> {
     write_config_batch(request_handle, vec![trusted_project_edit(project_path)]).await
 }
 
 pub(crate) async fn read_effective_config(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: String,
 ) -> Result<ConfigReadResponse> {
     let request_id = RequestId::String(format!("tui-config-read-{}", Uuid::new_v4()));
@@ -165,7 +165,7 @@ pub(crate) async fn read_effective_config(
 }
 
 pub(crate) async fn write_skill_enabled(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     path: AbsolutePathBuf,
     enabled: bool,
 ) -> Result<()> {

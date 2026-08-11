@@ -1,4 +1,4 @@
-//! Thread routing, buffering, and app-server operation submission for the TUI app.
+//! Thread routing, buffering, and cli-runtime operation submission for the TUI app.
 //!
 //! This module manages active thread channels, routes server requests and notifications into those
 //! channels, submits thread-scoped operations through the app server, and replays buffered events
@@ -8,18 +8,18 @@ use super::session_lifecycle::ThreadAttachPresentation;
 use super::*;
 use crate::chatwidget::ThreadInputStateRestoreMode;
 use crate::session_resume::read_session_model;
-use codex_app_server_protocol::TurnInterruptParams;
-use codex_app_server_protocol::TurnInterruptResponse;
-use codex_app_server_protocol::WarningNotification;
+use codex_cli_protocol::TurnInterruptParams;
+use codex_cli_protocol::TurnInterruptResponse;
+use codex_cli_protocol::WarningNotification;
 
 impl App {
-    pub(super) async fn shutdown_current_thread(&mut self, app_server: &mut AppServerSession) {
+    pub(super) async fn shutdown_current_thread(&mut self, cli_runtime: &mut CliRuntimeSession) {
         let side_thread_ids: Vec<ThreadId> = self.side_threads.keys().copied().collect();
         for side_thread_id in side_thread_ids {
-            self.discard_side_thread(app_server, side_thread_id).await;
+            self.discard_side_thread(cli_runtime, side_thread_id).await;
         }
         if let Some(thread_id) = self.chat_widget.thread_id() {
-            if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
+            if let Err(err) = cli_runtime.thread_unsubscribe(thread_id).await {
                 tracing::warn!("failed to unsubscribe thread {thread_id}: {err}");
             }
             self.abort_thread_event_listener(thread_id);
@@ -207,7 +207,7 @@ impl App {
         thread_id: ThreadId,
         turn_id: &str,
         item_id: &str,
-    ) -> Option<Vec<codex_app_server_protocol::FileUpdateChange>> {
+    ) -> Option<Vec<codex_cli_protocol::FileUpdateChange>> {
         let channel = self.thread_event_channels.get(&thread_id)?;
         let store = channel.store.lock().await;
         store.file_change_changes(turn_id, item_id)
@@ -255,28 +255,30 @@ impl App {
                     approval,
                 )))
             }
-            ServerRequest::FileChangeRequestApproval { params, .. } => Some(
-                ThreadInteractiveRequest::Approval(ApprovalRequest::ApplyPatch(
-                    ApplyPatchApprovalRequest {
-                    thread_id,
-                    thread_label,
-                    id: params.item_id.clone(),
-                    reason: params.reason.clone(),
-                    cwd: self
-                        .thread_cwd(thread_id)
-                        .await
-                        .unwrap_or_else(|| self.config.cwd.clone()),
-                    changes: self
-                        .thread_file_change_changes(thread_id, &params.turn_id, &params.item_id)
-                        .await
-                        .map(crate::app_server_approval_conversions::file_update_changes_to_display)
-                        .unwrap_or_default(),
-                    },
-                )),
-            ),
+            ServerRequest::FileChangeRequestApproval { params, .. } => {
+                Some(ThreadInteractiveRequest::Approval(
+                    ApprovalRequest::ApplyPatch(ApplyPatchApprovalRequest {
+                        thread_id,
+                        thread_label,
+                        id: params.item_id.clone(),
+                        reason: params.reason.clone(),
+                        cwd: self
+                            .thread_cwd(thread_id)
+                            .await
+                            .unwrap_or_else(|| self.config.cwd.clone()),
+                        changes: self
+                            .thread_file_change_changes(thread_id, &params.turn_id, &params.item_id)
+                            .await
+                            .map(
+                                crate::runtime_approval_conversions::file_update_changes_to_display,
+                            )
+                            .unwrap_or_default(),
+                    }),
+                ))
+            }
             ServerRequest::PermissionsRequestApproval { params, .. } => {
                 // TODO(anp): Remove this native-path localization error path once core permission
-                // paths remain PathUri after crossing the app-server boundary.
+                // paths remain PathUri after crossing the cli-runtime boundary.
                 let permissions = params.permissions.clone().try_into().map_err(|err| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
@@ -369,7 +371,7 @@ impl App {
 
     pub(super) async fn submit_active_thread_op(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         op: AppCommand,
     ) -> Result<()> {
         let Some(thread_id) = self.active_thread_id else {
@@ -378,26 +380,26 @@ impl App {
             return Ok(());
         };
 
-        self.submit_thread_op(app_server, thread_id, op).await
+        self.submit_thread_op(cli_runtime, thread_id, op).await
     }
 
     pub(super) async fn submit_thread_op(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
         op: AppCommand,
     ) -> Result<()> {
         crate::session_log::log_outbound_op(&op);
 
         if self
-            .try_resolve_app_server_request(app_server, thread_id, &op)
+            .try_resolve_cli_runtime_request(cli_runtime, thread_id, &op)
             .await?
         {
             return Ok(());
         }
 
         if self
-            .try_submit_active_thread_op_via_app_server(app_server, thread_id, &op)
+            .try_submit_active_thread_op_via_cli_runtime(cli_runtime, thread_id, &op)
             .await?
         {
             if ThreadEventStore::op_can_change_pending_replay_state(&op) {
@@ -515,9 +517,9 @@ impl App {
         Ok(())
     }
 
-    pub(super) async fn try_submit_active_thread_op_via_app_server(
+    pub(super) async fn try_submit_active_thread_op_via_cli_runtime(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
         op: &AppCommand,
     ) -> Result<bool> {
@@ -539,8 +541,8 @@ impl App {
                     }
                     store.pending_interrupt_turn_id = Some(turn_id.clone());
                 }
-                let request_handle = app_server.request_handle();
-                let request_ids = [app_server.next_request_id(), app_server.next_request_id()];
+                let request_handle = cli_runtime.request_handle();
+                let request_ids = [cli_runtime.next_request_id(), cli_runtime.next_request_id()];
                 tokio::spawn(async move {
                     for (attempt, request_id) in request_ids.into_iter().enumerate() {
                         let result = request_handle
@@ -611,7 +613,7 @@ impl App {
                     let mut steer_turn_id = turn_id;
                     let mut retried_after_turn_mismatch = false;
                     loop {
-                        match app_server
+                        match cli_runtime
                             .turn_steer(thread_id, steer_turn_id.clone(), items.to_vec())
                             .await
                         {
@@ -682,7 +684,7 @@ impl App {
                             .as_ref()
                             .map(|profile| &profile.permission_profile),
                     );
-                    let response = app_server
+                    let response = cli_runtime
                         .turn_start(
                             thread_id,
                             items.to_vec(),
@@ -711,8 +713,8 @@ impl App {
             }
             AppCommand::ListSkills { cwds, force_reload } => {
                 self.handle_skills_list_result(
-                    app_server
-                        .skills_list(codex_app_server_protocol::SkillsListParams {
+                    cli_runtime
+                        .skills_list(codex_cli_protocol::SkillsListParams {
                             cwds: cwds.clone(),
                             force_reload: *force_reload,
                         })
@@ -722,17 +724,17 @@ impl App {
                 Ok(true)
             }
             AppCommand::Compact => {
-                app_server.thread_compact_start(thread_id).await?;
+                cli_runtime.thread_compact_start(thread_id).await?;
                 Ok(true)
             }
             AppCommand::SetThreadName { name } => {
-                app_server
+                cli_runtime
                     .thread_set_name(thread_id, name.to_string())
                     .await?;
                 Ok(true)
             }
             AppCommand::Review { target } => {
-                let response = app_server.review_start(thread_id, target.clone()).await?;
+                let response = cli_runtime.review_start(thread_id, target.clone()).await?;
                 let review_thread_id = ThreadId::from_string(&response.review_thread_id)
                     .wrap_err("review/start returned invalid review thread id")?;
                 let store = Arc::clone(&self.ensure_thread_channel(review_thread_id).store);
@@ -741,28 +743,28 @@ impl App {
                 Ok(true)
             }
             AppCommand::CleanBackgroundTerminals => {
-                app_server
+                cli_runtime
                     .thread_background_terminals_clean(thread_id)
                     .await?;
                 Ok(true)
             }
             AppCommand::RunUserShellCommand { command } => {
-                app_server
+                cli_runtime
                     .thread_shell_command(thread_id, command.to_string())
                     .await?;
                 Ok(true)
             }
             AppCommand::ReloadUserConfig => {
-                app_server.reload_user_config().await?;
+                cli_runtime.reload_user_config().await?;
                 Ok(true)
             }
             AppCommand::OverrideTurnContext { .. } => {
-                self.sync_override_turn_context_settings(app_server, thread_id, op)
+                self.sync_override_turn_context_settings(cli_runtime, thread_id, op)
                     .await;
                 Ok(true)
             }
             AppCommand::ApproveGuardianDeniedAction { event } => {
-                app_server
+                cli_runtime
                     .thread_approve_guardian_denied_action(thread_id, event)
                     .await?;
                 Ok(true)
@@ -814,21 +816,21 @@ impl App {
         }
     }
 
-    pub(super) async fn try_resolve_app_server_request(
+    pub(super) async fn try_resolve_cli_runtime_request(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         thread_id: ThreadId,
         op: &AppCommand,
     ) -> Result<bool> {
         let Some(resolution) = self
-            .pending_app_server_requests
+            .pending_runtime_requests
             .take_resolution(op)
             .map_err(|err| color_eyre::eyre::eyre!(err))?
         else {
             return Ok(false);
         };
 
-        match app_server
+        match cli_runtime
             .resolve_server_request(resolution.request_id, resolution.result)
             .await
         {
@@ -842,7 +844,7 @@ impl App {
             }
             Err(err) => {
                 self.chat_widget.add_error_message(format!(
-                    "Failed to resolve app-server request for thread {thread_id}: {err}"
+                    "Failed to resolve cli-runtime request for thread {thread_id}: {err}"
                 ));
                 Ok(false)
             }
@@ -982,8 +984,8 @@ impl App {
 
     /// Locally remembers receiver threads referenced by a collab notification.
     ///
-    /// This intentionally avoids app-server reads on the active-thread rendering path. During large
-    /// fan-outs the app-server can be saturated with spawn work, and blocking here would freeze the
+    /// This intentionally avoids cli-runtime reads on the active-thread rendering path. During large
+    /// fan-outs the cli-runtime can be saturated with spawn work, and blocking here would freeze the
     /// TUI event loop. Metadata from `ThreadStarted` or explicit picker refreshes still fills in
     /// names and roles later; until then, rendering falls back to the thread id.
     pub(super) fn cache_collab_receiver_threads_for_notification(
@@ -1270,7 +1272,7 @@ impl App {
 
     pub(super) async fn refresh_snapshot_session_if_needed(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
         is_replay_only: bool,
         snapshot: &mut ThreadEventSnapshot,
@@ -1279,7 +1281,7 @@ impl App {
             return;
         }
 
-        match app_server
+        match cli_runtime
             .resume_thread(self.config.clone(), thread_id, self.resume_model_settings())
             .await
         {
@@ -1313,13 +1315,13 @@ impl App {
     pub(super) async fn apply_refreshed_snapshot_thread(
         &mut self,
         thread_id: ThreadId,
-        started: AppServerStartedThread,
+        started: CliRuntimeStartedThread,
         snapshot: &mut ThreadEventSnapshot,
     ) {
         if started.blocks_direct_input {
             self.agent_navigation.mark_parent_owned(thread_id);
         }
-        let AppServerStartedThread { session, turns, .. } = started;
+        let CliRuntimeStartedThread { session, turns, .. } = started;
         if let Some(channel) = self.thread_event_channels.get(&thread_id) {
             let mut store = channel.store.lock().await;
             store.set_session(session.clone(), turns.clone());
@@ -1509,7 +1511,7 @@ impl App {
             }
             ThreadBufferedEvent::Request(request) => {
                 if self
-                    .pending_app_server_requests
+                    .pending_runtime_requests
                     .contains_server_request(request.as_ref())
                 {
                     self.chat_widget
@@ -1553,7 +1555,7 @@ impl App {
     pub(super) async fn handle_active_thread_event(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         event: ThreadBufferedEvent,
     ) -> Result<()> {
         // Capture this before any potential thread switch: we only want to clear
@@ -1580,10 +1582,10 @@ impl App {
             self.mark_agent_picker_thread_closed(closed_thread_id);
             if self.side_threads.contains_key(&closed_thread_id) {
                 self.discard_closed_side_thread(closed_thread_id).await;
-                self.select_agent_thread(tui, app_server, primary_thread_id)
+                self.select_agent_thread(tui, cli_runtime, primary_thread_id)
                     .await?;
             } else {
-                self.select_agent_thread_and_discard_side(tui, app_server, primary_thread_id)
+                self.select_agent_thread_and_discard_side(tui, cli_runtime, primary_thread_id)
                     .await?;
             }
             if self.active_thread_id == Some(primary_thread_id) {

@@ -2,11 +2,11 @@
 
 use std::collections::VecDeque;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
 use crate::approval_events::ApplyPatchApprovalRequestEvent;
 use crate::approval_events::ExecApprovalRequestEvent;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::ToolRequestUserInputParams;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::ToolRequestUserInputParams;
 use codex_protocol::request_permissions::RequestPermissionsEvent;
 
 use super::ChatWidget;
@@ -64,7 +64,7 @@ impl InterruptManager {
         self.queue.push_back(QueuedInterrupt::ItemCompleted(item));
     }
 
-    pub(crate) fn remove_resolved_prompt(&mut self, request: &ResolvedAppServerRequest) -> bool {
+    pub(crate) fn remove_resolved_prompt(&mut self, request: &ResolvedCliRuntimeRequest) -> bool {
         let original_len = self.queue.len();
         self.queue
             .retain(|queued| !queued.matches_resolved_prompt(request));
@@ -88,22 +88,22 @@ impl InterruptManager {
 }
 
 impl QueuedInterrupt {
-    fn matches_resolved_prompt(&self, request: &ResolvedAppServerRequest) -> bool {
+    fn matches_resolved_prompt(&self, request: &ResolvedCliRuntimeRequest) -> bool {
         match self {
             QueuedInterrupt::ExecApproval(ev) => {
-                matches!(request, ResolvedAppServerRequest::ExecApproval { id }
+                matches!(request, ResolvedCliRuntimeRequest::ExecApproval { id }
                     if ev.effective_approval_id() == id.as_str())
             }
             QueuedInterrupt::ApplyPatchApproval(ev) => {
-                matches!(request, ResolvedAppServerRequest::FileChangeApproval { id }
+                matches!(request, ResolvedCliRuntimeRequest::FileChangeApproval { id }
                     if ev.call_id == id.as_str())
             }
             QueuedInterrupt::RequestPermissions(ev) => {
-                matches!(request, ResolvedAppServerRequest::PermissionsApproval { id }
+                matches!(request, ResolvedCliRuntimeRequest::PermissionsApproval { id }
                     if ev.call_id == id.as_str())
             }
             QueuedInterrupt::RequestUserInput(ev) => {
-                matches!(request, ResolvedAppServerRequest::UserInput { call_id }
+                matches!(request, ResolvedCliRuntimeRequest::UserInput { call_id }
                     if ev.item_id == call_id.as_str())
             }
             QueuedInterrupt::ItemStarted(_) | QueuedInterrupt::ItemCompleted(_) => false,
@@ -114,9 +114,9 @@ impl QueuedInterrupt {
 #[cfg(test)]
 mod tests {
     use crate::approval_events::ExecApprovalRequestEvent;
-    use codex_app_server_protocol::CommandExecutionSource;
-    use codex_app_server_protocol::CommandExecutionStatus;
-    use codex_app_server_protocol::ThreadItem;
+    use codex_cli_protocol::CommandExecutionSource;
+    use codex_cli_protocol::CommandExecutionStatus;
+    use codex_cli_protocol::ThreadItem;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
 
@@ -174,7 +174,7 @@ mod tests {
         manager.push_user_input(user_input("call-b", "turn"));
 
         assert!(
-            manager.remove_resolved_prompt(&ResolvedAppServerRequest::UserInput {
+            manager.remove_resolved_prompt(&ResolvedCliRuntimeRequest::UserInput {
                 call_id: "call-b".to_string(),
             })
         );
@@ -192,14 +192,14 @@ mod tests {
         manager.push_exec_approval(exec_approval("call", Some("approval")));
 
         assert!(
-            !manager.remove_resolved_prompt(&ResolvedAppServerRequest::ExecApproval {
+            !manager.remove_resolved_prompt(&ResolvedCliRuntimeRequest::ExecApproval {
                 id: "call".to_string(),
             })
         );
         assert_eq!(manager.queue.len(), 1);
 
         assert!(
-            manager.remove_resolved_prompt(&ResolvedAppServerRequest::ExecApproval {
+            manager.remove_resolved_prompt(&ResolvedCliRuntimeRequest::ExecApproval {
                 id: "approval".to_string(),
             })
         );
@@ -212,7 +212,7 @@ mod tests {
         manager.push_item_started(command_execution("call"));
 
         assert!(
-            !manager.remove_resolved_prompt(&ResolvedAppServerRequest::ExecApproval {
+            !manager.remove_resolved_prompt(&ResolvedCliRuntimeRequest::ExecApproval {
                 id: "call".to_string(),
             })
         );

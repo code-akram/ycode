@@ -1,11 +1,11 @@
-//! Canonical TUI session state shared across app-server routing, chat display, and status UI.
+//! Canonical TUI session state shared across cli-runtime routing, chat display, and status UI.
 //!
-//! The app-server API is the boundary for session lifecycle events. Once those responses enter
+//! The cli-runtime API is the boundary for session lifecycle events. Once those responses enter
 //! TUI, this module holds the small internal state shape used by app orchestration and widgets.
 
 use std::path::PathBuf;
 
-use codex_app_server_protocol::AskForApproval;
+use codex_cli_protocol::AskForApproval;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
@@ -37,7 +37,7 @@ pub(crate) struct ThreadSessionState {
     pub(crate) service_tier: Option<String>,
     pub(crate) approval_policy: AskForApproval,
     pub(crate) approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer,
-    /// Permission snapshot used by TUI display surfaces. Legacy app-server
+    /// Permission snapshot used by TUI display surfaces. Legacy cli-runtime
     /// responses are converted to a profile at ingestion time using the
     /// response cwd so cached sessions do not reinterpret cwd-bound grants.
     /// Turn requests must not treat this snapshot as a local permission

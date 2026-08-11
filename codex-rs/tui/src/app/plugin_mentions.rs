@@ -1,18 +1,18 @@
 //! Plugin mention capability enrichment for the TUI.
 //!
-//! Mention inventory comes from app-server `plugin/list`, matching the GUI
+//! Mention inventory comes from cli-runtime `plugin/list`, matching the GUI
 //! client. The current API exposes plugin-level mention metadata there, but not
 //! effective per-session capability summaries.
 
 use super::background_requests::request_plugin_list;
 use super::*;
-use codex_app_server_protocol::PluginAvailability;
-use codex_app_server_protocol::PluginListResponse;
-use codex_app_server_protocol::PluginSummary;
+use codex_cli_protocol::PluginAvailability;
+use codex_cli_protocol::PluginListResponse;
+use codex_cli_protocol::PluginSummary;
 use codex_plugin::PluginCapabilitySummary;
 
 pub(super) async fn fetch_plugin_mentions(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
 ) -> Result<Vec<PluginCapabilitySummary>> {
     let response = request_plugin_list(request_handle, cwd).await?;
@@ -84,14 +84,14 @@ fn plugin_mention_description(marketplace_name: &str, plugin: &PluginSummary) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_app_server_protocol::PluginAuthPolicy;
-    use codex_app_server_protocol::PluginAvailability;
-    use codex_app_server_protocol::PluginInstallPolicy;
-    use codex_app_server_protocol::PluginListResponse;
-    use codex_app_server_protocol::PluginMarketplaceEntry;
-    use codex_app_server_protocol::PluginShareContext;
-    use codex_app_server_protocol::PluginShareDiscoverability;
-    use codex_app_server_protocol::PluginSource;
+    use codex_cli_protocol::PluginAuthPolicy;
+    use codex_cli_protocol::PluginAvailability;
+    use codex_cli_protocol::PluginInstallPolicy;
+    use codex_cli_protocol::PluginListResponse;
+    use codex_cli_protocol::PluginMarketplaceEntry;
+    use codex_cli_protocol::PluginShareContext;
+    use codex_cli_protocol::PluginShareDiscoverability;
+    use codex_cli_protocol::PluginSource;
     use pretty_assertions::assert_eq;
 
     #[test]

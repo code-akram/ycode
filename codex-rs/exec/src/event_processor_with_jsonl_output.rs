@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
-use codex_app_server_protocol::CollabAgentTool;
-use codex_app_server_protocol::CollabAgentToolCallStatus;
-use codex_app_server_protocol::CommandExecutionStatus;
-use codex_app_server_protocol::PatchApplyStatus;
-use codex_app_server_protocol::PatchChangeKind;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::ThreadTokenUsage;
-use codex_app_server_protocol::TurnStatus;
+use codex_cli_protocol::CollabAgentTool;
+use codex_cli_protocol::CollabAgentToolCallStatus;
+use codex_cli_protocol::CommandExecutionStatus;
+use codex_cli_protocol::PatchApplyStatus;
+use codex_cli_protocol::PatchChangeKind;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::ThreadTokenUsage;
+use codex_cli_protocol::TurnStatus;
 use codex_core::config::Config;
 use codex_protocol::models::WebSearchAction;
 use codex_protocol::protocol::SessionConfiguredEvent;
@@ -122,13 +122,13 @@ impl EventProcessorWithJsonOutput {
         }
     }
 
-    pub fn map_todo_items(plan: &[codex_app_server_protocol::TurnPlanStep]) -> Vec<TodoItem> {
+    pub fn map_todo_items(plan: &[codex_cli_protocol::TurnPlanStep]) -> Vec<TodoItem> {
         plan.iter()
             .map(|step| TodoItem {
                 text: step.step.clone(),
                 completed: matches!(
                     step.status,
-                    codex_app_server_protocol::TurnPlanStepStatus::Completed
+                    codex_cli_protocol::TurnPlanStepStatus::Completed
                 ),
             })
             .collect()
@@ -166,7 +166,9 @@ impl EventProcessorWithJsonOutput {
                     aggregated_output: aggregated_output.unwrap_or_default(),
                     exit_code,
                     status: match status {
-                        CommandExecutionStatus::InProgress => ExecCommandExecutionStatus::InProgress,
+                        CommandExecutionStatus::InProgress => {
+                            ExecCommandExecutionStatus::InProgress
+                        }
                         CommandExecutionStatus::Completed => ExecCommandExecutionStatus::Completed,
                         CommandExecutionStatus::Failed => ExecCommandExecutionStatus::Failed,
                         CommandExecutionStatus::Declined => ExecCommandExecutionStatus::Declined,
@@ -226,25 +228,25 @@ impl EventProcessorWithJsonOutput {
                                 thread_id,
                                 CollabAgentState {
                                     status: match state.status {
-                                        codex_app_server_protocol::CollabAgentStatus::PendingInit => {
+                                        codex_cli_protocol::CollabAgentStatus::PendingInit => {
                                             CollabAgentStatus::PendingInit
                                         }
-                                        codex_app_server_protocol::CollabAgentStatus::Running => {
+                                        codex_cli_protocol::CollabAgentStatus::Running => {
                                             CollabAgentStatus::Running
                                         }
-                                        codex_app_server_protocol::CollabAgentStatus::Interrupted => {
+                                        codex_cli_protocol::CollabAgentStatus::Interrupted => {
                                             CollabAgentStatus::Interrupted
                                         }
-                                        codex_app_server_protocol::CollabAgentStatus::Completed => {
+                                        codex_cli_protocol::CollabAgentStatus::Completed => {
                                             CollabAgentStatus::Completed
                                         }
-                                        codex_app_server_protocol::CollabAgentStatus::Errored => {
+                                        codex_cli_protocol::CollabAgentStatus::Errored => {
                                             CollabAgentStatus::Errored
                                         }
-                                        codex_app_server_protocol::CollabAgentStatus::Shutdown => {
+                                        codex_cli_protocol::CollabAgentStatus::Shutdown => {
                                             CollabAgentStatus::Shutdown
                                         }
-                                        codex_app_server_protocol::CollabAgentStatus::NotFound => {
+                                        codex_cli_protocol::CollabAgentStatus::NotFound => {
                                             CollabAgentStatus::NotFound
                                         }
                                     },

@@ -28,17 +28,17 @@ use crate::onboarding::mark_url_hyperlink;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::Renderable;
 use crate::tui::FrameRequester;
-use codex_app_server_protocol::PluginAuthPolicy;
-use codex_app_server_protocol::PluginAvailability;
-use codex_app_server_protocol::PluginDetail;
-use codex_app_server_protocol::PluginInstallPolicy;
-use codex_app_server_protocol::PluginListResponse;
-use codex_app_server_protocol::PluginMarketplaceEntry;
-use codex_app_server_protocol::PluginShareContext;
-use codex_app_server_protocol::PluginShareDiscoverability;
-use codex_app_server_protocol::PluginSharePrincipal;
-use codex_app_server_protocol::PluginSource;
-use codex_app_server_protocol::PluginSummary;
+use codex_cli_protocol::PluginAuthPolicy;
+use codex_cli_protocol::PluginAvailability;
+use codex_cli_protocol::PluginDetail;
+use codex_cli_protocol::PluginInstallPolicy;
+use codex_cli_protocol::PluginListResponse;
+use codex_cli_protocol::PluginMarketplaceEntry;
+use codex_cli_protocol::PluginShareContext;
+use codex_cli_protocol::PluginShareDiscoverability;
+use codex_cli_protocol::PluginSharePrincipal;
+use codex_cli_protocol::PluginSource;
+use codex_cli_protocol::PluginSummary;
 use codex_core_plugins::is_openai_curated_marketplace_name;
 use codex_core_plugins::remote::REMOTE_GLOBAL_MARKETPLACE_NAME;
 use codex_core_plugins::remote::REMOTE_WORKSPACE_MARKETPLACE_NAME;
@@ -1238,7 +1238,7 @@ impl ChatWidget {
                             location.clone().into_request_params();
                         tx.send(AppEvent::FetchPluginDetail {
                             cwd: cwd.clone(),
-                            params: codex_app_server_protocol::PluginReadParams {
+                            params: codex_cli_protocol::PluginReadParams {
                                 marketplace_path,
                                 remote_marketplace_name,
                                 plugin_name: plugin_name.clone(),
@@ -2011,7 +2011,7 @@ fn plugin_hook_summary(plugin: &PluginDetail) -> String {
     if plugin.hooks.is_empty() {
         "No plugin hooks.".to_string()
     } else {
-        let mut event_counts = Vec::<(codex_app_server_protocol::HookEventName, usize)>::new();
+        let mut event_counts = Vec::<(codex_cli_protocol::HookEventName, usize)>::new();
         for hook in &plugin.hooks {
             if let Some((_, handler_count)) = event_counts
                 .iter_mut()

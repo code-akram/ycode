@@ -211,8 +211,8 @@ fn turn_complete_item(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_app_server_protocol::ThreadItem;
-    use codex_app_server_protocol::build_turns_from_rollout_items;
+    use codex_cli_protocol::ThreadItem;
+    use codex_cli_protocol::build_turns_from_rollout_items;
     use serde_json::Value as JsonValue;
     use std::path::Path;
     use tempfile::TempDir;

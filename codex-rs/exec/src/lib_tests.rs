@@ -258,7 +258,7 @@ fn prompt_with_stdin_context_preserves_trailing_newline() {
 fn lagged_event_warning_message_is_explicit() {
     assert_eq!(
         lagged_event_warning_message(/*skipped*/ 7),
-        "in-process app-server event stream lagged; dropped 7 events".to_string()
+        "in-process cli-runtime event stream lagged; dropped 7 events".to_string()
     );
 }
 
@@ -267,15 +267,15 @@ fn runtime_warnings_are_filtered_to_the_primary_thread() {
     let primary_thread_id = "thread-1";
     let turn_id = "turn-1";
     let outcomes = [
-        codex_app_server_protocol::WarningNotification {
+        codex_cli_protocol::WarningNotification {
             thread_id: None,
             message: "global warning".to_string(),
         },
-        codex_app_server_protocol::WarningNotification {
+        codex_cli_protocol::WarningNotification {
             thread_id: Some(primary_thread_id.to_string()),
             message: "primary warning".to_string(),
         },
-        codex_app_server_protocol::WarningNotification {
+        codex_cli_protocol::WarningNotification {
             thread_id: Some("thread-2".to_string()),
             message: "other warning".to_string(),
         },
@@ -327,7 +327,7 @@ async fn resume_lookup_model_providers_filters_only_last_lookup() {
 
 #[test]
 fn turn_items_for_thread_returns_matching_turn_items() {
-    let thread = AppServerThread {
+    let thread = CliRuntimeThread {
         id: "thread-1".to_string(),
         extra: None,
         session_id: "thread-1".to_string(),
@@ -342,11 +342,11 @@ fn turn_items_for_thread_returns_matching_turn_items() {
         created_at: 0,
         updated_at: 0,
         recency_at: Some(0),
-        status: codex_app_server_protocol::ThreadStatus::Idle,
+        status: codex_cli_protocol::ThreadStatus::Idle,
         path: None,
         cwd: test_path_buf("/tmp/project").abs(),
         cli_version: "0.0.0-test".to_string(),
-        source: codex_app_server_protocol::SessionSource::Exec,
+        source: codex_cli_protocol::SessionSource::Exec,
         can_accept_direct_input: None,
         thread_source: None,
         agent_nickname: None,
@@ -354,29 +354,29 @@ fn turn_items_for_thread_returns_matching_turn_items() {
         git_info: None,
         name: None,
         turns: vec![
-            codex_app_server_protocol::Turn {
+            codex_cli_protocol::Turn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
-                items: vec![AppServerThreadItem::AgentMessage {
+                items_view: codex_cli_protocol::TurnItemsView::Full,
+                items: vec![CliRuntimeThreadItem::AgentMessage {
                     id: "msg-1".to_string(),
                     text: "hello".to_string(),
                     phase: None,
                     memory_citation: None,
                 }],
-                status: codex_app_server_protocol::TurnStatus::Completed,
+                status: codex_cli_protocol::TurnStatus::Completed,
                 error: None,
                 started_at: None,
                 completed_at: None,
                 duration_ms: None,
             },
-            codex_app_server_protocol::Turn {
+            codex_cli_protocol::Turn {
                 id: "turn-2".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
-                items: vec![AppServerThreadItem::Plan {
+                items_view: codex_cli_protocol::TurnItemsView::Full,
+                items: vec![CliRuntimeThreadItem::Plan {
                     id: "plan-1".to_string(),
                     text: "ship it".to_string(),
                 }],
-                status: codex_app_server_protocol::TurnStatus::Completed,
+                status: codex_cli_protocol::TurnStatus::Completed,
                 error: None,
                 started_at: None,
                 completed_at: None,
@@ -387,7 +387,7 @@ fn turn_items_for_thread_returns_matching_turn_items() {
 
     assert_eq!(
         turn_items_for_thread(&thread, "turn-1"),
-        Some(vec![AppServerThreadItem::AgentMessage {
+        Some(vec![CliRuntimeThreadItem::AgentMessage {
             id: "msg-1".to_string(),
             text: "hello".to_string(),
             phase: None,
@@ -400,13 +400,13 @@ fn turn_items_for_thread_returns_matching_turn_items() {
 #[test]
 fn should_backfill_turn_completed_items_backfills_persisted_summaries_only() {
     let notification =
-        ServerNotification::TurnCompleted(codex_app_server_protocol::TurnCompletedNotification {
+        ServerNotification::TurnCompleted(codex_cli_protocol::TurnCompletedNotification {
             thread_id: "thread-1".to_string(),
-            turn: codex_app_server_protocol::Turn {
+            turn: codex_cli_protocol::Turn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Summary,
+                items_view: codex_cli_protocol::TurnItemsView::Summary,
                 items: Vec::new(),
-                status: codex_app_server_protocol::TurnStatus::Completed,
+                status: codex_cli_protocol::TurnStatus::Completed,
                 error: None,
                 started_at: None,
                 completed_at: None,
@@ -444,7 +444,7 @@ async fn thread_start_params_include_review_policy_when_review_policy_is_manual_
 
     assert_eq!(
         params.approvals_reviewer,
-        Some(codex_app_server_protocol::ApprovalsReviewer::User)
+        Some(codex_cli_protocol::ApprovalsReviewer::User)
     );
     assert_eq!(params.sandbox, None);
     assert_eq!(
@@ -472,7 +472,7 @@ async fn thread_start_params_include_review_policy_when_auto_review_is_enabled()
 
     assert_eq!(
         params.approvals_reviewer,
-        Some(codex_app_server_protocol::ApprovalsReviewer::AutoReview)
+        Some(codex_cli_protocol::ApprovalsReviewer::AutoReview)
     );
 }
 
@@ -499,13 +499,13 @@ async fn thread_resume_params_only_include_explicit_review_policy_override() {
     let params_with_override = thread_resume_params_from_config(
         &config,
         "thread-id".to_string(),
-        Some(codex_app_server_protocol::ApprovalsReviewer::AutoReview),
+        Some(codex_cli_protocol::ApprovalsReviewer::AutoReview),
     );
 
     assert_eq!(params_without_override.approvals_reviewer, None);
     assert_eq!(
         params_with_override.approvals_reviewer,
-        Some(codex_app_server_protocol::ApprovalsReviewer::AutoReview)
+        Some(codex_cli_protocol::ApprovalsReviewer::AutoReview)
     );
 }
 
@@ -610,7 +610,7 @@ async fn thread_start_params_include_user_thread_source() {
 
     assert_eq!(
         params.thread_source,
-        Some(codex_app_server_protocol::ThreadSource::User)
+        Some(codex_cli_protocol::ThreadSource::User)
     );
 }
 
@@ -679,12 +679,12 @@ async fn thread_lifecycle_params_include_legacy_sandbox_when_no_active_profile()
     assert_eq!(config.permissions.active_permission_profile(), None);
     assert_eq!(
         start_params.sandbox,
-        Some(codex_app_server_protocol::SandboxMode::DangerFullAccess)
+        Some(codex_cli_protocol::SandboxMode::DangerFullAccess)
     );
     assert_eq!(start_params.permissions, None);
     assert_eq!(
         resume_params.sandbox,
-        Some(codex_app_server_protocol::SandboxMode::DangerFullAccess)
+        Some(codex_cli_protocol::SandboxMode::DangerFullAccess)
     );
     assert_eq!(resume_params.permissions, None);
 }
@@ -779,7 +779,7 @@ async fn session_configured_from_thread_response_preserves_parent_thread_id() {
 
 fn sample_thread_start_response() -> ThreadStartResponse {
     ThreadStartResponse {
-        thread: codex_app_server_protocol::Thread {
+        thread: codex_cli_protocol::Thread {
             id: "67e55044-10b1-426f-9247-bb680e5fe0c8".to_string(),
             extra: None,
             session_id: "67e55044-10b1-426f-9247-bb680e5fe0c7".to_string(),
@@ -794,13 +794,13 @@ fn sample_thread_start_response() -> ThreadStartResponse {
             created_at: 0,
             updated_at: 0,
             recency_at: Some(0),
-            status: codex_app_server_protocol::ThreadStatus::Idle,
+            status: codex_cli_protocol::ThreadStatus::Idle,
             path: Some(PathBuf::from("/tmp/rollout.jsonl")),
             cwd: test_path_buf("/tmp").abs(),
             cli_version: "0.0.0".to_string(),
-            source: codex_app_server_protocol::SessionSource::Cli,
+            source: codex_cli_protocol::SessionSource::Cli,
             can_accept_direct_input: None,
-            thread_source: Some(codex_app_server_protocol::ThreadSource::User),
+            thread_source: Some(codex_cli_protocol::ThreadSource::User),
             agent_nickname: None,
             agent_role: None,
             git_info: None,
@@ -813,9 +813,9 @@ fn sample_thread_start_response() -> ThreadStartResponse {
         cwd: test_path_buf("/tmp").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
-        approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
-        approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::AutoReview,
-        sandbox: codex_app_server_protocol::SandboxPolicy::WorkspaceWrite {
+        approval_policy: codex_cli_protocol::AskForApproval::OnRequest,
+        approvals_reviewer: codex_cli_protocol::ApprovalsReviewer::AutoReview,
+        sandbox: codex_cli_protocol::SandboxPolicy::WorkspaceWrite {
             writable_roots: vec![],
             network_access: false,
             exclude_tmpdir_env_var: false,

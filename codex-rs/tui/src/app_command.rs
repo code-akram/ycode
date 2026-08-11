@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::CommandExecutionApprovalDecision;
-use codex_app_server_protocol::FileChangeApprovalDecision;
-use codex_app_server_protocol::ReviewTarget;
-use codex_app_server_protocol::ToolRequestUserInputResponse;
-use codex_app_server_protocol::UserInput;
+use codex_cli_protocol::AskForApproval;
+use codex_cli_protocol::CommandExecutionApprovalDecision;
+use codex_cli_protocol::FileChangeApprovalDecision;
+use codex_cli_protocol::ReviewTarget;
+use codex_cli_protocol::ToolRequestUserInputResponse;
+use codex_cli_protocol::UserInput;
 use codex_config::types::ApprovalsReviewer;
 use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::config_types::CollaborationMode;

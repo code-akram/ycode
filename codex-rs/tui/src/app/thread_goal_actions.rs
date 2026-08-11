@@ -1,7 +1,6 @@
 use super::App;
 use crate::app_event::AppEvent;
 use crate::app_event::ThreadGoalSetMode;
-use crate::app_server_session::AppServerSession;
 use crate::bottom_pane::SelectionAction;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
@@ -10,9 +9,10 @@ use crate::goal_display::GOAL_USAGE;
 use crate::goal_display::goal_status_label;
 use crate::goal_display::goal_usage_summary;
 use crate::goal_files;
+use crate::runtime_session::CliRuntimeSession;
 use crate::text_formatting::truncate_text;
-use codex_app_server_protocol::ThreadGoal;
-use codex_app_server_protocol::ThreadGoalStatus;
+use codex_cli_protocol::ThreadGoal;
+use codex_cli_protocol::ThreadGoalStatus;
 use codex_protocol::ThreadId;
 
 const EPHEMERAL_THREAD_GOAL_ERROR_MESSAGE: &str = concat!(
@@ -23,10 +23,10 @@ const EPHEMERAL_THREAD_GOAL_ERROR_MESSAGE: &str = concat!(
 impl App {
     pub(super) async fn open_thread_goal_menu(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) {
-        let result = app_server.thread_goal_get(thread_id).await;
+        let result = cli_runtime.thread_goal_get(thread_id).await;
         if self.current_displayed_thread_id() != Some(thread_id) {
             return;
         }
@@ -53,10 +53,10 @@ impl App {
 
     pub(super) async fn maybe_prompt_resume_paused_goal_after_resume(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) {
-        let result = app_server.thread_goal_get(thread_id).await;
+        let result = cli_runtime.thread_goal_get(thread_id).await;
         if self.current_displayed_thread_id() != Some(thread_id) {
             return;
         }
@@ -83,7 +83,7 @@ impl App {
 
     pub(super) async fn open_thread_goal_editor(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: Option<ThreadId>,
     ) {
         let Some(thread_id) = thread_id else {
@@ -91,7 +91,7 @@ impl App {
             return;
         };
 
-        let result = app_server.thread_goal_get(thread_id).await;
+        let result = cli_runtime.thread_goal_get(thread_id).await;
         if self.current_displayed_thread_id() != Some(thread_id) {
             return;
         }
@@ -110,8 +110,8 @@ impl App {
             return;
         };
 
-        let codex_home = app_server.codex_home_path(&self.config.codex_home);
-        match goal_files::objective_text_for_edit(app_server, codex_home.as_ref(), &goal.objective)
+        let codex_home = cli_runtime.codex_home_path(&self.config.codex_home);
+        match goal_files::objective_text_for_edit(cli_runtime, codex_home.as_ref(), &goal.objective)
             .await
         {
             Ok(objective) => goal.objective = objective,
@@ -127,14 +127,14 @@ impl App {
 
     pub(super) async fn set_thread_goal_draft(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
         draft: goal_files::GoalDraft,
         mode: ThreadGoalSetMode,
     ) {
-        let codex_home = app_server.codex_home_path(&self.config.codex_home);
+        let codex_home = cli_runtime.codex_home_path(&self.config.codex_home);
         let mode = if matches!(mode, ThreadGoalSetMode::ConfirmIfExists) {
-            let result = app_server.thread_goal_get(thread_id).await;
+            let result = cli_runtime.thread_goal_get(thread_id).await;
             if self.current_displayed_thread_id() != Some(thread_id) {
                 return;
             }
@@ -158,28 +158,24 @@ impl App {
             mode
         };
 
-        let (objective, output_dir) = match goal_files::materialize_goal_draft(
-            app_server,
-            codex_home.as_ref(),
-            draft,
-        )
-        .await
-        {
-            Ok(materialized) => materialized,
-            Err(err) => {
-                if self.current_displayed_thread_id() == Some(thread_id) {
-                    self.chat_widget.add_error_message(err.to_string());
+        let (objective, output_dir) =
+            match goal_files::materialize_goal_draft(cli_runtime, codex_home.as_ref(), draft).await
+            {
+                Ok(materialized) => materialized,
+                Err(err) => {
+                    if self.current_displayed_thread_id() == Some(thread_id) {
+                        self.chat_widget.add_error_message(err.to_string());
+                    }
+                    return;
                 }
-                return;
-            }
-        };
+            };
 
         let replacing_goal = matches!(mode, ThreadGoalSetMode::ReplaceExisting);
         if replacing_goal {
-            let result = app_server.thread_goal_clear(thread_id).await;
+            let result = cli_runtime.thread_goal_clear(thread_id).await;
 
             if let Err(err) = result {
-                cleanup_materialized_goal_files(app_server, output_dir).await;
+                cleanup_materialized_goal_files(cli_runtime, output_dir).await;
                 if self.current_displayed_thread_id() != Some(thread_id) {
                     return;
                 }
@@ -199,7 +195,7 @@ impl App {
             } => (status, Some(token_budget)),
         };
 
-        let result = app_server
+        let result = cli_runtime
             .thread_goal_set(thread_id, Some(objective), Some(status), token_budget)
             .await;
 
@@ -215,7 +211,7 @@ impl App {
                 self.chat_widget.maybe_send_next_queued_input();
             }
             Err(err) => {
-                cleanup_materialized_goal_files(app_server, output_dir).await;
+                cleanup_materialized_goal_files(cli_runtime, output_dir).await;
                 if self.current_displayed_thread_id() != Some(thread_id) {
                     return;
                 }
@@ -228,11 +224,11 @@ impl App {
 
     pub(super) async fn set_thread_goal_status(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
         status: ThreadGoalStatus,
     ) {
-        let result = app_server
+        let result = cli_runtime
             .thread_goal_set(
                 thread_id,
                 /*objective*/ None,
@@ -257,10 +253,10 @@ impl App {
 
     pub(super) async fn clear_thread_goal(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) {
-        let result = app_server.thread_goal_clear(thread_id).await;
+        let result = cli_runtime.thread_goal_clear(thread_id).await;
         if self.current_displayed_thread_id() != Some(thread_id) {
             return;
         }
@@ -335,11 +331,11 @@ impl App {
 }
 
 async fn cleanup_materialized_goal_files(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     output_dir: Option<goal_files::GoalFilePath>,
 ) {
     if let Some(output_dir) = output_dir
-        && let Err(err) = app_server.fs_remove_path(&output_dir).await
+        && let Err(err) = cli_runtime.fs_remove_path(&output_dir).await
     {
         tracing::warn!("failed to clean up materialized goal files at {output_dir}: {err}");
     }

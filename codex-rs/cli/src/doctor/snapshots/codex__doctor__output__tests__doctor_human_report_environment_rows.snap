@@ -47,7 +47,7 @@ Connectivity
   ✓ reachability active provider endpoints are reachable over HTTP
 
 Background Server
-  ✓ app-server   background server is not running
+  ✓ cli-runtime  background server is not running
 
 ─────────────────────────────────────────────────────────────
 12 ok · 2 notes · 1 warn · 1 fail failed

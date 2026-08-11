@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use chrono::DateTime;
-use codex_app_server_protocol::project_rollout_line;
+use codex_cli_protocol::project_rollout_line;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;

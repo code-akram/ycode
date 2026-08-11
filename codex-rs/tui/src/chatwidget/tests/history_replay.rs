@@ -1,7 +1,7 @@
 use super::*;
 use crate::app_event::HistoryLookupResponse;
-use codex_app_server_protocol::NetworkAccess;
-use codex_app_server_protocol::SandboxPolicy;
+use codex_cli_protocol::NetworkAccess;
+use codex_cli_protocol::SandboxPolicy;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
@@ -80,21 +80,21 @@ async fn replayed_failed_turns_preserve_overload_warnings_between_retries() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     let prompt = "The workspace also looks super confusing with its separator.";
     let error_message = "Selected model is at capacity. Please try a different model.";
-    let failed_turn = |turn_id: &str, item_id: &str| AppServerTurn {
-        items: vec![AppServerThreadItem::UserMessage {
+    let failed_turn = |turn_id: &str, item_id: &str| CliRuntimeTurn {
+        items: vec![CliRuntimeThreadItem::UserMessage {
             id: item_id.to_string(),
             client_id: None,
-            content: vec![AppServerUserInput::Text {
+            content: vec![CliRuntimeUserInput::Text {
                 text: prompt.to_string(),
                 text_elements: Vec::new(),
             }],
         }],
-        ..app_server_turn(
+        ..cli_runtime_turn(
             turn_id,
-            AppServerTurnStatus::Failed,
+            CliRuntimeTurnStatus::Failed,
             /*duration_ms*/ None,
             /*error*/
-            Some(AppServerTurnError {
+            Some(CliRuntimeTurnError {
                 message: error_message.to_string(),
                 codex_error_info: Some(CodexErrorInfo::ServerOverloaded),
                 additional_details: None,
@@ -174,11 +174,11 @@ async fn replayed_user_messages_seed_composer_history() {
             &mut chat,
             id,
             vec![
-                AppServerUserInput::Text {
+                CliRuntimeUserInput::Text {
                     text: text.to_string(),
                     text_elements: Vec::new(),
                 },
-                AppServerUserInput::Mention {
+                CliRuntimeUserInput::Mention {
                     name: name.to_string(),
                     path: path.to_string(),
                 },
@@ -255,7 +255,7 @@ async fn replayed_review_prompt_does_not_seed_composer_history() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.replay_thread_item(
-        AppServerThreadItem::EnteredReviewMode {
+        CliRuntimeThreadItem::EnteredReviewMode {
             id: "review-start".to_string(),
             review: "changes against main".to_string(),
         },
@@ -279,28 +279,28 @@ async fn replayed_nested_review_prompts_do_not_render_or_seed_composer_history()
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     let review_hint = "current changes";
     let review_prompt = "Review the current code changes (staged, unstaged, and untracked files).";
-    let user_message = |id: &str, text: &str| AppServerThreadItem::UserMessage {
+    let user_message = |id: &str, text: &str| CliRuntimeThreadItem::UserMessage {
         id: id.to_string(),
         client_id: None,
-        content: vec![AppServerUserInput::Text {
+        content: vec![CliRuntimeUserInput::Text {
             text: text.to_string(),
             text_elements: Vec::new(),
         }],
     };
-    let review_marker = |turn_id: &str| AppServerTurn {
+    let review_marker = |turn_id: &str| CliRuntimeTurn {
         items: vec![
-            AppServerThreadItem::EnteredReviewMode {
+            CliRuntimeThreadItem::EnteredReviewMode {
                 id: format!("{turn_id}-start"),
                 review: review_hint.to_string(),
             },
-            AppServerThreadItem::ExitedReviewMode {
+            CliRuntimeThreadItem::ExitedReviewMode {
                 id: format!("{turn_id}-end"),
                 review: "review complete".to_string(),
             },
         ],
-        ..app_server_turn(
+        ..cli_runtime_turn(
             turn_id,
-            AppServerTurnStatus::Completed,
+            CliRuntimeTurnStatus::Completed,
             /*duration_ms*/ None,
             /*error*/ None,
         )
@@ -309,34 +309,34 @@ async fn replayed_nested_review_prompts_do_not_render_or_seed_composer_history()
     chat.replay_thread_turns(
         vec![
             review_marker("turn-review-before-steer"),
-            AppServerTurn {
+            CliRuntimeTurn {
                 items: vec![
                     user_message("interrupted-prompt", review_hint),
                     user_message("interrupted-steer", review_hint),
                 ],
                 completed_at: Some(1),
-                ..app_server_turn(
+                ..cli_runtime_turn(
                     "turn-interrupted",
-                    AppServerTurnStatus::Interrupted,
+                    CliRuntimeTurnStatus::Interrupted,
                     /*duration_ms*/ None,
                     /*error*/ None,
                 )
             },
             review_marker("turn-review"),
-            AppServerTurn {
+            CliRuntimeTurn {
                 items: vec![
                     user_message("review-prompt-1", review_prompt),
                     user_message("review-prompt-2", review_prompt),
-                    AppServerThreadItem::AgentMessage {
+                    CliRuntimeThreadItem::AgentMessage {
                         id: "review-result".to_string(),
                         text: "review result is retained".to_string(),
                         phase: Some(MessagePhase::FinalAnswer),
                         memory_citation: None,
                     },
                 ],
-                ..app_server_turn(
+                ..cli_runtime_turn(
                     "turn-review-child",
-                    AppServerTurnStatus::Interrupted,
+                    CliRuntimeTurnStatus::Interrupted,
                     /*duration_ms*/ None,
                     /*error*/ None,
                 )
@@ -399,11 +399,11 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
         &mut chat,
         "user-1",
         vec![
-            AppServerUserInput::Text {
+            CliRuntimeUserInput::Text {
                 text: message.clone(),
                 text_elements: text_elements.clone().into_iter().map(Into::into).collect(),
             },
-            AppServerUserInput::LocalImage {
+            CliRuntimeUserInput::LocalImage {
                 path: local_images[0].clone(),
                 detail: None,
             },
@@ -471,11 +471,11 @@ async fn replayed_user_message_preserves_remote_image_urls() {
         &mut chat,
         "user-1",
         vec![
-            AppServerUserInput::Text {
+            CliRuntimeUserInput::Text {
                 text: message.clone(),
                 text_elements: Vec::new(),
             },
-            AppServerUserInput::Image {
+            CliRuntimeUserInput::Image {
                 url: remote_image_urls[0].clone(),
                 detail: None,
             },
@@ -520,7 +520,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
     chat.config.cwd = test_path_buf("/home/user/main").abs();
 
     let expected_cwd = test_path_buf("/home/user/sub-agent").abs();
-    let expected_app_server_permission_profile = PermissionProfile::Managed {
+    let expected_cli_runtime_permission_profile = PermissionProfile::Managed {
         network: NetworkSandboxPolicy::Restricted,
         file_system: ManagedFileSystemPermissions::Restricted {
             entries: vec![
@@ -542,7 +542,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
             glob_scan_max_depth: None,
         },
     };
-    let expected_permission_profile = expected_app_server_permission_profile.clone();
+    let expected_permission_profile = expected_cli_runtime_permission_profile.clone();
     let expected_core_sandbox = expected_permission_profile
         .to_legacy_sandbox_policy(expected_cwd.as_path())
         .expect("permission profile should project to legacy sandbox policy");
@@ -580,7 +580,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
     assert_eq!(&actual_sandbox, &expected_sandbox);
     assert_eq!(
         chat.config_ref().permissions.effective_permission_profile(),
-        expected_app_server_permission_profile
+        expected_cli_runtime_permission_profile
     );
     assert_eq!(&chat.config_ref().cwd, &expected_cwd);
 
@@ -660,10 +660,10 @@ async fn session_configured_preserves_profile_workspace_roots() {
 async fn session_configured_external_sandbox_keeps_external_runtime_policy() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    let expected_app_server_permission_profile = PermissionProfile::External {
+    let expected_cli_runtime_permission_profile = PermissionProfile::External {
         network: NetworkSandboxPolicy::Restricted,
     };
-    let expected_permission_profile = expected_app_server_permission_profile.clone();
+    let expected_permission_profile = expected_cli_runtime_permission_profile.clone();
     let expected_sandbox = SandboxPolicy::ExternalSandbox {
         network_access: NetworkAccess::Restricted,
     };
@@ -696,7 +696,7 @@ async fn session_configured_external_sandbox_keeps_external_runtime_policy() {
     assert_eq!(&actual_sandbox, &expected_sandbox);
     assert_eq!(
         chat.config_ref().permissions.effective_permission_profile(),
-        expected_app_server_permission_profile
+        expected_cli_runtime_permission_profile
     );
 }
 
@@ -735,7 +735,7 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
     replay_user_message_inputs(
         &mut chat,
         "user-1",
-        vec![AppServerUserInput::Image {
+        vec![CliRuntimeUserInput::Image {
             url: remote_image_urls[0].clone(),
             detail: None,
         }],
@@ -793,7 +793,7 @@ async fn replayed_user_message_with_only_local_images_renders_history_cell() {
     replay_user_message_inputs(
         &mut chat,
         "user-1",
-        vec![AppServerUserInput::LocalImage {
+        vec![CliRuntimeUserInput::LocalImage {
             path: local_images[0].clone(),
             detail: None,
         }],
@@ -898,7 +898,7 @@ async fn prompt_edit_thread_history_line_snapshot() {
 }
 
 #[tokio::test]
-async fn app_server_forked_thread_history_line_uses_app_server_title_snapshot() {
+async fn cli_runtime_forked_thread_history_line_uses_cli_runtime_title_snapshot() {
     let (chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let mut chat = chat;
     let temp = tempdir().expect("tempdir");
@@ -914,7 +914,10 @@ async fn app_server_forked_thread_history_line_uses_app_server_title_snapshot() 
     std::fs::write(temp.path().join("session_index.jsonl"), session_index_entry)
         .expect("write session index");
 
-    chat.emit_forked_thread_event(forked_from_id, Some("app-server-parent-thread".to_string()));
+    chat.emit_forked_thread_event(
+        forked_from_id,
+        Some("cli-runtime-parent-thread".to_string()),
+    );
 
     let history_cell = tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
@@ -929,16 +932,16 @@ async fn app_server_forked_thread_history_line_uses_app_server_title_snapshot() 
     .expect("timed out waiting for forked thread history");
     let combined = lines_to_single_string(&history_cell.display_lines(/*width*/ 80));
 
-    assert!(combined.contains("app-server-parent-thread"));
+    assert!(combined.contains("cli-runtime-parent-thread"));
     assert!(
         !combined.contains("stale-local-thread"),
-        "app-server fork title lookup should not read local CODEX_HOME"
+        "cli-runtime fork title lookup should not read local CODEX_HOME"
     );
-    assert_chatwidget_snapshot!("app_server_forked_thread_history_line", combined);
+    assert_chatwidget_snapshot!("cli_runtime_forked_thread_history_line", combined);
 }
 
 #[tokio::test]
-async fn app_server_forked_thread_history_line_without_app_server_name_ignores_local_snapshot() {
+async fn cli_runtime_forked_thread_history_line_without_cli_runtime_name_ignores_local_snapshot() {
     let (chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let mut chat = chat;
     let temp = tempdir().expect("tempdir");
@@ -971,10 +974,10 @@ async fn app_server_forked_thread_history_line_without_app_server_name_ignores_l
 
     assert!(
         !combined.contains("stale-local-thread"),
-        "app-server fork title lookup should not read local CODEX_HOME"
+        "cli-runtime fork title lookup should not read local CODEX_HOME"
     );
     assert_chatwidget_snapshot!(
-        "app_server_forked_thread_history_line_without_app_server_name",
+        "cli_runtime_forked_thread_history_line_without_cli_runtime_name",
         combined
     );
 }
@@ -999,17 +1002,17 @@ async fn thread_snapshot_replay_preserves_agent_message_during_review_mode() {
 }
 
 #[tokio::test]
-async fn replayed_retryable_app_server_error_keeps_turn_running() {
+async fn replayed_retryable_cli_runtime_error_keeps_turn_running() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
             thread_id: "thread-1".to_string(),
-            turn: AppServerTurn {
+            turn: CliRuntimeTurn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
-                status: AppServerTurnStatus::InProgress,
+                status: CliRuntimeTurnStatus::InProgress,
                 error: None,
                 started_at: Some(0),
                 completed_at: None,
@@ -1022,7 +1025,7 @@ async fn replayed_retryable_app_server_error_keeps_turn_running() {
 
     chat.handle_server_notification(
         ServerNotification::Error(ErrorNotification {
-            error: AppServerTurnError {
+            error: CliRuntimeTurnError {
                 message: "Reconnecting... 1/5".to_string(),
                 codex_error_info: None,
                 additional_details: Some("Idle timeout waiting for SSE".to_string()),
@@ -1087,7 +1090,7 @@ async fn replayed_reasoning_item_preserves_summary_parts_and_hides_raw_reasoning
     let _ = drain_insert_history(&mut rx);
 
     chat.replay_thread_item(
-        AppServerThreadItem::Reasoning {
+        CliRuntimeThreadItem::Reasoning {
             id: "reasoning-1".to_string(),
             summary: vec![
                 "**Plan**\n\ndone".to_string(),
@@ -1138,7 +1141,7 @@ async fn replayed_reasoning_item_shows_raw_reasoning_when_enabled() {
     let _ = drain_insert_history(&mut rx);
 
     chat.replay_thread_item(
-        AppServerThreadItem::Reasoning {
+        CliRuntimeThreadItem::Reasoning {
             id: "reasoning-1".to_string(),
             summary: vec!["Summary only".to_string()],
             content: vec!["Raw reasoning".to_string()],
@@ -1164,11 +1167,11 @@ async fn live_reasoning_summary_is_not_rendered_twice_when_item_completes() {
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
             thread_id: "thread-1".to_string(),
-            turn: AppServerTurn {
+            turn: CliRuntimeTurn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
-                status: AppServerTurnStatus::InProgress,
+                status: CliRuntimeTurnStatus::InProgress,
                 error: None,
                 started_at: Some(0),
                 completed_at: None,
@@ -1195,7 +1198,7 @@ async fn live_reasoning_summary_is_not_rendered_twice_when_item_completes() {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             completed_at_ms: 0,
-            item: AppServerThreadItem::Reasoning {
+            item: CliRuntimeThreadItem::Reasoning {
                 id: "reasoning-1".to_string(),
                 summary: vec!["Summary only".to_string()],
                 content: Vec::new(),
@@ -1221,11 +1224,11 @@ async fn live_reasoning_summary_drops_empty_parts_without_losing_content() {
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
             thread_id: "thread-1".to_string(),
-            turn: AppServerTurn {
+            turn: CliRuntimeTurn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
-                status: AppServerTurnStatus::InProgress,
+                status: CliRuntimeTurnStatus::InProgress,
                 error: None,
                 started_at: Some(0),
                 completed_at: None,
@@ -1242,7 +1245,7 @@ async fn live_reasoning_summary_drops_empty_parts_without_losing_content() {
     ] {
         chat.handle_server_notification(
             ServerNotification::ReasoningSummaryPartAdded(
-                codex_app_server_protocol::ReasoningSummaryPartAddedNotification {
+                codex_cli_protocol::ReasoningSummaryPartAddedNotification {
                     thread_id: "thread-1".to_string(),
                     turn_id: "turn-1".to_string(),
                     item_id: "reasoning-1".to_string(),
@@ -1268,7 +1271,7 @@ async fn live_reasoning_summary_drops_empty_parts_without_losing_content() {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             completed_at_ms: 0,
-            item: AppServerThreadItem::Reasoning {
+            item: CliRuntimeThreadItem::Reasoning {
                 id: "reasoning-1".to_string(),
                 summary: vec![
                     "**Plan**\n\ndone".to_string(),
@@ -1309,11 +1312,11 @@ async fn replayed_in_progress_turn_marks_task_running() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.replay_thread_turns(
-        vec![AppServerTurn {
+        vec![CliRuntimeTurn {
             id: "turn-1".to_string(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
+            items_view: codex_cli_protocol::TurnItemsView::Full,
             items: Vec::new(),
-            status: AppServerTurnStatus::InProgress,
+            status: CliRuntimeTurnStatus::InProgress,
             error: None,
             started_at: None,
             completed_at: None,

@@ -26,7 +26,6 @@ use std::sync::Arc;
 
 use crate::app::App;
 use crate::app_event::AppEvent;
-use crate::app_server_session::AppServerSession;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::chatwidget::ChatWidget;
 use crate::chatwidget::UserMessage;
@@ -37,11 +36,12 @@ use crate::history_cell::SessionInfoCell;
 use crate::history_cell::UserHistoryCell;
 use crate::pager_overlay::Overlay;
 use crate::pager_overlay::TranscriptHistoryState;
+use crate::runtime_session::CliRuntimeSession;
 use crate::tui;
 use crate::tui::TuiEvent;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::Turn;
-use codex_app_server_protocol::TurnStatus;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::Turn;
+use codex_cli_protocol::TurnStatus;
 use codex_protocol::ThreadId;
 use codex_protocol::models::local_image_label_text;
 use color_eyre::eyre::Result;
@@ -90,7 +90,7 @@ impl App {
     pub(crate) async fn handle_backtrack_overlay_event(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         event: TuiEvent,
     ) -> Result<bool> {
         if let TuiEvent::Key(key_event) = &event
@@ -101,8 +101,8 @@ impl App {
                     && matches!(key_event.code, KeyCode::Esc | KeyCode::Left)
                     && matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)))
             && let Some(thread_id) = self.chat_widget.thread_id()
-            && app_server.has_older_history(thread_id)
-            && self.request_older_history_page(app_server, thread_id)
+            && cli_runtime.has_older_history(thread_id)
+            && self.request_older_history_page(cli_runtime, thread_id)
         {
             if let Some(Overlay::Transcript(overlay)) = self.overlay.as_mut() {
                 overlay.set_history_state(if overlay.should_load_from_start(*key_event) {
@@ -499,7 +499,7 @@ impl App {
 /// resolved against the same visible projection before restoring its canonical mention bindings.
 ///
 /// A turn can contain multiple user messages when it was steered. Only its initial prompt can be
-/// reopened independently because app-server cannot fork in the middle of a turn.
+/// reopened independently because cli-runtime cannot fork in the middle of a turn.
 pub(crate) fn backtrack_fork_before_turn_id(
     turns: &[Turn],
     nth_user_message: usize,
@@ -674,7 +674,7 @@ mod tests {
     use crate::bottom_pane::MentionBinding;
     use crate::history_cell::AgentMessageCell;
     use crate::history_cell::HistoryCell;
-    use codex_app_server_protocol::UserInput;
+    use codex_cli_protocol::UserInput;
     use pretty_assertions::assert_eq;
     use ratatui::prelude::Line;
     use std::path::PathBuf;
@@ -705,7 +705,7 @@ mod tests {
                     }],
                 })
                 .collect(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
+            items_view: codex_cli_protocol::TurnItemsView::Full,
             status,
             error: None,
             started_at: None,

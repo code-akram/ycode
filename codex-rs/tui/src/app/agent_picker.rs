@@ -1,13 +1,13 @@
 //! Root-scoped background refresh for the agent picker.
 
 use super::*;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::SortDirection;
-use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadListParams;
-use codex_app_server_protocol::ThreadListResponse;
-use codex_app_server_protocol::ThreadSourceKind;
-use codex_app_server_protocol::ThreadStatus;
+use codex_cli_protocol::RequestId;
+use codex_cli_protocol::SortDirection;
+use codex_cli_protocol::Thread;
+use codex_cli_protocol::ThreadListParams;
+use codex_cli_protocol::ThreadListResponse;
+use codex_cli_protocol::ThreadSourceKind;
+use codex_cli_protocol::ThreadStatus;
 use std::collections::HashSet;
 
 pub(super) const AGENT_PICKER_VIEW_ID: &str = "agent-picker";
@@ -17,13 +17,13 @@ const AGENT_PICKER_MAX_THREADS: usize = 1_000;
 impl App {
     pub(super) fn refresh_agent_picker_threads(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         root: ThreadId,
     ) {
         let Some(request_id) = self.agent_navigation.begin_picker_refresh(root) else {
             return;
         };
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = async {
@@ -122,7 +122,7 @@ impl App {
             if !is_closed && previous.is_some_and(|entry| entry.is_closed) {
                 continue;
             }
-            let agent_path = crate::app_server_session::source_agent_path(&thread.source);
+            let agent_path = crate::runtime_session::source_agent_path(&thread.source);
             let agent_nickname = thread
                 .agent_nickname
                 .or_else(|| previous.and_then(|entry| entry.agent_nickname.clone()));

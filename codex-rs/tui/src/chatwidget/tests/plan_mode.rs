@@ -861,16 +861,16 @@ async fn plan_implementation_popup_skips_replayed_turn_complete() {
     chat.set_collaboration_mask(plan_mask);
 
     chat.replay_thread_turns(
-        vec![AppServerTurn {
+        vec![CliRuntimeTurn {
             id: "turn-1".to_string(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
-            items: vec![AppServerThreadItem::AgentMessage {
+            items_view: codex_cli_protocol::TurnItemsView::Full,
+            items: vec![CliRuntimeThreadItem::AgentMessage {
                 id: "msg-plan".to_string(),
                 text: "Plan details".to_string(),
                 phase: Some(MessagePhase::FinalAnswer),
                 memory_citation: None,
             }],
-            status: AppServerTurnStatus::Completed,
+            status: CliRuntimeTurnStatus::Completed,
             error: None,
             started_at: None,
             completed_at: None,
@@ -899,16 +899,16 @@ async fn plan_implementation_popup_shows_once_when_replay_precedes_live_turn_com
     chat.on_plan_item_completed("- Step 1\n- Step 2\n".to_string());
 
     chat.replay_thread_turns(
-        vec![AppServerTurn {
+        vec![CliRuntimeTurn {
             id: "turn-1".to_string(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
-            items: vec![AppServerThreadItem::AgentMessage {
+            items_view: codex_cli_protocol::TurnItemsView::Full,
+            items: vec![CliRuntimeThreadItem::AgentMessage {
                 id: "msg-plan-replay".to_string(),
                 text: "Plan details".to_string(),
                 phase: Some(MessagePhase::FinalAnswer),
                 memory_citation: None,
             }],
-            status: AppServerTurnStatus::Completed,
+            status: CliRuntimeTurnStatus::Completed,
             error: None,
             started_at: None,
             completed_at: None,
@@ -1206,11 +1206,11 @@ async fn submit_user_message_queues_while_compaction_turn_is_running() {
     chat.handle_server_notification(
         ServerNotification::TurnStarted(TurnStartedNotification {
             thread_id: thread_id.to_string(),
-            turn: AppServerTurn {
+            turn: CliRuntimeTurn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
-                status: AppServerTurnStatus::InProgress,
+                status: CliRuntimeTurnStatus::InProgress,
                 error: None,
                 started_at: Some(0),
                 completed_at: None,
@@ -1251,11 +1251,11 @@ async fn submit_user_message_queues_while_compaction_turn_is_running() {
     chat.handle_server_notification(
         ServerNotification::TurnCompleted(TurnCompletedNotification {
             thread_id: thread_id.to_string(),
-            turn: AppServerTurn {
+            turn: CliRuntimeTurn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
-                status: AppServerTurnStatus::Completed,
+                status: CliRuntimeTurnStatus::Completed,
                 error: None,
                 started_at: None,
                 completed_at: Some(0),

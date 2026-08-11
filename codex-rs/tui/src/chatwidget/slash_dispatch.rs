@@ -425,10 +425,10 @@ impl ChatWidget {
                 self.clean_background_terminals();
             }
             SlashCommand::MemoryDrop => {
-                self.add_app_server_stub_message("Memory maintenance");
+                self.add_cli_runtime_stub_message("Memory maintenance");
             }
             SlashCommand::MemoryUpdate => {
-                self.add_app_server_stub_message("Memory maintenance");
+                self.add_cli_runtime_stub_message("Memory maintenance");
             }
             SlashCommand::Plugins => {
                 self.add_plugins_output();

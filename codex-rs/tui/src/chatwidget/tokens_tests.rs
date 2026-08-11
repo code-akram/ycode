@@ -1,5 +1,5 @@
 use super::*;
-use codex_app_server_protocol::AccountTokenUsageSummary;
+use codex_cli_protocol::AccountTokenUsageSummary;
 use pretty_assertions::assert_eq;
 
 #[test]

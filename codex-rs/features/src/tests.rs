@@ -195,17 +195,6 @@ fn use_legacy_landlock_config_records_deprecation_notice() {
 }
 
 #[test]
-fn remote_control_config_is_ignored() {
-    let mut entries = BTreeMap::new();
-    entries.insert("remote_control".to_string(), true);
-
-    let mut features = Features::with_defaults();
-    features.apply_map(&entries);
-
-    assert_eq!(features.enabled(Feature::RemoteControl), false);
-}
-
-#[test]
 fn telepathy_is_legacy_alias_for_chronicle() {
     assert_eq!(feature_for_key("chronicle"), Some(Feature::Chronicle));
     assert_eq!(feature_for_key("telepathy"), Some(Feature::Chronicle));

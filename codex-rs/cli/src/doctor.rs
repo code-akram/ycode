@@ -64,7 +64,6 @@ use http::HeaderValue;
 use serde::Serialize;
 use supports_color::Stream;
 
-mod background;
 mod git;
 mod output;
 mod progress;
@@ -74,7 +73,6 @@ mod thread_inventory;
 mod title;
 mod updates;
 
-use background::background_server_check;
 use git::git_check;
 use output::HumanOutputOptions;
 use output::redact_detail;
@@ -363,7 +361,6 @@ async fn build_report(
                 terminal_title_check,
                 state_check,
                 thread_inventory_check,
-                background_server_check,
                 reachability_check,
             ) = tokio::join!(
                 async { run_sync_check("config", progress.clone(), || config_check(config)) },
@@ -398,11 +395,6 @@ async fn build_report(
                     thread_inventory_check(config),
                 ),
                 run_async_check(
-                    "app-server",
-                    progress.clone(),
-                    background_server_check(config)
-                ),
-                run_async_check(
                     "provider reachability",
                     progress.clone(),
                     provider_reachability_check(reachability_plan),
@@ -420,7 +412,6 @@ async fn build_report(
                 terminal_title_check,
                 state_check,
                 thread_inventory_check,
-                background_server_check,
                 reachability_check,
             ]);
         }

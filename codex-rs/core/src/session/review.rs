@@ -143,7 +143,7 @@ pub(super) async fn spawn_review_thread(
         unified_exec_shell_mode,
         current_date: parent_turn_context.current_date.clone(),
         timezone: parent_turn_context.timezone.clone(),
-        app_server_client_name: parent_turn_context.app_server_client_name.clone(),
+        cli_runtime_client_name: parent_turn_context.cli_runtime_client_name.clone(),
         developer_instructions: None,
         mode: parent_turn_context.mode,
         collaboration_mode_developer_instructions: parent_turn_context

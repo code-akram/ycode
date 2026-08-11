@@ -27,10 +27,8 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 clap_complete = { workspace = true }
-codex-app-server = { workspace = true }
-codex-app-server-daemon = { workspace = true }
-codex-app-server-protocol = { workspace = true }
-codex-app-server-test-client = { workspace = true }
+codex-cli-runtime = { workspace = true }
+codex-cli-protocol = { workspace = true }
 codex-arg0 = { workspace = true }
 codex-api = { workspace = true }
 codex-chatgpt = { workspace = true }
@@ -43,7 +41,6 @@ codex-core-plugins = { workspace = true }
 codex-home = { workspace = true }
 codex-http-client = { workspace = true }
 codex-exec = { workspace = true }
-codex-exec-server = { workspace = true }
 codex-execpolicy = { workspace = true }
 codex-extension-api = { workspace = true }
 codex-features = { workspace = true }
@@ -105,7 +102,6 @@ insta = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
 sqlx = { workspace = true }
-tokio-tungstenite = { workspace = true }
 wiremock = { workspace = true }
 zstd = { workspace = true }
 

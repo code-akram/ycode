@@ -8,13 +8,11 @@ members = [
     "bwrap",
     "ansi-escape",
     "async-utils",
-    "app-server",
-    "app-server-transport",
-    "app-server-daemon",
-    "app-server-client",
-    "app-server-protocol",
-    "app-server-protocol-noop-macros",
-    "app-server-test-client",
+    "cli-runtime",
+    "cli-runtime-client",
+    "cli-protocol",
+    "cli-protocol-noop-macros",
+    "cli-test-support",
     "apply-patch",
     "arg0",
     "feedback",
@@ -136,20 +134,17 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 # Internal
-app_test_support = { path = "app-server/tests/common" }
+app_test_support = { path = "cli-test-support" }
 codex-analytics = { path = "analytics" }
 codex-agent-graph-store = { path = "agent-graph-store" }
 codex-agent-identity = { path = "agent-identity" }
 codex-ansi-escape = { path = "ansi-escape" }
 codex-api = { path = "codex-api" }
 codex-aws-auth = { path = "aws-auth" }
-codex-app-server = { path = "app-server" }
-codex-app-server-transport = { path = "app-server-transport" }
-codex-app-server-daemon = { path = "app-server-daemon" }
-codex-app-server-client = { path = "app-server-client" }
-codex-app-server-protocol = { path = "app-server-protocol" }
-codex-app-server-protocol-noop-macros = { path = "app-server-protocol-noop-macros" }
-codex-app-server-test-client = { path = "app-server-test-client" }
+codex-cli-runtime = { path = "cli-runtime" }
+codex-cli-runtime-client = { path = "cli-runtime-client" }
+codex-cli-protocol = { path = "cli-protocol" }
+codex-cli-protocol-noop-macros = { path = "cli-protocol-noop-macros" }
 codex-apply-patch = { path = "apply-patch" }
 codex-arg0 = { path = "arg0" }
 codex-async-utils = { path = "async-utils" }

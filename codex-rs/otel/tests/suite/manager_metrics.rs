@@ -135,7 +135,7 @@ fn manager_attaches_optional_service_name_tag() -> Result<()> {
         "tty".to_string(),
         SessionSource::Cli,
     )
-    .with_metrics_service_name("my_app_server_client")
+    .with_metrics_service_name("my_cli_runtime_client")
     .with_metrics(metrics);
 
     manager.counter("codex.session_started", /*inc*/ 1, &[]);
@@ -158,7 +158,7 @@ fn manager_attaches_optional_service_name_tag() -> Result<()> {
 
     assert_eq!(
         attrs.get("service_name"),
-        Some(&"my_app_server_client".to_string())
+        Some(&"my_cli_runtime_client".to_string())
     );
 
     Ok(())

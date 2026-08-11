@@ -1,14 +1,14 @@
-use crate::events::AppServerRpcTransport;
+use crate::events::CliRuntimeRpcTransport;
 use crate::events::CodexRuntimeMetadata;
 use crate::events::GuardianReviewEventParams;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ClientResponsePayload;
-use codex_app_server_protocol::InitializeParams;
-use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::ServerResponse;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ClientResponsePayload;
+use codex_cli_protocol::InitializeParams;
+use codex_cli_protocol::JSONRPCErrorError;
+use codex_cli_protocol::RequestId;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::ServerResponse;
 use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::ModeKind;
@@ -440,7 +440,7 @@ pub(crate) enum AnalyticsFact {
         params: InitializeParams,
         product_client_id: String,
         runtime: CodexRuntimeMetadata,
-        rpc_transport: AppServerRpcTransport,
+        rpc_transport: CliRuntimeRpcTransport,
     },
     ClientRequest {
         connection_id: u64,
@@ -483,7 +483,7 @@ pub(crate) enum AnalyticsFact {
         request_id: RequestId,
     },
     Notification(Box<ServerNotification>),
-    // Facts that do not naturally exist on the app-server protocol surface, or
+    // Facts that do not naturally exist on the cli-runtime protocol surface, or
     // would require non-trivial protocol reshaping on this branch.
     Custom(CustomAnalyticsFact),
 }

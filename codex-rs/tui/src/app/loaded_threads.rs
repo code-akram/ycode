@@ -14,10 +14,10 @@
 //! `SessionSource::SubAgent(ThreadSpawn { parent_thread_id, .. })` edges until no new children are
 //! found. The primary thread itself is never included in the output.
 
-use crate::app_server_session::thread_blocks_direct_input;
-use codex_app_server_protocol::SessionSource;
-use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadStatus;
+use crate::runtime_session::thread_blocks_direct_input;
+use codex_cli_protocol::SessionSource;
+use codex_cli_protocol::Thread;
+use codex_cli_protocol::ThreadStatus;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SubAgentSource;
 use std::collections::HashMap;
@@ -125,9 +125,9 @@ fn thread_spawn_parent_thread_id(source: &SessionSource) -> Option<ThreadId> {
 mod tests {
     use super::LoadedSubagentThread;
     use super::find_loaded_subagent_threads_for_primary;
-    use codex_app_server_protocol::SessionSource;
-    use codex_app_server_protocol::Thread;
-    use codex_app_server_protocol::ThreadStatus;
+    use codex_cli_protocol::SessionSource;
+    use codex_cli_protocol::Thread;
+    use codex_cli_protocol::ThreadStatus;
     use codex_protocol::ThreadId;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;

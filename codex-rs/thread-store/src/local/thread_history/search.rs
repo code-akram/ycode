@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::UserInput;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::UserInput;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::strip_user_message_prefix;
 use futures::TryStreamExt;

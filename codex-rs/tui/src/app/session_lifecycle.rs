@@ -1,6 +1,6 @@
 //! Session, resume, fork, and subagent selection lifecycle for the TUI app.
 //!
-//! This module owns the high-level transitions between app-server threads: starting fresh sessions,
+//! This module owns the high-level transitions between cli-runtime threads: starting fresh sessions,
 //! resuming/forking saved sessions, replacing ChatWidget instances, and maintaining the agent picker
 //! cache used for multi-agent navigation.
 
@@ -8,8 +8,8 @@ use std::io;
 
 use super::agent_picker::AGENT_PICKER_VIEW_ID;
 use super::*;
-use crate::app_server_session::source_agent_path;
-use crate::app_server_session::thread_blocks_direct_input;
+use crate::runtime_session::source_agent_path;
+use crate::runtime_session::thread_blocks_direct_input;
 use codex_config::types::ResumeCwdMode;
 use std::collections::HashSet;
 
@@ -28,9 +28,9 @@ pub(super) struct LoadedSubagentBackfill {
 }
 
 impl App {
-    pub(super) async fn open_agent_picker(&mut self, app_server: &mut AppServerSession) {
+    pub(super) async fn open_agent_picker(&mut self, cli_runtime: &mut CliRuntimeSession) {
         let backfill = if self.primary_thread_id.is_none() {
-            self.backfill_loaded_subagent_threads(app_server).await
+            self.backfill_loaded_subagent_threads(cli_runtime).await
         } else {
             LoadedSubagentBackfill::default()
         };
@@ -64,7 +64,7 @@ impl App {
             } else if self.primary_thread_id.is_none()
                 && !backfill.refreshed_thread_ids.contains(&thread_id)
             {
-                self.refresh_agent_picker_thread_liveness(app_server, thread_id)
+                self.refresh_agent_picker_thread_liveness(cli_runtime, thread_id)
                     .await;
             }
         }
@@ -120,7 +120,7 @@ impl App {
                 continue;
             }
             if self.primary_thread_id.is_none() {
-                self.refresh_agent_picker_thread_liveness(app_server, thread_id)
+                self.refresh_agent_picker_thread_liveness(cli_runtime, thread_id)
                     .await;
             } else if self.agent_navigation.get(&thread_id).is_none() {
                 self.upsert_agent_picker_thread(
@@ -135,7 +135,7 @@ impl App {
             .has_non_primary_thread(self.primary_thread_id);
         if !self.config.features.enabled(Feature::Collab) && !has_non_primary_agent_thread {
             if let Some(primary_thread_id) = self.primary_thread_id {
-                self.refresh_agent_picker_threads(app_server, primary_thread_id);
+                self.refresh_agent_picker_threads(cli_runtime, primary_thread_id);
             }
             self.chat_widget.open_multi_agent_enable_prompt();
             return;
@@ -159,7 +159,7 @@ impl App {
             self.chat_widget.show_selection_view(params);
         }
         if let Some(primary_thread_id) = self.primary_thread_id {
-            self.refresh_agent_picker_threads(app_server, primary_thread_id);
+            self.refresh_agent_picker_threads(cli_runtime, primary_thread_id);
         }
     }
 
@@ -261,7 +261,7 @@ impl App {
         self.sync_active_agent_label();
     }
 
-    /// Persists the app-server's authoritative ownership flag and updates the active composer.
+    /// Persists the cli-runtime's authoritative ownership flag and updates the active composer.
     pub(super) fn mark_primary_thread_parent_owned(&mut self, thread_id: ThreadId) {
         self.agent_navigation.mark_parent_owned(thread_id);
         self.chat_widget.set_parent_owned_thread();
@@ -278,12 +278,12 @@ impl App {
 
     pub(super) async fn refresh_agent_picker_thread_liveness(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) -> bool {
         let existing_entry = self.agent_navigation.get(&thread_id).cloned();
         let has_replay_channel = self.thread_event_channels.contains_key(&thread_id);
-        match app_server
+        match cli_runtime
             .thread_read(thread_id, /*include_turns*/ false)
             .await
         {
@@ -292,12 +292,10 @@ impl App {
                 let agent_path = source_agent_path(&thread.source);
                 let is_running = matches!(
                     thread.status,
-                    codex_app_server_protocol::ThreadStatus::Active { .. }
+                    codex_cli_protocol::ThreadStatus::Active { .. }
                 );
-                let is_closed = matches!(
-                    thread.status,
-                    codex_app_server_protocol::ThreadStatus::NotLoaded
-                );
+                let is_closed =
+                    matches!(thread.status, codex_cli_protocol::ThreadStatus::NotLoaded);
                 self.upsert_agent_picker_thread(
                     thread_id,
                     thread.agent_nickname.or_else(|| {
@@ -361,14 +359,14 @@ impl App {
     /// still-live discovered thread, attach it on demand with a real resumed snapshot.
     pub(super) async fn attach_live_thread_for_selection(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) -> Result<bool> {
         if self.thread_event_channels.contains_key(&thread_id) {
             return Ok(true);
         }
 
-        let (session, turns, live_attached) = match app_server
+        let (session, turns, live_attached) = match cli_runtime
             .resume_thread(self.config.clone(), thread_id, self.resume_model_settings())
             .await
         {
@@ -384,16 +382,16 @@ impl App {
                     error = %resume_err,
                     "failed to resume live thread for selection; falling back to thread/read"
                 );
-                let mut thread = app_server
+                let mut thread = cli_runtime
                     .thread_read(thread_id, /*include_turns*/ false)
                     .await?;
-                match app_server
+                match cli_runtime
                     .hydrate_initial_thread_history(
                         &mut thread,
                         /*turn_cursor*/ None,
                         /*item_cursor*/ None,
                         Some(&self.config),
-                        crate::app_server_session::HistoryHydrationScope::Initial,
+                        crate::runtime_session::HistoryHydrationScope::Initial,
                     )
                     .await
                 {
@@ -410,7 +408,7 @@ impl App {
                     ));
                 }
                 let mut session = self.session_state_for_thread_read(thread_id, &thread).await;
-                // `thread/read` can seed replay state, but it does not attach the app-server
+                // `thread/read` can seed replay state, but it does not attach the cli-runtime
                 // listener that `thread/resume` establishes, so treat this path as replay-only.
                 session.model.clear();
                 (session, turns, false)
@@ -455,7 +453,7 @@ impl App {
     pub(super) async fn select_agent_thread(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) -> Result<()> {
         if self.active_thread_id == Some(thread_id) {
@@ -467,7 +465,7 @@ impl App {
         if !(self.side_threads.contains_key(&thread_id)
             && self.thread_event_channels.contains_key(&thread_id)
             || self
-                .refresh_agent_picker_thread_liveness(app_server, thread_id)
+                .refresh_agent_picker_thread_liveness(cli_runtime, thread_id)
                 .await)
         {
             self.chat_widget
@@ -481,7 +479,7 @@ impl App {
         let mut attached_replay_only = false;
         if self.should_attach_live_thread_for_selection(thread_id) {
             match self
-                .attach_live_thread_for_selection(app_server, thread_id)
+                .attach_live_thread_for_selection(cli_runtime, thread_id)
                 .await
             {
                 Ok(live_attached) => {
@@ -516,7 +514,7 @@ impl App {
         };
 
         self.refresh_snapshot_session_if_needed(
-            app_server,
+            cli_runtime,
             thread_id,
             is_replay_only,
             &mut snapshot,
@@ -596,7 +594,7 @@ impl App {
         self.last_subagent_backfill_attempt = None;
         self.primary_session_configured = None;
         self.pending_primary_events.clear();
-        self.pending_app_server_requests.clear();
+        self.pending_runtime_requests.clear();
         self.pending_startup_thread_start = false;
         self.chat_widget.set_pending_thread_approvals(Vec::new());
         self.sync_active_agent_label();
@@ -604,13 +602,13 @@ impl App {
 
     pub(super) async fn handle_startup_thread_started(
         &mut self,
-        app_server: &mut AppServerSession,
-        result: Result<AppServerStartedThread, String>,
+        cli_runtime: &mut CliRuntimeSession,
+        result: Result<CliRuntimeStartedThread, String>,
     ) -> Result<()> {
         if !self.pending_startup_thread_start {
             if let Ok(started) = result {
                 let thread_id = started.session.thread_id;
-                if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
+                if let Err(err) = cli_runtime.thread_unsubscribe(thread_id).await {
                     tracing::warn!(
                         thread_id = %thread_id,
                         "failed to unsubscribe stale startup thread: {err}"
@@ -645,7 +643,7 @@ impl App {
     pub(super) async fn start_fresh_session_with_summary_hint(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         session_start_source: Option<ThreadStartSource>,
         initial_user_message: Option<crate::chatwidget::UserMessage>,
         new_thread_name: Option<String>,
@@ -659,7 +657,7 @@ impl App {
         let mut config = self.fresh_session_config();
         apply_managed_new_thread_defaults(
             &mut config,
-            app_server.managed_new_thread_defaults(),
+            cli_runtime.managed_new_thread_defaults(),
             &self.cli_kv_overrides,
             &self.harness_overrides,
         );
@@ -669,22 +667,22 @@ impl App {
             self.chat_widget.thread_name(),
             self.chat_widget.rollout_path().as_deref(),
         );
-        self.shutdown_current_thread(app_server).await;
+        self.shutdown_current_thread(cli_runtime).await;
         let tracked_thread_ids: Vec<ThreadId> =
             self.thread_event_channels.keys().copied().collect();
         for thread_id in tracked_thread_ids {
-            if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
+            if let Err(err) = cli_runtime.thread_unsubscribe(thread_id).await {
                 tracing::warn!("failed to unsubscribe tracked thread {thread_id}: {err}");
             }
         }
         self.config = config.clone();
-        match app_server
+        match cli_runtime
             .start_thread_with_session_start_source(&config, session_start_source)
             .await
         {
             Ok(mut started) => {
                 let name_error = if let Some(name) = new_thread_name {
-                    match app_server
+                    match cli_runtime
                         .thread_set_name(started.session.thread_id, name.clone())
                         .await
                     {
@@ -698,7 +696,7 @@ impl App {
                     None
                 };
                 if let Err(err) = self
-                    .replace_chat_widget_with_app_server_thread(
+                    .replace_chat_widget_with_cli_runtime_thread(
                         tui,
                         started,
                         ThreadAttachPresentation::SessionLineage,
@@ -707,7 +705,7 @@ impl App {
                     .await
                 {
                     self.chat_widget.add_error_message(format!(
-                        "Failed to attach to fresh app-server thread: {err}"
+                        "Failed to attach to fresh cli-runtime thread: {err}"
                     ));
                 } else {
                     if let Some(err) = name_error {
@@ -737,10 +735,10 @@ impl App {
         tui.frame_requester().schedule_frame();
     }
 
-    pub(super) async fn replace_chat_widget_with_app_server_thread(
+    pub(super) async fn replace_chat_widget_with_cli_runtime_thread(
         &mut self,
         tui: &mut tui::Tui,
-        started: AppServerStartedThread,
+        started: CliRuntimeStartedThread,
         presentation: ThreadAttachPresentation,
         initial_user_message: Option<crate::chatwidget::UserMessage>,
     ) -> Result<()> {
@@ -779,13 +777,13 @@ impl App {
     /// `ChatWidget` metadata map.
     pub(super) async fn backfill_loaded_subagent_threads(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
     ) -> LoadedSubagentBackfill {
         let Some(primary_thread_id) = self.primary_thread_id else {
             return LoadedSubagentBackfill::default();
         };
 
-        let loaded_thread_ids = match app_server
+        let loaded_thread_ids = match cli_runtime
             .thread_loaded_list(ThreadLoadedListParams {
                 cursor: None,
                 limit: None,
@@ -811,7 +809,7 @@ impl App {
                 continue;
             }
 
-            match app_server
+            match cli_runtime
                 .thread_read(thread_id, /*include_turns*/ false)
                 .await
             {
@@ -872,7 +870,7 @@ impl App {
     /// without requiring the user to wait for a proactive fetch.
     pub(super) async fn adjacent_thread_id_with_backfill(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         direction: AgentNavigationDirection,
     ) -> Option<ThreadId> {
         let current_thread = self.current_displayed_thread_id();
@@ -889,7 +887,7 @@ impl App {
         }
 
         if self
-            .backfill_loaded_subagent_threads(app_server)
+            .backfill_loaded_subagent_threads(cli_runtime)
             .await
             .completed
         {
@@ -907,7 +905,7 @@ impl App {
     pub(super) async fn resume_target_session(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         target_session: SessionTarget,
     ) -> Result<AppRunControl> {
         if self.ignore_same_thread_resume(&target_session) {
@@ -921,7 +919,7 @@ impl App {
             .harness_overrides
             .cwd
             .as_deref()
-            .or_else(|| app_server.remote_cwd_override());
+            .or_else(|| cli_runtime.remote_cwd_override());
         let resume_cwd_mode = crate::session_resume::effective_resume_cwd_mode(
             self.config.tui_resume_cwd,
             cwd_override,
@@ -933,12 +931,12 @@ impl App {
             self.config.cwd.to_path_buf()
         };
         let uses_remote_workspace_or_environment = crate::uses_remote_workspace_or_environment(
-            &self.app_server_target,
+            &self.cli_runtime_target,
             &self.environment_manager,
         );
         if uses_remote_workspace_or_environment
             && self.harness_overrides.cwd.is_none()
-            && app_server.remote_cwd_override().is_none()
+            && cli_runtime.remote_cwd_override().is_none()
             && matches!(resume_cwd_mode, Some(ResumeCwdMode::Current))
         {
             self.chat_widget.add_error_message(
@@ -947,7 +945,7 @@ impl App {
             );
             return Ok(AppRunControl::Continue);
         }
-        let resume_cwd = if self.app_server_target.uses_remote_workspace() {
+        let resume_cwd = if self.cli_runtime_target.uses_remote_workspace() {
             current_cwd.clone()
         } else {
             let outcome = crate::session_resume::resolve_cwd_for_resume_or_fork(
@@ -981,7 +979,7 @@ impl App {
         };
 
         let (config_current_cwd, config_resume_cwd) =
-            if self.app_server_target.uses_remote_workspace() {
+            if self.cli_runtime_target.uses_remote_workspace() {
                 let local_config_cwd = self.config.cwd.to_path_buf();
                 (local_config_cwd.clone(), local_config_cwd)
             } else {
@@ -1007,7 +1005,7 @@ impl App {
             self.chat_widget.thread_name(),
             self.chat_widget.rollout_path().as_deref(),
         );
-        match app_server
+        match cli_runtime
             .resume_thread(
                 resume_config.clone(),
                 target_session.thread_id,
@@ -1017,7 +1015,7 @@ impl App {
         {
             Ok(resumed) => {
                 let resumed_thread_id = resumed.session.thread_id;
-                self.shutdown_current_thread(app_server).await;
+                self.shutdown_current_thread(cli_runtime).await;
                 self.config = resume_config;
                 tui.set_notification_settings(
                     self.config.tui_notifications.method,
@@ -1026,7 +1024,7 @@ impl App {
                 self.file_search
                     .update_search_dir(self.config.cwd.to_path_buf());
                 match self
-                    .replace_chat_widget_with_app_server_thread(
+                    .replace_chat_widget_with_cli_runtime_thread(
                         tui,
                         resumed,
                         ThreadAttachPresentation::SessionLineage,
@@ -1035,7 +1033,7 @@ impl App {
                     .await
                 {
                     Ok(()) => {
-                        self.backfill_loaded_subagent_threads(app_server).await;
+                        self.backfill_loaded_subagent_threads(cli_runtime).await;
                         if let Some(summary) = summary {
                             let mut lines: Vec<Line<'static>> = Vec::new();
                             if let Some(usage_line) = summary.usage_line {
@@ -1049,14 +1047,14 @@ impl App {
                             self.chat_widget.add_plain_history_lines(lines);
                         }
                         self.maybe_prompt_resume_paused_goal_after_resume(
-                            app_server,
+                            cli_runtime,
                             resumed_thread_id,
                         )
                         .await;
                     }
                     Err(err) => {
                         self.chat_widget.add_error_message(format!(
-                            "Failed to attach to resumed app-server thread: {err}"
+                            "Failed to attach to resumed cli-runtime thread: {err}"
                         ));
                     }
                 }

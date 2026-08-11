@@ -1,20 +1,20 @@
 //! TUI-owned approval request models used while rendering and queueing prompts.
 //!
-//! These structs normalize app-server request params into the shape the TUI
+//! These structs normalize cli-runtime request params into the shape the TUI
 //! needs while an approval may be deferred behind streaming output. Exec
-//! approvals keep app-server decision and permission types; patch approvals add
+//! approvals keep cli-runtime decision and permission types; patch approvals add
 //! the file-change display model collected from nearby thread items.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::diff_model::FileChange;
-use codex_app_server_protocol::AdditionalPermissionProfile;
-use codex_app_server_protocol::CommandExecutionApprovalDecision;
-use codex_app_server_protocol::ExecPolicyAmendment;
-use codex_app_server_protocol::NetworkApprovalContext;
-use codex_app_server_protocol::NetworkPolicyAmendment;
-use codex_app_server_protocol::NetworkPolicyRuleAction;
+use codex_cli_protocol::AdditionalPermissionProfile;
+use codex_cli_protocol::CommandExecutionApprovalDecision;
+use codex_cli_protocol::ExecPolicyAmendment;
+use codex_cli_protocol::NetworkApprovalContext;
+use codex_cli_protocol::NetworkPolicyAmendment;
+use codex_cli_protocol::NetworkPolicyRuleAction;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use serde::Serialize;

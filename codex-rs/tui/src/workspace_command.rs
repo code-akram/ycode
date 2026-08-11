@@ -2,9 +2,9 @@
 //!
 //! This module is the TUI boundary for non-interactive commands that need to run wherever
 //! the active workspace lives. Callers describe a command in terms of argv, cwd, environment
-//! overrides, timeout, and output cap; the runner translates that request to app-server
+//! overrides, timeout, and output cap; the runner translates that request to cli-runtime
 //! `command/exec`. Keeping this as a TUI-local abstraction lets status surfaces avoid knowing
-//! whether the current app-server is embedded or remote.
+//! whether the current cli-runtime is embedded or remote.
 //!
 //! Commands sent through this path should not prompt for stdin. Most callers should keep output
 //! bounded so metadata refreshes cannot grow into unbounded background processes; callers that own a
@@ -17,11 +17,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use codex_app_server_client::AppServerRequestHandle;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::CommandExecParams;
-use codex_app_server_protocol::CommandExecResponse;
-use codex_app_server_protocol::RequestId;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::CommandExecParams;
+use codex_cli_protocol::CommandExecResponse;
+use codex_cli_protocol::RequestId;
+use codex_cli_runtime_client::CliRuntimeRequestHandle;
 use uuid::Uuid;
 
 /// Shared handle for running workspace commands from TUI components.
@@ -30,22 +30,22 @@ pub(crate) type WorkspaceCommandRunner = Arc<dyn WorkspaceCommandExecutor>;
 /// Describes a bounded non-interactive command to execute in the active workspace.
 ///
 /// The command is intentionally argv-based rather than shell-based so callers do not need to quote
-/// user or repository data. `cwd` is interpreted by app-server relative to the workspace rules for
+/// user or repository data. `cwd` is interpreted by cli-runtime relative to the workspace rules for
 /// the active session, which is what makes the same request shape work for embedded and remote
-/// app-server instances.
+/// cli-runtime instances.
 #[derive(Clone, Debug)]
 pub(crate) struct WorkspaceCommand {
     /// Program and arguments to execute without shell interpolation.
     pub(crate) argv: Vec<String>,
-    /// Working directory for the command, if different from app-server's session cwd.
+    /// Working directory for the command, if different from cli-runtime's session cwd.
     pub(crate) cwd: Option<PathBuf>,
     /// Environment overrides where `None` removes a variable.
     pub(crate) env: HashMap<String, Option<String>>,
-    /// Maximum wall-clock duration before app-server cancels the command.
+    /// Maximum wall-clock duration before cli-runtime cancels the command.
     pub(crate) timeout: Duration,
-    /// Maximum captured stdout/stderr bytes returned by app-server.
+    /// Maximum captured stdout/stderr bytes returned by cli-runtime.
     pub(crate) output_bytes_cap: usize,
-    /// Whether app-server should return uncapped stdout/stderr.
+    /// Whether cli-runtime should return uncapped stdout/stderr.
     pub(crate) disable_output_cap: bool,
 }
 
@@ -74,13 +74,13 @@ impl WorkspaceCommand {
         self
     }
 
-    /// Sets the maximum wall-clock duration before app-server cancels the command.
+    /// Sets the maximum wall-clock duration before cli-runtime cancels the command.
     pub(crate) fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
-    /// Requests uncapped stdout/stderr capture from app-server.
+    /// Requests uncapped stdout/stderr capture from cli-runtime.
     pub(crate) fn disable_output_cap(mut self) -> Self {
         self.disable_output_cap = true;
         self
@@ -90,11 +90,11 @@ impl WorkspaceCommand {
 /// Captured result from a completed workspace command.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkspaceCommandOutput {
-    /// Process exit status code reported by app-server.
+    /// Process exit status code reported by cli-runtime.
     pub(crate) exit_code: i32,
-    /// Captured stdout after app-server output capping.
+    /// Captured stdout after cli-runtime output capping.
     pub(crate) stdout: String,
-    /// Captured stderr after app-server output capping.
+    /// Captured stderr after cli-runtime output capping.
     pub(crate) stderr: String,
 }
 
@@ -108,7 +108,7 @@ impl WorkspaceCommandOutput {
 /// Transport or protocol failure before a command result was available.
 ///
 /// Non-zero process exits are represented as `WorkspaceCommandOutput` so callers can distinguish
-/// a normal probe miss from an app-server request failure.
+/// a normal probe miss from an cli-runtime request failure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkspaceCommandError {
     message: String,
@@ -130,12 +130,12 @@ impl std::fmt::Display for WorkspaceCommandError {
 
 impl std::error::Error for WorkspaceCommandError {}
 
-/// Executes non-interactive workspace commands through the active TUI app-server session.
+/// Executes non-interactive workspace commands through the active TUI cli-runtime session.
 ///
 /// Implementations decide where the workspace lives. Callers provide argv/cwd/env and should not
 /// branch on local versus remote execution.
 pub(crate) trait WorkspaceCommandExecutor: Send + Sync {
-    /// Runs a workspace command and returns captured output or an app-server request error.
+    /// Runs a workspace command and returns captured output or an cli-runtime request error.
     ///
     /// Callers should treat errors as infrastructure failures and should treat successful output
     /// with a non-zero exit code as ordinary command failure. Returning a boxed future keeps the
@@ -148,24 +148,24 @@ pub(crate) trait WorkspaceCommandExecutor: Send + Sync {
     >;
 }
 
-/// Workspace command runner that forwards every request to the active app-server.
+/// Workspace command runner that forwards every request to the active cli-runtime.
 #[derive(Clone)]
-pub(crate) struct AppServerWorkspaceCommandRunner {
-    request_handle: AppServerRequestHandle,
+pub(crate) struct CliRuntimeWorkspaceCommandRunner {
+    request_handle: CliRuntimeRequestHandle,
 }
 
-impl AppServerWorkspaceCommandRunner {
-    /// Creates a runner from an app-server request handle owned by the current TUI session.
-    pub(crate) fn new(request_handle: AppServerRequestHandle) -> Self {
+impl CliRuntimeWorkspaceCommandRunner {
+    /// Creates a runner from an cli-runtime request handle owned by the current TUI session.
+    pub(crate) fn new(request_handle: CliRuntimeRequestHandle) -> Self {
         Self { request_handle }
     }
 }
 
-impl WorkspaceCommandExecutor for AppServerWorkspaceCommandRunner {
-    /// Sends the command as a one-off app-server `command/exec` request.
+impl WorkspaceCommandExecutor for CliRuntimeWorkspaceCommandRunner {
+    /// Sends the command as a one-off cli-runtime `command/exec` request.
     ///
     /// The request is non-tty, does not stream stdin/stdout/stderr, and uses the caller's timeout
-    /// and output cap. It leaves sandbox and permission profile selection to app-server so the same
+    /// and output cap. It leaves sandbox and permission profile selection to cli-runtime so the same
     /// runner follows the active session's embedded or remote execution policy.
     fn run(
         &self,

@@ -1,4 +1,4 @@
-use codex_app_server_protocol::SkillMetadata;
+use codex_cli_protocol::SkillMetadata;
 use codex_plugin::PluginCapabilitySummary;
 
 use crate::skills_helpers::skill_description;

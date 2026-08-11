@@ -5,7 +5,8 @@ use crate::chatwidget::UserMessage;
 async fn turn_start_failure_is_shown_without_exiting() -> Result<()> {
     let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+    let mut cli_runtime =
+        Box::pin(crate::start_embedded_cli_runtime_for_picker(&app.config)).await?;
     let thread_id = ThreadId::from_string("123e4567-e89b-12d3-a456-426614174000")?;
     app.active_thread_id = Some(thread_id);
     app.chat_widget
@@ -18,11 +19,11 @@ async fn turn_start_failure_is_shown_without_exiting() -> Result<()> {
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let op = next_user_turn_op(&mut op_rx);
     while let Ok(event) = app_event_rx.try_recv() {
-        app.handle_event(&mut tui, &mut app_server, event).await?;
+        app.handle_event(&mut tui, &mut cli_runtime, event).await?;
     }
 
     let control = app
-        .handle_event(&mut tui, &mut app_server, AppEvent::CodexOp(op))
+        .handle_event(&mut tui, &mut cli_runtime, AppEvent::CodexOp(op))
         .await?;
 
     assert!(matches!(control, AppRunControl::Continue));
@@ -47,6 +48,6 @@ async fn turn_start_failure_is_shown_without_exiting() -> Result<()> {
     ■ Failed to start turn: turn/start failed in TUI: turn/start failed: thread not found: 123e4567-e89b-12d3-a456-426614174000 (code -32600)
     ");
 
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }

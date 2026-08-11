@@ -21,7 +21,7 @@ impl ChatWidget {
         }
         match notification {
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
-                self.set_token_info(Some(token_usage_info_from_app_server(
+                self.set_token_info(Some(token_usage_info_from_cli_runtime(
                     notification.token_usage,
                 )));
             }
@@ -34,7 +34,7 @@ impl ChatWidget {
                         tracing::warn!(
                             thread_id = notification.thread_id,
                             error = %err,
-                            "ignoring app-server ThreadNameUpdated with invalid thread_id"
+                            "ignoring cli-runtime ThreadNameUpdated with invalid thread_id"
                         );
                     }
                 }
@@ -136,7 +136,7 @@ impl ChatWidget {
             }
             ServerNotification::ModelRerouted(_) => {}
             ServerNotification::ModelVerification(notification) => {
-                self.on_app_server_model_verification(&notification.verifications)
+                self.on_cli_runtime_model_verification(&notification.verifications)
             }
             ServerNotification::ModelSafetyBufferingUpdated(notification) => {
                 self.on_model_safety_buffering_updated(notification, replay_kind)
@@ -195,7 +195,6 @@ impl ChatWidget {
             | ServerNotification::FileChangePatchUpdated(_)
             | ServerNotification::EnvironmentConnected(_)
             | ServerNotification::EnvironmentDisconnected(_)
-            | ServerNotification::RemoteControlStatusChanged(_)
             | ServerNotification::ExternalAgentConfigImportProgress(_)
             | ServerNotification::ExternalAgentConfigImportCompleted(_)
             | ServerNotification::FsChanged(_)
@@ -220,7 +219,7 @@ impl ChatWidget {
         notification: TurnCompletedNotification,
         replay_kind: Option<ReplayKind>,
     ) {
-        // User-message dedupe only suppresses the app-server echo of a prompt
+        // User-message dedupe only suppresses the cli-runtime echo of a prompt
         // this TUI already rendered locally. Once that turn ends, another
         // client can submit the same text and it still needs its own user cell.
         self.last_rendered_user_message_display = None;

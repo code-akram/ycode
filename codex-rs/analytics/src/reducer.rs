@@ -2,10 +2,10 @@ use crate::accepted_lines::AcceptedLineFingerprintEventInput;
 use crate::accepted_lines::accepted_line_fingerprint_event_requests;
 use crate::accepted_lines::accepted_line_fingerprints_from_unified_diff;
 use crate::accepted_lines::accepted_line_repo_hash_for_cwd;
-use crate::events::AppServerRpcTransport;
+use crate::events::CliRuntimeRpcTransport;
 use crate::events::CodexAppMentionedEventRequest;
-use crate::events::CodexAppServerClientMetadata;
 use crate::events::CodexAppUsedEventRequest;
+use crate::events::CodexCliRuntimeClientMetadata;
 use crate::events::CodexCollabAgentToolCallEventParams;
 use crate::events::CodexCollabAgentToolCallEventRequest;
 use crate::events::CodexCommandExecutionEventParams;
@@ -100,34 +100,34 @@ use crate::now_unix_seconds;
 use crate::option_i64_to_u64;
 use crate::serialize_enum_as_string;
 use crate::usize_to_u64;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ClientResponse;
-use codex_app_server_protocol::CodexErrorInfo;
-use codex_app_server_protocol::CollabAgentStatus;
-use codex_app_server_protocol::CollabAgentTool;
-use codex_app_server_protocol::CollabAgentToolCallStatus;
-use codex_app_server_protocol::CommandAction;
-use codex_app_server_protocol::CommandExecutionApprovalDecision;
-use codex_app_server_protocol::CommandExecutionSource;
-use codex_app_server_protocol::CommandExecutionStatus;
-use codex_app_server_protocol::DynamicToolCallOutputContentItem;
-use codex_app_server_protocol::DynamicToolCallStatus;
-use codex_app_server_protocol::FileChangeApprovalDecision;
-use codex_app_server_protocol::GuardianApprovalReviewAction;
-use codex_app_server_protocol::GuardianApprovalReviewStatus;
-use codex_app_server_protocol::InitializeParams;
-use codex_app_server_protocol::NetworkPolicyRuleAction;
-use codex_app_server_protocol::PatchApplyStatus;
-use codex_app_server_protocol::PatchChangeKind;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::RequestPermissionProfile;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::ServerResponse;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::TurnSteerResponse;
-use codex_app_server_protocol::UserInput;
-use codex_app_server_protocol::WebSearchAction;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ClientResponse;
+use codex_cli_protocol::CodexErrorInfo;
+use codex_cli_protocol::CollabAgentStatus;
+use codex_cli_protocol::CollabAgentTool;
+use codex_cli_protocol::CollabAgentToolCallStatus;
+use codex_cli_protocol::CommandAction;
+use codex_cli_protocol::CommandExecutionApprovalDecision;
+use codex_cli_protocol::CommandExecutionSource;
+use codex_cli_protocol::CommandExecutionStatus;
+use codex_cli_protocol::DynamicToolCallOutputContentItem;
+use codex_cli_protocol::DynamicToolCallStatus;
+use codex_cli_protocol::FileChangeApprovalDecision;
+use codex_cli_protocol::GuardianApprovalReviewAction;
+use codex_cli_protocol::GuardianApprovalReviewStatus;
+use codex_cli_protocol::InitializeParams;
+use codex_cli_protocol::NetworkPolicyRuleAction;
+use codex_cli_protocol::PatchApplyStatus;
+use codex_cli_protocol::PatchChangeKind;
+use codex_cli_protocol::RequestId;
+use codex_cli_protocol::RequestPermissionProfile;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::ServerResponse;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::TurnSteerResponse;
+use codex_cli_protocol::UserInput;
+use codex_cli_protocol::WebSearchAction;
 use codex_git_utils::collect_git_info;
 use codex_git_utils::get_git_repo_root;
 use codex_login::default_client::originator;
@@ -163,7 +163,7 @@ pub(crate) struct AnalyticsReducer {
 }
 
 struct ConnectionState {
-    app_server_client: CodexAppServerClientMetadata,
+    cli_runtime_client: CodexCliRuntimeClientMetadata,
     runtime: CodexRuntimeMetadata,
 }
 
@@ -175,15 +175,15 @@ struct ThreadAnalyticsState {
 }
 
 impl ThreadAnalyticsState {
-    fn app_server_client(
+    fn cli_runtime_client(
         &self,
         connection_state: &ConnectionState,
-    ) -> CodexAppServerClientMetadata {
-        let mut app_server_client = connection_state.app_server_client.clone();
+    ) -> CodexCliRuntimeClientMetadata {
+        let mut cli_runtime_client = connection_state.cli_runtime_client.clone();
         if let Some(originator) = self.originator.as_ref() {
-            app_server_client.product_client_id.clone_from(originator);
+            cli_runtime_client.product_client_id.clone_from(originator);
         }
-        app_server_client
+        cli_runtime_client
     }
 }
 
@@ -238,7 +238,7 @@ impl<'a> AnalyticsDropSite<'a> {
     }
 
     fn tool_item(
-        notification: &'a codex_app_server_protocol::ItemCompletedNotification,
+        notification: &'a codex_cli_protocol::ItemCompletedNotification,
         item_id: &'a str,
     ) -> Self {
         Self {
@@ -886,12 +886,12 @@ impl AnalyticsReducer {
         params: InitializeParams,
         product_client_id: String,
         runtime: CodexRuntimeMetadata,
-        rpc_transport: AppServerRpcTransport,
+        rpc_transport: CliRuntimeRpcTransport,
     ) {
         self.connections.insert(
             connection_id,
             ConnectionState {
-                app_server_client: CodexAppServerClientMetadata {
+                cli_runtime_client: CodexCliRuntimeClientMetadata {
                     product_client_id,
                     client_name: Some(params.client_info.name),
                     client_version: Some(params.client_info.version),
@@ -951,7 +951,7 @@ impl AnalyticsReducer {
                 event_type: "codex_guardian_review",
                 event_params: GuardianReviewEventPayload {
                     session_id: thread_metadata.session_id.clone(),
-                    app_server_client: thread_state.app_server_client(connection_state),
+                    cli_runtime_client: thread_state.cli_runtime_client(connection_state),
                     runtime: connection_state.runtime.clone(),
                     guardian_review: input,
                 },
@@ -1712,7 +1712,7 @@ impl AnalyticsReducer {
     fn emit_thread_initialized(
         &mut self,
         connection_id: u64,
-        thread: codex_app_server_protocol::Thread,
+        thread: codex_cli_protocol::Thread,
         model: String,
         initialization_mode: ThreadInitializationMode,
         thread_originator: Option<String>,
@@ -1739,14 +1739,14 @@ impl AnalyticsReducer {
         }
         thread_state.connection_id = Some(connection_id);
         thread_state.metadata = Some(thread_metadata.clone());
-        let app_server_client = thread_state.app_server_client(connection_state);
+        let cli_runtime_client = thread_state.cli_runtime_client(connection_state);
         out.push(TrackEventRequest::ThreadInitialized(
             ThreadInitializedEvent {
                 event_type: "codex_thread_initialized",
                 event_params: ThreadInitializedEventParams {
                     thread_id,
                     session_id,
-                    app_server_client,
+                    cli_runtime_client,
                     runtime: connection_state.runtime.clone(),
                     model,
                     ephemeral: thread.ephemeral,
@@ -1773,7 +1773,7 @@ impl AnalyticsReducer {
                 event_params: codex_compaction_event_params(
                     input,
                     thread_metadata.session_id.clone(),
-                    thread_state.app_server_client(connection_state),
+                    thread_state.cli_runtime_client(connection_state),
                     connection_state.runtime.clone(),
                     thread_metadata.thread_source.clone(),
                     thread_metadata.subagent_source.clone(),
@@ -1794,7 +1794,7 @@ impl AnalyticsReducer {
             event_params: codex_goal_event_params(
                 input,
                 thread_metadata.session_id.clone(),
-                thread_state.app_server_client(connection_state),
+                thread_state.cli_runtime_client(connection_state),
                 connection_state.runtime.clone(),
                 thread_metadata.thread_source.clone(),
                 thread_metadata.subagent_source.clone(),
@@ -1805,7 +1805,7 @@ impl AnalyticsReducer {
 
     fn ingest_guardian_review_completed(
         &mut self,
-        notification: codex_app_server_protocol::ItemGuardianApprovalReviewCompletedNotification,
+        notification: codex_cli_protocol::ItemGuardianApprovalReviewCompletedNotification,
         out: &mut Vec<TrackEventRequest>,
     ) {
         let Some((status, resolution)) = guardian_review_result(notification.review.status) else {
@@ -1898,7 +1898,7 @@ impl AnalyticsReducer {
                 session_id: thread_metadata.session_id.clone(),
                 expected_turn_id: Some(pending_request.expected_turn_id),
                 accepted_turn_id,
-                app_server_client: thread_state.app_server_client(connection_state),
+                cli_runtime_client: thread_state.cli_runtime_client(connection_state),
                 runtime: connection_state.runtime.clone(),
                 thread_source: thread_metadata.thread_source.clone(),
                 subagent_source: thread_metadata.subagent_source.clone(),
@@ -1941,7 +1941,7 @@ impl AnalyticsReducer {
                 turn_id: pending_review.turn_id,
                 item_id: pending_review.item_id,
                 review_id: pending_review.review_id,
-                app_server_client: thread_state.app_server_client(connection_state),
+                cli_runtime_client: thread_state.cli_runtime_client(connection_state),
                 runtime: connection_state.runtime.clone(),
                 thread_source: thread_metadata.thread_source.clone(),
                 subagent_source: thread_metadata.subagent_source.clone(),
@@ -2021,7 +2021,7 @@ impl AnalyticsReducer {
         let turn_event = TrackEventRequest::TurnEvent(Box::new(CodexTurnEventRequest {
             event_type: "codex_turn_event",
             event_params: codex_turn_event_params(
-                thread_state.app_server_client(connection_state),
+                thread_state.cli_runtime_client(connection_state),
                 connection_state.runtime.clone(),
                 turn_id.to_string(),
                 turn_state,
@@ -2540,9 +2540,9 @@ fn tool_item_base(
         parent_call_id: None,
         originating_response_id: None,
         subsequent_response_id: None,
-        app_server_client: context
+        cli_runtime_client: context
             .thread_state
-            .app_server_client(context.connection_state),
+            .cli_runtime_client(context.connection_state),
         runtime: context.connection_state.runtime.clone(),
         thread_source: thread_metadata.thread_source.clone(),
         subagent_source: thread_metadata.subagent_source.clone(),
@@ -2550,7 +2550,7 @@ fn tool_item_base(
         tool_name,
         started_at_ms: context.started_at_ms,
         completed_at_ms: context.completed_at_ms,
-        // duration_ms reflects item lifecycle observed by app-server. For web
+        // duration_ms reflects item lifecycle observed by cli-runtime. For web
         // search and image generation in particular, that can be narrower than
         // full upstream execution time.
         duration_ms: observed_duration_ms(context.started_at_ms, context.completed_at_ms),
@@ -2851,7 +2851,7 @@ struct FileChangeCounts {
     move_: u64,
 }
 
-fn file_change_counts(changes: &[codex_app_server_protocol::FileUpdateChange]) -> FileChangeCounts {
+fn file_change_counts(changes: &[codex_cli_protocol::FileUpdateChange]) -> FileChangeCounts {
     let mut counts = FileChangeCounts::default();
     for change in changes {
         match &change.kind {
@@ -2944,7 +2944,7 @@ fn accepted_line_event_input(
 }
 
 fn codex_turn_event_params(
-    app_server_client: CodexAppServerClientMetadata,
+    cli_runtime_client: CodexCliRuntimeClientMetadata,
     runtime: CodexRuntimeMetadata,
     turn_id: String,
     turn_state: &TurnState,
@@ -3005,7 +3005,7 @@ fn codex_turn_event_params(
         thread_id,
         session_id: thread_metadata.session_id.clone(),
         turn_id,
-        app_server_client,
+        cli_runtime_client,
         runtime,
         submission_type,
         ephemeral,
@@ -3124,12 +3124,12 @@ fn personality_mode(personality: Option<Personality>) -> Option<String> {
     }
 }
 
-fn analytics_turn_status(status: codex_app_server_protocol::TurnStatus) -> Option<TurnStatus> {
+fn analytics_turn_status(status: codex_cli_protocol::TurnStatus) -> Option<TurnStatus> {
     match status {
-        codex_app_server_protocol::TurnStatus::Completed => Some(TurnStatus::Completed),
-        codex_app_server_protocol::TurnStatus::Failed => Some(TurnStatus::Failed),
-        codex_app_server_protocol::TurnStatus::Interrupted => Some(TurnStatus::Interrupted),
-        codex_app_server_protocol::TurnStatus::InProgress => None,
+        codex_cli_protocol::TurnStatus::Completed => Some(TurnStatus::Completed),
+        codex_cli_protocol::TurnStatus::Failed => Some(TurnStatus::Failed),
+        codex_cli_protocol::TurnStatus::Interrupted => Some(TurnStatus::Interrupted),
+        codex_cli_protocol::TurnStatus::InProgress => None,
     }
 }
 
@@ -3194,7 +3194,7 @@ pub(crate) fn normalize_path_for_skill_id(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_app_server_protocol::JSONRPCErrorError;
+    use codex_cli_protocol::JSONRPCErrorError;
     use codex_protocol::models::SandboxEnforcement;
     use codex_protocol::permissions::FileSystemSandboxPolicy;
     use codex_protocol::permissions::NetworkSandboxPolicy;

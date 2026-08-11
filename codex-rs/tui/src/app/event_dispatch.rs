@@ -6,10 +6,10 @@
 use super::resize_reflow::trailing_run_start;
 use super::session_lifecycle::ThreadAttachPresentation;
 use super::*;
-use crate::app_server_session::ForkGoalContinuation;
 use crate::config_update::format_config_error;
 use crate::external_agent_config_migration::flow::ExternalAgentConfigMigrationFlowOutcome;
 use crate::pager_overlay::TranscriptHistoryState;
+use crate::runtime_session::ForkGoalContinuation;
 
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
@@ -17,19 +17,22 @@ impl App {
     pub(super) async fn handle_event(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         event: AppEvent,
     ) -> Result<AppRunControl> {
         match event {
             AppEvent::NewSession { name } => {
                 self.start_fresh_session_with_summary_hint(
-                    tui, app_server, /*session_start_source*/ None,
-                    /*initial_user_message*/ None, name,
+                    tui,
+                    cli_runtime,
+                    /*session_start_source*/ None,
+                    /*initial_user_message*/ None,
+                    name,
                 )
                 .await;
             }
             AppEvent::StartupThreadStarted { result } => {
-                self.handle_startup_thread_started(app_server, result)
+                self.handle_startup_thread_started(cli_runtime, result)
                     .await?;
             }
             AppEvent::RequestOlderScrollbackHistory { thread_id } => {
@@ -37,7 +40,7 @@ impl App {
                     && self.overlay.is_none()
                     && self.scrollback_has_older_history
                 {
-                    self.request_older_history_page(app_server, thread_id);
+                    self.request_older_history_page(cli_runtime, thread_id);
                 }
             }
             AppEvent::OlderThreadHistoryLoaded {
@@ -46,10 +49,10 @@ impl App {
                 result,
             } => {
                 if let Err(err) = self
-                    .handle_older_history_page(tui, app_server, thread_id, &cursor, result)
+                    .handle_older_history_page(tui, cli_runtime, thread_id, &cursor, result)
                     .await
                 {
-                    app_server.cancel_older_history_page(thread_id);
+                    cli_runtime.cancel_older_history_page(thread_id);
                     if self.chat_widget.thread_id() == Some(thread_id)
                         && let Some(Overlay::Transcript(overlay)) = self.overlay.as_mut()
                     {
@@ -65,7 +68,7 @@ impl App {
 
                 self.start_fresh_session_with_summary_hint(
                     tui,
-                    app_server,
+                    cli_runtime,
                     Some(ThreadStartSource::Clear),
                     /*initial_user_message*/ None,
                     name,
@@ -81,7 +84,7 @@ impl App {
 
                 self.start_fresh_session_with_summary_hint(
                     tui,
-                    app_server,
+                    cli_runtime,
                     Some(ThreadStartSource::Clear),
                     crate::chatwidget::create_initial_user_message(
                         Some(text),
@@ -93,15 +96,15 @@ impl App {
                 .await;
             }
             AppEvent::OpenResumePicker => {
-                let picker_app_server = match crate::start_app_server_for_picker(
+                let picker_cli_runtime = match crate::start_cli_runtime_for_picker(
                     &self.config,
-                    &self.app_server_target,
+                    &self.cli_runtime_target,
                     self.state_db.clone(),
                     self.environment_manager.clone(),
                 )
                 .await
                 {
-                    Ok(app_server) => app_server,
+                    Ok(cli_runtime) => cli_runtime,
                     Err(err) => {
                         self.chat_widget.add_error_message(format!(
                             "Failed to start TUI session picker: {err}"
@@ -110,18 +113,18 @@ impl App {
                         return Ok(AppRunControl::Continue);
                     }
                 };
-                match crate::resume_picker::run_resume_picker_from_existing_session_with_app_server(
+                match crate::resume_picker::run_resume_picker_from_existing_session_with_cli_runtime(
                     tui,
                     &self.config,
                     /*show_all*/ false,
                     /*include_non_interactive*/ false,
-                    picker_app_server,
+                    picker_cli_runtime,
                 )
                 .await?
                 {
                     SessionSelection::Resume(target_session) => {
                         match self
-                            .resume_target_session(tui, app_server, target_session)
+                            .resume_target_session(tui, cli_runtime, target_session)
                             .await?
                         {
                             AppRunControl::Continue => {}
@@ -146,7 +149,7 @@ impl App {
             AppEvent::OpenExternalAgentConfigMigration => {
                 match crate::external_agent_config_migration::flow::handle_external_agent_config_migration_prompt(
                     tui,
-                    app_server,
+                    cli_runtime,
                     &self.config,
                 )
                 .await
@@ -169,8 +172,8 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
-                match crate::lookup_session_target_with_app_server(
-                    app_server,
+                match crate::lookup_session_target_with_cli_runtime(
+                    cli_runtime,
                     &self.config,
                     &id_or_name,
                 )
@@ -178,7 +181,7 @@ impl App {
                 {
                     Some(target_session) => {
                         return self
-                            .resume_target_session(tui, app_server, target_session)
+                            .resume_target_session(tui, cli_runtime, target_session)
                             .await;
                     }
                     None => {
@@ -189,10 +192,10 @@ impl App {
                 }
             }
             AppEvent::ArchiveCurrentThread => {
-                return Ok(self.archive_current_thread(app_server).await);
+                return Ok(self.archive_current_thread(cli_runtime).await);
             }
             AppEvent::DeleteCurrentThread => {
-                return Ok(self.delete_current_thread(app_server).await);
+                return Ok(self.delete_current_thread(cli_runtime).await);
             }
             AppEvent::ForkCurrentSession { name } => {
                 self.session_telemetry.counter(
@@ -215,10 +218,10 @@ impl App {
                     fork_config.model = Some(self.chat_widget.current_model().to_string());
                     fork_config.model_reasoning_effort =
                         self.chat_widget.current_reasoning_effort();
-                    match app_server.fork_thread(fork_config, thread_id).await {
+                    match cli_runtime.fork_thread(fork_config, thread_id).await {
                         Ok(mut forked) => {
                             let name_error = if let Some(name) = name {
-                                match app_server
+                                match cli_runtime
                                     .thread_set_name(forked.session.thread_id, name.clone())
                                     .await
                                 {
@@ -233,9 +236,9 @@ impl App {
                             } else {
                                 None
                             };
-                            self.shutdown_current_thread(app_server).await;
+                            self.shutdown_current_thread(cli_runtime).await;
                             match self
-                                .replace_chat_widget_with_app_server_thread(
+                                .replace_chat_widget_with_cli_runtime_thread(
                                     tui,
                                     forked,
                                     ThreadAttachPresentation::SessionLineage,
@@ -264,7 +267,7 @@ impl App {
                                 }
                                 Err(err) => {
                                     self.chat_widget.add_error_message(format!(
-                                        "Failed to attach to forked app-server thread: {err}"
+                                        "Failed to attach to forked cli-runtime thread: {err}"
                                     ));
                                 }
                             }
@@ -313,11 +316,11 @@ impl App {
                     ) {
                         Ok(before_turn_id)
                             if before_turn_id.is_some()
-                                || app_server.has_older_history(thread_id) =>
+                                || cli_runtime.has_older_history(thread_id) =>
                         {
                             let before_turn_id = before_turn_id
                                 .or_else(|| turns.first().map(|turn| turn.id.clone()));
-                            app_server
+                            cli_runtime
                                 .fork_thread_at(
                                     config.clone(),
                                     thread_id,
@@ -328,7 +331,7 @@ impl App {
                                 .await
                         }
                         Ok(_) => {
-                            app_server
+                            cli_runtime
                                 .start_thread_with_session_start_source(
                                     &config, /*session_start_source*/ None,
                                 )
@@ -342,9 +345,9 @@ impl App {
                 };
                 match started {
                     Ok(forked) => {
-                        self.shutdown_current_thread(app_server).await;
+                        self.shutdown_current_thread(cli_runtime).await;
                         match self
-                            .replace_chat_widget_with_app_server_thread(
+                            .replace_chat_widget_with_cli_runtime_thread(
                                 tui,
                                 forked,
                                 ThreadAttachPresentation::PromptEdit,
@@ -377,7 +380,7 @@ impl App {
                 self.scrollback_has_older_history = self
                     .chat_widget
                     .thread_id()
-                    .is_some_and(|thread_id| app_server.has_older_history(thread_id));
+                    .is_some_and(|thread_id| cli_runtime.has_older_history(thread_id));
                 self.finish_initial_history_replay_buffer(tui);
             }
             AppEvent::ConsolidateAgentMessage {
@@ -460,13 +463,13 @@ impl App {
                 if mode == ExitMode::ShutdownFirst {
                     self.show_shutdown_feedback(tui)?;
                 }
-                return Ok(self.handle_exit_mode(app_server, mode).await);
+                return Ok(self.handle_exit_mode(cli_runtime, mode).await);
             }
-            AppEvent::Logout => match app_server.logout_account().await {
+            AppEvent::Logout => match cli_runtime.logout_account().await {
                 Ok(()) => {
                     self.show_shutdown_feedback(tui)?;
                     return Ok(self
-                        .handle_exit_mode(app_server, ExitMode::ShutdownFirst)
+                        .handle_exit_mode(cli_runtime, ExitMode::ShutdownFirst)
                         .await);
                 }
                 Err(err) => {
@@ -491,7 +494,7 @@ impl App {
                     self.render_chat_widget_frame(tui, screen_size)?;
                 }
                 self.chat_widget.prepare_local_op_submission(&op);
-                if let Err(err) = self.submit_active_thread_op(app_server, op).await {
+                if let Err(err) = self.submit_active_thread_op(cli_runtime, op).await {
                     let handled = is_user_turn
                         && matches!(
                             err.downcast_ref::<TypedRequestError>(),
@@ -516,7 +519,7 @@ impl App {
             } => {
                 self.retry_safety_buffered_turn(
                     tui,
-                    app_server,
+                    cli_runtime,
                     super::safety_buffering::SafetyBufferedRetry {
                         thread_id,
                         turn_id,
@@ -531,7 +534,7 @@ impl App {
                 self.append_message_history_entry(thread_id, text);
             }
             AppEvent::SyncThreadGitBranch { thread_id, branch } => {
-                if let Err(err) = app_server
+                if let Err(err) = cli_runtime
                     .thread_metadata_update_branch(thread_id, branch)
                     .await
                 {
@@ -559,7 +562,7 @@ impl App {
                     .approve_recent_auto_review_denial(thread_id, id);
             }
             AppEvent::SubmitThreadOp { thread_id, op } => {
-                self.submit_thread_op(app_server, thread_id, op).await?;
+                self.submit_thread_op(cli_runtime, thread_id, op).await?;
             }
             AppEvent::ThreadHistoryEntryResponse { thread_id, event } => {
                 self.enqueue_thread_history_entry_response(thread_id, event)
@@ -613,10 +616,10 @@ impl App {
                 self.handle_configured_pet_loaded(tui, pet_id, result);
             }
             AppEvent::FetchPluginsList { cwd } => {
-                self.fetch_plugins_list(app_server, cwd);
+                self.fetch_plugins_list(cli_runtime, cwd);
             }
             AppEvent::FetchHooksList { cwd } => {
-                self.fetch_hooks_list(app_server, cwd);
+                self.fetch_hooks_list(cli_runtime, cwd);
             }
             AppEvent::OpenMarketplaceAddPrompt => {
                 self.chat_widget.open_marketplace_add_prompt();
@@ -682,13 +685,13 @@ impl App {
                 self.chat_widget.on_hooks_loaded(cwd, result);
             }
             AppEvent::FetchMarketplaceAdd { cwd, source } => {
-                self.fetch_marketplace_add(app_server, cwd, source);
+                self.fetch_marketplace_add(cli_runtime, cwd, source);
             }
             AppEvent::FetchMarketplaceUpgrade {
                 cwd,
                 marketplace_name,
             } => {
-                self.fetch_marketplace_upgrade(app_server, cwd, marketplace_name);
+                self.fetch_marketplace_upgrade(cli_runtime, cwd, marketplace_name);
             }
             AppEvent::MarketplaceAddLoaded {
                 cwd,
@@ -699,7 +702,7 @@ impl App {
                 self.chat_widget
                     .on_marketplace_add_loaded(cwd.clone(), source, result);
                 if add_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path() {
-                    self.fetch_plugins_list(app_server, cwd);
+                    self.fetch_plugins_list(cli_runtime, cwd);
                 }
             }
             AppEvent::MarketplaceUpgradeLoaded { cwd, result } => {
@@ -711,7 +714,7 @@ impl App {
                 self.chat_widget
                     .on_marketplace_upgrade_loaded(cwd.clone(), result);
                 if self.chat_widget.config_ref().cwd.as_path() == cwd.as_path() {
-                    self.fetch_plugins_list(app_server, cwd);
+                    self.fetch_plugins_list(cli_runtime, cwd);
                 }
             }
             AppEvent::FetchMarketplaceRemove {
@@ -720,7 +723,7 @@ impl App {
                 marketplace_display_name,
             } => {
                 self.fetch_marketplace_remove(
-                    app_server,
+                    cli_runtime,
                     cwd,
                     marketplace_name,
                     marketplace_display_name,
@@ -742,11 +745,11 @@ impl App {
                 if remove_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
                 {
                     self.refresh_plugin_mentions_after_config_write();
-                    self.fetch_plugins_list(app_server, cwd);
+                    self.fetch_plugins_list(cli_runtime, cwd);
                 }
             }
             AppEvent::FetchPluginDetail { cwd, params } => {
-                self.fetch_plugin_detail(app_server, cwd, params);
+                self.fetch_plugin_detail(cli_runtime, cwd, params);
             }
             AppEvent::PluginDetailLoaded { cwd, result } => {
                 self.chat_widget.on_plugin_detail_loaded(cwd, result);
@@ -758,7 +761,7 @@ impl App {
                 plugin_display_name,
             } => {
                 self.fetch_plugin_install(
-                    app_server,
+                    cli_runtime,
                     cwd,
                     location,
                     plugin_name,
@@ -770,14 +773,14 @@ impl App {
                 plugin_id,
                 plugin_display_name,
             } => {
-                self.fetch_plugin_uninstall(app_server, cwd, plugin_id, plugin_display_name);
+                self.fetch_plugin_uninstall(cli_runtime, cwd, plugin_id, plugin_display_name);
             }
             AppEvent::SetPluginEnabled {
                 cwd,
                 plugin_id,
                 enabled,
             } => {
-                self.set_plugin_enabled(app_server, cwd, plugin_id, enabled);
+                self.set_plugin_enabled(cli_runtime, cwd, plugin_id, enabled);
             }
             AppEvent::PluginInstallLoaded {
                 cwd,
@@ -799,12 +802,12 @@ impl App {
                 );
                 if install_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
                 {
-                    self.fetch_plugins_list(app_server, cwd.clone());
+                    self.fetch_plugins_list(cli_runtime, cwd.clone());
                     if should_refresh_plugin_detail {
                         let (marketplace_path, remote_marketplace_name) =
                             location.into_request_params();
                         self.fetch_plugin_detail(
-                            app_server,
+                            cli_runtime,
                             cwd,
                             PluginReadParams {
                                 marketplace_path,
@@ -829,7 +832,7 @@ impl App {
                     && (result.is_err() || queued_enabled != enabled)
                 {
                     self.spawn_plugin_enabled_write(
-                        app_server,
+                        cli_runtime,
                         cwd.clone(),
                         plugin_id.clone(),
                         queued_enabled,
@@ -861,41 +864,41 @@ impl App {
                 self.chat_widget.apply_file_search_result(query, matches);
             }
             AppEvent::RefreshRateLimits { origin } => {
-                self.refresh_rate_limits(app_server, origin);
+                self.refresh_rate_limits(cli_runtime, origin);
             }
             AppEvent::RefreshTokenActivity { request_id } => {
-                self.refresh_token_activity(app_server, request_id);
+                self.refresh_token_activity(cli_runtime, request_id);
             }
             AppEvent::RefreshStatusLineWorkspaceHeadline { request_id } => {
-                self.refresh_status_line_workspace_headline(app_server, request_id);
+                self.refresh_status_line_workspace_headline(cli_runtime, request_id);
             }
             AppEvent::OpenThreadGoalMenu { thread_id } => {
-                self.open_thread_goal_menu(app_server, thread_id).await;
+                self.open_thread_goal_menu(cli_runtime, thread_id).await;
             }
             AppEvent::OpenThreadGoalEditor { thread_id } => {
-                self.open_thread_goal_editor(app_server, thread_id).await;
+                self.open_thread_goal_editor(cli_runtime, thread_id).await;
             }
             AppEvent::SetThreadGoalDraft {
                 thread_id,
                 draft,
                 mode,
             } => {
-                self.set_thread_goal_draft(app_server, thread_id, draft, mode)
+                self.set_thread_goal_draft(cli_runtime, thread_id, draft, mode)
                     .await;
             }
             AppEvent::SetThreadGoalStatus { thread_id, status } => {
-                self.set_thread_goal_status(app_server, thread_id, status)
+                self.set_thread_goal_status(cli_runtime, thread_id, status)
                     .await;
             }
             AppEvent::ClearThreadGoal { thread_id } => {
-                self.clear_thread_goal(app_server, thread_id).await;
+                self.clear_thread_goal(cli_runtime, thread_id).await;
             }
             AppEvent::SendAddCreditsNudgeEmail { credit_type } => {
                 if self
                     .chat_widget
                     .start_add_credits_nudge_email_request(credit_type)
                 {
-                    self.send_add_credits_nudge_email(app_server, credit_type);
+                    self.send_add_credits_nudge_email(cli_runtime, credit_type);
                 }
             }
             AppEvent::AddCreditsNudgeEmailFinished { result } => {
@@ -911,7 +914,7 @@ impl App {
                     let rate_limit_reset_credits = response.rate_limit_reset_credits.clone();
                     let snapshots = if hard_stop_generation == self.rate_limit_hard_stop_generation
                     {
-                        app_server_rate_limit_snapshots(response)
+                        cli_runtime_rate_limit_snapshots(response)
                     } else {
                         Vec::new()
                     };
@@ -1015,7 +1018,7 @@ impl App {
             AppEvent::OpenRateLimitResetCredits => {
                 let request_id = self.chat_widget.show_rate_limit_reset_loading_popup();
                 self.refresh_rate_limits(
-                    app_server,
+                    cli_runtime,
                     RateLimitRefreshOrigin::ResetPicker { request_id },
                 );
             }
@@ -1045,7 +1048,7 @@ impl App {
                     .start_rate_limit_reset_consumption(&idempotency_key)
                 {
                     self.consume_rate_limit_reset_credit(
-                        app_server,
+                        cli_runtime,
                         request_id,
                         idempotency_key,
                         credit_id,
@@ -1070,7 +1073,7 @@ impl App {
                     result,
                 ) {
                     self.refresh_rate_limits(
-                        app_server,
+                        cli_runtime,
                         RateLimitRefreshOrigin::ResetConsume { request_id },
                     );
                 }
@@ -1099,7 +1102,7 @@ impl App {
             }
             AppEvent::UpdateReasoningEffort(effort) => {
                 self.on_update_reasoning_effort(effort.clone());
-                self.sync_active_thread_reasoning_setting(app_server, effort)
+                self.sync_active_thread_reasoning_setting(cli_runtime, effort)
                     .await;
             }
             AppEvent::UpdateModel(model) => {
@@ -1107,7 +1110,7 @@ impl App {
                     || self.chat_widget.current_collaboration_mode().model() != model;
                 if model_changed {
                     self.chat_widget.set_model(&model);
-                    self.sync_active_thread_model_setting(app_server, model, /*effort*/ None)
+                    self.sync_active_thread_model_setting(cli_runtime, model, /*effort*/ None)
                         .await;
                     self.sync_active_thread_service_tier_to_cached_session()
                         .await;
@@ -1115,7 +1118,7 @@ impl App {
             }
             AppEvent::UpdatePersonality(personality) => {
                 self.on_update_personality(personality);
-                self.sync_active_thread_personality_setting(app_server, personality)
+                self.sync_active_thread_personality_setting(cli_runtime, personality)
                     .await;
             }
             AppEvent::SettingsSelectionClosed => {
@@ -1141,7 +1144,7 @@ impl App {
                     self.on_apply_advanced_reasoning(model.as_str(), effort.clone());
                 if model_changed {
                     self.sync_active_thread_model_setting(
-                        app_server,
+                        cli_runtime,
                         model.clone(),
                         Some(effort.clone()),
                     )
@@ -1151,14 +1154,14 @@ impl App {
                 {
                     params.collaboration_mode =
                         Some(self.chat_widget.effective_collaboration_mode());
-                    self.send_thread_settings_update(app_server, params).await;
+                    self.send_thread_settings_update(cli_runtime, params).await;
                 }
                 self.sync_active_thread_service_tier_to_cached_session()
                     .await;
 
                 if let Some(default_effort) = default_effort.as_ref()
                     && let Err(err) = crate::config_update::write_config_batch(
-                        app_server.request_handle(),
+                        cli_runtime.request_handle(),
                         crate::config_update::build_model_selection_edits(
                             model.as_str(),
                             Some(default_effort),
@@ -1210,7 +1213,7 @@ impl App {
                 turn_id,
                 include_logs,
             } => {
-                self.submit_feedback(app_server, category, reason, turn_id, include_logs);
+                self.submit_feedback(cli_runtime, category, reason, turn_id, include_logs);
             }
             AppEvent::FeedbackSubmitted {
                 origin_thread_id,
@@ -1228,7 +1231,7 @@ impl App {
             }
             AppEvent::PersistModelSelection { model, effort } => {
                 match crate::config_update::write_config_batch(
-                    app_server.request_handle(),
+                    cli_runtime.request_handle(),
                     crate::config_update::build_model_selection_edits(
                         model.as_str(),
                         effort.as_ref(),
@@ -1283,11 +1286,11 @@ impl App {
                 if uninstall_succeeded
                     && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
                 {
-                    self.fetch_plugins_list(app_server, cwd);
+                    self.fetch_plugins_list(cli_runtime, cwd);
                 }
             }
             AppEvent::RefreshPluginMentions => {
-                self.refresh_plugin_mentions(app_server);
+                self.refresh_plugin_mentions(cli_runtime);
             }
             AppEvent::PluginMentionsLoaded { mut plugins } => {
                 if !self.config.features.enabled(Feature::Plugins) {
@@ -1297,7 +1300,7 @@ impl App {
             }
             AppEvent::PersistPersonalitySelection { personality } => {
                 match crate::config_update::write_config_batch(
-                    app_server.request_handle(),
+                    cli_runtime.request_handle(),
                     vec![crate::config_update::replace_config_value(
                         "personality",
                         serde_json::json!(personality.to_string()),
@@ -1329,7 +1332,7 @@ impl App {
                 let edits = crate::config_update::build_service_tier_selection_edits(
                     service_tier.as_deref(),
                 );
-                match crate::config_update::write_config_batch(app_server.request_handle(), edits)
+                match crate::config_update::write_config_batch(cli_runtime.request_handle(), edits)
                     .await
                 {
                     Ok(_) => {
@@ -1412,7 +1415,7 @@ impl App {
                 self.sync_active_thread_permission_settings_to_cached_session()
                     .await;
                 if let Err(err) = crate::config_update::write_config_batch(
-                    app_server.request_handle(),
+                    cli_runtime.request_handle(),
                     vec![crate::config_update::replace_config_value(
                         "approvals_reviewer",
                         serde_json::json!(policy.to_string()),
@@ -1429,28 +1432,28 @@ impl App {
                 }
             }
             AppEvent::UpdateFeatureFlags { updates } => {
-                self.update_feature_flags(app_server, updates).await;
+                self.update_feature_flags(cli_runtime, updates).await;
             }
             AppEvent::UpdateMemorySettings {
                 use_memories,
                 generate_memories,
             } => {
-                self.update_memory_settings_with_app_server(
-                    app_server,
+                self.update_memory_settings_with_cli_runtime(
+                    cli_runtime,
                     use_memories,
                     generate_memories,
                 )
                 .await;
             }
             AppEvent::ResetMemories => {
-                self.reset_memories_with_app_server(app_server).await;
+                self.reset_memories_with_cli_runtime(cli_runtime).await;
             }
             AppEvent::UpdateRateLimitSwitchPromptHidden(hidden) => {
                 self.chat_widget.set_rate_limit_switch_prompt_hidden(hidden);
             }
             AppEvent::UpdatePlanModeReasoningEffort(effort) => {
                 self.on_update_plan_mode_reasoning_effort(effort);
-                self.sync_active_thread_plan_mode_reasoning_setting(app_server)
+                self.sync_active_thread_plan_mode_reasoning_setting(cli_runtime)
                     .await;
             }
             AppEvent::PersistRateLimitSwitchPromptHidden => {
@@ -1479,7 +1482,7 @@ impl App {
                     crate::config_update::clear_config_value(key_path)
                 };
                 if let Err(err) = crate::config_update::write_config_batch(
-                    app_server.request_handle(),
+                    cli_runtime.request_handle(),
                     vec![edit],
                 )
                 .await
@@ -1515,7 +1518,7 @@ impl App {
                 self.chat_widget.open_approvals_popup();
             }
             AppEvent::OpenAgentPicker => {
-                self.open_agent_picker(app_server).await;
+                self.open_agent_picker(cli_runtime).await;
             }
             AppEvent::AgentPickerThreadsLoaded {
                 primary_thread_id,
@@ -1525,7 +1528,7 @@ impl App {
                 self.apply_agent_picker_thread_refresh(primary_thread_id, request_id, result);
             }
             AppEvent::SelectAgentThread(thread_id) => {
-                self.select_agent_thread_and_discard_side(tui, app_server, thread_id)
+                self.select_agent_thread_and_discard_side(tui, cli_runtime, thread_id)
                     .await?;
             }
             AppEvent::StartSide {
@@ -1533,7 +1536,7 @@ impl App {
                 user_message,
             } => {
                 return self
-                    .handle_start_side(tui, app_server, parent_thread_id, user_message)
+                    .handle_start_side(tui, cli_runtime, parent_thread_id, user_message)
                     .await;
             }
             AppEvent::OpenSkillsList => {
@@ -1544,7 +1547,7 @@ impl App {
             }
             AppEvent::SetSkillEnabled { path, enabled } => {
                 match crate::config_update::write_skill_enabled(
-                    app_server.request_handle(),
+                    cli_runtime.request_handle(),
                     path.clone(),
                     enabled,
                 )
@@ -1562,13 +1565,13 @@ impl App {
                 }
             }
             AppEvent::SetHookEnabled { key, enabled } => {
-                self.set_hook_enabled(app_server, key, enabled);
+                self.set_hook_enabled(cli_runtime, key, enabled);
             }
             AppEvent::TrustHook { key, current_hash } => {
-                self.trust_hook(app_server, key, current_hash);
+                self.trust_hook(cli_runtime, key, current_hash);
             }
             AppEvent::TrustHooks { updates } => {
-                self.trust_hooks(app_server, updates);
+                self.trust_hooks(cli_runtime, updates);
             }
             AppEvent::HookEnabledSet {
                 key,
@@ -1582,7 +1585,7 @@ impl App {
                 let should_apply_result = if let Some(queued_enabled) = queued_enabled
                     && (result.is_err() || queued_enabled != enabled)
                 {
-                    self.spawn_hook_enabled_write(app_server, key.clone(), queued_enabled);
+                    self.spawn_hook_enabled_write(cli_runtime, key.clone(), queued_enabled);
                     false
                 } else {
                     true
@@ -1946,7 +1949,7 @@ impl App {
 
     pub(super) async fn handle_exit_mode(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         mode: ExitMode,
     ) -> AppRunControl {
         match mode {
@@ -1959,16 +1962,16 @@ impl App {
                     // This is a UI escape-hatch budget, not a protocol
                     // deadline. A healthy local thread/unsubscribe round trip
                     // should finish comfortably inside two seconds, while a
-                    // longer wait makes Ctrl+C feel broken when the app-server
+                    // longer wait makes Ctrl+C feel broken when the cli-runtime
                     // is already wedged.
                     if tokio::time::timeout(
                         SHUTDOWN_FIRST_EXIT_TIMEOUT,
-                        self.shutdown_current_thread(app_server),
+                        self.shutdown_current_thread(cli_runtime),
                     )
                     .await
                     .is_err()
                     {
-                        tracing::warn!("timed out waiting for app-server thread shutdown");
+                        tracing::warn!("timed out waiting for cli-runtime thread shutdown");
                     }
                 }
                 self.pending_shutdown_exit_thread_id = None;
@@ -1983,7 +1986,7 @@ impl App {
 
     pub(super) async fn archive_current_thread(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
     ) -> AppRunControl {
         let Some(thread_id) = self.active_thread_id.or(self.chat_widget.thread_id()) else {
             self.chat_widget
@@ -1998,7 +2001,7 @@ impl App {
             return AppRunControl::Continue;
         }
 
-        match app_server.thread_archive(thread_id).await {
+        match cli_runtime.thread_archive(thread_id).await {
             Ok(()) => AppRunControl::Exit(ExitReason::UserRequested),
             Err(err) => {
                 self.chat_widget
@@ -2010,7 +2013,7 @@ impl App {
 
     pub(super) async fn delete_current_thread(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
     ) -> AppRunControl {
         let Some(thread_id) = self.active_thread_id.or(self.chat_widget.thread_id()) else {
             self.chat_widget
@@ -2025,7 +2028,7 @@ impl App {
             return AppRunControl::Continue;
         }
 
-        match app_server.thread_delete(thread_id).await {
+        match cli_runtime.thread_delete(thread_id).await {
             Ok(()) => AppRunControl::Exit(ExitReason::UserRequested),
             Err(err) => {
                 self.chat_widget

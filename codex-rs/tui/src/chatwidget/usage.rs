@@ -1,6 +1,6 @@
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditOutcome;
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditResponse;
-use codex_app_server_protocol::RateLimitResetCreditsSummary;
+use codex_cli_protocol::ConsumeAccountRateLimitResetCreditOutcome;
+use codex_cli_protocol::ConsumeAccountRateLimitResetCreditResponse;
+use codex_cli_protocol::RateLimitResetCreditsSummary;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;

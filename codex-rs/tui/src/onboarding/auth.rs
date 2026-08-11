@@ -7,14 +7,14 @@
 
 #![allow(clippy::unwrap_used)]
 
-use codex_app_server_client::AppServerRequestHandle;
-use codex_app_server_protocol::AccountLoginCompletedNotification;
-use codex_app_server_protocol::AccountUpdatedNotification;
-use codex_app_server_protocol::AuthMode as ApiAuthMode;
-use codex_app_server_protocol::CancelLoginAccountParams;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::LoginAccountParams;
-use codex_app_server_protocol::LoginAccountResponse;
+use codex_cli_protocol::AccountLoginCompletedNotification;
+use codex_cli_protocol::AccountUpdatedNotification;
+use codex_cli_protocol::AuthMode as ApiAuthMode;
+use codex_cli_protocol::CancelLoginAccountParams;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::LoginAccountParams;
+use codex_cli_protocol::LoginAccountResponse;
+use codex_cli_runtime_client::CliRuntimeRequestHandle;
 use codex_login::AuthConfig;
 use codex_login::read_openai_api_key_from_env;
 use codex_protocol::auth::AuthMode;
@@ -98,16 +98,16 @@ pub(crate) enum SignInOption {
 }
 
 const API_KEY_DISABLED_MESSAGE: &str = "API key login is disabled.";
-fn onboarding_request_id() -> codex_app_server_protocol::RequestId {
-    codex_app_server_protocol::RequestId::String(Uuid::new_v4().to_string())
+fn onboarding_request_id() -> codex_cli_protocol::RequestId {
+    codex_cli_protocol::RequestId::String(Uuid::new_v4().to_string())
 }
 
 pub(super) async fn cancel_login_attempt(
-    request_handle: &AppServerRequestHandle,
+    request_handle: &CliRuntimeRequestHandle,
     login_id: String,
 ) {
     let _ = request_handle
-        .request_typed::<codex_app_server_protocol::CancelLoginAccountResponse>(
+        .request_typed::<codex_cli_protocol::CancelLoginAccountResponse>(
             ClientRequest::CancelLoginAccount {
                 request_id: onboarding_request_id(),
                 params: CancelLoginAccountParams { login_id },
@@ -234,7 +234,7 @@ pub(crate) struct AuthModeWidget {
     pub error: Arc<RwLock<Option<String>>>,
     pub sign_in_state: Arc<RwLock<SignInState>>,
     pub login_status: LoginStatus,
-    pub app_server_request_handle: AppServerRequestHandle,
+    pub cli_runtime_request_handle: CliRuntimeRequestHandle,
     pub auth_config: AuthConfig,
     pub animations_enabled: bool,
     pub animations_suppressed: Cell<bool>,
@@ -256,7 +256,7 @@ impl AuthModeWidget {
         let mut sign_in_state = self.sign_in_state.write().unwrap();
         match &*sign_in_state {
             SignInState::ChatGptContinueInBrowser(state) => {
-                let request_handle = self.app_server_request_handle.clone();
+                let request_handle = self.cli_runtime_request_handle.clone();
                 let login_id = state.login_id.clone();
                 tokio::spawn(async move {
                     cancel_login_attempt(&request_handle, login_id).await;
@@ -264,7 +264,7 @@ impl AuthModeWidget {
             }
             SignInState::ChatGptDeviceCode(state) => {
                 if let Some(login_id) = state.login_id().map(str::to_owned) {
-                    let request_handle = self.app_server_request_handle.clone();
+                    let request_handle = self.cli_runtime_request_handle.clone();
                     tokio::spawn(async move {
                         cancel_login_attempt(&request_handle, login_id).await;
                     });
@@ -810,7 +810,7 @@ impl AuthModeWidget {
             return;
         }
         self.set_error(/*message*/ None);
-        let request_handle = self.app_server_request_handle.clone();
+        let request_handle = self.cli_runtime_request_handle.clone();
         let sign_in_state = self.sign_in_state.clone();
         let error = self.error.clone();
         let request_frame = self.request_frame.clone();
@@ -872,7 +872,7 @@ impl AuthModeWidget {
         }
 
         self.set_error(/*message*/ None);
-        let request_handle = self.app_server_request_handle.clone();
+        let request_handle = self.cli_runtime_request_handle.clone();
         let sign_in_state = self.sign_in_state.clone();
         let error = self.error.clone();
         let request_frame = self.request_frame.clone();
@@ -1012,8 +1012,8 @@ impl WidgetRef for AuthModeWidget {
     }
 }
 
-pub(super) fn maybe_open_auth_url_in_browser(request_handle: &AppServerRequestHandle, url: &str) {
-    if !matches!(request_handle, AppServerRequestHandle::InProcess(_)) {
+pub(super) fn maybe_open_auth_url_in_browser(request_handle: &CliRuntimeRequestHandle, url: &str) {
+    if !matches!(request_handle, CliRuntimeRequestHandle::InProcess(_)) {
         return;
     }
 
@@ -1026,11 +1026,11 @@ pub(super) fn maybe_open_auth_url_in_browser(request_handle: &AppServerRequestHa
 mod tests {
     use super::*;
     use crate::legacy_core::config::ConfigBuilder;
-    use codex_app_server_client::AppServerRequestHandle;
-    use codex_app_server_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
-    use codex_app_server_client::InProcessAppServerClient;
-    use codex_app_server_client::InProcessClientStartArgs;
     use codex_arg0::Arg0DispatchPaths;
+    use codex_cli_runtime_client::CliRuntimeRequestHandle;
+    use codex_cli_runtime_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
+    use codex_cli_runtime_client::InProcessCliRuntimeClient;
+    use codex_cli_runtime_client::InProcessClientStartArgs;
     use codex_cloud_config::cloud_config_bundle_loader_for_storage;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
@@ -1060,7 +1060,7 @@ mod tests {
             .await
             .unwrap();
         let mut auth_config = config.auth_config();
-        let client = InProcessAppServerClient::start(InProcessClientStartArgs {
+        let client = InProcessCliRuntimeClient::start(InProcessClientStartArgs {
             arg0_paths: Arg0DispatchPaths::default(),
             config: Arc::new(config),
             cli_overrides: Vec::new(),
@@ -1075,7 +1075,7 @@ mod tests {
             log_db: None,
             state_db: None,
             environment_manager: Arc::new(
-                codex_app_server_client::EnvironmentManager::default_for_tests(),
+                codex_cli_runtime_client::EnvironmentManager::default_for_tests(),
             ),
             config_warnings: Vec::new(),
             session_source: serde_json::from_value(serde_json::json!("cli"))
@@ -1096,7 +1096,7 @@ mod tests {
             error: Arc::new(RwLock::new(None)),
             sign_in_state: Arc::new(RwLock::new(SignInState::PickMode)),
             login_status: LoginStatus::NotAuthenticated,
-            app_server_request_handle: AppServerRequestHandle::InProcess(client.request_handle()),
+            cli_runtime_request_handle: CliRuntimeRequestHandle::InProcess(client.request_handle()),
             auth_config,
             animations_enabled: true,
             animations_suppressed: std::cell::Cell::new(false),

@@ -640,7 +640,7 @@ mod tests {
     use super::session_all_proxy_url;
     use crate::legacy_core::config::ConfigBuilder;
     use crate::legacy_core::config::Permissions;
-    use codex_app_server_protocol::AskForApproval;
+    use codex_cli_protocol::AskForApproval;
     use codex_config::ConfigLayerEntry;
     use codex_config::ConfigLayerSource;
     use codex_config::ConfigLayerStack;

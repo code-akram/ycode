@@ -14,12 +14,12 @@ use tempfile::TempDir;
 
 use super::DeleteConfirmation;
 use super::SessionArchiveAction;
-use super::run_session_archive_action_with_app_server;
-use crate::app_server_session::AppServerSession;
-use crate::app_server_session::ThreadParamsMode;
+use super::run_session_archive_action_with_cli_runtime;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
-use crate::tests::start_test_embedded_app_server;
+use crate::runtime_session::CliRuntimeSession;
+use crate::runtime_session::ThreadParamsMode;
+use crate::tests::start_test_embedded_cli_runtime;
 
 async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
     ConfigBuilder::default()
@@ -42,10 +42,10 @@ async fn state_runtime(config: &Config) -> std::io::Result<Arc<codex_state::Stat
     Ok(runtime)
 }
 
-async fn start_app_server(config: Config) -> color_eyre::Result<AppServerSession> {
-    Ok(AppServerSession::new(
-        codex_app_server_client::AppServerClient::InProcess(
-            start_test_embedded_app_server(config).await?,
+async fn start_cli_runtime(config: Config) -> color_eyre::Result<CliRuntimeSession> {
+    Ok(CliRuntimeSession::new(
+        codex_cli_runtime_client::CliRuntimeClient::InProcess(
+            start_test_embedded_cli_runtime(config).await?,
         ),
         ThreadParamsMode::Embedded,
     ))
@@ -169,15 +169,15 @@ async fn archives_by_sqlite_name() -> color_eyre::Result<()> {
         .await
         .map_err(std::io::Error::other)?;
 
-    let mut app_server = start_app_server(config.clone()).await?;
-    let message = run_session_archive_action_with_app_server(
-        &mut app_server,
+    let mut cli_runtime = start_cli_runtime(config.clone()).await?;
+    let message = run_session_archive_action_with_cli_runtime(
+        &mut cli_runtime,
         config.codex_home.as_path(),
         SessionArchiveAction::Archive,
         "saved-session",
     )
     .await?;
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
 
     assert_eq!(
         (
@@ -220,15 +220,15 @@ async fn unarchives_by_sqlite_name() -> color_eyre::Result<()> {
         .await
         .map_err(std::io::Error::other)?;
 
-    let mut app_server = start_app_server(config.clone()).await?;
-    let message = run_session_archive_action_with_app_server(
-        &mut app_server,
+    let mut cli_runtime = start_cli_runtime(config.clone()).await?;
+    let message = run_session_archive_action_with_cli_runtime(
+        &mut cli_runtime,
         config.codex_home.as_path(),
         SessionArchiveAction::Unarchive,
         "saved-session",
     )
     .await?;
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
 
     assert_eq!(
         (
@@ -282,15 +282,15 @@ async fn deletes_valid_duplicate_after_stale_sqlite_hit() -> color_eyre::Result<
     codex_rollout::append_thread_name(config.codex_home.as_path(), thread_id, "saved-session")
         .await?;
 
-    let mut app_server = start_app_server(config.clone()).await?;
-    let message = run_session_archive_action_with_app_server(
-        &mut app_server,
+    let mut cli_runtime = start_cli_runtime(config.clone()).await?;
+    let message = run_session_archive_action_with_cli_runtime(
+        &mut cli_runtime,
         config.codex_home.as_path(),
         SessionArchiveAction::Delete(DeleteConfirmation::Skip),
         "saved-session",
     )
     .await?;
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
 
     assert_eq!(
         (
@@ -344,15 +344,15 @@ async fn trusts_sqlite_name_over_legacy_index_for_delete() -> color_eyre::Result
     codex_rollout::append_thread_name(config.codex_home.as_path(), thread_id, "old-session")
         .await?;
 
-    let mut app_server = start_app_server(config.clone()).await?;
-    let message = run_session_archive_action_with_app_server(
-        &mut app_server,
+    let mut cli_runtime = start_cli_runtime(config.clone()).await?;
+    let message = run_session_archive_action_with_cli_runtime(
+        &mut cli_runtime,
         config.codex_home.as_path(),
         SessionArchiveAction::Delete(DeleteConfirmation::Skip),
         "new-session",
     )
     .await?;
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
 
     assert_eq!(
         (

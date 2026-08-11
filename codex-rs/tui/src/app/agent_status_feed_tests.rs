@@ -1,7 +1,7 @@
 use super::*;
-use codex_app_server_protocol::CommandExecutionSource;
-use codex_app_server_protocol::CommandExecutionStatus;
-use codex_app_server_protocol::ItemCompletedNotification;
+use codex_cli_protocol::CommandExecutionSource;
+use codex_cli_protocol::CommandExecutionStatus;
+use codex_cli_protocol::ItemCompletedNotification;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 #[test]

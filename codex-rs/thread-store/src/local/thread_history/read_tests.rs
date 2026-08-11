@@ -2,7 +2,7 @@ use std::fs;
 use std::time::Duration;
 
 use chrono::Utc;
-use codex_app_server_protocol::CodexErrorInfo;
+use codex_cli_protocol::CodexErrorInfo;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::HistoryPosition;

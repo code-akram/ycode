@@ -1,6 +1,6 @@
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::LoginAccountParams;
-use codex_app_server_protocol::LoginAccountResponse;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::LoginAccountParams;
+use codex_cli_protocol::LoginAccountResponse;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::Widget;
@@ -26,7 +26,7 @@ pub(super) fn start_headless_chatgpt_login(widget: &mut AuthModeWidget) {
         SignInState::ChatGptDeviceCode(ContinueWithDeviceCodeState::pending(request_id.clone()));
     widget.request_frame.schedule_frame();
 
-    let request_handle = widget.app_server_request_handle.clone();
+    let request_handle = widget.cli_runtime_request_handle.clone();
     let sign_in_state = widget.sign_in_state.clone();
     let request_frame = widget.request_frame.clone();
     let error = widget.error.clone();

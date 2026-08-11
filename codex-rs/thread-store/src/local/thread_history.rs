@@ -1,6 +1,6 @@
-use codex_app_server_protocol::ThreadHistoryChangeSet;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::TurnStatus;
+use codex_cli_protocol::ThreadHistoryChangeSet;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::TurnStatus;
 use codex_protocol::ThreadId;
 use codex_protocol::models::MessagePhase;
 

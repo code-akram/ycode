@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
 #[cfg(test)]
 use crate::app_command::AppCommand as Op;
 use crate::app_event::AppEvent;
@@ -38,16 +38,16 @@ use crate::keymap::ListKeymap;
 use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::Renderable;
-use codex_app_server_protocol::AdditionalPermissionProfile;
-use codex_app_server_protocol::CommandExecutionApprovalDecision;
-use codex_app_server_protocol::FileChangeApprovalDecision;
-use codex_app_server_protocol::FileSystemAccessMode;
-use codex_app_server_protocol::FileSystemPath;
-use codex_app_server_protocol::FileSystemSandboxEntry;
-use codex_app_server_protocol::FileSystemSpecialPath;
-use codex_app_server_protocol::NetworkApprovalContext;
-use codex_app_server_protocol::NetworkApprovalProtocol;
-use codex_app_server_protocol::NetworkPolicyRuleAction;
+use codex_cli_protocol::AdditionalPermissionProfile;
+use codex_cli_protocol::CommandExecutionApprovalDecision;
+use codex_cli_protocol::FileChangeApprovalDecision;
+use codex_cli_protocol::FileSystemAccessMode;
+use codex_cli_protocol::FileSystemPath;
+use codex_cli_protocol::FileSystemSandboxEntry;
+use codex_cli_protocol::FileSystemSpecialPath;
+use codex_cli_protocol::NetworkApprovalContext;
+use codex_cli_protocol::NetworkApprovalProtocol;
+use codex_cli_protocol::NetworkPolicyRuleAction;
 use codex_features::Features;
 use codex_protocol::ThreadId;
 use codex_protocol::request_permissions::PermissionGrantScope;
@@ -124,19 +124,19 @@ impl ApprovalRequest {
         }
     }
 
-    pub(super) fn matches_resolved_request(&self, request: &ResolvedAppServerRequest) -> bool {
+    pub(super) fn matches_resolved_request(&self, request: &ResolvedCliRuntimeRequest) -> bool {
         match (self, request) {
             (
                 ApprovalRequest::Exec(request),
-                ResolvedAppServerRequest::ExecApproval { id: resolved_id },
+                ResolvedCliRuntimeRequest::ExecApproval { id: resolved_id },
             ) => request.id == *resolved_id,
             (
                 ApprovalRequest::Permissions(request),
-                ResolvedAppServerRequest::PermissionsApproval { id },
+                ResolvedCliRuntimeRequest::PermissionsApproval { id },
             ) => request.call_id == *id,
             (
                 ApprovalRequest::ApplyPatch(request),
-                ResolvedAppServerRequest::FileChangeApproval { id: resolved_id },
+                ResolvedCliRuntimeRequest::FileChangeApproval { id: resolved_id },
             ) => request.id == *resolved_id,
             _ => false,
         }
@@ -185,7 +185,7 @@ impl ApprovalOverlay {
         self.queue.push(req);
     }
 
-    fn dismiss_resolved_request(&mut self, request: &ResolvedAppServerRequest) -> bool {
+    fn dismiss_resolved_request(&mut self, request: &ResolvedCliRuntimeRequest) -> bool {
         let queue_len = self.queue.len();
         self.queue
             .retain(|queued_request| !queued_request.matches_resolved_request(request));
@@ -525,7 +525,7 @@ impl BottomPaneView for ApprovalOverlay {
         None
     }
 
-    fn dismiss_app_server_request(&mut self, request: &ResolvedAppServerRequest) -> bool {
+    fn dismiss_cli_runtime_request(&mut self, request: &ResolvedCliRuntimeRequest) -> bool {
         self.dismiss_resolved_request(request)
     }
 
@@ -884,10 +884,9 @@ pub(crate) fn format_additional_permissions_rule(
 pub(crate) fn format_requested_permissions_rule(
     permissions: &RequestPermissionProfile,
 ) -> Option<String> {
-    let permissions =
-        crate::app_server_approval_conversions::granted_permission_profile_from_request(
-            permissions.clone(),
-        );
+    let permissions = crate::runtime_approval_conversions::granted_permission_profile_from_request(
+        permissions.clone(),
+    );
     format_additional_permissions_rule(&AdditionalPermissionProfile {
         network: permissions.network,
         file_system: permissions.file_system,
@@ -984,11 +983,11 @@ mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use crate::keymap::RuntimeKeymap;
-    use codex_app_server_protocol::AdditionalFileSystemPermissions;
-    use codex_app_server_protocol::AdditionalNetworkPermissions;
-    use codex_app_server_protocol::ExecPolicyAmendment;
-    use codex_app_server_protocol::NetworkApprovalProtocol;
-    use codex_app_server_protocol::NetworkPolicyAmendment;
+    use codex_cli_protocol::AdditionalFileSystemPermissions;
+    use codex_cli_protocol::AdditionalNetworkPermissions;
+    use codex_cli_protocol::ExecPolicyAmendment;
+    use codex_cli_protocol::NetworkApprovalProtocol;
+    use codex_cli_protocol::NetworkPolicyAmendment;
     use codex_config::types::KeybindingSpec;
     use codex_config::types::KeybindingsSpec;
     use codex_config::types::TuiKeymap;
@@ -1329,7 +1328,7 @@ mod tests {
         let mut view = make_overlay(make_exec_request(), tx, Features::with_defaults());
 
         assert!(
-            view.dismiss_app_server_request(&ResolvedAppServerRequest::ExecApproval {
+            view.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::ExecApproval {
                 id: "test".to_string(),
             })
         );

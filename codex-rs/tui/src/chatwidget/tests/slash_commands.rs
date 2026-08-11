@@ -477,12 +477,10 @@ async fn queued_bare_rename_drains_next_input_after_name_update() {
     );
 
     chat.handle_server_notification(
-        ServerNotification::ThreadNameUpdated(
-            codex_app_server_protocol::ThreadNameUpdatedNotification {
-                thread_id: thread_id.to_string(),
-                thread_name: Some("Queued rename".to_string()),
-            },
-        ),
+        ServerNotification::ThreadNameUpdated(codex_cli_protocol::ThreadNameUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            thread_name: Some("Queued rename".to_string()),
+        }),
         /*replay_kind*/ None,
     );
 
@@ -561,12 +559,10 @@ async fn queued_inline_rename_does_not_drain_again_before_turn_started() {
     );
 
     chat.handle_server_notification(
-        ServerNotification::ThreadNameUpdated(
-            codex_app_server_protocol::ThreadNameUpdatedNotification {
-                thread_id: thread_id.to_string(),
-                thread_name: Some("Queued rename".to_string()),
-            },
-        ),
+        ServerNotification::ThreadNameUpdated(codex_cli_protocol::ThreadNameUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            thread_name: Some("Queued rename".to_string()),
+        }),
         /*replay_kind*/ None,
     );
 
@@ -1510,8 +1506,8 @@ async fn completed_token_activity_refresh_waits_for_active_hook() {
         &mut chat,
         hook_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
-            codex_app_server_protocol::HookRunStatus::Running,
+            codex_cli_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookRunStatus::Running,
             "checking output policy",
             Vec::new(),
         ),
@@ -1530,11 +1526,11 @@ async fn completed_token_activity_refresh_waits_for_active_hook() {
         &mut chat,
         hook_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
-            codex_app_server_protocol::HookRunStatus::Completed,
+            codex_cli_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookRunStatus::Completed,
             "checking output policy",
-            vec![codex_app_server_protocol::HookOutputEntry {
-                kind: codex_app_server_protocol::HookOutputEntryKind::Context,
+            vec![codex_cli_protocol::HookOutputEntry {
+                kind: codex_cli_protocol::HookOutputEntryKind::Context,
                 text: "hook context".to_string(),
             }],
         ),
@@ -1695,7 +1691,7 @@ async fn slash_quit_requests_exit() {
 }
 
 #[tokio::test]
-async fn slash_logout_requests_app_server_logout() {
+async fn slash_logout_requests_cli_runtime_logout() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.dispatch_command(SlashCommand::Logout);
@@ -1725,7 +1721,7 @@ async fn slash_copy_state_tracks_plan_item_completion() {
             thread_id: String::new(),
             turn_id: "turn-1".to_string(),
             completed_at_ms: 0,
-            item: AppServerThreadItem::Plan {
+            item: CliRuntimeThreadItem::Plan {
                 id: "plan-1".to_string(),
                 text: plan_text.clone(),
             },
@@ -2022,22 +2018,20 @@ async fn active_goal_without_follow_up_suppresses_agent_turn_complete_notificati
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_feature_enabled(Feature::Goals, /*enabled*/ true);
     chat.handle_server_notification(
-        ServerNotification::ThreadGoalUpdated(
-            codex_app_server_protocol::ThreadGoalUpdatedNotification {
+        ServerNotification::ThreadGoalUpdated(codex_cli_protocol::ThreadGoalUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: None,
+            goal: codex_cli_protocol::ThreadGoal {
                 thread_id: "thread-1".to_string(),
-                turn_id: None,
-                goal: codex_app_server_protocol::ThreadGoal {
-                    thread_id: "thread-1".to_string(),
-                    objective: "finish the benchmark".to_string(),
-                    status: codex_app_server_protocol::ThreadGoalStatus::Active,
-                    token_budget: None,
-                    tokens_used: 0,
-                    time_used_seconds: 0,
-                    created_at: 1,
-                    updated_at: 1,
-                },
+                objective: "finish the benchmark".to_string(),
+                status: codex_cli_protocol::ThreadGoalStatus::Active,
+                token_budget: None,
+                tokens_used: 0,
+                time_used_seconds: 0,
+                created_at: 1,
+                updated_at: 1,
             },
-        ),
+        }),
         /*replay_kind*/ None,
     );
 

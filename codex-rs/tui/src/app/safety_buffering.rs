@@ -2,14 +2,14 @@
 
 use super::session_lifecycle::ThreadAttachPresentation;
 use super::*;
-use crate::app_server_session::ForkGoalContinuation;
-use crate::app_server_session::HISTORY_ITEM_PAGE_LIMIT;
 use crate::chatwidget::ThreadInputState;
 use crate::chatwidget::ThreadInputStateRestoreMode;
 use crate::chatwidget::UserMessage;
-use codex_app_server_protocol::ThreadHistoryMode;
-use codex_app_server_protocol::TurnItemsView;
-use codex_app_server_protocol::UserInput;
+use crate::runtime_session::ForkGoalContinuation;
+use crate::runtime_session::HISTORY_ITEM_PAGE_LIMIT;
+use codex_cli_protocol::ThreadHistoryMode;
+use codex_cli_protocol::TurnItemsView;
+use codex_cli_protocol::UserInput;
 
 pub(super) struct SafetyBufferedRetry {
     pub(super) thread_id: ThreadId,
@@ -23,7 +23,7 @@ impl App {
     pub(super) async fn retry_safety_buffered_turn(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         retry: SafetyBufferedRetry,
     ) {
         let SafetyBufferedRetry {
@@ -73,33 +73,33 @@ impl App {
             )
         });
 
-        if let Err(err) = app_server.turn_interrupt(thread_id, turn_id.clone()).await {
+        if let Err(err) = cli_runtime.turn_interrupt(thread_id, turn_id.clone()).await {
             self.chat_widget
                 .add_error_message(format!("Failed to retry with a faster model: {err}"));
             return;
         }
 
         let thread = match async {
-            let mut thread = app_server
+            let mut thread = cli_runtime
                 .thread_read(thread_id, /*include_turns*/ false)
                 .await?;
             if thread.history_mode == ThreadHistoryMode::Legacy {
-                app_server
+                cli_runtime
                     .hydrate_initial_thread_history(
                         &mut thread,
                         /*turn_cursor*/ None,
                         /*item_cursor*/ None,
                         /*config*/ None,
-                        crate::app_server_session::HistoryHydrationScope::Initial,
+                        crate::runtime_session::HistoryHydrationScope::Initial,
                     )
                     .await?;
             } else {
-                let page = app_server
+                let page = cli_runtime
                     .thread_turns_page(thread_id, /*cursor*/ None)
                     .await?;
                 thread.turns = page.data.into_iter().rev().collect();
                 if let Some(turn_index) = thread.turns.iter().position(|turn| turn.id == turn_id) {
-                    let page = app_server
+                    let page = cli_runtime
                         .thread_items_page(
                             thread_id,
                             Some(&turn_id),
@@ -159,7 +159,7 @@ impl App {
         let retry_display = ChatWidget::user_message_display_from_inputs(items);
 
         self.config = retry_config.clone();
-        let started = app_server
+        let started = cli_runtime
             .fork_thread_at(
                 retry_config,
                 thread_id,
@@ -177,9 +177,9 @@ impl App {
         };
         let retry_thread_id = started.session.thread_id;
 
-        self.shutdown_current_thread(app_server).await;
+        self.shutdown_current_thread(cli_runtime).await;
         if let Err(err) = self
-            .replace_chat_widget_with_app_server_thread(
+            .replace_chat_widget_with_cli_runtime_thread(
                 tui,
                 started,
                 ThreadAttachPresentation::SessionLineage,
@@ -201,7 +201,7 @@ impl App {
         self.chat_widget
             .prepare_safety_buffered_retry_submission(prompt.clone());
         if let Err(err) = self
-            .submit_thread_op(app_server, retry_thread_id, turn)
+            .submit_thread_op(cli_runtime, retry_thread_id, turn)
             .await
         {
             self.fail_safety_buffered_branch(failure_input_state, prompt, err);

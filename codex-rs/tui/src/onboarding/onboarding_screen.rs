@@ -10,9 +10,9 @@
 //! editing a non-empty API-key field, while control/alt chords remain available
 //! as explicit exit shortcuts.
 
-use codex_app_server_client::AppServerEvent;
-use codex_app_server_client::AppServerRequestHandle;
-use codex_app_server_protocol::ServerNotification;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_runtime_client::CliRuntimeEvent;
+use codex_cli_runtime_client::CliRuntimeRequestHandle;
 use codex_exec_server::LOCAL_FS;
 use codex_git_utils::resolve_root_git_project_for_trust;
 use crossterm::event::KeyCode;
@@ -29,7 +29,6 @@ use ratatui::widgets::WidgetRef;
 use codex_protocol::config_types::ForcedLoginMethod;
 
 use crate::LoginStatus;
-use crate::app_server_session::AppServerSession;
 use crate::config_update::format_config_error;
 use crate::config_update::write_trusted_project;
 use crate::key_hint::KeyBindingListExt;
@@ -41,6 +40,7 @@ use crate::onboarding::keys;
 use crate::onboarding::trust_directory::TrustDirectorySelection;
 use crate::onboarding::trust_directory::TrustDirectoryWidget;
 use crate::onboarding::welcome::WelcomeWidget;
+use crate::runtime_session::CliRuntimeSession;
 use crate::tui::FrameRequester;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
@@ -82,7 +82,7 @@ pub(crate) struct OnboardingScreenArgs {
     pub show_trust_screen: bool,
     pub show_login_screen: bool,
     pub login_status: LoginStatus,
-    pub app_server_request_handle: Option<AppServerRequestHandle>,
+    pub cli_runtime_request_handle: Option<CliRuntimeRequestHandle>,
     pub config: Config,
 }
 
@@ -105,7 +105,7 @@ impl OnboardingScreen {
             show_trust_screen,
             show_login_screen,
             login_status,
-            app_server_request_handle,
+            cli_runtime_request_handle,
             config,
         } = args;
         let cwd = config.cwd.to_path_buf();
@@ -123,20 +123,20 @@ impl OnboardingScreen {
                 } else {
                     SignInOption::ApiKey
                 };
-            if let Some(app_server_request_handle) = app_server_request_handle {
+            if let Some(cli_runtime_request_handle) = cli_runtime_request_handle {
                 steps.push(Step::Auth(AuthModeWidget {
                     request_frame: tui.frame_requester(),
                     highlighted_mode,
                     error: Arc::new(RwLock::new(None)),
                     sign_in_state: Arc::new(RwLock::new(SignInState::PickMode)),
                     login_status,
-                    app_server_request_handle,
+                    cli_runtime_request_handle,
                     auth_config,
                     animations_enabled: config.animations,
                     animations_suppressed: std::cell::Cell::new(false),
                 }));
             } else {
-                tracing::warn!("skipping onboarding login step without app-server request handle");
+                tracing::warn!("skipping onboarding login step without cli-runtime request handle");
             }
         }
         let highlighted = TrustDirectorySelection::Trust;
@@ -234,7 +234,7 @@ impl OnboardingScreen {
         })
     }
 
-    fn handle_app_server_notification(&mut self, notification: ServerNotification) {
+    fn handle_cli_runtime_notification(&mut self, notification: ServerNotification) {
         match notification {
             ServerNotification::AccountLoginCompleted(notification) => {
                 if let Some(widget) = self.auth_widget_mut() {
@@ -467,12 +467,12 @@ impl WidgetRef for Step {
 
 pub(crate) async fn run_onboarding_app(
     args: OnboardingScreenArgs,
-    mut app_server: Option<&mut AppServerSession>,
+    mut cli_runtime: Option<&mut CliRuntimeSession>,
     tui: &mut Tui,
 ) -> Result<OnboardingResult> {
     use tokio_stream::StreamExt;
 
-    let app_server_request_handle = args.app_server_request_handle.clone();
+    let cli_runtime_request_handle = args.cli_runtime_request_handle.clone();
     let mut onboarding_screen = OnboardingScreen::new(tui, args).await;
     let mut directory_trust_persisted = false;
     // One-time guard to fully clear the screen after ChatGPT login success message is shown
@@ -496,7 +496,7 @@ pub(crate) async fn run_onboarding_app(
                             if !directory_trust_persisted {
                                 directory_trust_persisted = persist_selected_trust(
                                     &mut onboarding_screen,
-                                    app_server_request_handle.clone(),
+                                    cli_runtime_request_handle.clone(),
                                 )
                                 .await;
                             }
@@ -543,21 +543,21 @@ pub(crate) async fn run_onboarding_app(
                 }
             }
             event = async {
-                match app_server.as_mut() {
-                    Some(app_server) => app_server.next_event().await,
+                match cli_runtime.as_mut() {
+                    Some(cli_runtime) => cli_runtime.next_event().await,
                     None => None,
                 }
-            }, if app_server.is_some() => {
+            }, if cli_runtime.is_some() => {
                 if let Some(event) = event {
                     match event {
-                        AppServerEvent::ServerNotification(notification) => {
-                            onboarding_screen.handle_app_server_notification(*notification);
+                        CliRuntimeEvent::ServerNotification(notification) => {
+                            onboarding_screen.handle_cli_runtime_notification(*notification);
                         }
-                        AppServerEvent::Disconnected { message } => {
+                        CliRuntimeEvent::Disconnected { message } => {
                             return Err(color_eyre::eyre::eyre!(message));
                         }
-                        AppServerEvent::Lagged { .. }
-                        | AppServerEvent::ServerRequest(_) => {}
+                        CliRuntimeEvent::Lagged { .. }
+                        | CliRuntimeEvent::ServerRequest(_) => {}
                     }
                 }
             }
@@ -571,7 +571,7 @@ pub(crate) async fn run_onboarding_app(
 
 async fn persist_selected_trust(
     onboarding_screen: &mut OnboardingScreen,
-    request_handle: Option<AppServerRequestHandle>,
+    request_handle: Option<CliRuntimeRequestHandle>,
 ) -> bool {
     let Some((trust_step_index, trust_target)) = onboarding_screen
         .steps

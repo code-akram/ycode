@@ -1,8 +1,8 @@
 use crate::app_command::AppCommand;
-use codex_app_server_protocol::RequestId as AppServerRequestId;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::ThreadItem;
+use codex_cli_protocol::RequestId as CliRuntimeRequestId;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::ThreadItem;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -29,7 +29,7 @@ pub(super) struct PendingInteractiveReplayState {
     request_permissions_call_ids_by_turn_id: HashMap<String, Vec<String>>,
     request_user_input_call_ids: HashSet<String>,
     request_user_input_call_ids_by_turn_id: HashMap<String, Vec<String>>,
-    pending_requests_by_request_id: HashMap<AppServerRequestId, PendingInteractiveRequest>,
+    pending_requests_by_request_id: HashMap<CliRuntimeRequestId, PendingInteractiveRequest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -418,7 +418,7 @@ impl PendingInteractiveReplayState {
         self.pending_requests_by_request_id.clear();
     }
 
-    fn remove_request(&mut self, request_id: &AppServerRequestId) {
+    fn remove_request(&mut self, request_id: &CliRuntimeRequestId) {
         let Some(pending) = self.pending_requests_by_request_id.remove(request_id) else {
             return;
         };
@@ -498,19 +498,19 @@ mod tests {
     use super::super::ThreadBufferedEvent;
     use super::super::ThreadEventStore;
     use crate::app_command::AppCommand as Op;
-    use codex_app_server_protocol::CommandExecutionApprovalDecision;
-    use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
-    use codex_app_server_protocol::FileChangeRequestApprovalParams;
-    use codex_app_server_protocol::RequestId as AppServerRequestId;
-    use codex_app_server_protocol::ServerNotification;
-    use codex_app_server_protocol::ServerRequest;
-    use codex_app_server_protocol::ServerRequestResolvedNotification;
-    use codex_app_server_protocol::ThreadClosedNotification;
-    use codex_app_server_protocol::ToolRequestUserInputParams;
-    use codex_app_server_protocol::ToolRequestUserInputResponse;
-    use codex_app_server_protocol::Turn;
-    use codex_app_server_protocol::TurnCompletedNotification;
-    use codex_app_server_protocol::TurnStatus;
+    use codex_cli_protocol::CommandExecutionApprovalDecision;
+    use codex_cli_protocol::CommandExecutionRequestApprovalParams;
+    use codex_cli_protocol::FileChangeRequestApprovalParams;
+    use codex_cli_protocol::RequestId as CliRuntimeRequestId;
+    use codex_cli_protocol::ServerNotification;
+    use codex_cli_protocol::ServerRequest;
+    use codex_cli_protocol::ServerRequestResolvedNotification;
+    use codex_cli_protocol::ThreadClosedNotification;
+    use codex_cli_protocol::ToolRequestUserInputParams;
+    use codex_cli_protocol::ToolRequestUserInputResponse;
+    use codex_cli_protocol::Turn;
+    use codex_cli_protocol::TurnCompletedNotification;
+    use codex_cli_protocol::TurnStatus;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
     use pretty_assertions::assert_eq;
@@ -518,7 +518,7 @@ mod tests {
 
     fn request_user_input_request(call_id: &str, turn_id: &str) -> ServerRequest {
         ServerRequest::ToolRequestUserInput {
-            request_id: AppServerRequestId::Integer(1),
+            request_id: CliRuntimeRequestId::Integer(1),
             params: ToolRequestUserInputParams {
                 thread_id: "thread-1".to_string(),
                 turn_id: turn_id.to_string(),
@@ -536,7 +536,7 @@ mod tests {
         turn_id: &str,
     ) -> ServerRequest {
         ServerRequest::CommandExecutionRequestApproval {
-            request_id: AppServerRequestId::Integer(2),
+            request_id: CliRuntimeRequestId::Integer(2),
             params: CommandExecutionRequestApprovalParams {
                 thread_id: "thread-1".to_string(),
                 turn_id: turn_id.to_string(),
@@ -559,7 +559,7 @@ mod tests {
 
     fn patch_approval_request(call_id: &str, turn_id: &str) -> ServerRequest {
         ServerRequest::FileChangeRequestApproval {
-            request_id: AppServerRequestId::Integer(3),
+            request_id: CliRuntimeRequestId::Integer(3),
             params: FileChangeRequestApprovalParams {
                 thread_id: "thread-1".to_string(),
                 turn_id: turn_id.to_string(),
@@ -576,7 +576,7 @@ mod tests {
             thread_id: "thread-1".to_string(),
             turn: Turn {
                 id: turn_id.to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
                 status: TurnStatus::Completed,
                 error: None,
@@ -593,7 +593,7 @@ mod tests {
         })
     }
 
-    fn request_resolved(request_id: AppServerRequestId) -> ServerNotification {
+    fn request_resolved(request_id: CliRuntimeRequestId) -> ServerNotification {
         ServerNotification::ServerRequestResolved(ServerRequestResolvedNotification {
             thread_id: "thread-1".to_string(),
             request_id,
@@ -644,7 +644,7 @@ mod tests {
         let mut store = ThreadEventStore::new(/*capacity*/ 8);
         store.push_request(request_user_input_request("call-1", "turn-1"));
 
-        store.push_notification(request_resolved(AppServerRequestId::Integer(1)));
+        store.push_notification(request_resolved(CliRuntimeRequestId::Integer(1)));
 
         let snapshot = store.snapshot();
         assert!(
@@ -693,7 +693,7 @@ mod tests {
             "turn-1",
         ));
 
-        store.push_notification(request_resolved(AppServerRequestId::Integer(2)));
+        store.push_notification(request_resolved(CliRuntimeRequestId::Integer(2)));
 
         let snapshot = store.snapshot();
         assert!(
@@ -771,7 +771,7 @@ mod tests {
 
         store.note_outbound_op(&Op::PatchApproval {
             id: "call-1".to_string(),
-            decision: codex_app_server_protocol::FileChangeApprovalDecision::Accept,
+            decision: codex_cli_protocol::FileChangeApprovalDecision::Accept,
         });
 
         let snapshot = store.snapshot();

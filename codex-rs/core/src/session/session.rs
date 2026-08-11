@@ -98,8 +98,8 @@ pub(crate) struct SessionConfiguration {
     pub(super) original_config_do_not_use: Arc<Config>,
     /// Optional service name tag for session metrics.
     pub(super) metrics_service_name: Option<String>,
-    pub(super) app_server_client_name: Option<String>,
-    pub(super) app_server_client_version: Option<String>,
+    pub(super) cli_runtime_client_name: Option<String>,
+    pub(super) cli_runtime_client_version: Option<String>,
     /// Source of the session (CLI, app server, exec, and so on).
     pub(super) session_source: SessionSource,
     /// Persisted thread history contract selected when this thread was created.
@@ -383,11 +383,11 @@ impl SessionConfiguration {
                     ),
                 )?;
         }
-        if let Some(app_server_client_name) = updates.app_server_client_name.clone() {
-            next_configuration.app_server_client_name = Some(app_server_client_name);
+        if let Some(cli_runtime_client_name) = updates.cli_runtime_client_name.clone() {
+            next_configuration.cli_runtime_client_name = Some(cli_runtime_client_name);
         }
-        if let Some(app_server_client_version) = updates.app_server_client_version.clone() {
-            next_configuration.app_server_client_version = Some(app_server_client_version);
+        if let Some(cli_runtime_client_version) = updates.cli_runtime_client_version.clone() {
+            next_configuration.cli_runtime_client_version = Some(cli_runtime_client_version);
         }
         Ok(next_configuration)
     }
@@ -444,11 +444,11 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) service_tier: Option<Option<String>>,
     pub(crate) final_output_json_schema: Option<Option<Value>>,
     pub(crate) personality: Option<Personality>,
-    pub(crate) app_server_client_name: Option<String>,
-    pub(crate) app_server_client_version: Option<String>,
+    pub(crate) cli_runtime_client_name: Option<String>,
+    pub(crate) cli_runtime_client_version: Option<String>,
 }
 
-pub(crate) struct AppServerClientMetadata {
+pub(crate) struct CliRuntimeClientMetadata {
     pub(crate) client_name: Option<String>,
     pub(crate) client_version: Option<String>,
 }

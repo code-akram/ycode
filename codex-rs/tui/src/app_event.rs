@@ -13,24 +13,24 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use crate::inline_visualization::InlineVisualizationContext;
-use codex_app_server_protocol::AddCreditsNudgeCreditType;
-use codex_app_server_protocol::AddCreditsNudgeEmailStatus;
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditResponse;
-use codex_app_server_protocol::GetAccountRateLimitsResponse;
-use codex_app_server_protocol::GetAccountTokenUsageResponse;
-use codex_app_server_protocol::MarketplaceAddResponse;
-use codex_app_server_protocol::MarketplaceRemoveResponse;
-use codex_app_server_protocol::MarketplaceUpgradeResponse;
-use codex_app_server_protocol::PluginInstallResponse;
-use codex_app_server_protocol::PluginListResponse;
-use codex_app_server_protocol::PluginMarketplaceEntry;
-use codex_app_server_protocol::PluginReadParams;
-use codex_app_server_protocol::PluginReadResponse;
-use codex_app_server_protocol::PluginUninstallResponse;
-use codex_app_server_protocol::SkillsListResponse;
-use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadGoalStatus;
-use codex_app_server_protocol::ThreadItemsListResponse;
+use codex_cli_protocol::AddCreditsNudgeCreditType;
+use codex_cli_protocol::AddCreditsNudgeEmailStatus;
+use codex_cli_protocol::ConsumeAccountRateLimitResetCreditResponse;
+use codex_cli_protocol::GetAccountRateLimitsResponse;
+use codex_cli_protocol::GetAccountTokenUsageResponse;
+use codex_cli_protocol::MarketplaceAddResponse;
+use codex_cli_protocol::MarketplaceRemoveResponse;
+use codex_cli_protocol::MarketplaceUpgradeResponse;
+use codex_cli_protocol::PluginInstallResponse;
+use codex_cli_protocol::PluginListResponse;
+use codex_cli_protocol::PluginMarketplaceEntry;
+use codex_cli_protocol::PluginReadParams;
+use codex_cli_protocol::PluginReadResponse;
+use codex_cli_protocol::PluginUninstallResponse;
+use codex_cli_protocol::SkillsListResponse;
+use codex_cli_protocol::Thread;
+use codex_cli_protocol::ThreadGoalStatus;
+use codex_cli_protocol::ThreadItemsListResponse;
 use codex_file_search::FileMatch;
 use codex_message_history::HistoryBatchCursor;
 use codex_protocol::ThreadId;
@@ -40,13 +40,13 @@ use codex_utils_approval_presets::ApprovalPreset;
 use uuid::Uuid;
 
 use crate::app_command::AppCommand;
-use crate::app_server_session::AppServerStartedThread;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::chatwidget::UserMessage;
 use crate::goal_files::GoalDraft;
-use codex_app_server_protocol::AskForApproval;
+use crate::runtime_session::CliRuntimeStartedThread;
+use codex_cli_protocol::AskForApproval;
 use codex_config::types::ApprovalsReviewer;
 use codex_features::Feature;
 use codex_plugin::PluginCapabilitySummary;
@@ -254,7 +254,7 @@ pub(crate) enum AppEvent {
 
     /// Result of the fresh startup thread that is attached after the input UI is live.
     StartupThreadStarted {
-        result: Result<AppServerStartedThread, String>,
+        result: Result<CliRuntimeStartedThread, String>,
     },
 
     /// Clear the terminal UI (screen + scrollback), start a fresh session, and keep the
@@ -311,7 +311,7 @@ pub(crate) enum AppEvent {
     /// background tasks, rollout flush, or child process cleanup).
     Exit(ExitMode),
 
-    /// Request app-server account logout, then exit after it succeeds.
+    /// Request cli-runtime account logout, then exit after it succeeds.
     Logout,
 
     /// Request to exit the application due to a fatal error.
@@ -520,7 +520,7 @@ pub(crate) enum AppEvent {
     /// Result of fetching lifecycle hook inventory.
     HooksLoaded {
         cwd: PathBuf,
-        result: Result<codex_app_server_protocol::HooksListResponse, String>,
+        result: Result<codex_cli_protocol::HooksListResponse, String>,
     },
 
     /// Open the prompt for adding a marketplace source.
@@ -811,7 +811,7 @@ pub(crate) enum AppEvent {
         generate_memories: bool,
     },
 
-    /// Clear all persisted local memory artifacts via the app-server.
+    /// Clear all persisted local memory artifacts via the cli-runtime.
     ResetMemories,
 
     /// Update whether the rate limit switch prompt has been acknowledged for the session.
@@ -911,7 +911,7 @@ pub(crate) enum AppEvent {
         category: FeedbackCategory,
     },
 
-    /// Submit feedback for the current thread via the app-server feedback RPC.
+    /// Submit feedback for the current thread via the cli-runtime feedback RPC.
     SubmitFeedback {
         category: FeedbackCategory,
         reason: Option<String>,

@@ -12,11 +12,11 @@ use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
 use super::lookup;
-use crate::app_server_session::AppServerSession;
-use crate::app_server_session::ThreadParamsMode;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
-use crate::tests::start_test_embedded_app_server;
+use crate::runtime_session::CliRuntimeSession;
+use crate::runtime_session::ThreadParamsMode;
+use crate::tests::start_test_embedded_cli_runtime;
 
 async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
     ConfigBuilder::default()
@@ -43,14 +43,14 @@ async fn lookup_name(
     config: &Config,
     name: &str,
 ) -> color_eyre::Result<Option<crate::resume_picker::SessionTarget>> {
-    let mut app_server = AppServerSession::new(
-        codex_app_server_client::AppServerClient::InProcess(
-            start_test_embedded_app_server(config.clone()).await?,
+    let mut cli_runtime = CliRuntimeSession::new(
+        codex_cli_runtime_client::CliRuntimeClient::InProcess(
+            start_test_embedded_cli_runtime(config.clone()).await?,
         ),
         ThreadParamsMode::Embedded,
     );
-    let target = lookup(&mut app_server, config, name).await?;
-    app_server.shutdown().await?;
+    let target = lookup(&mut cli_runtime, config, name).await?;
+    cli_runtime.shutdown().await?;
     Ok(target)
 }
 

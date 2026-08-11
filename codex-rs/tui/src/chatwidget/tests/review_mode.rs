@@ -144,10 +144,10 @@ async fn live_review_prompt_item_is_not_rendered() {
 }
 
 #[tokio::test]
-async fn live_app_server_review_prompt_item_is_not_rendered() {
+async fn live_cli_runtime_review_prompt_item_is_not_rendered() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    let review_mode_item = AppServerThreadItem::EnteredReviewMode {
+    let review_mode_item = CliRuntimeThreadItem::EnteredReviewMode {
         id: "review-start".to_string(),
         review: "changes against 'main'".to_string(),
     };
@@ -180,10 +180,10 @@ async fn live_app_server_review_prompt_item_is_not_rendered() {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             completed_at_ms: 0,
-            item: AppServerThreadItem::UserMessage {
+            item: CliRuntimeThreadItem::UserMessage {
                 id: "review-prompt".to_string(),
                 client_id: None,
-                content: vec![AppServerUserInput::Text {
+                content: vec![CliRuntimeUserInput::Text {
                     text: "Review the code changes against the base branch 'main'.".to_string(),
                     text_elements: Vec::new(),
                 }],
@@ -1220,14 +1220,14 @@ async fn interrupted_turn_after_goal_budget_limited_uses_budget_message_snapshot
     chat.set_feature_enabled(Feature::Goals, /*enabled*/ true);
 
     chat.handle_server_notification(
-        codex_app_server_protocol::ServerNotification::TurnStarted(
-            codex_app_server_protocol::TurnStartedNotification {
+        codex_cli_protocol::ServerNotification::TurnStarted(
+            codex_cli_protocol::TurnStartedNotification {
                 thread_id: "thread-1".to_string(),
-                turn: codex_app_server_protocol::Turn {
+                turn: codex_cli_protocol::Turn {
                     id: "turn-1".to_string(),
-                    items_view: codex_app_server_protocol::TurnItemsView::Full,
+                    items_view: codex_cli_protocol::TurnItemsView::Full,
                     items: Vec::new(),
-                    status: codex_app_server_protocol::TurnStatus::InProgress,
+                    status: codex_cli_protocol::TurnStatus::InProgress,
                     error: None,
                     started_at: None,
                     completed_at: None,
@@ -1238,14 +1238,14 @@ async fn interrupted_turn_after_goal_budget_limited_uses_budget_message_snapshot
         /*replay_kind*/ None,
     );
     chat.handle_server_notification(
-        codex_app_server_protocol::ServerNotification::ThreadGoalUpdated(
-            codex_app_server_protocol::ThreadGoalUpdatedNotification {
+        codex_cli_protocol::ServerNotification::ThreadGoalUpdated(
+            codex_cli_protocol::ThreadGoalUpdatedNotification {
                 thread_id: "thread-1".to_string(),
                 turn_id: Some("turn-1".to_string()),
-                goal: codex_app_server_protocol::ThreadGoal {
+                goal: codex_cli_protocol::ThreadGoal {
                     thread_id: "thread-1".to_string(),
                     objective: "Run until the token budget is limited".to_string(),
-                    status: codex_app_server_protocol::ThreadGoalStatus::BudgetLimited,
+                    status: codex_cli_protocol::ThreadGoalStatus::BudgetLimited,
                     token_budget: Some(10_000),
                     tokens_used: 10_500,
                     time_used_seconds: 0,
@@ -1257,14 +1257,14 @@ async fn interrupted_turn_after_goal_budget_limited_uses_budget_message_snapshot
         /*replay_kind*/ None,
     );
     chat.handle_server_notification(
-        codex_app_server_protocol::ServerNotification::TurnCompleted(
-            codex_app_server_protocol::TurnCompletedNotification {
+        codex_cli_protocol::ServerNotification::TurnCompleted(
+            codex_cli_protocol::TurnCompletedNotification {
                 thread_id: "thread-1".to_string(),
-                turn: codex_app_server_protocol::Turn {
+                turn: codex_cli_protocol::Turn {
                     id: "turn-1".to_string(),
-                    items_view: codex_app_server_protocol::TurnItemsView::Full,
+                    items_view: codex_cli_protocol::TurnItemsView::Full,
                     items: Vec::new(),
-                    status: codex_app_server_protocol::TurnStatus::Interrupted,
+                    status: codex_cli_protocol::TurnStatus::Interrupted,
                     error: None,
                     started_at: None,
                     completed_at: None,

@@ -13,7 +13,7 @@ pub const SESSION_SOURCE_TAG: &str = "session_source";
 const OTHER_ORIGINATOR_TAG_VALUE: &str = "other";
 const KNOWN_ORIGINATOR_TAG_VALUES: &[&str] = &[
     "codex_desktop",
-    "codex-app-server",
+    "codex-cli-runtime",
     "codex_cli_rs",
     "codex-tui",
     "codex_vscode",
@@ -21,7 +21,7 @@ const KNOWN_ORIGINATOR_TAG_VALUES: &[&str] = &[
     "codex_exec",
     "codex-cli",
     "codex_sdk_ts",
-    "codex-app-server-sdk",
+    "codex-cli-runtime-sdk",
 ];
 
 /// Return a known low-cardinality originator tag value, or `other`.

@@ -13,7 +13,6 @@ use tokio_stream::StreamExt;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
-use crate::app_server_session::AppServerSession;
 use crate::bottom_pane::BottomPaneView;
 use crate::bottom_pane::ListSelectionView;
 use crate::bottom_pane::SelectionItem;
@@ -29,10 +28,11 @@ use crate::keymap::RuntimeKeymap;
 use crate::legacy_core::config::Config;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::Renderable;
+use crate::runtime_session::CliRuntimeSession;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
-use codex_app_server_client::AppServerRequestHandle;
-use codex_app_server_protocol::HooksListEntry;
+use codex_cli_protocol::HooksListEntry;
+use codex_cli_runtime_client::CliRuntimeRequestHandle;
 use std::path::PathBuf;
 
 pub(crate) enum StartupHooksReviewOutcome {
@@ -48,7 +48,7 @@ enum StartupHooksReviewSelection {
 }
 
 pub(crate) async fn load_startup_hooks_review_entry(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
 ) -> HooksListEntry {
     let response = match fetch_hooks_list(request_handle, cwd.clone()).await {
@@ -67,7 +67,7 @@ pub(crate) async fn load_startup_hooks_review_entry(
 }
 
 pub(crate) async fn maybe_run_startup_hooks_review(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     tui: &mut Tui,
     config: &Config,
     bypass_hook_trust: bool,
@@ -77,11 +77,11 @@ pub(crate) async fn maybe_run_startup_hooks_review(
         return Ok(StartupHooksReviewOutcome::Continue);
     }
 
-    run_startup_hooks_review_app(app_server, tui, config, entry).await
+    run_startup_hooks_review_app(cli_runtime, tui, config, entry).await
 }
 
 async fn run_startup_hooks_review_app(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     tui: &mut Tui,
     config: &Config,
     entry: HooksListEntry,
@@ -147,7 +147,7 @@ async fn run_startup_hooks_review_app(
                         );
                         draw_view(tui, &view)?;
                         let result = write_hook_trusts(
-                            app_server.request_handle(),
+                            cli_runtime.request_handle(),
                             entry
                                 .hooks
                                 .iter()
@@ -304,12 +304,12 @@ mod tests {
     use crate::render::renderable::Renderable;
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
-    use codex_app_server_protocol::HookEventName;
-    use codex_app_server_protocol::HookHandlerType;
-    use codex_app_server_protocol::HookMetadata;
-    use codex_app_server_protocol::HookSource;
-    use codex_app_server_protocol::HookTrustStatus;
-    use codex_app_server_protocol::HooksListEntry;
+    use codex_cli_protocol::HookEventName;
+    use codex_cli_protocol::HookHandlerType;
+    use codex_cli_protocol::HookMetadata;
+    use codex_cli_protocol::HookSource;
+    use codex_cli_protocol::HookTrustStatus;
+    use codex_cli_protocol::HooksListEntry;
     use insta::assert_snapshot;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;

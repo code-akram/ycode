@@ -289,13 +289,13 @@ impl ChatWidget {
         self.input_queue.has_queued_follow_up_messages()
     }
 
-    pub(super) fn handle_app_server_steer_rejected_error(
+    pub(super) fn handle_cli_runtime_steer_rejected_error(
         &mut self,
-        codex_error_info: &AppServerCodexErrorInfo,
+        codex_error_info: &CliRuntimeCodexErrorInfo,
     ) -> bool {
         matches!(
             codex_error_info,
-            AppServerCodexErrorInfo::ActiveTurnNotSteerable { .. }
+            CliRuntimeCodexErrorInfo::ActiveTurnNotSteerable { .. }
         ) && self.enqueue_rejected_steer()
     }
 
@@ -427,15 +427,15 @@ impl ChatWidget {
     pub(super) fn handle_non_retry_error(
         &mut self,
         message: String,
-        codex_error_info: Option<AppServerCodexErrorInfo>,
+        codex_error_info: Option<CliRuntimeCodexErrorInfo>,
     ) {
         if codex_error_info
             .as_ref()
-            .is_some_and(|info| self.handle_app_server_steer_rejected_error(info))
+            .is_some_and(|info| self.handle_cli_runtime_steer_rejected_error(info))
         {
         } else if codex_error_info
             .as_ref()
-            .is_some_and(is_app_server_cyber_policy_error)
+            .is_some_and(is_cli_runtime_cyber_policy_error)
         {
             self.on_cyber_policy_error();
         } else if is_safety_access_block_message(&message)
@@ -453,7 +453,7 @@ impl ChatWidget {
             self.maybe_send_next_queued_input();
         } else if let Some(info) = codex_error_info
             .as_ref()
-            .and_then(app_server_rate_limit_error_kind)
+            .and_then(cli_runtime_rate_limit_error_kind)
         {
             match info {
                 RateLimitErrorKind::ServerOverloaded => self.on_server_overloaded_error(message),
@@ -475,11 +475,11 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    pub(super) fn on_app_server_model_verification(
+    pub(super) fn on_cli_runtime_model_verification(
         &mut self,
-        verifications: &[AppServerModelVerification],
+        verifications: &[CliRuntimeModelVerification],
     ) {
-        if verifications.contains(&AppServerModelVerification::TrustedAccessForCyber) {
+        if verifications.contains(&CliRuntimeModelVerification::TrustedAccessForCyber) {
             self.on_warning(TRUSTED_ACCESS_FOR_CYBER_VERIFICATION_WARNING);
         }
     }

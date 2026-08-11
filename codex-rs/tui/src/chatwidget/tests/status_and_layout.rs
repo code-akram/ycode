@@ -2,7 +2,7 @@ use super::*;
 use crate::bottom_pane::goal_status_indicator_line;
 use crate::chatwidget::rate_limits::NUDGE_MODEL_SLUG;
 use crate::chatwidget::rate_limits::get_limits_duration;
-use codex_app_server_protocol::SpendControlLimitSnapshot;
+use codex_cli_protocol::SpendControlLimitSnapshot;
 use pretty_assertions::assert_eq;
 use ratatui::backend::TestBackend;
 use serial_test::serial;
@@ -88,7 +88,7 @@ async fn resumed_session_hides_unknown_token_usage_until_an_update_arrives() {
 }
 
 #[tokio::test]
-async fn app_server_cyber_policy_error_renders_dedicated_notice() {
+async fn cli_runtime_cyber_policy_error_renders_dedicated_notice() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 
     handle_error(
@@ -106,12 +106,12 @@ async fn app_server_cyber_policy_error_renders_dedicated_notice() {
 }
 
 #[tokio::test]
-async fn app_server_model_verification_renders_warning() {
+async fn cli_runtime_model_verification_renders_warning() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 
     handle_model_verification(
         &mut chat,
-        vec![AppServerModelVerification::TrustedAccessForCyber],
+        vec![CliRuntimeModelVerification::TrustedAccessForCyber],
     );
 
     let cells = drain_insert_history(&mut rx);
@@ -2120,13 +2120,11 @@ fn update_thread_goal(chat: &mut ChatWidget, thread_id: ThreadId, status: AppThr
     let thread_id = thread_id.to_string();
     goal.thread_id = thread_id.clone();
     chat.handle_server_notification(
-        ServerNotification::ThreadGoalUpdated(
-            codex_app_server_protocol::ThreadGoalUpdatedNotification {
-                thread_id,
-                turn_id: None,
-                goal,
-            },
-        ),
+        ServerNotification::ThreadGoalUpdated(codex_cli_protocol::ThreadGoalUpdatedNotification {
+            thread_id,
+            turn_id: None,
+            goal,
+        }),
         /*replay_kind*/ None,
     );
 }
@@ -3056,7 +3054,7 @@ async fn interrupted_turn_clears_visible_running_hook() {
         &mut chat,
         hook_started_run(
             "pre-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PreToolUse,
+            codex_cli_protocol::HookEventName::PreToolUse,
             Some("checking command policy"),
         ),
     );
@@ -3082,7 +3080,7 @@ async fn completed_turn_clears_visible_running_hook() {
         &mut chat,
         hook_started_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookEventName::PostToolUse,
             /*status_message*/ None,
         ),
     );
@@ -3279,12 +3277,10 @@ async fn renamed_thread_footer_title_snapshot() {
     let thread_id = ThreadId::new();
     chat.thread_id = Some(thread_id);
     chat.handle_server_notification(
-        ServerNotification::ThreadNameUpdated(
-            codex_app_server_protocol::ThreadNameUpdatedNotification {
-                thread_id: thread_id.to_string(),
-                thread_name: Some("Roadmap cleanup".to_string()),
-            },
-        ),
+        ServerNotification::ThreadNameUpdated(codex_cli_protocol::ThreadNameUpdatedNotification {
+            thread_id: thread_id.to_string(),
+            thread_name: Some("Roadmap cleanup".to_string()),
+        }),
         /*replay_kind*/ None,
     );
 
@@ -3379,17 +3375,15 @@ async fn status_line_goal_active_token_budget_footer_snapshot() {
     chat.config.tui_status_line = Some(vec!["model-name".to_string()]);
     chat.refresh_status_line();
     chat.handle_server_notification(
-        ServerNotification::ThreadGoalUpdated(
-            codex_app_server_protocol::ThreadGoalUpdatedNotification {
-                thread_id: "thread-1".to_string(),
-                turn_id: None,
-                goal: test_thread_goal(
-                    codex_app_server_protocol::ThreadGoalStatus::Active,
-                    /*token_budget*/ Some(50_000),
-                    /*tokens_used*/ 40_000,
-                ),
-            },
-        ),
+        ServerNotification::ThreadGoalUpdated(codex_cli_protocol::ThreadGoalUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: None,
+            goal: test_thread_goal(
+                codex_cli_protocol::ThreadGoalStatus::Active,
+                /*token_budget*/ Some(50_000),
+                /*tokens_used*/ 40_000,
+            ),
+        }),
         /*replay_kind*/ None,
     );
 
@@ -3416,19 +3410,17 @@ async fn status_line_goal_complete_elapsed_footer_snapshot() {
     chat.config.tui_status_line = Some(vec!["model-name".to_string()]);
     chat.refresh_status_line();
     let mut goal = test_thread_goal(
-        codex_app_server_protocol::ThreadGoalStatus::Complete,
+        codex_cli_protocol::ThreadGoalStatus::Complete,
         /*token_budget*/ None,
         /*tokens_used*/ 40_000,
     );
     goal.time_used_seconds = 2 * 24 * 60 * 60 + 23 * 60 * 60 + 42 * 60;
     chat.handle_server_notification(
-        ServerNotification::ThreadGoalUpdated(
-            codex_app_server_protocol::ThreadGoalUpdatedNotification {
-                thread_id: "thread-1".to_string(),
-                turn_id: None,
-                goal,
-            },
-        ),
+        ServerNotification::ThreadGoalUpdated(codex_cli_protocol::ThreadGoalUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: None,
+            goal,
+        }),
         /*replay_kind*/ None,
     );
 
@@ -3449,17 +3441,15 @@ async fn session_configured_clears_goal_status_footer() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.set_feature_enabled(Feature::Goals, /*enabled*/ true);
     chat.handle_server_notification(
-        ServerNotification::ThreadGoalUpdated(
-            codex_app_server_protocol::ThreadGoalUpdatedNotification {
-                thread_id: "thread-1".to_string(),
-                turn_id: None,
-                goal: test_thread_goal(
-                    codex_app_server_protocol::ThreadGoalStatus::Active,
-                    /*token_budget*/ Some(50_000),
-                    /*tokens_used*/ 40_000,
-                ),
-            },
-        ),
+        ServerNotification::ThreadGoalUpdated(codex_cli_protocol::ThreadGoalUpdatedNotification {
+            thread_id: "thread-1".to_string(),
+            turn_id: None,
+            goal: test_thread_goal(
+                codex_cli_protocol::ThreadGoalStatus::Active,
+                /*token_budget*/ Some(50_000),
+                /*tokens_used*/ 40_000,
+            ),
+        }),
         /*replay_kind*/ None,
     );
     assert_eq!(
@@ -3507,20 +3497,18 @@ async fn thread_goal_update_for_other_thread_is_ignored() {
     chat.thread_id = Some(ThreadId::new());
     let other_thread_id = ThreadId::new().to_string();
     let mut goal = test_thread_goal(
-        codex_app_server_protocol::ThreadGoalStatus::BudgetLimited,
+        codex_cli_protocol::ThreadGoalStatus::BudgetLimited,
         /*token_budget*/ Some(50_000),
         /*tokens_used*/ 50_000,
     );
     goal.thread_id = other_thread_id.clone();
 
     chat.handle_server_notification(
-        ServerNotification::ThreadGoalUpdated(
-            codex_app_server_protocol::ThreadGoalUpdatedNotification {
-                thread_id: other_thread_id,
-                turn_id: Some("turn-other".to_string()),
-                goal,
-            },
-        ),
+        ServerNotification::ThreadGoalUpdated(codex_cli_protocol::ThreadGoalUpdatedNotification {
+            thread_id: other_thread_id,
+            turn_id: Some("turn-other".to_string()),
+            goal,
+        }),
         /*replay_kind*/ None,
     );
 
@@ -3533,7 +3521,7 @@ async fn thread_goal_update_for_other_thread_is_ignored() {
 fn goal_status_indicator_formats_statuses_and_budgets() {
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
-            codex_app_server_protocol::ThreadGoalStatus::Active,
+            codex_cli_protocol::ThreadGoalStatus::Active,
             /*token_budget*/ Some(50_000),
             /*tokens_used*/ 40_000,
         )),
@@ -3543,7 +3531,7 @@ fn goal_status_indicator_formats_statuses_and_budgets() {
     );
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
-            codex_app_server_protocol::ThreadGoalStatus::Active,
+            codex_cli_protocol::ThreadGoalStatus::Active,
             /*token_budget*/ None,
             /*tokens_used*/ 0,
         )),
@@ -3553,7 +3541,7 @@ fn goal_status_indicator_formats_statuses_and_budgets() {
     );
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
-            codex_app_server_protocol::ThreadGoalStatus::Blocked,
+            codex_cli_protocol::ThreadGoalStatus::Blocked,
             /*token_budget*/ None,
             /*tokens_used*/ 0,
         )),
@@ -3561,7 +3549,7 @@ fn goal_status_indicator_formats_statuses_and_budgets() {
     );
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
-            codex_app_server_protocol::ThreadGoalStatus::UsageLimited,
+            codex_cli_protocol::ThreadGoalStatus::UsageLimited,
             /*token_budget*/ None,
             /*tokens_used*/ 0,
         )),
@@ -3569,7 +3557,7 @@ fn goal_status_indicator_formats_statuses_and_budgets() {
     );
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
-            codex_app_server_protocol::ThreadGoalStatus::BudgetLimited,
+            codex_cli_protocol::ThreadGoalStatus::BudgetLimited,
             /*token_budget*/ Some(50_000),
             /*tokens_used*/ 51_000,
         )),
@@ -3579,7 +3567,7 @@ fn goal_status_indicator_formats_statuses_and_budgets() {
     );
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
-            codex_app_server_protocol::ThreadGoalStatus::BudgetLimited,
+            codex_cli_protocol::ThreadGoalStatus::BudgetLimited,
             /*token_budget*/ None,
             /*tokens_used*/ 0,
         )),
@@ -3587,7 +3575,7 @@ fn goal_status_indicator_formats_statuses_and_budgets() {
     );
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
-            codex_app_server_protocol::ThreadGoalStatus::Complete,
+            codex_cli_protocol::ThreadGoalStatus::Complete,
             /*token_budget*/ Some(50_000),
             /*tokens_used*/ 40_000,
         )),
@@ -3647,11 +3635,11 @@ fn goal_status_indicator_line_formats_goal_text() {
 }
 
 fn test_thread_goal(
-    status: codex_app_server_protocol::ThreadGoalStatus,
+    status: codex_cli_protocol::ThreadGoalStatus,
     token_budget: Option<i64>,
     tokens_used: i64,
-) -> codex_app_server_protocol::ThreadGoal {
-    codex_app_server_protocol::ThreadGoal {
+) -> codex_cli_protocol::ThreadGoal {
+    codex_cli_protocol::ThreadGoal {
         thread_id: "thread-1".to_string(),
         objective: "Keep improving the benchmark".to_string(),
         status,
@@ -3991,23 +3979,23 @@ async fn reasoning_delta_restores_recreated_status_indicator_header() {
 }
 
 #[tokio::test]
-async fn user_prompt_submit_app_server_hook_notifications_render_snapshot() {
+async fn user_prompt_submit_cli_runtime_hook_notifications_render_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.handle_server_notification(
-        ServerNotification::HookStarted(AppServerHookStartedNotification {
+        ServerNotification::HookStarted(CliRuntimeHookStartedNotification {
             thread_id: ThreadId::new().to_string(),
             turn_id: Some("turn-1".to_string()),
-            run: AppServerHookRunSummary {
+            run: CliRuntimeHookRunSummary {
                 id: "user-prompt-submit:0:/tmp/hooks.json".to_string(),
-                event_name: AppServerHookEventName::UserPromptSubmit,
-                handler_type: AppServerHookHandlerType::Command,
-                execution_mode: AppServerHookExecutionMode::Sync,
-                scope: AppServerHookScope::Turn,
+                event_name: CliRuntimeHookEventName::UserPromptSubmit,
+                handler_type: CliRuntimeHookHandlerType::Command,
+                execution_mode: CliRuntimeHookExecutionMode::Sync,
+                scope: CliRuntimeHookScope::Turn,
                 source_path: PathBuf::from(test_path_display("/tmp/hooks.json")).abs(),
-                source: codex_app_server_protocol::HookSource::User,
+                source: codex_cli_protocol::HookSource::User,
                 display_order: 0,
-                status: AppServerHookRunStatus::Running,
+                status: CliRuntimeHookRunStatus::Running,
                 status_message: Some("checking go-workflow input policy".to_string()),
                 started_at: 1,
                 completed_at: None,
@@ -4018,30 +4006,30 @@ async fn user_prompt_submit_app_server_hook_notifications_render_snapshot() {
         /*replay_kind*/ None,
     );
     chat.handle_server_notification(
-        ServerNotification::HookCompleted(AppServerHookCompletedNotification {
+        ServerNotification::HookCompleted(CliRuntimeHookCompletedNotification {
             thread_id: ThreadId::new().to_string(),
             turn_id: Some("turn-1".to_string()),
-            run: AppServerHookRunSummary {
+            run: CliRuntimeHookRunSummary {
                 id: "user-prompt-submit:0:/tmp/hooks.json".to_string(),
-                event_name: AppServerHookEventName::UserPromptSubmit,
-                handler_type: AppServerHookHandlerType::Command,
-                execution_mode: AppServerHookExecutionMode::Sync,
-                scope: AppServerHookScope::Turn,
+                event_name: CliRuntimeHookEventName::UserPromptSubmit,
+                handler_type: CliRuntimeHookHandlerType::Command,
+                execution_mode: CliRuntimeHookExecutionMode::Sync,
+                scope: CliRuntimeHookScope::Turn,
                 source_path: PathBuf::from(test_path_display("/tmp/hooks.json")).abs(),
-                source: codex_app_server_protocol::HookSource::User,
+                source: codex_cli_protocol::HookSource::User,
                 display_order: 0,
-                status: AppServerHookRunStatus::Stopped,
+                status: CliRuntimeHookRunStatus::Stopped,
                 status_message: Some("checking go-workflow input policy".to_string()),
                 started_at: 1,
                 completed_at: Some(11),
                 duration_ms: Some(10),
                 entries: vec![
-                    AppServerHookOutputEntry {
-                        kind: AppServerHookOutputEntryKind::Warning,
+                    CliRuntimeHookOutputEntry {
+                        kind: CliRuntimeHookOutputEntryKind::Warning,
                         text: "go-workflow must start from PlanMode".to_string(),
                     },
-                    AppServerHookOutputEntry {
-                        kind: AppServerHookOutputEntryKind::Stop,
+                    CliRuntimeHookOutputEntry {
+                        kind: CliRuntimeHookOutputEntryKind::Stop,
                         text: "prompt blocked".to_string(),
                     },
                 ],
@@ -4056,7 +4044,7 @@ async fn user_prompt_submit_app_server_hook_notifications_render_snapshot() {
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
     assert_chatwidget_snapshot!(
-        "user_prompt_submit_app_server_hook_notifications_render_snapshot",
+        "user_prompt_submit_cli_runtime_hook_notifications_render_snapshot",
         combined
     );
     assert!(!chat.bottom_pane.status_indicator_visible());
@@ -4065,7 +4053,7 @@ async fn user_prompt_submit_app_server_hook_notifications_render_snapshot() {
 #[tokio::test]
 async fn pre_tool_use_hook_events_render_snapshot() {
     assert_hook_events_snapshot(
-        codex_app_server_protocol::HookEventName::PreToolUse,
+        codex_cli_protocol::HookEventName::PreToolUse,
         "pre-tool-use:0:/tmp/hooks.json",
         "warming the shell",
         "pre_tool_use_hook_events_render_snapshot",
@@ -4076,7 +4064,7 @@ async fn pre_tool_use_hook_events_render_snapshot() {
 #[tokio::test]
 async fn post_tool_use_hook_events_render_snapshot() {
     assert_hook_events_snapshot(
-        codex_app_server_protocol::HookEventName::PostToolUse,
+        codex_cli_protocol::HookEventName::PostToolUse,
         "post-tool-use:0:/tmp/hooks.json",
         "warming the shell",
         "post_tool_use_hook_events_render_snapshot",
@@ -4092,7 +4080,7 @@ async fn completed_hook_with_no_entries_stays_out_of_history() {
         &mut chat,
         hook_started_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookEventName::PostToolUse,
             /*status_message*/ None,
         ),
     );
@@ -4104,8 +4092,8 @@ async fn completed_hook_with_no_entries_stays_out_of_history() {
         &mut chat,
         hook_completed_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
-            codex_app_server_protocol::HookRunStatus::Completed,
+            codex_cli_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookRunStatus::Completed,
             Vec::new(),
         ),
     );
@@ -4129,7 +4117,7 @@ async fn quiet_hook_linger_starts_when_delayed_redraw_reveals_hook() {
         &mut chat,
         hook_started_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookEventName::PostToolUse,
             Some("checking output policy"),
         ),
     );
@@ -4140,8 +4128,8 @@ async fn quiet_hook_linger_starts_when_delayed_redraw_reveals_hook() {
         &mut chat,
         hook_completed_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
-            codex_app_server_protocol::HookRunStatus::Completed,
+            codex_cli_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookRunStatus::Completed,
             Vec::new(),
         ),
     );
@@ -4163,10 +4151,10 @@ async fn blocked_and_failed_hooks_render_feedback_and_errors() {
         &mut chat,
         hook_completed_run(
             "pre-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PreToolUse,
-            codex_app_server_protocol::HookRunStatus::Blocked,
-            vec![codex_app_server_protocol::HookOutputEntry {
-                kind: codex_app_server_protocol::HookOutputEntryKind::Feedback,
+            codex_cli_protocol::HookEventName::PreToolUse,
+            codex_cli_protocol::HookRunStatus::Blocked,
+            vec![codex_cli_protocol::HookOutputEntry {
+                kind: codex_cli_protocol::HookOutputEntryKind::Feedback,
                 text: "run tests before touching the fixture".to_string(),
             }],
         ),
@@ -4175,10 +4163,10 @@ async fn blocked_and_failed_hooks_render_feedback_and_errors() {
         &mut chat,
         hook_completed_run(
             "post-tool-use:1:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
-            codex_app_server_protocol::HookRunStatus::Failed,
-            vec![codex_app_server_protocol::HookOutputEntry {
-                kind: codex_app_server_protocol::HookOutputEntryKind::Error,
+            codex_cli_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookRunStatus::Failed,
+            vec![codex_cli_protocol::HookOutputEntry {
+                kind: codex_cli_protocol::HookOutputEntryKind::Error,
                 text: "hook exited with code 7".to_string(),
             }],
         ),
@@ -4209,7 +4197,7 @@ async fn completed_hook_with_output_flushes_immediately() {
         &mut chat,
         hook_started_run(
             "pre-tool-use:0:/tmp/hooks.json:tool-call-1",
-            codex_app_server_protocol::HookEventName::PreToolUse,
+            codex_cli_protocol::HookEventName::PreToolUse,
             Some("checking command"),
         ),
     );
@@ -4220,10 +4208,10 @@ async fn completed_hook_with_output_flushes_immediately() {
         &mut chat,
         hook_completed_run(
             "pre-tool-use:0:/tmp/hooks.json:tool-call-1",
-            codex_app_server_protocol::HookEventName::PreToolUse,
-            codex_app_server_protocol::HookRunStatus::Blocked,
-            vec![codex_app_server_protocol::HookOutputEntry {
-                kind: codex_app_server_protocol::HookOutputEntryKind::Feedback,
+            codex_cli_protocol::HookEventName::PreToolUse,
+            codex_cli_protocol::HookRunStatus::Blocked,
+            vec![codex_cli_protocol::HookOutputEntry {
+                kind: codex_cli_protocol::HookOutputEntryKind::Feedback,
                 text: "command blocked by policy".to_string(),
             }],
         ),
@@ -4248,7 +4236,7 @@ async fn completed_hook_output_precedes_following_assistant_message() {
         &mut chat,
         hook_started_run(
             "pre-tool-use:0:/tmp/hooks.json:tool-call-1",
-            codex_app_server_protocol::HookEventName::PreToolUse,
+            codex_cli_protocol::HookEventName::PreToolUse,
             Some("checking command"),
         ),
     );
@@ -4258,10 +4246,10 @@ async fn completed_hook_output_precedes_following_assistant_message() {
         &mut chat,
         hook_completed_run(
             "pre-tool-use:0:/tmp/hooks.json:tool-call-1",
-            codex_app_server_protocol::HookEventName::PreToolUse,
-            codex_app_server_protocol::HookRunStatus::Blocked,
-            vec![codex_app_server_protocol::HookOutputEntry {
-                kind: codex_app_server_protocol::HookOutputEntryKind::Feedback,
+            codex_cli_protocol::HookEventName::PreToolUse,
+            codex_cli_protocol::HookRunStatus::Blocked,
+            vec![codex_cli_protocol::HookOutputEntry {
+                kind: codex_cli_protocol::HookOutputEntryKind::Feedback,
                 text: "command blocked by policy".to_string(),
             }],
         ),
@@ -4306,7 +4294,7 @@ async fn completed_same_id_hook_output_survives_restart() {
         &mut chat,
         hook_started_run(
             hook_id,
-            codex_app_server_protocol::HookEventName::Stop,
+            codex_cli_protocol::HookEventName::Stop,
             Some("checking stop condition"),
         ),
     );
@@ -4315,10 +4303,10 @@ async fn completed_same_id_hook_output_survives_restart() {
         &mut chat,
         hook_completed_run(
             hook_id,
-            codex_app_server_protocol::HookEventName::Stop,
-            codex_app_server_protocol::HookRunStatus::Stopped,
-            vec![codex_app_server_protocol::HookOutputEntry {
-                kind: codex_app_server_protocol::HookOutputEntryKind::Stop,
+            codex_cli_protocol::HookEventName::Stop,
+            codex_cli_protocol::HookRunStatus::Stopped,
+            vec![codex_cli_protocol::HookOutputEntry {
+                kind: codex_cli_protocol::HookOutputEntryKind::Stop,
                 text: "continue with more context".to_string(),
             }],
         ),
@@ -4327,7 +4315,7 @@ async fn completed_same_id_hook_output_survives_restart() {
         &mut chat,
         hook_started_run(
             hook_id,
-            codex_app_server_protocol::HookEventName::Stop,
+            codex_cli_protocol::HookEventName::Stop,
             Some("checking stop condition"),
         ),
     );
@@ -4359,7 +4347,7 @@ async fn identical_parallel_running_hooks_collapse_to_count() {
             &mut chat,
             hook_started_run(
                 &format!("pre-tool-use:0:/tmp/hooks.json:{tool_call_id}"),
-                codex_app_server_protocol::HookEventName::PreToolUse,
+                codex_cli_protocol::HookEventName::PreToolUse,
                 Some("checking command policy"),
             ),
         );
@@ -4383,7 +4371,7 @@ async fn overlapping_hook_live_cell_tracks_parallel_quiet_hooks() {
         &mut chat,
         hook_started_run(
             "pre-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PreToolUse,
+            codex_cli_protocol::HookEventName::PreToolUse,
             Some("checking command policy"),
         ),
     );
@@ -4395,7 +4383,7 @@ async fn overlapping_hook_live_cell_tracks_parallel_quiet_hooks() {
         &mut chat,
         hook_started_run(
             "post-tool-use:1:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookEventName::PostToolUse,
             Some("checking output policy"),
         ),
     );
@@ -4407,8 +4395,8 @@ async fn overlapping_hook_live_cell_tracks_parallel_quiet_hooks() {
         &mut chat,
         hook_completed_run(
             "pre-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PreToolUse,
-            codex_app_server_protocol::HookRunStatus::Completed,
+            codex_cli_protocol::HookEventName::PreToolUse,
+            codex_cli_protocol::HookRunStatus::Completed,
             Vec::new(),
         ),
     );
@@ -4423,8 +4411,8 @@ async fn overlapping_hook_live_cell_tracks_parallel_quiet_hooks() {
         &mut chat,
         hook_completed_run(
             "post-tool-use:1:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
-            codex_app_server_protocol::HookRunStatus::Completed,
+            codex_cli_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookRunStatus::Completed,
             Vec::new(),
         ),
     );
@@ -4454,7 +4442,7 @@ async fn running_hook_does_not_displace_active_exec_cell() {
         &mut chat,
         hook_started_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookEventName::PostToolUse,
             Some("checking output policy"),
         ),
     );
@@ -4476,8 +4464,8 @@ async fn running_hook_does_not_displace_active_exec_cell() {
         &mut chat,
         hook_completed_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
-            codex_app_server_protocol::HookRunStatus::Completed,
+            codex_cli_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookRunStatus::Completed,
             Vec::new(),
         ),
     );
@@ -4508,7 +4496,7 @@ async fn hidden_active_hook_does_not_add_transcript_separator() {
         &mut chat,
         hook_started_run(
             "post-tool-use:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::PostToolUse,
+            codex_cli_protocol::HookEventName::PostToolUse,
             Some("checking output policy"),
         ),
     );
@@ -4546,7 +4534,7 @@ async fn hook_completed_before_reveal_renders_completed_without_running_flash() 
         &mut chat,
         hook_started_run(
             "session-start:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::SessionStart,
+            codex_cli_protocol::HookEventName::SessionStart,
             Some("warming the shell"),
         ),
     );
@@ -4556,10 +4544,10 @@ async fn hook_completed_before_reveal_renders_completed_without_running_flash() 
         &mut chat,
         hook_completed_run(
             "session-start:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::SessionStart,
-            codex_app_server_protocol::HookRunStatus::Completed,
-            vec![codex_app_server_protocol::HookOutputEntry {
-                kind: codex_app_server_protocol::HookOutputEntryKind::Context,
+            codex_cli_protocol::HookEventName::SessionStart,
+            codex_cli_protocol::HookRunStatus::Completed,
+            vec![codex_cli_protocol::HookOutputEntry {
+                kind: codex_cli_protocol::HookOutputEntryKind::Context,
                 text: "session context\nsecond line".to_string(),
             }],
         ),
@@ -4583,16 +4571,16 @@ async fn long_hook_context_is_truncated_with_transcript_hint_snapshot() {
         &mut chat,
         hook_completed_run(
             "session-start:0:/tmp/hooks.json",
-            codex_app_server_protocol::HookEventName::SessionStart,
-            codex_app_server_protocol::HookRunStatus::Stopped,
+            codex_cli_protocol::HookEventName::SessionStart,
+            codex_cli_protocol::HookRunStatus::Stopped,
             vec![
-                codex_app_server_protocol::HookOutputEntry {
-                    kind: codex_app_server_protocol::HookOutputEntryKind::Context,
+                codex_cli_protocol::HookOutputEntry {
+                    kind: codex_cli_protocol::HookOutputEntryKind::Context,
                     text: "This hook context is intentionally long enough to wrap across several terminal rows while keeping the complete value available in the transcript overlay. The main conversation should stay compact even when a hook injects a large block of instructions for the model."
                         .to_string(),
                 },
-                codex_app_server_protocol::HookOutputEntry {
-                    kind: codex_app_server_protocol::HookOutputEntryKind::Stop,
+                codex_cli_protocol::HookOutputEntry {
+                    kind: codex_cli_protocol::HookOutputEntryKind::Stop,
                     text: "The hook stopped this turn for an important reason.\nThis second line must remain visible in full."
                         .to_string(),
                 },
@@ -4613,7 +4601,7 @@ async fn long_hook_context_is_truncated_with_transcript_hint_snapshot() {
 #[tokio::test]
 async fn session_start_hook_events_render_snapshot() {
     assert_hook_events_snapshot(
-        codex_app_server_protocol::HookEventName::SessionStart,
+        codex_cli_protocol::HookEventName::SessionStart,
         "session-start:0:/tmp/hooks.json",
         "warming the shell",
         "session_start_hook_events_render_snapshot",
@@ -4623,13 +4611,13 @@ async fn session_start_hook_events_render_snapshot() {
 
 fn hook_started_run(
     id: &str,
-    event_name: codex_app_server_protocol::HookEventName,
+    event_name: codex_cli_protocol::HookEventName,
     status_message: Option<&str>,
-) -> codex_app_server_protocol::HookRunSummary {
+) -> codex_cli_protocol::HookRunSummary {
     hook_run_summary(
         id,
         event_name,
-        codex_app_server_protocol::HookRunStatus::Running,
+        codex_cli_protocol::HookRunStatus::Running,
         status_message,
         Vec::new(),
     )
@@ -4637,10 +4625,10 @@ fn hook_started_run(
 
 fn hook_completed_run(
     id: &str,
-    event_name: codex_app_server_protocol::HookEventName,
-    status: codex_app_server_protocol::HookRunStatus,
-    entries: Vec<codex_app_server_protocol::HookOutputEntry>,
-) -> codex_app_server_protocol::HookRunSummary {
+    event_name: codex_cli_protocol::HookEventName,
+    status: codex_cli_protocol::HookRunStatus,
+    entries: Vec<codex_cli_protocol::HookOutputEntry>,
+) -> codex_cli_protocol::HookRunSummary {
     hook_run_summary(
         id, event_name, status, /*status_message*/ None, entries,
     )
@@ -4648,25 +4636,25 @@ fn hook_completed_run(
 
 fn hook_run_summary(
     id: &str,
-    event_name: codex_app_server_protocol::HookEventName,
-    status: codex_app_server_protocol::HookRunStatus,
+    event_name: codex_cli_protocol::HookEventName,
+    status: codex_cli_protocol::HookRunStatus,
     status_message: Option<&str>,
-    entries: Vec<codex_app_server_protocol::HookOutputEntry>,
-) -> codex_app_server_protocol::HookRunSummary {
-    codex_app_server_protocol::HookRunSummary {
+    entries: Vec<codex_cli_protocol::HookOutputEntry>,
+) -> codex_cli_protocol::HookRunSummary {
+    codex_cli_protocol::HookRunSummary {
         id: id.to_string(),
         event_name,
-        handler_type: codex_app_server_protocol::HookHandlerType::Command,
-        execution_mode: codex_app_server_protocol::HookExecutionMode::Sync,
-        scope: codex_app_server_protocol::HookScope::Turn,
+        handler_type: codex_cli_protocol::HookHandlerType::Command,
+        execution_mode: codex_cli_protocol::HookExecutionMode::Sync,
+        scope: codex_cli_protocol::HookScope::Turn,
         source_path: PathBuf::from(test_path_display("/tmp/hooks.json")).abs(),
-        source: codex_app_server_protocol::HookSource::User,
+        source: codex_cli_protocol::HookSource::User,
         display_order: 0,
         status,
         status_message: status_message.map(str::to_string),
         started_at: 1,
-        completed_at: (status != codex_app_server_protocol::HookRunStatus::Running).then_some(2),
-        duration_ms: (status != codex_app_server_protocol::HookRunStatus::Running).then_some(1),
+        completed_at: (status != codex_cli_protocol::HookRunStatus::Running).then_some(2),
+        duration_ms: (status != codex_cli_protocol::HookRunStatus::Running).then_some(1),
         entries,
     }
 }
@@ -4712,12 +4700,12 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
     let command_actions = parsed_cmd
         .iter()
         .cloned()
-        .map(|parsed| AppServerCommandAction::from_core_with_cwd(parsed, &chat.config.cwd))
+        .map(|parsed| CliRuntimeCommandAction::from_core_with_cwd(parsed, &chat.config.cwd))
         .collect::<Vec<_>>();
     let cwd = chat.config.cwd.clone();
     handle_exec_begin(
         &mut chat,
-        AppServerThreadItem::CommandExecution {
+        CliRuntimeThreadItem::CommandExecution {
             id: "c1".into(),
             command: codex_shell_command::parse_command::shlex_join(&command),
             cwd: cwd.clone().into(),
@@ -4725,7 +4713,7 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
             plugin_id: None,
             script_path: None,
             source: ExecCommandSource::Agent,
-            status: AppServerCommandExecutionStatus::InProgress,
+            status: CliRuntimeCommandExecutionStatus::InProgress,
             command_actions: command_actions.clone(),
             aggregated_output: None,
             exit_code: None,
@@ -4734,7 +4722,7 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
     );
     handle_exec_end(
         &mut chat,
-        AppServerThreadItem::CommandExecution {
+        CliRuntimeThreadItem::CommandExecution {
             id: "c1".into(),
             command: codex_shell_command::parse_command::shlex_join(&command),
             cwd: cwd.into(),
@@ -4742,7 +4730,7 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
             plugin_id: None,
             script_path: None,
             source: ExecCommandSource::Agent,
-            status: AppServerCommandExecutionStatus::Completed,
+            status: CliRuntimeCommandExecutionStatus::Completed,
             command_actions,
             aggregated_output: None,
             exit_code: Some(0),

@@ -9,10 +9,10 @@
 
 use super::*;
 use crate::chatwidget::InterruptedTurnNoticeMode;
-use codex_app_server_protocol::ThreadUnsubscribeParams;
-use codex_app_server_protocol::ThreadUnsubscribeResponse;
-use codex_app_server_protocol::TurnInterruptParams;
-use codex_app_server_protocol::TurnInterruptResponse;
+use codex_cli_protocol::ThreadUnsubscribeParams;
+use codex_cli_protocol::ThreadUnsubscribeResponse;
+use codex_cli_protocol::TurnInterruptParams;
+use codex_cli_protocol::TurnInterruptResponse;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 
@@ -353,7 +353,7 @@ impl App {
     pub(super) async fn maybe_return_from_side(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
     ) -> bool {
         if self.overlay.is_none()
             && self.chat_widget.no_modal_or_popup_active()
@@ -361,7 +361,7 @@ impl App {
             && let Some(parent_thread_id) = self.active_side_parent_thread_id()
         {
             if self
-                .select_agent_thread_and_discard_side(tui, app_server, parent_thread_id)
+                .select_agent_thread_and_discard_side(tui, cli_runtime, parent_thread_id)
                 .await
                 .is_err()
             {
@@ -390,7 +390,7 @@ impl App {
     pub(super) async fn toggle_side_conversation(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
     ) -> Result<()> {
         let Some(active_thread_id) = self.current_displayed_thread_id() else {
             return Ok(());
@@ -406,21 +406,21 @@ impl App {
             return Ok(());
         };
 
-        self.select_agent_thread(tui, app_server, target_thread_id)
+        self.select_agent_thread(tui, cli_runtime, target_thread_id)
             .await
     }
 
     pub(super) async fn discard_side_thread(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) -> bool {
-        if let Err(message) = self.interrupt_side_thread(app_server, thread_id).await {
+        if let Err(message) = self.interrupt_side_thread(cli_runtime, thread_id).await {
             tracing::warn!("{message}");
             self.chat_widget.add_error_message(message);
             return false;
         }
-        if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
+        if let Err(err) = cli_runtime.thread_unsubscribe(thread_id).await {
             let message =
                 format!("Failed to close side conversation {thread_id}; it is still open: {err}");
             tracing::warn!("{message}");
@@ -434,17 +434,17 @@ impl App {
 
     pub(super) async fn discard_side_thread_in_background(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) {
         let turn_id = self
             .active_turn_id_for_thread(thread_id)
             .await
             .unwrap_or_default();
-        let request_handle = app_server.request_handle();
-        let interrupt_request_id = app_server.next_request_id();
-        let retry_interrupt_request_id = app_server.next_request_id();
-        let unsubscribe_request_id = app_server.next_request_id();
+        let request_handle = cli_runtime.request_handle();
+        let interrupt_request_id = cli_runtime.next_request_id();
+        let retry_interrupt_request_id = cli_runtime.next_request_id();
+        let unsubscribe_request_id = cli_runtime.next_request_id();
 
         self.abandoned_side_threads.insert(thread_id);
         self.discard_thread_local_state(thread_id).await;
@@ -510,14 +510,14 @@ impl App {
 
     async fn interrupt_side_thread(
         &self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) -> std::result::Result<(), String> {
         let interrupt_result =
             if let Some(turn_id) = self.active_turn_id_for_thread(thread_id).await {
-                app_server.turn_interrupt(thread_id, turn_id).await
+                cli_runtime.turn_interrupt(thread_id, turn_id).await
             } else {
-                app_server.startup_interrupt(thread_id).await
+                cli_runtime.startup_interrupt(thread_id).await
             };
         interrupt_result.map_err(|err| {
             format!("Failed to close side conversation {thread_id}; it is still open: {err}")
@@ -527,11 +527,11 @@ impl App {
     async fn keep_side_thread_visible_after_cleanup_failure(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) {
         if self.active_thread_id != Some(thread_id)
-            && let Err(err) = self.select_agent_thread(tui, app_server, thread_id).await
+            && let Err(err) = self.select_agent_thread(tui, cli_runtime, thread_id).await
         {
             tracing::warn!(
                 "failed to restore side conversation after cleanup failure for {thread_id}: {err}"
@@ -542,13 +542,13 @@ impl App {
     async fn discard_side_thread_or_keep_visible(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) -> bool {
-        if self.discard_side_thread(app_server, thread_id).await {
+        if self.discard_side_thread(cli_runtime, thread_id).await {
             true
         } else {
-            self.keep_side_thread_visible_after_cleanup_failure(tui, app_server, thread_id)
+            self.keep_side_thread_visible_after_cleanup_failure(tui, cli_runtime, thread_id)
                 .await;
             false
         }
@@ -636,15 +636,16 @@ impl App {
     pub(super) async fn select_agent_thread_and_discard_side(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) -> Result<()> {
         let side_thread_to_discard = self.side_thread_to_discard_after_switch(thread_id);
-        self.select_agent_thread(tui, app_server, thread_id).await?;
+        self.select_agent_thread(tui, cli_runtime, thread_id)
+            .await?;
         if self.active_thread_id == Some(thread_id)
             && let Some(side_thread_id) = side_thread_to_discard
         {
-            self.discard_side_thread_in_background(app_server, side_thread_id)
+            self.discard_side_thread_in_background(cli_runtime, side_thread_id)
                 .await;
             self.surface_pending_inactive_thread_interactive_requests()
                 .await?;
@@ -655,7 +656,7 @@ impl App {
     pub(super) async fn handle_start_side(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         parent_thread_id: ThreadId,
         mut user_message: Option<crate::chatwidget::UserMessage>,
     ) -> Result<AppRunControl> {
@@ -668,7 +669,7 @@ impl App {
 
         if let Some((&side_thread_id, state)) = self.side_threads.iter().next()
             && (parent_thread_id != state.parent_thread_id
-                || !self.discard_side_thread(app_server, side_thread_id).await)
+                || !self.discard_side_thread(cli_runtime, side_thread_id).await)
         {
             self.restore_side_user_message(user_message.take());
             self.sync_side_thread_ui();
@@ -684,7 +685,7 @@ impl App {
             .await;
 
         let fork_config = self.side_fork_config();
-        match app_server
+        match cli_runtime
             .fork_side_thread(fork_config, parent_thread_id)
             .await
         {
@@ -698,18 +699,18 @@ impl App {
                 self.side_threads
                     .insert(child_thread_id, SideThreadState::new(parent_thread_id));
                 // `thread/started` is delivered after the fork response; seed navigation before
-                // the first selection without blocking on another app-server read.
+                // the first selection without blocking on another cli-runtime read.
                 self.upsert_agent_picker_thread(
                     child_thread_id,
                     /*agent_nickname*/ None,
                     /*agent_role*/ None,
                     /*is_closed*/ false,
                 );
-                if let Err(err) = app_server
+                if let Err(err) = cli_runtime
                     .thread_inject_items(child_thread_id, vec![Self::side_boundary_prompt_item()])
                     .await
                 {
-                    self.discard_side_thread_or_keep_visible(tui, app_server, child_thread_id)
+                    self.discard_side_thread_or_keep_visible(tui, cli_runtime, child_thread_id)
                         .await;
                     self.restore_side_user_message(user_message.take());
                     self.chat_widget.add_error_message(format!(
@@ -718,16 +719,16 @@ impl App {
                     return Ok(AppRunControl::Continue);
                 }
                 if let Err(err) = self
-                    .select_agent_thread_and_discard_side(tui, app_server, child_thread_id)
+                    .select_agent_thread_and_discard_side(tui, cli_runtime, child_thread_id)
                     .await
                 {
                     let discarded = self
-                        .discard_side_thread_or_keep_visible(tui, app_server, child_thread_id)
+                        .discard_side_thread_or_keep_visible(tui, cli_runtime, child_thread_id)
                         .await;
                     if discarded
                         && self.active_thread_id != Some(parent_thread_id)
                         && let Err(restore_err) = self
-                            .select_agent_thread(tui, app_server, parent_thread_id)
+                            .select_agent_thread(tui, cli_runtime, parent_thread_id)
                             .await
                     {
                         tracing::warn!(
@@ -747,7 +748,7 @@ impl App {
                             .submit_user_message_as_plain_user_turn(user_message);
                     }
                 } else {
-                    self.discard_side_thread_or_keep_visible(tui, app_server, child_thread_id)
+                    self.discard_side_thread_or_keep_visible(tui, cli_runtime, child_thread_id)
                         .await;
                     self.restore_side_user_message(user_message.take());
                     self.chat_widget.add_error_message(format!(

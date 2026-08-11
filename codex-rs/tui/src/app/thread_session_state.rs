@@ -1,8 +1,8 @@
 use super::App;
 use crate::session_resume::read_session_model;
 use crate::session_state::ThreadSessionState;
-use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::Thread;
+use codex_cli_protocol::AskForApproval;
+use codex_cli_protocol::Thread;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::PermissionProfile;
@@ -156,7 +156,7 @@ mod tests {
     use crate::legacy_core::config::PermissionProfileSnapshot;
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
-    use codex_app_server_protocol::AskForApproval;
+    use codex_cli_protocol::AskForApproval;
     use codex_config::types::ApprovalsReviewer;
     use codex_protocol::config_types::ServiceTier;
     use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
@@ -424,11 +424,11 @@ mod tests {
             created_at: 1,
             updated_at: 2,
             recency_at: Some(2),
-            status: codex_app_server_protocol::ThreadStatus::Idle,
+            status: codex_cli_protocol::ThreadStatus::Idle,
             path: None,
             cwd: test_path_buf("/tmp/read").abs(),
             cli_version: "0.0.0".to_string(),
-            source: codex_app_server_protocol::SessionSource::Unknown,
+            source: codex_cli_protocol::SessionSource::Unknown,
             can_accept_direct_input: None,
             thread_source: None,
             agent_nickname: None,

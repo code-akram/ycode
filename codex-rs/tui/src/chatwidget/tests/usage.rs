@@ -2,12 +2,12 @@ use super::super::reset_credits::ResetCreditOption;
 use super::super::reset_credits::reset_credit_options;
 use super::*;
 use chrono::TimeZone;
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditOutcome;
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditResponse;
-use codex_app_server_protocol::RateLimitResetCredit;
-use codex_app_server_protocol::RateLimitResetCreditStatus;
-use codex_app_server_protocol::RateLimitResetCreditsSummary;
-use codex_app_server_protocol::RateLimitResetType;
+use codex_cli_protocol::ConsumeAccountRateLimitResetCreditOutcome;
+use codex_cli_protocol::ConsumeAccountRateLimitResetCreditResponse;
+use codex_cli_protocol::RateLimitResetCredit;
+use codex_cli_protocol::RateLimitResetCreditStatus;
+use codex_cli_protocol::RateLimitResetCreditsSummary;
+use codex_cli_protocol::RateLimitResetType;
 use pretty_assertions::assert_eq;
 use uuid::Uuid;
 

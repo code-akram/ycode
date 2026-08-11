@@ -26,11 +26,11 @@ async fn fork_current_session_preserves_conversation_ultra() -> Result<()> {
         ..test_thread_session(source_thread_id, test_path_buf("/tmp/project"))
     });
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let mut cli_runtime = crate::start_embedded_cli_runtime_for_picker(&app.config).await?;
 
     let control = Box::pin(app.handle_event(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         AppEvent::ForkCurrentSession { name: None },
     ))
     .await?;
@@ -42,7 +42,7 @@ async fn fork_current_session_preserves_conversation_ultra() -> Result<()> {
         app.chat_widget.current_reasoning_effort(),
         Some(ReasoningEffortConfig::Ultra)
     );
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 

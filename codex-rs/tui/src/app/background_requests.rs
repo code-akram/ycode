@@ -1,4 +1,4 @@
-//! Background app-server requests launched by the TUI app.
+//! Background cli-runtime requests launched by the TUI app.
 //!
 //! This module owns fire-and-forget fetch/write helpers for skills, plugins, rate
 //! limits, add-credit nudges, and feedback uploads. Results are routed back through `AppEvent` so
@@ -7,16 +7,16 @@
 use super::plugin_mentions::fetch_plugin_mentions;
 use super::*;
 use crate::config_update::format_config_error;
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditParams;
-use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditResponse;
-use codex_app_server_protocol::MarketplaceAddParams;
-use codex_app_server_protocol::MarketplaceAddResponse;
-use codex_app_server_protocol::MarketplaceRemoveParams;
-use codex_app_server_protocol::MarketplaceRemoveResponse;
-use codex_app_server_protocol::MarketplaceUpgradeParams;
-use codex_app_server_protocol::MarketplaceUpgradeResponse;
+use codex_cli_protocol::ConsumeAccountRateLimitResetCreditParams;
+use codex_cli_protocol::ConsumeAccountRateLimitResetCreditResponse;
+use codex_cli_protocol::MarketplaceAddParams;
+use codex_cli_protocol::MarketplaceAddResponse;
+use codex_cli_protocol::MarketplaceRemoveParams;
+use codex_cli_protocol::MarketplaceRemoveResponse;
+use codex_cli_protocol::MarketplaceUpgradeParams;
+use codex_cli_protocol::MarketplaceUpgradeResponse;
 
-use codex_app_server_protocol::RequestId;
+use codex_cli_protocol::RequestId;
 
 use crate::hooks_rpc::fetch_hooks_list;
 use crate::hooks_rpc::write_hook_trust;
@@ -40,10 +40,10 @@ impl App {
     /// finalize the corresponding status card).
     pub(super) fn refresh_rate_limits(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         origin: RateLimitRefreshOrigin,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         let hard_stop_generation = self.rate_limit_hard_stop_generation;
         tokio::spawn(async move {
@@ -72,10 +72,10 @@ impl App {
 
     pub(super) fn refresh_token_activity(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         request_id: u64,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = tokio::time::timeout(
@@ -91,12 +91,12 @@ impl App {
 
     pub(super) fn consume_rate_limit_reset_credit(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         request_id: u64,
         idempotency_key: String,
         credit_id: Option<String>,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = tokio::time::timeout(
@@ -121,10 +121,10 @@ impl App {
 
     pub(super) fn refresh_status_line_workspace_headline(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         request_id: u64,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = tokio::time::timeout(
@@ -144,10 +144,10 @@ impl App {
 
     pub(super) fn send_add_credits_nudge_email(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         credit_type: AddCreditsNudgeCreditType,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = send_add_credits_nudge_email(request_handle, credit_type)
@@ -162,10 +162,10 @@ impl App {
     /// Startup only needs skill metadata to populate skill mentions and the skills UI; the prompt can be
     /// rendered before that metadata arrives. The result is routed through the normal app event queue so
     /// the same response handler updates the chat widget and emits invalid `SKILL.md` warnings once the
-    /// app-server RPC finishes. User-initiated skills refreshes still use the blocking app command path so
+    /// cli-runtime RPC finishes. User-initiated skills refreshes still use the blocking app command path so
     /// callers that explicitly asked for fresh skill state do not race ahead of their own refresh.
-    pub(super) fn refresh_startup_skills(&mut self, app_server: &AppServerSession) {
-        let request_handle = app_server.request_handle();
+    pub(super) fn refresh_startup_skills(&mut self, cli_runtime: &CliRuntimeSession) {
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         let cwd = self.config.cwd.to_path_buf();
         tokio::spawn(async move {
@@ -176,9 +176,9 @@ impl App {
         });
     }
 
-    pub(super) fn fetch_plugins_list(&mut self, app_server: &AppServerSession, cwd: PathBuf) {
+    pub(super) fn fetch_plugins_list(&mut self, cli_runtime: &CliRuntimeSession, cwd: PathBuf) {
         self.chat_widget.on_plugins_list_fetch_started(cwd.clone());
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         let plugin_sharing_enabled = self.config.features.enabled(Feature::PluginSharing);
         let remote_plugin_enabled = self.config.features.enabled(Feature::RemotePlugin);
@@ -208,8 +208,8 @@ impl App {
         });
     }
 
-    pub(super) fn fetch_hooks_list(&mut self, app_server: &AppServerSession, cwd: PathBuf) {
-        let request_handle = app_server.request_handle();
+    pub(super) fn fetch_hooks_list(&mut self, cli_runtime: &CliRuntimeSession, cwd: PathBuf) {
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = fetch_hooks_list(request_handle, cwd.clone())
@@ -221,11 +221,11 @@ impl App {
 
     pub(super) fn fetch_plugin_detail(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         cwd: PathBuf,
         params: PluginReadParams,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = fetch_plugin_detail(request_handle, params)
@@ -237,11 +237,11 @@ impl App {
 
     pub(super) fn fetch_marketplace_add(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         cwd: PathBuf,
         source: String,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let cwd_for_event = cwd.clone();
@@ -259,12 +259,12 @@ impl App {
 
     pub(super) fn fetch_marketplace_remove(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         cwd: PathBuf,
         marketplace_name: String,
         marketplace_display_name: String,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let cwd_for_event = cwd.clone();
@@ -283,11 +283,11 @@ impl App {
 
     pub(super) fn fetch_marketplace_upgrade(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         cwd: PathBuf,
         marketplace_name: Option<String>,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let cwd_for_event = cwd.clone();
@@ -303,13 +303,13 @@ impl App {
 
     pub(super) fn fetch_plugin_install(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         cwd: PathBuf,
         location: PluginLocation,
         plugin_name: String,
         plugin_display_name: String,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let cwd_for_event = cwd.clone();
@@ -330,12 +330,12 @@ impl App {
 
     pub(super) fn fetch_plugin_uninstall(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         cwd: PathBuf,
         plugin_id: String,
         plugin_display_name: String,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let cwd_for_event = cwd.clone();
@@ -354,7 +354,7 @@ impl App {
 
     pub(super) fn set_plugin_enabled(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         cwd: PathBuf,
         plugin_id: String,
         enabled: bool,
@@ -366,17 +366,17 @@ impl App {
 
         self.pending_plugin_enabled_writes
             .insert(plugin_id.clone(), None);
-        self.spawn_plugin_enabled_write(app_server, cwd, plugin_id, enabled);
+        self.spawn_plugin_enabled_write(cli_runtime, cwd, plugin_id, enabled);
     }
 
     pub(super) fn spawn_plugin_enabled_write(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         cwd: PathBuf,
         plugin_id: String,
         enabled: bool,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let cwd_for_event = cwd.clone();
@@ -396,7 +396,7 @@ impl App {
 
     pub(super) fn set_hook_enabled(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         key: String,
         enabled: bool,
     ) {
@@ -406,16 +406,16 @@ impl App {
         }
 
         self.pending_hook_enabled_writes.insert(key.clone(), None);
-        self.spawn_hook_enabled_write(app_server, key, enabled);
+        self.spawn_hook_enabled_write(cli_runtime, key, enabled);
     }
 
     pub(super) fn spawn_hook_enabled_write(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         key: String,
         enabled: bool,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let key_for_event = key.clone();
@@ -438,11 +438,11 @@ impl App {
 
     pub(super) fn trust_hook(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         key: String,
         current_hash: String,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = write_hook_trust(request_handle, key, current_hash)
@@ -455,10 +455,10 @@ impl App {
 
     pub(super) fn trust_hooks(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         updates: Vec<HookTrustUpdate>,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = write_hook_trusts(request_handle, updates)
@@ -469,9 +469,9 @@ impl App {
         });
     }
 
-    pub(super) fn refresh_plugin_mentions(&mut self, app_server: &AppServerSession) {
+    pub(super) fn refresh_plugin_mentions(&mut self, cli_runtime: &CliRuntimeSession) {
         let cwd = self.config.cwd.to_path_buf();
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         if !self.config.features.enabled(Feature::Plugins) {
             app_event_tx.send(AppEvent::PluginMentionsLoaded { plugins: None });
@@ -494,13 +494,13 @@ impl App {
 
     pub(super) fn submit_feedback(
         &mut self,
-        app_server: &AppServerSession,
+        cli_runtime: &CliRuntimeSession,
         category: FeedbackCategory,
         reason: Option<String>,
         turn_id: Option<String>,
         include_logs: bool,
     ) {
-        let request_handle = app_server.request_handle();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         let origin_thread_id = self.chat_widget.thread_id();
         let rollout_path = if include_logs {
@@ -614,7 +614,7 @@ impl App {
 }
 
 pub(super) async fn fetch_account_rate_limits(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
 ) -> Result<GetAccountRateLimitsResponse> {
     let request_id = RequestId::String(format!("account-rate-limits-{}", Uuid::new_v4()));
     request_handle
@@ -627,8 +627,8 @@ pub(super) async fn fetch_account_rate_limits(
 }
 
 pub(super) async fn fetch_account_token_activity(
-    request_handle: AppServerRequestHandle,
-) -> Result<codex_app_server_protocol::GetAccountTokenUsageResponse> {
+    request_handle: CliRuntimeRequestHandle,
+) -> Result<codex_cli_protocol::GetAccountTokenUsageResponse> {
     let request_id = RequestId::String(format!("account-token-usage-{}", Uuid::new_v4()));
     request_handle
         .request_typed(ClientRequest::GetAccountTokenUsage {
@@ -640,7 +640,7 @@ pub(super) async fn fetch_account_token_activity(
 }
 
 pub(super) async fn consume_rate_limit_reset_credit_request(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     idempotency_key: String,
     credit_id: Option<String>,
 ) -> Result<ConsumeAccountRateLimitResetCreditResponse> {
@@ -658,8 +658,8 @@ pub(super) async fn consume_rate_limit_reset_credit_request(
 }
 
 pub(super) async fn fetch_workspace_messages(
-    request_handle: AppServerRequestHandle,
-) -> Result<codex_app_server_protocol::GetWorkspaceMessagesResponse> {
+    request_handle: CliRuntimeRequestHandle,
+) -> Result<codex_cli_protocol::GetWorkspaceMessagesResponse> {
     let request_id = RequestId::String(format!("workspace-messages-{}", Uuid::new_v4()));
     request_handle
         .request_typed(ClientRequest::GetWorkspaceMessages {
@@ -671,11 +671,11 @@ pub(super) async fn fetch_workspace_messages(
 }
 
 pub(super) async fn send_add_credits_nudge_email(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     credit_type: AddCreditsNudgeCreditType,
-) -> Result<codex_app_server_protocol::AddCreditsNudgeEmailStatus> {
+) -> Result<codex_cli_protocol::AddCreditsNudgeEmailStatus> {
     let request_id = RequestId::String(format!("add-credits-nudge-{}", Uuid::new_v4()));
-    let response: codex_app_server_protocol::SendAddCreditsNudgeEmailResponse = request_handle
+    let response: codex_cli_protocol::SendAddCreditsNudgeEmailResponse = request_handle
         .request_typed(ClientRequest::SendAddCreditsNudgeEmail {
             request_id,
             params: SendAddCreditsNudgeEmailParams { credit_type },
@@ -687,12 +687,12 @@ pub(super) async fn send_add_credits_nudge_email(
 }
 
 pub(super) async fn fetch_skills_list(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
 ) -> Result<SkillsListResponse> {
     let request_id = RequestId::String(format!("startup-skills-list-{}", Uuid::new_v4()));
     // Use the cloneable request handle so startup can issue this RPC from a background task without
-    // extending a borrow of `AppServerSession` across the first frame render.
+    // extending a borrow of `CliRuntimeSession` across the first frame render.
     request_handle
         .request_typed(ClientRequest::SkillsList {
             request_id,
@@ -706,7 +706,7 @@ pub(super) async fn fetch_skills_list(
 }
 
 pub(super) async fn fetch_plugins_list(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
 ) -> Result<PluginListResponse> {
     let mut response = request_plugin_list(request_handle, cwd)
@@ -717,7 +717,7 @@ pub(super) async fn fetch_plugins_list(
 }
 
 pub(super) async fn fetch_additional_plugin_remote_sections(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
     plugin_sharing_enabled: bool,
     remote_plugin_enabled: bool,
@@ -833,7 +833,7 @@ pub(super) fn hide_cli_only_plugin_marketplaces(response: &mut PluginListRespons
 }
 
 pub(super) async fn request_plugin_list(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
 ) -> Result<PluginListResponse> {
     request_plugin_list_with_marketplace_kinds(request_handle, cwd, /*marketplace_kinds*/ None)
@@ -841,7 +841,7 @@ pub(super) async fn request_plugin_list(
 }
 
 pub(super) async fn request_plugin_list_for_kinds(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
     marketplace_kinds: Vec<PluginListMarketplaceKind>,
 ) -> Result<PluginListResponse> {
@@ -849,7 +849,7 @@ pub(super) async fn request_plugin_list_for_kinds(
 }
 
 async fn request_plugin_list_with_marketplace_kinds(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
     marketplace_kinds: Option<Vec<PluginListMarketplaceKind>>,
 ) -> Result<PluginListResponse> {
@@ -869,7 +869,7 @@ async fn request_plugin_list_with_marketplace_kinds(
 }
 
 pub(super) async fn fetch_plugin_detail(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     params: PluginReadParams,
 ) -> Result<PluginReadResponse> {
     let request_id = RequestId::String(format!("plugin-read-{}", Uuid::new_v4()));
@@ -880,7 +880,7 @@ pub(super) async fn fetch_plugin_detail(
 }
 
 pub(super) async fn fetch_marketplace_add(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
     source: String,
 ) -> Result<MarketplaceAddResponse> {
@@ -928,7 +928,7 @@ fn marketplace_add_source_for_request(cwd: &std::path::Path, source: String) -> 
 }
 
 pub(super) async fn fetch_marketplace_remove(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     marketplace_name: String,
 ) -> Result<MarketplaceRemoveResponse> {
     let request_id = RequestId::String(format!("marketplace-remove-{}", Uuid::new_v4()));
@@ -942,7 +942,7 @@ pub(super) async fn fetch_marketplace_remove(
 }
 
 pub(super) async fn fetch_marketplace_upgrade(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     marketplace_name: Option<String>,
 ) -> Result<MarketplaceUpgradeResponse> {
     let request_id = RequestId::String(format!("marketplace-upgrade-{}", Uuid::new_v4()));
@@ -955,7 +955,7 @@ pub(super) async fn fetch_marketplace_upgrade(
         .wrap_err("marketplace/upgrade failed in TUI")
 }
 pub(super) async fn fetch_plugin_install(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     location: PluginLocation,
     plugin_name: String,
 ) -> Result<PluginInstallResponse> {
@@ -975,7 +975,7 @@ pub(super) async fn fetch_plugin_install(
 }
 
 pub(super) async fn fetch_plugin_uninstall(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     plugin_id: String,
 ) -> Result<PluginUninstallResponse> {
     let request_id = RequestId::String(format!("plugin-uninstall-{}", Uuid::new_v4()));
@@ -989,7 +989,7 @@ pub(super) async fn fetch_plugin_uninstall(
 }
 
 pub(super) async fn write_plugin_enabled(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     plugin_id: String,
     enabled: bool,
 ) -> Result<ConfigWriteResponse> {
@@ -1010,7 +1010,7 @@ pub(super) async fn write_plugin_enabled(
 }
 
 pub(super) async fn write_hook_enabled(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     key: String,
     enabled: bool,
 ) -> Result<ConfigWriteResponse> {
@@ -1019,7 +1019,7 @@ pub(super) async fn write_hook_enabled(
         .request_typed(ClientRequest::ConfigBatchWrite {
             request_id,
             params: ConfigBatchWriteParams {
-                edits: vec![codex_app_server_protocol::ConfigEdit {
+                edits: vec![codex_cli_protocol::ConfigEdit {
                     key_path: "hooks.state".to_string(),
                     value: serde_json::json!({
                         key: {
@@ -1062,7 +1062,7 @@ pub(super) fn build_feedback_upload_params(
 }
 
 pub(super) async fn fetch_feedback_upload(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     params: FeedbackUploadParams,
 ) -> Result<FeedbackUploadResponse> {
     let request_id = RequestId::String(format!("feedback-upload-{}", Uuid::new_v4()));
@@ -1076,7 +1076,7 @@ pub(super) async fn fetch_feedback_upload(
 mod tests {
     use super::*;
 
-    use codex_app_server_protocol::PluginMarketplaceEntry;
+    use codex_cli_protocol::PluginMarketplaceEntry;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
 

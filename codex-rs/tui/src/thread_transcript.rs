@@ -2,8 +2,6 @@
 
 use std::sync::Arc;
 
-use crate::app_server_session::AppServerSession;
-use crate::app_server_session::HistoryHydrationScope;
 use crate::git_action_directives::parse_assistant_markdown;
 use crate::history_cell::AgentMarkdownCell;
 use crate::history_cell::HistoryCell;
@@ -13,9 +11,11 @@ use crate::history_cell::UserHistoryCell;
 use crate::history_cell::split_reasoning_summary_parts;
 use crate::inline_visualization::InlineVisualizationContext;
 use crate::multi_agents::sub_agent_activity_summary;
-use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::UserInput;
+use crate::runtime_session::CliRuntimeSession;
+use crate::runtime_session::HistoryHydrationScope;
+use codex_cli_protocol::Thread;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::UserInput;
 use codex_protocol::ThreadId;
 use codex_protocol::items::UserMessageItem;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -31,16 +31,16 @@ pub(crate) enum RawReasoningVisibility {
 }
 
 pub(crate) async fn load_session_transcript(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     thread_id: ThreadId,
     raw_reasoning_visibility: RawReasoningVisibility,
     codex_home: Option<&std::path::Path>,
 ) -> std::io::Result<TranscriptCells> {
-    let mut thread = app_server
+    let mut thread = cli_runtime
         .thread_read(thread_id, /*include_turns*/ false)
         .await
         .map_err(std::io::Error::other)?;
-    app_server
+    cli_runtime
         .hydrate_initial_thread_history(
             &mut thread,
             /*turn_cursor*/ None,
@@ -113,7 +113,7 @@ pub(crate) fn thread_items_to_transcript_cells(
                     client_id,
                     content: content
                         .into_iter()
-                        .map(codex_app_server_protocol::UserInput::into_core)
+                        .map(codex_cli_protocol::UserInput::into_core)
                         .collect(),
                 };
                 cells.push(Arc::new(UserHistoryCell {

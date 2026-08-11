@@ -1,7 +1,7 @@
 //! Thread event buffering and replay state for the TUI app.
 //!
 //! This module owns the per-thread event store used when the TUI switches between the main
-//! conversation, subagents, and side conversations. It keeps buffered app-server notifications,
+//! conversation, subagents, and side conversations. It keeps buffered cli-runtime notifications,
 //! pending interactive request replay state, active-turn tracking, and saved composer state close
 //! together with the replay behavior that consumes them.
 
@@ -207,7 +207,7 @@ impl ThreadEventStore {
         &self,
         turn_id: &str,
         item_id: &str,
-    ) -> Option<Vec<codex_app_server_protocol::FileUpdateChange>> {
+    ) -> Option<Vec<codex_cli_protocol::FileUpdateChange>> {
         self.buffer
             .iter()
             .rev()
@@ -313,7 +313,7 @@ fn turn_id_matches(request_turn_id: &str, candidate_turn_id: &str) -> bool {
 fn file_change_item_changes(
     item: &ThreadItem,
     item_id: &str,
-) -> Option<Vec<codex_app_server_protocol::FileUpdateChange>> {
+) -> Option<Vec<codex_cli_protocol::FileUpdateChange>> {
     match item {
         ThreadItem::FileChange { id, changes, .. } if id == item_id => Some(changes.clone()),
         _ => None,
@@ -370,22 +370,22 @@ mod tests {
     use super::*;
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
-    use codex_app_server_protocol::AskForApproval;
-    use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
-    use codex_app_server_protocol::HookCompletedNotification;
-    use codex_app_server_protocol::HookEventName as AppServerHookEventName;
-    use codex_app_server_protocol::HookExecutionMode as AppServerHookExecutionMode;
-    use codex_app_server_protocol::HookHandlerType as AppServerHookHandlerType;
-    use codex_app_server_protocol::HookOutputEntry as AppServerHookOutputEntry;
-    use codex_app_server_protocol::HookOutputEntryKind as AppServerHookOutputEntryKind;
-    use codex_app_server_protocol::HookRunStatus as AppServerHookRunStatus;
-    use codex_app_server_protocol::HookRunSummary as AppServerHookRunSummary;
-    use codex_app_server_protocol::HookScope as AppServerHookScope;
-    use codex_app_server_protocol::HookStartedNotification;
-    use codex_app_server_protocol::RequestId as AppServerRequestId;
+    use codex_cli_protocol::AskForApproval;
+    use codex_cli_protocol::CommandExecutionRequestApprovalParams;
+    use codex_cli_protocol::HookCompletedNotification;
+    use codex_cli_protocol::HookEventName as CliRuntimeHookEventName;
+    use codex_cli_protocol::HookExecutionMode as CliRuntimeHookExecutionMode;
+    use codex_cli_protocol::HookHandlerType as CliRuntimeHookHandlerType;
+    use codex_cli_protocol::HookOutputEntry as CliRuntimeHookOutputEntry;
+    use codex_cli_protocol::HookOutputEntryKind as CliRuntimeHookOutputEntryKind;
+    use codex_cli_protocol::HookRunStatus as CliRuntimeHookRunStatus;
+    use codex_cli_protocol::HookRunSummary as CliRuntimeHookRunSummary;
+    use codex_cli_protocol::HookScope as CliRuntimeHookScope;
+    use codex_cli_protocol::HookStartedNotification;
+    use codex_cli_protocol::RequestId as CliRuntimeRequestId;
 
-    use codex_app_server_protocol::TurnCompletedNotification;
-    use codex_app_server_protocol::TurnStartedNotification;
+    use codex_cli_protocol::TurnCompletedNotification;
+    use codex_cli_protocol::TurnStartedNotification;
     use codex_config::types::ApprovalsReviewer;
     use codex_protocol::models::PermissionProfile;
     use pretty_assertions::assert_eq;
@@ -419,7 +419,7 @@ mod tests {
     fn test_turn(turn_id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn {
         Turn {
             id: turn_id.to_string(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
+            items_view: codex_cli_protocol::TurnItemsView::Full,
             items,
             status,
             error: None,
@@ -458,16 +458,16 @@ mod tests {
         ServerNotification::HookStarted(HookStartedNotification {
             thread_id: thread_id.to_string(),
             turn_id: Some(turn_id.to_string()),
-            run: AppServerHookRunSummary {
+            run: CliRuntimeHookRunSummary {
                 id: "user-prompt-submit:0:/tmp/hooks.json".to_string(),
-                event_name: AppServerHookEventName::UserPromptSubmit,
-                handler_type: AppServerHookHandlerType::Command,
-                execution_mode: AppServerHookExecutionMode::Sync,
-                scope: AppServerHookScope::Turn,
+                event_name: CliRuntimeHookEventName::UserPromptSubmit,
+                handler_type: CliRuntimeHookHandlerType::Command,
+                execution_mode: CliRuntimeHookExecutionMode::Sync,
+                scope: CliRuntimeHookScope::Turn,
                 source_path: test_path_buf("/tmp/hooks.json").abs(),
-                source: codex_app_server_protocol::HookSource::User,
+                source: codex_cli_protocol::HookSource::User,
                 display_order: 0,
-                status: AppServerHookRunStatus::Running,
+                status: CliRuntimeHookRunStatus::Running,
                 status_message: Some("checking go-workflow input policy".to_string()),
                 started_at: 1,
                 completed_at: None,
@@ -481,27 +481,27 @@ mod tests {
         ServerNotification::HookCompleted(HookCompletedNotification {
             thread_id: thread_id.to_string(),
             turn_id: Some(turn_id.to_string()),
-            run: AppServerHookRunSummary {
+            run: CliRuntimeHookRunSummary {
                 id: "user-prompt-submit:0:/tmp/hooks.json".to_string(),
-                event_name: AppServerHookEventName::UserPromptSubmit,
-                handler_type: AppServerHookHandlerType::Command,
-                execution_mode: AppServerHookExecutionMode::Sync,
-                scope: AppServerHookScope::Turn,
+                event_name: CliRuntimeHookEventName::UserPromptSubmit,
+                handler_type: CliRuntimeHookHandlerType::Command,
+                execution_mode: CliRuntimeHookExecutionMode::Sync,
+                scope: CliRuntimeHookScope::Turn,
                 source_path: test_path_buf("/tmp/hooks.json").abs(),
-                source: codex_app_server_protocol::HookSource::User,
+                source: codex_cli_protocol::HookSource::User,
                 display_order: 0,
-                status: AppServerHookRunStatus::Stopped,
+                status: CliRuntimeHookRunStatus::Stopped,
                 status_message: Some("checking go-workflow input policy".to_string()),
                 started_at: 1,
                 completed_at: Some(11),
                 duration_ms: Some(10),
                 entries: vec![
-                    AppServerHookOutputEntry {
-                        kind: AppServerHookOutputEntryKind::Warning,
+                    CliRuntimeHookOutputEntry {
+                        kind: CliRuntimeHookOutputEntryKind::Warning,
                         text: "go-workflow must start from PlanMode".to_string(),
                     },
-                    AppServerHookOutputEntry {
-                        kind: AppServerHookOutputEntryKind::Stop,
+                    CliRuntimeHookOutputEntry {
+                        kind: CliRuntimeHookOutputEntryKind::Stop,
                         text: "prompt blocked".to_string(),
                     },
                 ],
@@ -516,7 +516,7 @@ mod tests {
         approval_id: Option<&str>,
     ) -> ServerRequest {
         ServerRequest::CommandExecutionRequestApproval {
-            request_id: AppServerRequestId::Integer(1),
+            request_id: CliRuntimeRequestId::Integer(1),
             params: CommandExecutionRequestApprovalParams {
                 thread_id: thread_id.to_string(),
                 turn_id: turn_id.to_string(),
@@ -601,8 +601,8 @@ mod tests {
             /*approval_id*/ None,
         ));
         store.push_notification(ServerNotification::ServerRequestResolved(
-            codex_app_server_protocol::ServerRequestResolvedNotification {
-                request_id: AppServerRequestId::Integer(1),
+            codex_cli_protocol::ServerRequestResolvedNotification {
+                request_id: CliRuntimeRequestId::Integer(1),
                 thread_id: thread_id.to_string(),
             },
         ));

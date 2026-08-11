@@ -1,7 +1,7 @@
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::Turn;
-use codex_app_server_protocol::TurnStatus;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::Turn;
+use codex_cli_protocol::TurnStatus;
 use codex_core::config::ConfigBuilder;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
@@ -308,11 +308,11 @@ fn turn_completed_recovers_final_message_from_turn_items() {
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
-        codex_app_server_protocol::TurnCompletedNotification {
+        codex_cli_protocol::TurnCompletedNotification {
             thread_id: "thread-1".to_string(),
             turn: Turn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: vec![ThreadItem::AgentMessage {
                     id: "msg-1".to_string(),
                     text: "final answer".to_string(),
@@ -356,11 +356,11 @@ fn turn_completed_overwrites_stale_final_message_from_turn_items() {
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
-        codex_app_server_protocol::TurnCompletedNotification {
+        codex_cli_protocol::TurnCompletedNotification {
             thread_id: "thread-1".to_string(),
             turn: Turn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: vec![ThreadItem::AgentMessage {
                     id: "msg-1".to_string(),
                     text: "final answer".to_string(),
@@ -405,11 +405,11 @@ fn turn_completed_preserves_streamed_final_message_when_turn_items_are_empty() {
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
-        codex_app_server_protocol::TurnCompletedNotification {
+        codex_cli_protocol::TurnCompletedNotification {
             thread_id: "thread-1".to_string(),
             turn: Turn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
                 status: TurnStatus::Completed,
                 error: None,
@@ -449,11 +449,11 @@ fn turn_failed_clears_stale_final_message() {
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
-        codex_app_server_protocol::TurnCompletedNotification {
+        codex_cli_protocol::TurnCompletedNotification {
             thread_id: "thread-1".to_string(),
             turn: Turn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
                 status: TurnStatus::Failed,
                 error: None,
@@ -494,11 +494,11 @@ fn turn_interrupted_clears_stale_final_message() {
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
-        codex_app_server_protocol::TurnCompletedNotification {
+        codex_cli_protocol::TurnCompletedNotification {
             thread_id: "thread-1".to_string(),
             turn: Turn {
                 id: "turn-1".to_string(),
-                items_view: codex_app_server_protocol::TurnItemsView::Full,
+                items_view: codex_cli_protocol::TurnItemsView::Full,
                 items: Vec::new(),
                 status: TurnStatus::Interrupted,
                 error: None,

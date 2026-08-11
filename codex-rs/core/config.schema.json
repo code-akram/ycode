@@ -609,9 +609,6 @@
             "remote_compaction_v2": {
               "type": "boolean"
             },
-            "remote_control": {
-              "type": "boolean"
-            },
             "remote_models": {
               "type": "boolean"
             },
@@ -694,9 +691,6 @@
               "type": "boolean"
             },
             "tool_suggest": {
-              "type": "boolean"
-            },
-            "tui_app_server": {
               "type": "boolean"
             },
             "unavailable_dummy_tools": {
@@ -4828,9 +4822,6 @@
         "remote_compaction_v2": {
           "type": "boolean"
         },
-        "remote_control": {
-          "type": "boolean"
-        },
         "remote_models": {
           "type": "boolean"
         },
@@ -4913,9 +4904,6 @@
           "type": "boolean"
         },
         "tool_suggest": {
-          "type": "boolean"
-        },
-        "tui_app_server": {
           "type": "boolean"
         },
         "unavailable_dummy_tools": {

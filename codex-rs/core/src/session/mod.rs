@@ -217,7 +217,7 @@ pub(crate) use self::input_queue::InputQueueActivity;
 pub use self::input_queue::TurnInput;
 pub(crate) use self::input_queue::TurnInputQueue;
 use self::review::spawn_review_thread;
-use self::session::AppServerClientMetadata;
+use self::session::CliRuntimeClientMetadata;
 use self::session::Session;
 use self::session::SessionConfiguration;
 pub(crate) use self::session::SessionSettingsUpdate;
@@ -673,8 +673,8 @@ impl Session {
             thread_name: None,
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
-            app_server_client_name: None,
-            app_server_client_version: None,
+            cli_runtime_client_name: None,
+            cli_runtime_client_version: None,
             session_source,
             history_mode,
             forked_from_thread_id,
@@ -941,13 +941,13 @@ fn push_prompt_fragment(
 }
 
 impl Session {
-    pub(crate) async fn app_server_client_metadata(&self) -> AppServerClientMetadata {
+    pub(crate) async fn cli_runtime_client_metadata(&self) -> CliRuntimeClientMetadata {
         let state = self.state.lock().await;
-        AppServerClientMetadata {
-            client_name: state.session_configuration.app_server_client_name.clone(),
+        CliRuntimeClientMetadata {
+            client_name: state.session_configuration.cli_runtime_client_name.clone(),
             client_version: state
                 .session_configuration
-                .app_server_client_version
+                .cli_runtime_client_version
                 .clone(),
         }
     }
@@ -1207,7 +1207,7 @@ impl Session {
     ///
     /// Resume and fork reconstruction seed this state from the last persisted rollout
     /// `TokenCount` event. Callers that need to replay restored usage to a client
-    /// should use this accessor instead of `total_token_usage`, because the app-server
+    /// should use this accessor instead of `total_token_usage`, because the cli-runtime
     /// notification includes both total and last-turn usage.
     pub(crate) async fn token_usage_info(&self) -> Option<TokenUsageInfo> {
         let state = self.state.lock().await;
@@ -1510,14 +1510,14 @@ impl Session {
         state.session_configuration.thread_config_snapshot()
     }
 
-    pub(crate) async fn set_app_server_client_info(
+    pub(crate) async fn set_cli_runtime_client_info(
         &self,
-        app_server_client_name: Option<String>,
-        app_server_client_version: Option<String>,
+        cli_runtime_client_name: Option<String>,
+        cli_runtime_client_version: Option<String>,
     ) -> ConstraintResult<()> {
         self.update_settings(SessionSettingsUpdate {
-            app_server_client_name,
-            app_server_client_version,
+            cli_runtime_client_name,
+            cli_runtime_client_version,
             ..Default::default()
         })
         .await?;
@@ -1709,7 +1709,7 @@ impl Session {
         self.refresh_runtime_config(next_config).await;
     }
 
-    /// Record a terminal CodexErr before the app-server completion notification is reduced.
+    /// Record a terminal CodexErr before the cli-runtime completion notification is reduced.
     pub(crate) fn track_turn_codex_error(&self, turn_context: &TurnContext, error: &CodexErr) {
         self.services
             .analytics_events_client
@@ -3888,14 +3888,14 @@ impl Session {
 
 pub(crate) fn emit_subagent_session_started(
     analytics_events_client: &AnalyticsEventsClient,
-    client_metadata: AppServerClientMetadata,
+    client_metadata: CliRuntimeClientMetadata,
     session_id: SessionId,
     thread_id: ThreadId,
     parent_thread_id: Option<ThreadId>,
     thread_config: ThreadConfigSnapshot,
     subagent_source: SubAgentSource,
 ) {
-    let AppServerClientMetadata {
+    let CliRuntimeClientMetadata {
         client_name,
         client_version,
     } = client_metadata;

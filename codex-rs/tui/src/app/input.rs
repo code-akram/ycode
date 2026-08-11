@@ -168,7 +168,7 @@ impl App {
     pub(super) async fn handle_key_event(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         key_event: KeyEvent,
     ) {
         // Some terminals, especially on macOS, encode Option+Left/Right as Option+b/f unless
@@ -186,11 +186,11 @@ impl App {
             && previous_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
         {
             if let Some(thread_id) = self
-                .adjacent_thread_id_with_backfill(app_server, AgentNavigationDirection::Previous)
+                .adjacent_thread_id_with_backfill(cli_runtime, AgentNavigationDirection::Previous)
                 .await
             {
                 let _ = self
-                    .select_agent_thread_and_discard_side(tui, app_server, thread_id)
+                    .select_agent_thread_and_discard_side(tui, cli_runtime, thread_id)
                     .await;
             }
             return;
@@ -203,17 +203,17 @@ impl App {
             && next_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
         {
             if let Some(thread_id) = self
-                .adjacent_thread_id_with_backfill(app_server, AgentNavigationDirection::Next)
+                .adjacent_thread_id_with_backfill(cli_runtime, AgentNavigationDirection::Next)
                 .await
             {
                 let _ = self
-                    .select_agent_thread_and_discard_side(tui, app_server, thread_id)
+                    .select_agent_thread_and_discard_side(tui, cli_runtime, thread_id)
                     .await;
             }
             return;
         }
         if side_return_shortcut_matches(key_event)
-            && self.maybe_return_from_side(tui, app_server).await
+            && self.maybe_return_from_side(tui, cli_runtime).await
         {
             return;
         }
@@ -226,7 +226,7 @@ impl App {
                 || side_toggle_bindings.contains(&crate::key_hint::ctrl(KeyCode::Char('/')))
                     && crate::key_hint::ctrl(KeyCode::Char('7')).is_press(key_event))
         {
-            if let Err(err) = self.toggle_side_conversation(tui, app_server).await {
+            if let Err(err) = self.toggle_side_conversation(tui, cli_runtime).await {
                 self.chat_widget
                     .add_error_message(format!("Failed to switch side conversation: {err}"));
             }
@@ -257,7 +257,7 @@ impl App {
             self.scrollback_has_older_history = self
                 .chat_widget
                 .thread_id()
-                .is_some_and(|thread_id| app_server.has_older_history(thread_id));
+                .is_some_and(|thread_id| cli_runtime.has_older_history(thread_id));
             self.open_transcript_overlay(tui);
             return;
         }

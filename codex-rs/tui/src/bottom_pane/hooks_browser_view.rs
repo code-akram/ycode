@@ -1,8 +1,8 @@
-use codex_app_server_protocol::HookEventName;
-use codex_app_server_protocol::HookMetadata;
-use codex_app_server_protocol::HookSource;
-use codex_app_server_protocol::HookTrustStatus;
-use codex_app_server_protocol::HooksListEntry;
+use codex_cli_protocol::HookEventName;
+use codex_cli_protocol::HookMetadata;
+use codex_cli_protocol::HookSource;
+use codex_cli_protocol::HookTrustStatus;
+use codex_cli_protocol::HooksListEntry;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
@@ -61,7 +61,7 @@ impl HooksBrowserView {
     pub(crate) fn new(
         hooks: Vec<HookMetadata>,
         warnings: Vec<String>,
-        errors: Vec<codex_app_server_protocol::HookErrorInfo>,
+        errors: Vec<codex_cli_protocol::HookErrorInfo>,
         app_event_tx: AppEventSender,
     ) -> Self {
         Self::from_entry(
@@ -881,12 +881,12 @@ mod tests {
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
     use crate::test_support::test_path_display;
-    use codex_app_server_protocol::HookErrorInfo;
-    use codex_app_server_protocol::HookEventName;
-    use codex_app_server_protocol::HookHandlerType;
-    use codex_app_server_protocol::HookMetadata;
-    use codex_app_server_protocol::HookSource;
-    use codex_app_server_protocol::HookTrustStatus;
+    use codex_cli_protocol::HookErrorInfo;
+    use codex_cli_protocol::HookEventName;
+    use codex_cli_protocol::HookHandlerType;
+    use codex_cli_protocol::HookMetadata;
+    use codex_cli_protocol::HookSource;
+    use codex_cli_protocol::HookTrustStatus;
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
     use insta::assert_snapshot;

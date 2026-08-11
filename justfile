@@ -1,14 +1,9 @@
 set working-directory := "codex-rs"
 set positional-arguments := true
 
-export JUST_SHELL := justfile_directory() / "scripts/just-shell.py"
-
-set shell := ["python3", "-c", 'import os, runpy; runpy.run_path(os.environ["JUST_SHELL"], run_name="__main__")']
-set windows-shell := ["python", "-c", 'import os, runpy; runpy.run_path(os.environ["JUST_SHELL"], run_name="__main__")']
+set shell := ["sh", "-eu", "-c"]
 
 rust_min_stack := "8388608"
-python := if os_family() == "windows" { "python" } else { "python3" }
-
 # Display help
 help:
     just -l
@@ -24,13 +19,6 @@ codex *args:
 exec *args:
     cargo run --bin codex -- exec {args}
 
-# Start `codex exec-server` and run codex-tui.
-[no-cd]
-[positional-arguments]
-[unix]
-tui-with-exec-server *args:
-    {{ justfile_directory() }}/scripts/run_tui_with_exec_server.sh "$@"
-
 # Run the CLI version of the file-search crate.
 file-search *args:
     cargo run --bin codex-file-search -- {args}
@@ -39,42 +27,23 @@ file-search *args:
 code-mode-host *args:
     cargo run --bin codex-code-mode-host -- {args}
 
-# Build the CLI and run the app-server test client
-app-server-test-client *args:
-    cargo build -p codex-cli
-    cargo run -p codex-app-server-test-client -- --codex-bin ./target/debug/codex {args}
-
-# Format the justfile, Rust, Python SDK code, and Python scripts.
+# Format Rust source.
 fmt:
-    @{{ python }} ../scripts/format.py
+    cargo fmt --all
 
 # Check formatting without modifying files.
 fmt-check:
-    @{{ python }} ../scripts/format.py --check
+    cargo fmt --all --check
 
 fix *args:
-    cargo clippy --fix --tests --allow-dirty {args}
+    cargo clippy --fix --tests --allow-dirty "$@"
 
 clippy *args:
-    cargo clippy --tests {args}
+    cargo clippy --tests "$@"
 
-[unix]
 install:
     rustup show active-toolchain
     cargo fetch
-
-[windows]
-install:
-    #!powershell.exe -File
-    $pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
-    if (-not $pwsh) {
-        winget install --exact --id Microsoft.PowerShell --source winget --accept-package-agreements --accept-source-agreements
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    }
-    rustup show active-toolchain
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    cargo fetch
-    exit $LASTEXITCODE
 
 # Run nextest with --no-fail-fast so all tests are run.
 #
@@ -82,20 +51,8 @@ install:
 # Prefer this for routine local runs. Workspace crate features are banned, so
 
 # there should be no need to add `--all-features`.
-[unix]
 test *args:
     RUST_MIN_STACK={{ rust_min_stack }} NEXTEST_PROFILE=local cargo nextest run --no-fail-fast "$@"
-
-[windows]
-test *args:
-    $env:RUST_MIN_STACK = "{{ rust_min_stack }}"; $env:NEXTEST_PROFILE = "local"; cargo nextest run --no-fail-fast @($args | Select-Object -Skip 1)
-
-# Run from the repository root so scripts that resolve paths from `cwd` see
-
-# the same layout they use in GitHub Actions.
-[no-cd]
-test-github-scripts:
-    {{ python }} -m unittest discover -s {{ justfile_directory() }}/.github/scripts -p 'test_*.py'
 
 # Run explicit workspace benchmark targets.
 bench *args:
@@ -109,24 +66,10 @@ bench-smoke:
 write-config-schema:
     cargo run -p codex-core --bin codex-write-config-schema
 
-# Regenerate vendored app-server protocol schema artifacts.
-write-app-server-schema *args:
-    cargo run -p codex-app-server-protocol --bin write_schema_fixtures -- {args}
-
 [no-cd]
 write-hooks-schema:
     cargo run --manifest-path {{ justfile_directory() }}/codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures
 
-# Run the argument-comment Dylint checks across codex-rs.
-[no-cd]
-argument-comment-lint *args:
-    {{ python }} {{ justfile_directory() }}/tools/argument-comment-lint/run.py {args}
-
 # Tail logs from the state SQLite database
-[unix]
 log *args:
     if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p codex-cli --bin logs_client -- "$@"
-
-[windows]
-log *args:
-    $forwarded_args = @($args | Select-Object -Skip 1); if ($forwarded_args.Count -gt 0 -and $forwarded_args[0] -eq "--") { $forwarded_args = @($forwarded_args | Select-Object -Skip 1) }; cargo run -p codex-cli --bin logs_client -- @forwarded_args

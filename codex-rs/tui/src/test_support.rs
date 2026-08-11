@@ -26,30 +26,30 @@ pub(crate) fn session_source_cli<T>() -> T
 where
     T: DeserializeOwned,
 {
-    from_app_server_wire(codex_app_server_protocol::SessionSource::Cli)
+    from_cli_runtime_wire(codex_cli_protocol::SessionSource::Cli)
 }
 
 pub(crate) fn skill_scope_user<T>() -> T
 where
     T: DeserializeOwned,
 {
-    from_app_server_wire(codex_app_server_protocol::SkillScope::User)
+    from_cli_runtime_wire(codex_cli_protocol::SkillScope::User)
 }
 
 pub(crate) fn skill_scope_repo<T>() -> T
 where
     T: DeserializeOwned,
 {
-    from_app_server_wire(codex_app_server_protocol::SkillScope::Repo)
+    from_cli_runtime_wire(codex_cli_protocol::SkillScope::Repo)
 }
 
-fn from_app_server_wire<T>(value: impl Serialize) -> T
+fn from_cli_runtime_wire<T>(value: impl Serialize) -> T
 where
     T: DeserializeOwned,
 {
     serde_json::to_value(value)
         .and_then(serde_json::from_value)
         .unwrap_or_else(|err| {
-            panic!("app-server wire value should map to legacy helper type: {err}")
+            panic!("cli-runtime wire value should map to legacy helper type: {err}")
         })
 }

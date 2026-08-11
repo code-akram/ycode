@@ -1,14 +1,14 @@
-use codex_app_server_client::AppServerRequestHandle;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ConfigBatchWriteParams;
-use codex_app_server_protocol::ConfigWriteResponse;
-use codex_app_server_protocol::HookMetadata;
-use codex_app_server_protocol::HookTrustStatus;
-use codex_app_server_protocol::HooksListEntry;
-use codex_app_server_protocol::HooksListParams;
-use codex_app_server_protocol::HooksListResponse;
-use codex_app_server_protocol::MergeStrategy;
-use codex_app_server_protocol::RequestId;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ConfigBatchWriteParams;
+use codex_cli_protocol::ConfigWriteResponse;
+use codex_cli_protocol::HookMetadata;
+use codex_cli_protocol::HookTrustStatus;
+use codex_cli_protocol::HooksListEntry;
+use codex_cli_protocol::HooksListParams;
+use codex_cli_protocol::HooksListResponse;
+use codex_cli_protocol::MergeStrategy;
+use codex_cli_protocol::RequestId;
+use codex_cli_runtime_client::CliRuntimeRequestHandle;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use std::path::Path;
@@ -22,7 +22,7 @@ pub(crate) struct HookTrustUpdate {
 }
 
 pub(crate) async fn fetch_hooks_list(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     cwd: PathBuf,
 ) -> Result<HooksListResponse> {
     let request_id = RequestId::String(format!("hooks-list-{}", Uuid::new_v4()));
@@ -56,7 +56,7 @@ pub(crate) fn hook_needs_review(hook: &HookMetadata) -> bool {
 }
 
 pub(crate) async fn write_hook_trusts(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     trust_updates: Vec<HookTrustUpdate>,
 ) -> Result<ConfigWriteResponse> {
     let request_id = RequestId::String(format!("hooks-config-write-{}", Uuid::new_v4()));
@@ -77,7 +77,7 @@ pub(crate) async fn write_hook_trusts(
         .request_typed(ClientRequest::ConfigBatchWrite {
             request_id,
             params: ConfigBatchWriteParams {
-                edits: vec![codex_app_server_protocol::ConfigEdit {
+                edits: vec![codex_cli_protocol::ConfigEdit {
                     key_path: "hooks.state".to_string(),
                     value,
                     merge_strategy: MergeStrategy::Upsert,
@@ -92,7 +92,7 @@ pub(crate) async fn write_hook_trusts(
 }
 
 pub(crate) async fn write_hook_trust(
-    request_handle: AppServerRequestHandle,
+    request_handle: CliRuntimeRequestHandle,
     key: String,
     current_hash: String,
 ) -> Result<ConfigWriteResponse> {

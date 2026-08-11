@@ -44,7 +44,7 @@ const GROUPS: &[OutputGroup] = &[
     },
     OutputGroup {
         title: "Background Server",
-        keys: &["app-server"],
+        keys: &["cli-runtime"],
     },
 ];
 
@@ -262,7 +262,7 @@ struct DoctorNote {
 }
 
 fn display_status(check: &DoctorCheck) -> DisplayStatus {
-    if check.category == "app-server"
+    if check.category == "cli-runtime"
         && check.status == CheckStatus::Ok
         && check
             .details
@@ -628,7 +628,7 @@ fn display_summary(check: &DoctorCheck, options: HumanOutputOptions) -> String {
         "sandbox" => sandbox_summary(check),
         "network" => network_summary(check),
         "websocket" => websocket_summary(check),
-        "app-server" => app_server_summary(check),
+        "cli-runtime" => cli_runtime_summary(check),
         _ => check.summary.clone(),
     }
 }
@@ -747,7 +747,7 @@ fn websocket_summary(check: &DoctorCheck) -> String {
     }
 }
 
-fn app_server_summary(check: &DoctorCheck) -> String {
+fn cli_runtime_summary(check: &DoctorCheck) -> String {
     let status = detail::detail_value(check, "status");
     let mode = detail::detail_value(check, "mode");
     match (status, mode) {
@@ -1189,8 +1189,8 @@ mod tests {
                 "Responses WebSocket handshake succeeded",
             ),
             DoctorCheck::new(
-                "app_server.status",
-                "app-server",
+                "cli_runtime.status",
+                "cli-runtime",
                 CheckStatus::Ok,
                 "background server is not running",
             ),
@@ -1260,7 +1260,7 @@ Connectivity
   ✓ reachability active provider endpoints are reachable over HTTP
 
 Background Server
-  ✓ app-server   background server is not running
+  ✓ cli-runtime  background server is not running
 
 {}
 12 ok · 2 notes · 1 warn · 1 fail failed
@@ -1315,7 +1315,7 @@ Connectivity
   ✓ reachability active provider endpoints are reachable over HTTP
 
 Background Server
-  ✓ app-server   background server is not running
+  ✓ cli-runtime  background server is not running
 
 {}
 12 ok · 2 notes · 1 warn · 1 fail failed
@@ -1423,7 +1423,7 @@ Connectivity
   [ok] reachability active provider endpoints are reachable over HTTP
 
 Background Server
-  [ok] app-server   background server is not running
+  [ok] cli-runtime  background server is not running
 
 {}
 12 ok | 2 notes | 1 warn | 1 fail failed
@@ -1543,8 +1543,8 @@ Run codex doctor without --summary for detailed diagnostics.
                 )
                 .detail("reachability mode: API key auth"),
                 DoctorCheck::new(
-                    "app_server.status",
-                    "app-server",
+                    "cli_runtime.status",
+                    "cli-runtime",
                     CheckStatus::Ok,
                     "background server is not running",
                 )
@@ -1563,7 +1563,7 @@ Run codex doctor without --summary for detailed diagnostics.
         assert!(rendered.contains(
             "⚠ auth         mixed auth signals: ChatGPT login plus API key env var; HTTP reachability uses API-key mode"
         ));
-        assert!(rendered.contains("○ app-server   not running (ephemeral mode)"));
+        assert!(rendered.contains("○ cli-runtime  not running (ephemeral mode)"));
         assert!(rendered.contains("5 ok · 1 idle · 5 notes · 1 warn · 0 fail degraded"));
     }
 

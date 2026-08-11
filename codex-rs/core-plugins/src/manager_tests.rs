@@ -470,11 +470,11 @@ fn remote_installed_plugin_in_marketplace(
         name: name.to_string(),
         installed_at: None,
         enabled: true,
-        install_policy: codex_app_server_protocol::PluginInstallPolicy::Available,
+        install_policy: codex_cli_protocol::PluginInstallPolicy::Available,
         install_policy_source: None,
         must_show_installation_interstitial: None,
-        auth_policy: codex_app_server_protocol::PluginAuthPolicy::OnUse,
-        availability: codex_app_server_protocol::PluginAvailability::Available,
+        auth_policy: codex_cli_protocol::PluginAuthPolicy::OnUse,
+        availability: codex_cli_protocol::PluginAvailability::Available,
         disabled_reason: None,
         eligible_plan_types: None,
         interface: None,
@@ -894,9 +894,9 @@ async fn build_remote_installed_plugin_marketplaces_from_cache_uses_remote_metad
     let codex_home = TempDir::new().unwrap();
     let manager = PluginsManager::new(codex_home.path().to_path_buf());
     let mut plugin = remote_installed_linear_plugin();
-    plugin.install_policy = codex_app_server_protocol::PluginInstallPolicy::InstalledByDefault;
-    plugin.auth_policy = codex_app_server_protocol::PluginAuthPolicy::OnInstall;
-    plugin.interface = Some(codex_app_server_protocol::PluginInterface {
+    plugin.install_policy = codex_cli_protocol::PluginInstallPolicy::InstalledByDefault;
+    plugin.auth_policy = codex_cli_protocol::PluginAuthPolicy::OnInstall;
+    plugin.interface = Some(codex_cli_protocol::PluginInterface {
         display_name: Some("Linear".to_string()),
         short_description: Some("Track remote work".to_string()),
         long_description: None,
@@ -935,11 +935,11 @@ async fn build_remote_installed_plugin_marketplaces_from_cache_uses_remote_metad
     assert_eq!(plugin.enabled, true);
     assert_eq!(
         plugin.install_policy,
-        codex_app_server_protocol::PluginInstallPolicy::InstalledByDefault
+        codex_cli_protocol::PluginInstallPolicy::InstalledByDefault
     );
     assert_eq!(
         plugin.auth_policy,
-        codex_app_server_protocol::PluginAuthPolicy::OnInstall
+        codex_cli_protocol::PluginAuthPolicy::OnInstall
     );
     assert_eq!(plugin.keywords, vec!["issues".to_string()]);
     assert_eq!(
@@ -4125,7 +4125,7 @@ plugins = true
             loaded_plugins: &loaded_plugins,
             auth: Some(&auth),
             disabled_tools: &disabled_tools,
-            app_server_client_name: None,
+            cli_runtime_client_name: None,
         })
         .await;
 

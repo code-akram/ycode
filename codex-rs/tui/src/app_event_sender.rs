@@ -6,10 +6,10 @@
 use std::path::PathBuf;
 
 use crate::app_command::AppCommand;
-use codex_app_server_protocol::CommandExecutionApprovalDecision;
-use codex_app_server_protocol::FileChangeApprovalDecision;
-use codex_app_server_protocol::ReviewTarget;
-use codex_app_server_protocol::ToolRequestUserInputResponse;
+use codex_cli_protocol::CommandExecutionApprovalDecision;
+use codex_cli_protocol::FileChangeApprovalDecision;
+use codex_cli_protocol::ReviewTarget;
+use codex_cli_protocol::ToolRequestUserInputResponse;
 use codex_protocol::ThreadId;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use tokio::sync::mpsc::UnboundedSender;

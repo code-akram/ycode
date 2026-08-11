@@ -10,7 +10,7 @@ use crate::line_truncation::line_width;
 use crate::render::highlight::MAX_HIGHLIGHT_LINE_BYTES;
 use crate::session_state::ThreadSessionState;
 use crate::wrapping::word_wrap_lines;
-use codex_app_server_protocol::AskForApproval;
+use codex_cli_protocol::AskForApproval;
 use codex_otel::RuntimeMetricTotals;
 use codex_otel::RuntimeMetricsSummary;
 use codex_protocol::ThreadId;
@@ -25,7 +25,7 @@ use ratatui::layout::Rect;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
+use codex_cli_protocol::CommandExecutionSource as ExecCommandSource;
 async fn test_config() -> Config {
     let codex_home = std::env::temp_dir();
     ConfigBuilder::default()

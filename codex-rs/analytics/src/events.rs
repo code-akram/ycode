@@ -25,8 +25,8 @@ use crate::facts::TurnSteerRejectionReason;
 use crate::facts::TurnSteerResult;
 use crate::facts::TurnSubmissionType;
 use crate::now_unix_millis;
-use codex_app_server_protocol::CodexErrorInfo;
-use codex_app_server_protocol::CommandExecutionSource;
+use codex_cli_protocol::CodexErrorInfo;
+use codex_cli_protocol::CommandExecutionSource;
 use codex_login::default_client::originator;
 use codex_plugin::PluginId;
 use codex_plugin::PluginTelemetryMetadata;
@@ -47,7 +47,7 @@ use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AppServerRpcTransport {
+pub enum CliRuntimeRpcTransport {
     Stdio,
     Websocket,
     InProcess,
@@ -147,11 +147,11 @@ pub(crate) struct SkillInvocationEventParams {
 }
 
 #[derive(Clone, Serialize)]
-pub(crate) struct CodexAppServerClientMetadata {
+pub(crate) struct CodexCliRuntimeClientMetadata {
     pub(crate) product_client_id: String,
     pub(crate) client_name: Option<String>,
     pub(crate) client_version: Option<String>,
-    pub(crate) rpc_transport: AppServerRpcTransport,
+    pub(crate) rpc_transport: CliRuntimeRpcTransport,
     pub(crate) experimental_api_enabled: Option<bool>,
 }
 
@@ -167,7 +167,7 @@ pub(crate) struct CodexRuntimeMetadata {
 pub(crate) struct ThreadInitializedEventParams {
     pub(crate) thread_id: String,
     pub(crate) session_id: String,
-    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) cli_runtime_client: CodexCliRuntimeClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     pub(crate) model: String,
     pub(crate) ephemeral: bool,
@@ -478,7 +478,7 @@ pub struct GuardianReviewSessionAnalyticsParams {
 #[derive(Serialize)]
 pub(crate) struct GuardianReviewEventPayload {
     pub(crate) session_id: String,
-    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) cli_runtime_client: CodexCliRuntimeClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     #[serde(flatten)]
     pub(crate) guardian_review: GuardianReviewEventParams,
@@ -534,7 +534,7 @@ pub(crate) struct CodexToolItemEventBase {
     pub(crate) parent_call_id: Option<String>,
     pub(crate) originating_response_id: Option<String>,
     pub(crate) subsequent_response_id: Option<String>,
-    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) cli_runtime_client: CodexCliRuntimeClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     pub(crate) thread_source: Option<ThreadSource>,
     pub(crate) subagent_source: Option<String>,
@@ -543,7 +543,7 @@ pub(crate) struct CodexToolItemEventBase {
     pub(crate) started_at_ms: u64,
     pub(crate) completed_at_ms: u64,
     // Observed item lifecycle duration. This may undercount end-to-end execution
-    // for tools where app-server only sees part of the upstream flow.
+    // for tools where cli-runtime only sees part of the upstream flow.
     pub(crate) duration_ms: Option<u64>,
     pub(crate) execution_duration_ms: Option<u64>,
     pub(crate) review_count: u64,
@@ -610,7 +610,7 @@ pub(crate) struct CodexReviewEventParams {
     pub(crate) turn_id: String,
     pub(crate) item_id: Option<String>,
     pub(crate) review_id: String,
-    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) cli_runtime_client: CodexCliRuntimeClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     pub(crate) thread_source: Option<ThreadSource>,
     pub(crate) subagent_source: Option<String>,
@@ -791,7 +791,7 @@ pub(crate) struct CodexCompactionEventParams {
     pub(crate) thread_id: String,
     pub(crate) session_id: String,
     pub(crate) turn_id: String,
-    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) cli_runtime_client: CodexCliRuntimeClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     pub(crate) thread_source: Option<ThreadSource>,
     pub(crate) subagent_source: Option<String>,
@@ -826,7 +826,7 @@ pub(crate) struct CodexGoalEventParams {
     pub(crate) thread_id: String,
     pub(crate) session_id: String,
     pub(crate) turn_id: Option<String>,
-    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) cli_runtime_client: CodexCliRuntimeClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     pub(crate) thread_source: Option<ThreadSource>,
     pub(crate) subagent_source: Option<String>,
@@ -853,7 +853,7 @@ pub(crate) struct CodexTurnEventParams {
     // TODO(rhan-oai): Populate once queued/default submission type is plumbed from
     // the turn/start callsites instead of always being reported as None.
     pub(crate) submission_type: Option<TurnSubmissionType>,
-    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) cli_runtime_client: CodexCliRuntimeClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     pub(crate) ephemeral: bool,
     pub(crate) thread_source: Option<ThreadSource>,
@@ -921,7 +921,7 @@ pub(crate) struct CodexTurnSteerEventParams {
     pub(crate) session_id: String,
     pub(crate) expected_turn_id: Option<String>,
     pub(crate) accepted_turn_id: Option<String>,
-    pub(crate) app_server_client: CodexAppServerClientMetadata,
+    pub(crate) cli_runtime_client: CodexCliRuntimeClientMetadata,
     pub(crate) runtime: CodexRuntimeMetadata,
     pub(crate) thread_source: Option<ThreadSource>,
     pub(crate) subagent_source: Option<String>,
@@ -1124,7 +1124,7 @@ pub(crate) fn codex_plugin_install_requested_metadata(
 pub(crate) fn codex_compaction_event_params(
     input: CodexCompactionEvent,
     session_id: String,
-    app_server_client: CodexAppServerClientMetadata,
+    cli_runtime_client: CodexCliRuntimeClientMetadata,
     runtime: CodexRuntimeMetadata,
     thread_source: Option<ThreadSource>,
     subagent_source: Option<String>,
@@ -1134,7 +1134,7 @@ pub(crate) fn codex_compaction_event_params(
         thread_id: input.thread_id,
         session_id,
         turn_id: input.turn_id,
-        app_server_client,
+        cli_runtime_client,
         runtime,
         thread_source,
         subagent_source,
@@ -1162,7 +1162,7 @@ pub(crate) fn codex_compaction_event_params(
 pub(crate) fn codex_goal_event_params(
     input: CodexGoalEvent,
     session_id: String,
-    app_server_client: CodexAppServerClientMetadata,
+    cli_runtime_client: CodexCliRuntimeClientMetadata,
     runtime: CodexRuntimeMetadata,
     thread_source: Option<ThreadSource>,
     subagent_source: Option<String>,
@@ -1172,7 +1172,7 @@ pub(crate) fn codex_goal_event_params(
         thread_id: input.thread_id,
         session_id,
         turn_id: input.turn_id,
-        app_server_client,
+        cli_runtime_client,
         runtime,
         thread_source,
         subagent_source,
@@ -1264,11 +1264,11 @@ pub(crate) fn subagent_thread_started_event_request(
     let event_params = ThreadInitializedEventParams {
         thread_id: input.thread_id,
         session_id: input.session_id,
-        app_server_client: CodexAppServerClientMetadata {
+        cli_runtime_client: CodexCliRuntimeClientMetadata {
             product_client_id: input.product_client_id,
             client_name: Some(input.client_name),
             client_version: Some(input.client_version),
-            rpc_transport: AppServerRpcTransport::InProcess,
+            rpc_transport: CliRuntimeRpcTransport::InProcess,
             experimental_api_enabled: None,
         },
         runtime: current_runtime_metadata(),

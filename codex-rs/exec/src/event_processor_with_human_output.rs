@@ -1,12 +1,12 @@
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
-use codex_app_server_protocol::CommandExecutionStatus;
-use codex_app_server_protocol::PatchApplyStatus;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::ThreadTokenUsage;
-use codex_app_server_protocol::TurnStatus;
+use codex_cli_protocol::CommandExecutionStatus;
+use codex_cli_protocol::PatchApplyStatus;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::ThreadTokenUsage;
+use codex_cli_protocol::TurnStatus;
 use codex_core::config::Config;
 use codex_model_provider_info::WireApi;
 use codex_protocol::num_format::format_with_separators;
@@ -312,13 +312,13 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 }
                 for step in notification.plan {
                     match step.status {
-                        codex_app_server_protocol::TurnPlanStepStatus::Completed => {
+                        codex_cli_protocol::TurnPlanStepStatus::Completed => {
                             eprintln!("  {} {}", "✓".style(self.green), step.step);
                         }
-                        codex_app_server_protocol::TurnPlanStepStatus::InProgress => {
+                        codex_cli_protocol::TurnPlanStepStatus::InProgress => {
                             eprintln!("  {} {}", "→".style(self.cyan), step.step);
                         }
-                        codex_app_server_protocol::TurnPlanStepStatus::Pending => {
+                        codex_cli_protocol::TurnPlanStepStatus::Pending => {
                             eprintln!(
                                 "  {} {}",
                                 "•".style(self.dimmed),

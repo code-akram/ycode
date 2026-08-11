@@ -8,8 +8,6 @@ mod model_catalog;
 mod plugin_catalog;
 mod rate_limits;
 mod safety_buffering;
-#[path = "tests/session_lifecycle_requests.rs"]
-mod session_lifecycle_requests;
 mod session_summary;
 mod startup;
 #[path = "tests/turn_submission.rs"]
@@ -48,45 +46,45 @@ use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::PermissionProfileSnapshot;
 use crate::legacy_core::config::TerminalResizeReflowMaxRows;
-use codex_app_server_client::AppServerPath;
-use codex_app_server_protocol::AdditionalFileSystemPermissions;
-use codex_app_server_protocol::AdditionalNetworkPermissions;
-use codex_app_server_protocol::AdditionalPermissionProfile;
-use codex_app_server_protocol::AgentMessageDeltaNotification;
-use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
-use codex_app_server_protocol::FileChangeRequestApprovalParams;
-use codex_app_server_protocol::FileUpdateChange;
-use codex_app_server_protocol::ItemStartedNotification;
-use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::NetworkApprovalContext as AppServerNetworkApprovalContext;
-use codex_app_server_protocol::NetworkApprovalProtocol as AppServerNetworkApprovalProtocol;
-use codex_app_server_protocol::NetworkPolicyAmendment as AppServerNetworkPolicyAmendment;
-use codex_app_server_protocol::NetworkPolicyRuleAction as AppServerNetworkPolicyRuleAction;
-use codex_app_server_protocol::NonSteerableTurnKind as AppServerNonSteerableTurnKind;
-use codex_app_server_protocol::PatchChangeKind;
-use codex_app_server_protocol::PermissionsRequestApprovalParams;
-use codex_app_server_protocol::RequestId as AppServerRequestId;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadClosedNotification;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::ThreadSettings;
-use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
-use codex_app_server_protocol::ThreadStartedNotification;
-use codex_app_server_protocol::ThreadTokenUsage;
-use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
-use codex_app_server_protocol::TokenUsageBreakdown;
-use codex_app_server_protocol::ToolRequestUserInputParams;
-use codex_app_server_protocol::Turn;
-use codex_app_server_protocol::TurnCompletedNotification;
-use codex_app_server_protocol::TurnError as AppServerTurnError;
-use codex_app_server_protocol::TurnStartedNotification;
-use codex_app_server_protocol::TurnStatus;
-use codex_app_server_protocol::UserInput;
-use codex_app_server_protocol::UserInput as AppServerUserInput;
-use codex_app_server_protocol::WarningNotification;
+use codex_cli_protocol::AdditionalFileSystemPermissions;
+use codex_cli_protocol::AdditionalNetworkPermissions;
+use codex_cli_protocol::AdditionalPermissionProfile;
+use codex_cli_protocol::AgentMessageDeltaNotification;
+use codex_cli_protocol::AskForApproval;
+use codex_cli_protocol::CommandExecutionRequestApprovalParams;
+use codex_cli_protocol::FileChangeRequestApprovalParams;
+use codex_cli_protocol::FileUpdateChange;
+use codex_cli_protocol::ItemStartedNotification;
+use codex_cli_protocol::JSONRPCErrorError;
+use codex_cli_protocol::NetworkApprovalContext as CliRuntimeNetworkApprovalContext;
+use codex_cli_protocol::NetworkApprovalProtocol as CliRuntimeNetworkApprovalProtocol;
+use codex_cli_protocol::NetworkPolicyAmendment as CliRuntimeNetworkPolicyAmendment;
+use codex_cli_protocol::NetworkPolicyRuleAction as CliRuntimeNetworkPolicyRuleAction;
+use codex_cli_protocol::NonSteerableTurnKind as CliRuntimeNonSteerableTurnKind;
+use codex_cli_protocol::PatchChangeKind;
+use codex_cli_protocol::PermissionsRequestApprovalParams;
+use codex_cli_protocol::RequestId as CliRuntimeRequestId;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::Thread;
+use codex_cli_protocol::ThreadClosedNotification;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::ThreadSettings;
+use codex_cli_protocol::ThreadSettingsUpdatedNotification;
+use codex_cli_protocol::ThreadStartedNotification;
+use codex_cli_protocol::ThreadTokenUsage;
+use codex_cli_protocol::ThreadTokenUsageUpdatedNotification;
+use codex_cli_protocol::TokenUsageBreakdown;
+use codex_cli_protocol::ToolRequestUserInputParams;
+use codex_cli_protocol::Turn;
+use codex_cli_protocol::TurnCompletedNotification;
+use codex_cli_protocol::TurnError as CliRuntimeTurnError;
+use codex_cli_protocol::TurnStartedNotification;
+use codex_cli_protocol::TurnStatus;
+use codex_cli_protocol::UserInput;
+use codex_cli_protocol::UserInput as CliRuntimeUserInput;
+use codex_cli_protocol::WarningNotification;
+use codex_cli_runtime_client::CliRuntimePath;
 use codex_models_manager::test_support::construct_model_info_offline_for_tests;
 use codex_models_manager::test_support::get_model_offline_for_tests;
 use codex_otel::SessionTelemetry;
@@ -185,18 +183,18 @@ async fn chat_widget_frame_reuses_active_cell_height_across_frame_passes() {
 }
 
 async fn next_thread_settings_updated(
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     thread_id: ThreadId,
 ) -> ThreadSettingsUpdatedNotification {
     for _ in 0..20 {
         let event = time::timeout(
             std::time::Duration::from_secs(/*secs*/ 2),
-            app_server.next_event(),
+            cli_runtime.next_event(),
         )
         .await
-        .expect("app-server should emit an event")
-        .expect("app-server event stream should remain open");
-        if let codex_app_server_client::AppServerEvent::ServerNotification(notification) = event
+        .expect("cli-runtime should emit an event")
+        .expect("cli-runtime event stream should remain open");
+        if let codex_cli_runtime_client::CliRuntimeEvent::ServerNotification(notification) = event
             && let ServerNotification::ThreadSettingsUpdated(notification) = *notification
             && notification.thread_id == thread_id.to_string()
         {
@@ -222,13 +220,13 @@ fn bypass_hook_trust_startup_warning_snapshot() {
 #[tokio::test]
 async fn cyber_model_auto_review_notice_snapshot() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let mut app_server =
-        crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
+    let mut cli_runtime =
+        crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
 
     app.handle_event(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         AppEvent::CyberModelAutoReviewNotice,
     )
     .await?;
@@ -250,7 +248,7 @@ async fn enqueue_primary_thread_session_replays_buffered_approval_after_attach()
         exec_approval_request(thread_id, "turn-1", "call-1", /*approval_id*/ None);
 
     assert_eq!(
-        app.pending_app_server_requests
+        app.pending_runtime_requests
             .note_server_request(&approval_request),
         None
     );
@@ -313,7 +311,7 @@ async fn resolved_buffered_approval_does_not_become_actionable_after_drain() -> 
     while app_event_rx.try_recv().is_ok() {}
 
     assert_eq!(
-        app.pending_app_server_requests
+        app.pending_runtime_requests
             .note_server_request(&approval_request),
         None
     );
@@ -321,10 +319,10 @@ async fn resolved_buffered_approval_does_not_become_actionable_after_drain() -> 
         .await?;
 
     let resolved = app
-        .pending_app_server_requests
-        .resolve_notification(&AppServerRequestId::Integer(1))
-        .expect("matching app-server request should resolve");
-    app.chat_widget.dismiss_app_server_request(&resolved);
+        .pending_runtime_requests
+        .resolve_notification(&CliRuntimeRequestId::Integer(1))
+        .expect("matching cli-runtime request should resolve");
+    app.chat_widget.dismiss_cli_runtime_request(&resolved);
     while app_event_rx.try_recv().is_ok() {}
 
     let rx = app
@@ -401,7 +399,7 @@ async fn enqueue_primary_thread_session_replays_turns_before_initial_prompt_subm
             vec![ThreadItem::UserMessage {
                 id: "user-1".to_string(),
                 client_id: None,
-                content: vec![AppServerUserInput::Text {
+                content: vec![CliRuntimeUserInput::Text {
                     text: "earlier prompt".to_string(),
                     text_elements: Vec::new(),
                 }],
@@ -1323,7 +1321,7 @@ async fn token_usage_update_refreshes_status_line_with_runtime_context_window() 
 }
 
 #[tokio::test]
-async fn collab_receiver_notification_caches_thread_without_app_server_read() {
+async fn collab_receiver_notification_caches_thread_without_cli_runtime_read() {
     let mut app = make_test_app().await;
     let receiver_thread_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread id");
@@ -1335,8 +1333,8 @@ async fn collab_receiver_notification_caches_thread_without_app_server_read() {
             started_at_ms: 0,
             item: ThreadItem::CollabAgentToolCall {
                 id: "wait-1".to_string(),
-                tool: codex_app_server_protocol::CollabAgentTool::Wait,
-                status: codex_app_server_protocol::CollabAgentToolCallStatus::InProgress,
+                tool: codex_cli_protocol::CollabAgentTool::Wait,
+                status: codex_cli_protocol::CollabAgentToolCallStatus::InProgress,
                 sender_thread_id: ThreadId::new().to_string(),
                 receiver_thread_ids: vec![receiver_thread_id.to_string()],
                 prompt: None,
@@ -1366,14 +1364,14 @@ async fn collab_receiver_notification_does_not_cache_not_found_thread() {
         ThreadId::from_string("00000000-0000-0000-0000-000000000124").expect("valid thread id");
 
     app.handle_thread_event_now(ThreadBufferedEvent::Notification(Box::new(
-        ServerNotification::ItemCompleted(codex_app_server_protocol::ItemCompletedNotification {
+        ServerNotification::ItemCompleted(codex_cli_protocol::ItemCompletedNotification {
             thread_id: ThreadId::new().to_string(),
             turn_id: "turn-1".to_string(),
             completed_at_ms: 0,
             item: ThreadItem::CollabAgentToolCall {
                 id: "send-1".to_string(),
-                tool: codex_app_server_protocol::CollabAgentTool::SendInput,
-                status: codex_app_server_protocol::CollabAgentToolCallStatus::Failed,
+                tool: codex_cli_protocol::CollabAgentTool::SendInput,
+                status: codex_cli_protocol::CollabAgentToolCallStatus::Failed,
                 sender_thread_id: ThreadId::new().to_string(),
                 receiver_thread_ids: vec![receiver_thread_id.to_string()],
                 prompt: Some("hello".to_string()),
@@ -1381,8 +1379,8 @@ async fn collab_receiver_notification_does_not_cache_not_found_thread() {
                 reasoning_effort: None,
                 agents_states: HashMap::from([(
                     receiver_thread_id.to_string(),
-                    codex_app_server_protocol::CollabAgentState {
-                        status: codex_app_server_protocol::CollabAgentStatus::NotFound,
+                    codex_cli_protocol::CollabAgentState {
+                        status: codex_cli_protocol::CollabAgentStatus::NotFound,
                         message: None,
                     },
                 )]),
@@ -1396,7 +1394,7 @@ async fn collab_receiver_notification_does_not_cache_not_found_thread() {
 #[tokio::test]
 async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -1405,7 +1403,7 @@ async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
     app.thread_event_channels
         .insert(thread_id, ThreadEventChannel::new(/*capacity*/ 1));
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     assert_eq!(app.thread_event_channels.contains_key(&thread_id), true);
     assert_eq!(
@@ -1425,7 +1423,7 @@ async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
 #[tokio::test]
 async fn open_agent_picker_preserves_cached_metadata_for_replay_threads() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -1440,7 +1438,7 @@ async fn open_agent_picker_preserves_cached_metadata_for_replay_threads() -> Res
         /*is_closed*/ true,
     );
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     assert_eq!(app.thread_event_channels.contains_key(&thread_id), true);
     assert_eq!(
@@ -1459,7 +1457,7 @@ async fn open_agent_picker_preserves_cached_metadata_for_replay_threads() -> Res
 #[tokio::test]
 async fn open_agent_picker_preserves_running_hints_until_observed_completion() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -1474,7 +1472,7 @@ async fn open_agent_picker_preserves_running_hints_until_observed_completion() -
             is_running_hint: true,
         });
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     let mut expected_entry = AgentPickerThreadEntry {
         agent_nickname: None,
@@ -1507,7 +1505,7 @@ async fn open_agent_picker_preserves_running_hints_until_observed_completion() -
     )
     .await?;
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     assert_eq!(app.agent_navigation.get(&thread_id), Some(&expected_entry));
     app.enqueue_thread_notification(thread_id, turn_started_notification(thread_id, "turn-1"))
@@ -1518,7 +1516,7 @@ async fn open_agent_picker_preserves_running_hints_until_observed_completion() -
     )
     .await?;
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     expected_entry.is_running = false;
     assert_eq!(app.agent_navigation.get(&thread_id), Some(&expected_entry));
@@ -1529,14 +1527,14 @@ async fn open_agent_picker_preserves_running_hints_until_observed_completion() -
             is_running_hint: true,
         });
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     expected_entry.is_running = false;
     assert_eq!(app.agent_navigation.get(&thread_id), Some(&expected_entry));
     app.enqueue_thread_notification(thread_id, turn_started_notification(thread_id, "turn-2"))
         .await?;
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     expected_entry.is_running = true;
     assert_eq!(app.agent_navigation.get(&thread_id), Some(&expected_entry));
@@ -1546,7 +1544,7 @@ async fn open_agent_picker_preserves_running_hints_until_observed_completion() -
 #[tokio::test]
 async fn open_agent_picker_clears_running_hint_from_completed_snapshot() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -1568,7 +1566,7 @@ async fn open_agent_picker_clears_running_hint_from_completed_snapshot() -> Resu
         });
     assert!(!app.agent_navigation.is_parent_owned(thread_id));
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     assert_eq!(
         app.agent_navigation.get(&thread_id),
@@ -1586,7 +1584,7 @@ async fn open_agent_picker_clears_running_hint_from_completed_snapshot() -> Resu
 #[tokio::test]
 async fn open_agent_picker_selects_path_backed_agent() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = Box::pin(make_test_app_with_channels()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -1602,7 +1600,7 @@ async fn open_agent_picker_selects_path_backed_agent() -> Result<()> {
             is_running_hint: true,
         });
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     assert_app_snapshot!(
         "path_backed_agent_picker",
@@ -1621,7 +1619,7 @@ async fn open_agent_picker_selects_path_backed_agent() -> Result<()> {
 #[tokio::test]
 async fn open_agent_picker_refreshes_replay_only_path_backed_liveness() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -1641,7 +1639,7 @@ async fn open_agent_picker_refreshes_replay_only_path_backed_liveness() -> Resul
             is_running_hint: true,
         });
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     assert_eq!(
         app.agent_navigation.get(&thread_id),
@@ -1659,7 +1657,7 @@ async fn open_agent_picker_refreshes_replay_only_path_backed_liveness() -> Resul
 #[tokio::test]
 async fn open_agent_picker_prunes_terminal_metadata_only_threads() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -1672,7 +1670,7 @@ async fn open_agent_picker_prunes_terminal_metadata_only_threads() -> Result<()>
         /*is_closed*/ false,
     );
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     assert_eq!(app.agent_navigation.get(&thread_id), None);
     assert!(app.agent_navigation.is_empty());
@@ -1682,7 +1680,7 @@ async fn open_agent_picker_prunes_terminal_metadata_only_threads() -> Result<()>
 #[tokio::test]
 async fn open_agent_picker_marks_terminal_read_errors_closed() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -1697,7 +1695,7 @@ async fn open_agent_picker_marks_terminal_read_errors_closed() -> Result<()> {
         /*is_closed*/ false,
     );
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
     assert_eq!(
         app.agent_navigation.get(&thread_id),
@@ -1725,19 +1723,19 @@ fn open_agent_picker_marks_loaded_threads_open() -> Result<()> {
 
     runtime.block_on(async {
         let mut app = Box::pin(make_test_app()).await;
-        let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+        let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
             app.chat_widget.config_ref(),
         ))
         .await
         .expect("embedded app server");
-        let started = app_server
+        let started = cli_runtime
             .start_thread(app.chat_widget.config_ref())
             .await?;
         let thread_id = started.session.thread_id;
         app.thread_event_channels
             .insert(thread_id, ThreadEventChannel::new(/*capacity*/ 1));
 
-        Box::pin(app.open_agent_picker(&mut app_server)).await;
+        Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
 
         assert_eq!(
             app.agent_navigation.get(&thread_id),
@@ -1766,9 +1764,9 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
 
     runtime.block_on(async {
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let mut app_server =
-            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
-        let root = app_server
+        let mut cli_runtime =
+            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
+        let root = cli_runtime
             .start_thread(app.chat_widget.config_ref())
             .await?;
         let root_thread_id = root.session.thread_id;
@@ -1820,7 +1818,7 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
             std::fs::write(rollout_path, format!("{session_meta_line}\n"))?;
 
             assert!(
-                app.attach_live_thread_for_selection(&mut app_server, child_thread_id)
+                app.attach_live_thread_for_selection(&mut cli_runtime, child_thread_id)
                     .await?
             );
             assert_eq!(
@@ -1837,7 +1835,7 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
                 is_running_hint: true,
             });
         app.thread_event_channels.remove(&child_thread_ids[1]);
-        let backfill = app.backfill_loaded_subagent_threads(&mut app_server).await;
+        let backfill = app.backfill_loaded_subagent_threads(&mut cli_runtime).await;
         assert!(backfill.completed);
         assert_eq!(
             backfill.refreshed_thread_ids,
@@ -1857,7 +1855,7 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
         assert!(app.agent_navigation.is_parent_owned(child_thread_ids[1]));
 
         let mut tui = crate::tui::test_support::make_test_tui()?;
-        app.select_agent_thread(&mut tui, &mut app_server, child_thread_ids[0])
+        app.select_agent_thread(&mut tui, &mut cli_runtime, child_thread_ids[0])
             .await?;
         while app_event_rx.try_recv().is_ok() {}
         app.chat_widget
@@ -1869,7 +1867,7 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
                 .any(|event| matches!(event, AppEvent::CodexOp(Op::UserTurn { .. })))
         );
 
-        app.select_agent_thread(&mut tui, &mut app_server, child_thread_ids[1])
+        app.select_agent_thread(&mut tui, &mut cli_runtime, child_thread_ids[1])
             .await?;
         while app_event_rx.try_recv().is_ok() {}
         app.chat_widget
@@ -1884,7 +1882,7 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
                 .any(|event| matches!(event, AppEvent::CodexOp(Op::UserTurn { .. })))
         );
 
-        let resumed = app_server
+        let resumed = cli_runtime
             .resume_thread(
                 app.config.clone(),
                 child_thread_ids[1],
@@ -1892,7 +1890,7 @@ fn selected_and_resumed_threads_use_server_capability_for_v1_and_v2_children() -
             )
             .await?;
         assert!(resumed.blocks_direct_input);
-        app.replace_chat_widget_with_app_server_thread(
+        app.replace_chat_widget_with_cli_runtime_thread(
             &mut tui,
             resumed,
             crate::app::session_lifecycle::ThreadAttachPresentation::SessionLineage,
@@ -1931,10 +1929,10 @@ fn attach_live_thread_for_selection_rejects_empty_non_ephemeral_fallback_threads
             let app = make_test_app().await;
             app.chat_widget.config_ref().clone()
         };
-        let mut app_server = crate::start_embedded_app_server_for_picker(&config)
+        let mut cli_runtime = crate::start_embedded_cli_runtime_for_picker(&config)
             .await
             .expect("embedded app server");
-        let started = app_server.start_thread(&config).await?;
+        let started = cli_runtime.start_thread(&config).await?;
         let thread_id = started.session.thread_id;
         let mut app = make_test_app().await;
         app.agent_navigation.upsert(
@@ -1945,7 +1943,7 @@ fn attach_live_thread_for_selection_rejects_empty_non_ephemeral_fallback_threads
         );
 
         let err = app
-            .attach_live_thread_for_selection(&mut app_server, thread_id)
+            .attach_live_thread_for_selection(&mut cli_runtime, thread_id)
             .await
             .expect_err("empty fallback should not attach as a blank replay-only thread");
 
@@ -1971,11 +1969,11 @@ fn attach_live_thread_for_selection_rejects_unmaterialized_fallback_threads() ->
 
     runtime.block_on(async {
         let mut app = make_test_app().await;
-        let mut app_server =
-            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
+        let mut cli_runtime =
+            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
         let mut ephemeral_config = app.chat_widget.config_ref().clone();
         ephemeral_config.ephemeral = true;
-        let started = app_server.start_thread(&ephemeral_config).await?;
+        let started = cli_runtime.start_thread(&ephemeral_config).await?;
         let thread_id = started.session.thread_id;
         app.agent_navigation.upsert(
             thread_id,
@@ -1985,7 +1983,7 @@ fn attach_live_thread_for_selection_rejects_unmaterialized_fallback_threads() ->
         );
 
         let err = app
-            .attach_live_thread_for_selection(&mut app_server, thread_id)
+            .attach_live_thread_for_selection(&mut cli_runtime, thread_id)
             .await
             .expect_err("ephemeral fallback should not attach as a blank live thread");
 
@@ -2027,7 +2025,7 @@ async fn should_attach_live_thread_for_selection_skips_closed_metadata_only_thre
 #[tokio::test]
 async fn refresh_agent_picker_thread_liveness_prunes_closed_metadata_only_threads() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -2041,7 +2039,7 @@ async fn refresh_agent_picker_thread_liveness_prunes_closed_metadata_only_thread
     );
 
     let is_available =
-        Box::pin(app.refresh_agent_picker_thread_liveness(&mut app_server, thread_id)).await;
+        Box::pin(app.refresh_agent_picker_thread_liveness(&mut cli_runtime, thread_id)).await;
 
     assert!(!is_available);
     assert_eq!(app.agent_navigation.get(&thread_id), None);
@@ -2064,12 +2062,12 @@ async fn handle_start_side_seeds_navigation_before_thread_started() -> Result<()
         )
         .expect("create source rollout"),
     )?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&config)).await?;
-    let started = app_server
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(&config)).await?;
+    let started = cli_runtime
         .resume_thread(
             config,
             parent_thread_id,
-            crate::app_server_session::ResumeModelSettings::RestoreFromThread,
+            crate::runtime_session::ResumeModelSettings::RestoreFromThread,
         )
         .await?;
     app.enqueue_primary_thread_session(started.session, started.turns)
@@ -2079,7 +2077,7 @@ async fn handle_start_side_seeds_navigation_before_thread_started() -> Result<()
 
     let control = Box::pin(app.handle_start_side(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         parent_thread_id,
         /*user_message*/ None,
     ))
@@ -2103,12 +2101,12 @@ async fn handle_start_side_seeds_navigation_before_thread_started() -> Result<()
     for _ in 0..20 {
         let event = time::timeout(
             std::time::Duration::from_secs(/*secs*/ 2),
-            app_server.next_event(),
+            cli_runtime.next_event(),
         )
         .await
-        .expect("app-server should emit an event")
-        .expect("app-server event stream should remain open");
-        if let codex_app_server_client::AppServerEvent::ServerNotification(notification) = event
+        .expect("cli-runtime should emit an event")
+        .expect("cli-runtime event stream should remain open");
+        if let codex_cli_runtime_client::CliRuntimeEvent::ServerNotification(notification) = event
             && let ServerNotification::ThreadStarted(notification) = notification.as_ref()
             && notification.thread.id == side_thread_id.to_string()
         {
@@ -2118,14 +2116,14 @@ async fn handle_start_side_seeds_navigation_before_thread_started() -> Result<()
     }
 
     assert!(saw_thread_started);
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn select_uncached_agent_thread_still_refreshes_liveness() -> Result<()> {
     let mut app = Box::pin(make_test_app()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await?;
@@ -2138,25 +2136,25 @@ async fn select_uncached_agent_thread_still_refreshes_liveness() -> Result<()> {
     );
     let mut tui = crate::tui::test_support::make_test_tui()?;
 
-    Box::pin(app.select_agent_thread(&mut tui, &mut app_server, thread_id)).await?;
+    Box::pin(app.select_agent_thread(&mut tui, &mut cli_runtime, thread_id)).await?;
 
     assert_eq!(app.active_thread_id, None);
     assert_eq!(app.agent_navigation.get(&thread_id), None);
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn open_agent_picker_prompts_to_enable_multi_agent_when_disabled() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = Box::pin(make_test_app_with_channels()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
     .expect("embedded app server");
     let _ = app.config.features.disable(Feature::Collab);
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
     app.chat_widget
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -2197,14 +2195,14 @@ fn update_memory_settings_updates_current_thread_memory_mode() -> Result<()> {
         // Seed the previous setting so this test exercises the thread-mode update path.
         app.config.memories.generate_memories = true;
 
-        let mut app_server =
-            Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-        let started = app_server.start_thread(&app.config).await?;
+        let mut cli_runtime =
+            Box::pin(crate::start_embedded_cli_runtime_for_picker(&app.config)).await?;
+        let started = cli_runtime.start_thread(&app.config).await?;
         let thread_id = started.session.thread_id;
         app.active_thread_id = Some(thread_id);
 
-        Box::pin(app.update_memory_settings_with_app_server(
-            &mut app_server,
+        Box::pin(app.update_memory_settings_with_cli_runtime(
+            &mut cli_runtime,
             /*use_memories*/ true,
             /*generate_memories*/ false,
         ))
@@ -2222,7 +2220,7 @@ fn update_memory_settings_updates_current_thread_memory_mode() -> Result<()> {
             .expect("thread memory mode should be readable");
         assert_eq!(memory_mode.as_deref(), Some("disabled"));
 
-        app_server.shutdown().await?;
+        cli_runtime.shutdown().await?;
         Ok(())
     })
 }
@@ -2246,14 +2244,14 @@ async fn reset_memories_clears_local_memory_directories() -> Result<()> {
         )?;
         std::fs::write(extensions_root.join("stale.txt"), "stale extension\n")?;
 
-        let mut app_server =
-            Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+        let mut cli_runtime =
+            Box::pin(crate::start_embedded_cli_runtime_for_picker(&app.config)).await?;
 
-        Box::pin(app.reset_memories_with_app_server(&mut app_server)).await;
+        Box::pin(app.reset_memories_with_cli_runtime(&mut cli_runtime)).await;
 
         assert_eq!(std::fs::read_dir(&memory_root)?.count(), 0);
 
-        app_server.shutdown().await?;
+        cli_runtime.shutdown().await?;
         Ok(())
     })
     .await
@@ -2350,9 +2348,9 @@ async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<
     let codex_home = tempdir()?;
     app.config.codex_home = codex_home.path().to_path_buf().abs();
     let auto_review = auto_review_mode();
-    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let mut cli_runtime = start_config_write_test_cli_runtime(&app).await?;
 
-    app.update_feature_flags(&mut app_server, vec![(Feature::GuardianApproval, true)])
+    app.update_feature_flags(&mut cli_runtime, vec![(Feature::GuardianApproval, true)])
         .await;
 
     assert!(app.config.features.enabled(Feature::GuardianApproval));
@@ -2441,7 +2439,7 @@ async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<
     assert!(config.contains("approvals_reviewer = \"auto_review\""));
     assert!(config.contains("approval_policy = \"on-request\""));
     assert!(config.contains("sandbox_mode = \"workspace-write\""));
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
@@ -2480,9 +2478,9 @@ async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restor
         .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
             PermissionProfile::workspace_write(),
         ))?;
-    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let mut cli_runtime = start_config_write_test_cli_runtime(&app).await?;
 
-    app.update_feature_flags(&mut app_server, vec![(Feature::GuardianApproval, false)])
+    app.update_feature_flags(&mut cli_runtime, vec![(Feature::GuardianApproval, false)])
         .await;
 
     assert!(!app.config.features.enabled(Feature::GuardianApproval));
@@ -2536,7 +2534,7 @@ async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restor
     assert!(!config.contains("approvals_reviewer ="));
     assert!(config.contains("approval_policy = \"on-request\""));
     assert!(config.contains("sandbox_mode = \"workspace-write\""));
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
@@ -2558,9 +2556,9 @@ async fn update_feature_flags_enabling_guardian_overrides_explicit_manual_review
     app.config.approvals_reviewer = ApprovalsReviewer::User;
     app.chat_widget
         .set_approvals_reviewer(ApprovalsReviewer::User);
-    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let mut cli_runtime = start_config_write_test_cli_runtime(&app).await?;
 
-    app.update_feature_flags(&mut app_server, vec![(Feature::GuardianApproval, true)])
+    app.update_feature_flags(&mut cli_runtime, vec![(Feature::GuardianApproval, true)])
         .await;
 
     assert!(app.config.features.enabled(Feature::GuardianApproval));
@@ -2606,7 +2604,7 @@ async fn update_feature_flags_enabling_guardian_overrides_explicit_manual_review
     assert!(config.contains("guardian_approval = true"));
     assert!(config.contains("approval_policy = \"on-request\""));
     assert!(config.contains("sandbox_mode = \"workspace-write\""));
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
@@ -2632,9 +2630,9 @@ async fn update_feature_flags_disabling_guardian_clears_manual_review_policy_wit
     app.config.approvals_reviewer = ApprovalsReviewer::User;
     app.chat_widget
         .set_approvals_reviewer(ApprovalsReviewer::User);
-    let mut app_server = start_config_write_test_app_server(&app).await?;
+    let mut cli_runtime = start_config_write_test_cli_runtime(&app).await?;
 
-    app.update_feature_flags(&mut app_server, vec![(Feature::GuardianApproval, false)])
+    app.update_feature_flags(&mut cli_runtime, vec![(Feature::GuardianApproval, false)])
         .await;
 
     assert!(!app.config.features.enabled(Feature::GuardianApproval));
@@ -2668,14 +2666,14 @@ async fn update_feature_flags_disabling_guardian_clears_manual_review_policy_wit
     let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
     assert!(!config.contains("guardian_approval = true"));
     assert!(!config.contains("approvals_reviewer ="));
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disabled() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = Box::pin(make_test_app_with_channels()).await;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
@@ -2684,7 +2682,7 @@ async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disable
     app.thread_event_channels
         .insert(thread_id, ThreadEventChannel::new(/*capacity*/ 1));
 
-    Box::pin(app.open_agent_picker(&mut app_server)).await;
+    Box::pin(app.open_agent_picker(&mut cli_runtime)).await;
     app.chat_widget
         .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -2942,8 +2940,8 @@ async fn side_defers_subagent_approval_overlay_until_side_exits() -> Result<()> 
     app.enqueue_thread_request(
         quiet_thread_id,
         ServerRequest::DynamicToolCall {
-            request_id: AppServerRequestId::Integer(99),
-            params: codex_app_server_protocol::DynamicToolCallParams {
+            request_id: CliRuntimeRequestId::Integer(99),
+            params: codex_cli_protocol::DynamicToolCallParams {
                 thread_id: quiet_thread_id.to_string(),
                 turn_id: "turn-quiet".to_string(),
                 call_id: "call-quiet".to_string(),
@@ -2988,9 +2986,9 @@ async fn inactive_thread_exec_approval_preserves_context() {
     let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
         panic!("expected exec approval request");
     };
-    params.network_approval_context = Some(AppServerNetworkApprovalContext {
+    params.network_approval_context = Some(CliRuntimeNetworkApprovalContext {
         host: "example.com".to_string(),
-        protocol: AppServerNetworkApprovalProtocol::Socks5Tcp,
+        protocol: CliRuntimeNetworkApprovalProtocol::Socks5Tcp,
     });
     params.additional_permissions = Some(AdditionalPermissionProfile {
         network: Some(AdditionalNetworkPermissions {
@@ -3003,9 +3001,9 @@ async fn inactive_thread_exec_approval_preserves_context() {
             entries: None,
         }),
     });
-    params.proposed_network_policy_amendments = Some(vec![AppServerNetworkPolicyAmendment {
+    params.proposed_network_policy_amendments = Some(vec![CliRuntimeNetworkPolicyAmendment {
         host: "example.com".to_string(),
-        action: AppServerNetworkPolicyRuleAction::Allow,
+        action: CliRuntimeNetworkPolicyRuleAction::Allow,
     }]);
 
     let Some(ThreadInteractiveRequest::Approval(ApprovalRequest::Exec(approval))) = app
@@ -3018,9 +3016,9 @@ async fn inactive_thread_exec_approval_preserves_context() {
 
     assert_eq!(
         approval.network_approval_context,
-        Some(AppServerNetworkApprovalContext {
+        Some(CliRuntimeNetworkApprovalContext {
             host: "example.com".to_string(),
-            protocol: AppServerNetworkApprovalProtocol::Socks5Tcp,
+            protocol: CliRuntimeNetworkApprovalProtocol::Socks5Tcp,
         })
     );
     assert_eq!(
@@ -3040,15 +3038,15 @@ async fn inactive_thread_exec_approval_preserves_context() {
     assert_eq!(
         approval.available_decisions,
         vec![
-            codex_app_server_protocol::CommandExecutionApprovalDecision::Accept,
-            codex_app_server_protocol::CommandExecutionApprovalDecision::AcceptForSession,
-            codex_app_server_protocol::CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
-                network_policy_amendment: AppServerNetworkPolicyAmendment {
+            codex_cli_protocol::CommandExecutionApprovalDecision::Accept,
+            codex_cli_protocol::CommandExecutionApprovalDecision::AcceptForSession,
+            codex_cli_protocol::CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
+                network_policy_amendment: CliRuntimeNetworkPolicyAmendment {
                     host: "example.com".to_string(),
-                    action: AppServerNetworkPolicyRuleAction::Allow,
+                    action: CliRuntimeNetworkPolicyRuleAction::Allow,
                 },
             },
-            codex_app_server_protocol::CommandExecutionApprovalDecision::Cancel,
+            codex_cli_protocol::CommandExecutionApprovalDecision::Cancel,
         ]
     );
 }
@@ -3105,7 +3103,7 @@ async fn inactive_thread_file_change_approval_recovers_buffered_changes() {
                     kind: PatchChangeKind::Add,
                     diff: "hello\n".to_string(),
                 }],
-                status: codex_app_server_protocol::PatchApplyStatus::InProgress,
+                status: codex_cli_protocol::PatchApplyStatus::InProgress,
             },
         }),
     )
@@ -3113,7 +3111,7 @@ async fn inactive_thread_file_change_approval_recovers_buffered_changes() {
     .expect("enqueue file change item");
 
     let request = ServerRequest::FileChangeRequestApproval {
-        request_id: AppServerRequestId::Integer(9),
+        request_id: CliRuntimeRequestId::Integer(9),
         params: FileChangeRequestApprovalParams {
             thread_id: thread_id.to_string(),
             turn_id: "turn-approval".to_string(),
@@ -3162,7 +3160,7 @@ async fn inactive_thread_permissions_approval_preserves_file_system_permissions(
     let app = make_test_app().await;
     let thread_id = ThreadId::new();
     let request = ServerRequest::PermissionsRequestApproval {
-        request_id: AppServerRequestId::Integer(7),
+        request_id: CliRuntimeRequestId::Integer(7),
         params: PermissionsRequestApprovalParams {
             thread_id: thread_id.to_string(),
             turn_id: "turn-approval".to_string(),
@@ -3171,7 +3169,7 @@ async fn inactive_thread_permissions_approval_preserves_file_system_permissions(
             started_at_ms: 0,
             cwd: test_absolute_path("/tmp"),
             reason: Some("Need access to .git".to_string()),
-            permissions: codex_app_server_protocol::RequestPermissionProfile {
+            permissions: codex_cli_protocol::RequestPermissionProfile {
                 network: Some(AdditionalNetworkPermissions {
                     enabled: Some(true),
                 }),
@@ -3329,11 +3327,11 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
                 created_at: 1,
                 updated_at: 2,
                 recency_at: Some(2),
-                status: codex_app_server_protocol::ThreadStatus::Idle,
+                status: codex_cli_protocol::ThreadStatus::Idle,
                 path: Some(rollout_path.clone()),
                 cwd: test_path_buf("/tmp/agent").abs(),
                 cli_version: "0.0.0".to_string(),
-                source: codex_app_server_protocol::SessionSource::Unknown,
+                source: codex_cli_protocol::SessionSource::Unknown,
                 can_accept_direct_input: None,
                 thread_source: None,
                 agent_nickname: Some("Robie".to_string()),
@@ -3427,11 +3425,11 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
                 created_at: 1,
                 updated_at: 2,
                 recency_at: Some(2),
-                status: codex_app_server_protocol::ThreadStatus::Idle,
+                status: codex_cli_protocol::ThreadStatus::Idle,
                 path: None,
                 cwd: test_path_buf("/tmp/agent").abs(),
                 cli_version: "0.0.0".to_string(),
-                source: codex_app_server_protocol::SessionSource::Unknown,
+                source: codex_cli_protocol::SessionSource::Unknown,
                 can_accept_direct_input: None,
                 thread_source: None,
                 agent_nickname: Some("Robie".to_string()),
@@ -3492,11 +3490,11 @@ async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
         created_at: 1,
         updated_at: 2,
         recency_at: Some(2),
-        status: codex_app_server_protocol::ThreadStatus::Idle,
+        status: codex_cli_protocol::ThreadStatus::Idle,
         path: None,
         cwd: test_path_buf("/tmp/read").abs(),
         cli_version: "0.0.0".to_string(),
-        source: codex_app_server_protocol::SessionSource::Unknown,
+        source: codex_cli_protocol::SessionSource::Unknown,
         can_accept_direct_input: None,
         thread_source: None,
         agent_nickname: None,
@@ -3749,9 +3747,9 @@ async fn side_parent_status_prioritizes_input_over_approval() -> Result<()> {
     app.enqueue_thread_notification(
         parent_thread_id,
         ServerNotification::ServerRequestResolved(
-            codex_app_server_protocol::ServerRequestResolvedNotification {
+            codex_cli_protocol::ServerRequestResolvedNotification {
                 thread_id: parent_thread_id.to_string(),
-                request_id: AppServerRequestId::Integer(2),
+                request_id: CliRuntimeRequestId::Integer(2),
             },
         ),
     )
@@ -3766,9 +3764,9 @@ async fn side_parent_status_prioritizes_input_over_approval() -> Result<()> {
     app.enqueue_thread_notification(
         parent_thread_id,
         ServerNotification::ServerRequestResolved(
-            codex_app_server_protocol::ServerRequestResolvedNotification {
+            codex_cli_protocol::ServerRequestResolvedNotification {
                 thread_id: parent_thread_id.to_string(),
-                request_id: AppServerRequestId::Integer(1),
+                request_id: CliRuntimeRequestId::Integer(1),
             },
         ),
     )
@@ -3799,7 +3797,7 @@ async fn side_thread_snapshot_hides_forked_parent_transcript() {
         vec![ThreadItem::UserMessage {
             id: "parent-user".to_string(),
             client_id: None,
-            content: vec![AppServerUserInput::Text {
+            content: vec![CliRuntimeUserInput::Text {
                 text: "parent prompt should stay hidden".to_string(),
                 text_elements: Vec::new(),
             }],
@@ -3924,11 +3922,11 @@ async fn side_discard_selection_keeps_current_side_thread() {
 async fn discard_side_thread_removes_agent_navigation_entry() -> Result<()> {
     Box::pin(async {
         let mut app = make_test_app().await;
-        let mut app_server =
-            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
+        let mut cli_runtime =
+            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
         let mut side_config = app.chat_widget.config_ref().clone();
         side_config.ephemeral = true;
-        let started = app_server.start_thread(&side_config).await?;
+        let started = cli_runtime.start_thread(&side_config).await?;
         let side_thread_id = started.session.thread_id;
         app.side_threads
             .insert(side_thread_id, SideThreadState::new(ThreadId::new()));
@@ -3940,7 +3938,7 @@ async fn discard_side_thread_removes_agent_navigation_entry() -> Result<()> {
         );
 
         assert!(
-            app.discard_side_thread(&mut app_server, side_thread_id)
+            app.discard_side_thread(&mut cli_runtime, side_thread_id)
                 .await
         );
 
@@ -3955,8 +3953,8 @@ async fn discard_side_thread_removes_agent_navigation_entry() -> Result<()> {
 async fn discard_side_thread_keeps_local_state_when_server_close_fails() -> Result<()> {
     Box::pin(async {
         let mut app = make_test_app().await;
-        let mut app_server =
-            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
+        let mut cli_runtime =
+            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
         let parent_thread_id = ThreadId::new();
         let side_thread_id = ThreadId::new();
         app.active_thread_id = Some(side_thread_id);
@@ -3970,7 +3968,7 @@ async fn discard_side_thread_keeps_local_state_when_server_close_fails() -> Resu
         );
 
         assert!(
-            !app.discard_side_thread(&mut app_server, side_thread_id)
+            !app.discard_side_thread(&mut cli_runtime, side_thread_id)
                 .await
         );
 
@@ -3990,8 +3988,8 @@ async fn discard_side_thread_keeps_local_state_when_server_close_fails() -> Resu
 #[tokio::test]
 async fn background_side_cleanup_removes_local_state_and_ignores_late_events() -> Result<()> {
     let mut app = make_test_app().await;
-    let mut app_server =
-        crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
+    let mut cli_runtime =
+        crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
     let parent_thread_id = ThreadId::new();
     let side_thread_id = ThreadId::new();
     app.active_thread_id = Some(parent_thread_id);
@@ -4005,7 +4003,7 @@ async fn background_side_cleanup_removes_local_state_and_ignores_late_events() -
         Some("side".to_string()),
         /*is_closed*/ false,
     );
-    app.discard_side_thread_in_background(&mut app_server, side_thread_id)
+    app.discard_side_thread_in_background(&mut cli_runtime, side_thread_id)
         .await;
 
     assert_eq!(app.active_thread_id, Some(parent_thread_id));
@@ -4021,9 +4019,9 @@ async fn background_side_cleanup_removes_local_state_and_ignores_late_events() -
     .await?;
     assert!(!app.thread_event_channels.contains_key(&side_thread_id));
 
-    app.handle_app_server_event(
-        &app_server,
-        codex_app_server_client::AppServerEvent::ServerRequest(Box::new(exec_approval_request(
+    app.handle_cli_runtime_event(
+        &cli_runtime,
+        codex_cli_runtime_client::CliRuntimeEvent::ServerRequest(Box::new(exec_approval_request(
             side_thread_id,
             "turn-1",
             "item-1",
@@ -4032,11 +4030,11 @@ async fn background_side_cleanup_removes_local_state_and_ignores_late_events() -
     )
     .await;
     let resolution = app
-        .pending_app_server_requests
+        .pending_runtime_requests
         .take_resolution(Op::ExecApproval {
             id: "approval-1".to_string(),
             turn_id: None,
-            decision: codex_app_server_protocol::CommandExecutionApprovalDecision::Accept,
+            decision: codex_cli_protocol::CommandExecutionApprovalDecision::Accept,
         })
         .expect("approval resolution should serialize");
     assert_eq!(resolution, None);
@@ -4076,7 +4074,7 @@ async fn active_non_primary_shutdown_target_returns_none_for_non_shutdown_event(
 
     assert_eq!(
         app.active_non_primary_shutdown_target(&ServerNotification::SkillsChanged(
-            codex_app_server_protocol::SkillsChangedNotification {},
+            codex_cli_protocol::SkillsChangedNotification {},
         )),
         None
     );
@@ -4348,7 +4346,7 @@ async fn make_test_app() -> App {
         feedback: codex_feedback::CodexFeedback::new(),
         feedback_audience: FeedbackAudience::External,
         environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
-        app_server_target: crate::AppServerTarget::Embedded,
+        cli_runtime_target: crate::CliRuntimeTarget::Embedded,
         pending_update_action: None,
         pending_shutdown_exit_thread_id: None,
         thread_event_channels: HashMap::new(),
@@ -4362,7 +4360,7 @@ async fn make_test_app() -> App {
         last_subagent_backfill_attempt: None,
         primary_session_configured: None,
         pending_primary_events: VecDeque::new(),
-        pending_app_server_requests: PendingAppServerRequests::default(),
+        pending_runtime_requests: PendingCliRuntimeRequests::default(),
         pending_startup_thread_start: false,
         rate_limit_hard_stop_generation: 0,
         pending_plugin_enabled_writes: HashMap::new(),
@@ -4417,7 +4415,7 @@ async fn make_test_app_with_channels() -> (
             feedback: codex_feedback::CodexFeedback::new(),
             feedback_audience: FeedbackAudience::External,
             environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
-            app_server_target: crate::AppServerTarget::Embedded,
+            cli_runtime_target: crate::CliRuntimeTarget::Embedded,
             pending_update_action: None,
             pending_shutdown_exit_thread_id: None,
             thread_event_channels: HashMap::new(),
@@ -4431,7 +4429,7 @@ async fn make_test_app_with_channels() -> (
             last_subagent_backfill_attempt: None,
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
-            pending_app_server_requests: PendingAppServerRequests::default(),
+            pending_runtime_requests: PendingCliRuntimeRequests::default(),
             pending_startup_thread_start: false,
             rate_limit_hard_stop_generation: 0,
             pending_plugin_enabled_writes: HashMap::new(),
@@ -4446,9 +4444,9 @@ async fn make_test_app_with_channels() -> (
 async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_paste() -> Result<()>
 {
     let mut app = make_test_app().await;
-    let mut app_server =
-        crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
-    let started = app_server
+    let mut cli_runtime =
+        crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
+    let started = cli_runtime
         .start_thread(app.chat_widget.config_ref())
         .await?;
     let thread_id = started.session.thread_id;
@@ -4457,7 +4455,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
     let objective = "x".repeat(MAX_THREAD_GOAL_OBJECTIVE_CHARS + 1);
 
     app.set_thread_goal_draft(
-        &mut app_server,
+        &mut cli_runtime,
         thread_id,
         crate::goal_files::GoalDraft {
             objective: objective.clone(),
@@ -4467,22 +4465,23 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
     )
     .await;
 
-    let response = app_server.thread_goal_get(thread_id).await?;
+    let response = cli_runtime.thread_goal_get(thread_id).await?;
     let goal = response.goal.expect("goal should be set");
     let saved_objective = goal.objective.clone();
-    let codex_home = app_server
+    let codex_home = cli_runtime
         .codex_home_path(&app.chat_widget.config_ref().codex_home)
         .expect("codex home");
     assert!(goal_files::objective_file_path(&goal.objective, Some(&codex_home)).is_some());
     assert_eq!(
-        goal_files::objective_text_for_edit(&mut app_server, Some(&codex_home), &goal.objective)
+        goal_files::objective_text_for_edit(&mut cli_runtime, Some(&codex_home), &goal.objective)
             .await
             .expect("managed goal file should be readable"),
         objective
     );
-    let is_managed = |home: &AppServerPath, path: &str| {
-        let reference = goal_files::objective_file_reference(&AppServerPath::from_app_server(path))
-            .expect("goal objective reference");
+    let is_managed = |home: &CliRuntimePath, path: &str| {
+        let reference =
+            goal_files::objective_file_reference(&CliRuntimePath::from_cli_runtime(path))
+                .expect("goal objective reference");
         goal_files::objective_file_path(&reference, Some(home)).is_some()
     };
     let suffix = "attachments/00000000-0000-4000-8000-000000000000/goal-objective.md";
@@ -4494,10 +4493,10 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
         assert!(!is_managed(&codex_home, &path));
     }
     assert!(!is_managed(
-        &AppServerPath::from_app_server("/tmp/codex\\home"),
+        &CliRuntimePath::from_cli_runtime("/tmp/codex\\home"),
         &format!("/tmp/codex/home/{suffix}")
     ));
-    let unix_path = AppServerPath::from_app_server("/tmp/codex\\").join("a");
+    let unix_path = CliRuntimePath::from_cli_runtime("/tmp/codex\\").join("a");
     assert_eq!(unix_path.as_str(), "/tmp/codex\\/a");
     let attachments_dir = app.chat_widget.config_ref().codex_home.join("attachments");
     let attachment_count = std::fs::read_dir(&attachments_dir)?.count();
@@ -4513,7 +4512,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
     };
 
     app.set_thread_goal_draft(
-        &mut app_server,
+        &mut cli_runtime,
         thread_id,
         paste_draft.clone(),
         crate::app_event::ThreadGoalSetMode::ConfirmIfExists,
@@ -4525,7 +4524,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
         attachment_count
     );
     assert_eq!(
-        app_server
+        cli_runtime
             .thread_goal_get(thread_id)
             .await?
             .goal
@@ -4535,13 +4534,13 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
     );
 
     app.set_thread_goal_draft(
-        &mut app_server,
+        &mut cli_runtime,
         thread_id,
         paste_draft,
         crate::app_event::ThreadGoalSetMode::ReplaceExisting,
     )
     .await;
-    let goal = app_server
+    let goal = cli_runtime
         .thread_goal_get(thread_id)
         .await?
         .goal
@@ -4556,7 +4555,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
 
     let stale_paste = (placeholder.to_string(), "hello".to_string());
     app.set_thread_goal_draft(
-        &mut app_server,
+        &mut cli_runtime,
         thread_id,
         crate::goal_files::GoalDraft {
             objective: "small goal".to_string(),
@@ -4573,7 +4572,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
 
     let whitespace_placeholder = "[Pasted Content 3 chars]";
     app.set_thread_goal_draft(
-        &mut app_server,
+        &mut cli_runtime,
         thread_id,
         crate::goal_files::GoalDraft {
             objective: whitespace_placeholder.to_string(),
@@ -4592,7 +4591,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
         attachment_count
     );
     assert_eq!(
-        app_server
+        cli_runtime
             .thread_goal_get(thread_id)
             .await?
             .goal
@@ -4606,7 +4605,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
     std::fs::write(&image_path, b"png bytes")?;
     let image_placeholder = "[Image #3]";
     app.set_thread_goal_draft(
-        &mut app_server,
+        &mut cli_runtime,
         thread_id,
         crate::goal_files::GoalDraft {
             objective: format!("Describe {image_placeholder}"),
@@ -4627,7 +4626,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
         crate::app_event::ThreadGoalSetMode::ReplaceExisting,
     )
     .await;
-    let objective = app_server
+    let objective = cli_runtime
         .thread_goal_get(thread_id)
         .await?
         .goal
@@ -4642,7 +4641,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
     assert!(objective.contains(
         "Referenced image URLs:\n- [Image #1]: https://example.com/first.png\n- [Image #2]: https://example.com/second.png"
     ));
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
@@ -5047,7 +5046,7 @@ async fn resizing_empty_transcript_schedules_settled_size_recheck() {
 fn test_turn(turn_id: &str, status: TurnStatus, items: Vec<ThreadItem>) -> Turn {
     Turn {
         id: turn_id.to_string(),
-        items_view: codex_app_server_protocol::TurnItemsView::Full,
+        items_view: codex_cli_protocol::TurnItemsView::Full,
         items,
         status,
         error: None,
@@ -5139,7 +5138,7 @@ fn exec_approval_request(
     approval_id: Option<&str>,
 ) -> ServerRequest {
     ServerRequest::CommandExecutionRequestApproval {
-        request_id: AppServerRequestId::Integer(1),
+        request_id: CliRuntimeRequestId::Integer(1),
         params: CommandExecutionRequestApprovalParams {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
@@ -5162,7 +5161,7 @@ fn exec_approval_request(
 
 fn request_user_input_request(thread_id: ThreadId, turn_id: &str, item_id: &str) -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
-        request_id: AppServerRequestId::Integer(2),
+        request_id: CliRuntimeRequestId::Integer(2),
         params: ToolRequestUserInputParams {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
@@ -5306,10 +5305,10 @@ fn test_session_telemetry(config: &Config, model: &str) -> SessionTelemetry {
 
 #[test]
 fn active_turn_not_steerable_turn_error_extracts_structured_server_error() {
-    let turn_error = AppServerTurnError {
+    let turn_error = CliRuntimeTurnError {
         message: "cannot steer a review turn".to_string(),
-        codex_error_info: Some(AppServerCodexErrorInfo::ActiveTurnNotSteerable {
-            turn_kind: AppServerNonSteerableTurnKind::Review,
+        codex_error_info: Some(CliRuntimeCodexErrorInfo::ActiveTurnNotSteerable {
+            turn_kind: CliRuntimeNonSteerableTurnKind::Review,
         }),
         additional_details: None,
     };
@@ -5618,89 +5617,6 @@ async fn backtrack_branch_failure_restores_selected_prompt_snapshot() {
 }
 
 #[tokio::test]
-async fn remote_resume_current_cwd_rejection_snapshot() -> Result<()> {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    std::fs::write(
-        app.config.codex_home.join("config.toml"),
-        "[tui]\nresume_cwd = \"current\"\n",
-    )?;
-    app.app_server_target = crate::AppServerTarget::Remote {
-        endpoint: crate::RemoteAppServerEndpoint::WebSocket {
-            websocket_url: "ws://127.0.0.1:4500".to_string(),
-            auth_token: None,
-        },
-    };
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-    let mut tui = crate::tui::test_support::make_test_tui()?;
-
-    let control = app
-        .resume_target_session(
-            &mut tui,
-            &mut app_server,
-            crate::resume_picker::SessionTarget {
-                path: None,
-                thread_id: ThreadId::new(),
-            },
-        )
-        .await?;
-
-    assert!(matches!(control, AppRunControl::Continue));
-    let cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected InsertHistoryCell event, got {other:?}"),
-    };
-    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-    assert_app_snapshot!("remote_resume_current_cwd_rejected", rendered);
-    app_server.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn remote_exec_resume_current_cwd_is_rejected() -> Result<()> {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    std::fs::write(
-        app.config.codex_home.join("config.toml"),
-        "[tui]\nresume_cwd = \"current\"\n",
-    )?;
-    app.environment_manager = Arc::new(
-        EnvironmentManager::create_for_tests(
-            Some("ws://127.0.0.1:8765".to_string()),
-            Some(codex_exec_server::ExecServerRuntimePaths::new(
-                std::env::current_exe()?,
-                /*codex_linux_sandbox_exe*/ None,
-            )?),
-        )
-        .await,
-    );
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-    let mut tui = crate::tui::test_support::make_test_tui()?;
-
-    let control = app
-        .resume_target_session(
-            &mut tui,
-            &mut app_server,
-            crate::resume_picker::SessionTarget {
-                path: None,
-                thread_id: ThreadId::new(),
-            },
-        )
-        .await?;
-
-    assert!(matches!(control, AppRunControl::Continue));
-    let cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected InsertHistoryCell event, got {other:?}"),
-    };
-    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-    assert_eq!(
-        rendered,
-        "■ `tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace"
-    );
-    app_server.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
 async fn in_app_resume_session_cwd_without_metadata_is_non_fatal() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     std::fs::write(
@@ -5709,13 +5625,14 @@ async fn in_app_resume_session_cwd_without_metadata_is_non_fatal() -> Result<()>
     )?;
     app.state_db = None;
     let active_thread_id = app.chat_widget.thread_id();
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
+    let mut cli_runtime =
+        Box::pin(crate::start_embedded_cli_runtime_for_picker(&app.config)).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
 
     let control = app
         .resume_target_session(
             &mut tui,
-            &mut app_server,
+            &mut cli_runtime,
             crate::resume_picker::SessionTarget {
                 path: None,
                 thread_id: ThreadId::new(),
@@ -5731,68 +5648,7 @@ async fn in_app_resume_session_cwd_without_metadata_is_non_fatal() -> Result<()>
     };
     let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 100));
     assert_app_snapshot!("in_app_resume_session_cwd_without_metadata", rendered);
-    app_server.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn remote_resume_keeps_server_only_cwd_out_of_local_config() -> Result<()> {
-    let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let local_cwd = app.config.cwd.to_path_buf();
-    let local_workspace_roots = app
-        .rebuild_config_for_cwd(local_cwd.clone())
-        .await?
-        .workspace_roots;
-    let remote_cwd = if cfg!(windows) {
-        PathBuf::from("/srv/remote/project")
-    } else {
-        PathBuf::from(r"C:\remote\project")
-    };
-    let filename_timestamp = "2025-01-05T12-00-00";
-    let thread_id = app_test_support::create_fake_rollout(
-        app.config.codex_home.as_path(),
-        filename_timestamp,
-        "2025-01-05T12:00:00Z",
-        "Saved user message",
-        Some(&app.config.model_provider_id),
-        /*git_info*/ None,
-    )
-    .expect("materialized rollout should be created");
-    let rollout_path = app_test_support::rollout_path(
-        app.config.codex_home.as_path(),
-        filename_timestamp,
-        &thread_id,
-    );
-    app.app_server_target = crate::AppServerTarget::Remote {
-        endpoint: crate::RemoteAppServerEndpoint::WebSocket {
-            websocket_url: "ws://127.0.0.1:4500".to_string(),
-            auth_token: None,
-        },
-    };
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config))
-        .await?
-        .with_remote_cwd_override(Some(remote_cwd.clone()));
-    let mut tui = crate::tui::test_support::make_test_tui()?;
-
-    let control = app
-        .resume_target_session(
-            &mut tui,
-            &mut app_server,
-            crate::resume_picker::SessionTarget {
-                path: Some(rollout_path),
-                thread_id: ThreadId::from_string(&thread_id)?,
-            },
-        )
-        .await?;
-
-    assert!(matches!(control, AppRunControl::Continue));
-    assert_eq!(app_server.remote_cwd_override(), Some(remote_cwd.as_path()));
-    assert!(!crate::session_resume::cwds_differ(
-        app.config.cwd.as_path(),
-        &local_cwd,
-    ));
-    assert_eq!(app.config.workspace_roots, local_workspace_roots);
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
@@ -5858,9 +5714,11 @@ async fn in_app_resume_uses_configured_or_explicit_cwd() -> Result<()> {
             ),
         )?;
         let thread_id = ThreadId::from_string(&thread_id)?;
-        let state_db =
-            crate::init_state_db_for_app_server_target(&config, &crate::AppServerTarget::Embedded)
-                .await?;
+        let state_db = crate::init_state_db_for_cli_runtime_target(
+            &config,
+            &crate::CliRuntimeTarget::Embedded,
+        )
+        .await?;
         let environment_manager = if has_remote_exec {
             Arc::new(
                 EnvironmentManager::create_for_tests(
@@ -5875,9 +5733,9 @@ async fn in_app_resume_uses_configured_or_explicit_cwd() -> Result<()> {
         } else {
             Arc::new(EnvironmentManager::default_for_tests())
         };
-        let mut app_server = crate::start_app_server_for_picker(
+        let mut cli_runtime = crate::start_cli_runtime_for_picker(
             &config,
-            &crate::AppServerTarget::Embedded,
+            &crate::CliRuntimeTarget::Embedded,
             state_db.clone(),
             Arc::clone(&environment_manager),
         )
@@ -5895,7 +5753,7 @@ async fn in_app_resume_uses_configured_or_explicit_cwd() -> Result<()> {
         let control = app
             .resume_target_session(
                 &mut tui,
-                &mut app_server,
+                &mut cli_runtime,
                 crate::resume_picker::SessionTarget {
                     path: Some(rollout_path),
                     thread_id,
@@ -5917,7 +5775,7 @@ async fn in_app_resume_uses_configured_or_explicit_cwd() -> Result<()> {
 
         let control = Box::pin(app.handle_event(
             &mut tui,
-            &mut app_server,
+            &mut cli_runtime,
             AppEvent::ForkCurrentSession { name: None },
         ))
         .await?;
@@ -5928,7 +5786,7 @@ async fn in_app_resume_uses_configured_or_explicit_cwd() -> Result<()> {
             &expected_cwd,
         ));
         assert_ne!(app.chat_widget.thread_id(), Some(thread_id));
-        app_server.shutdown().await?;
+        cli_runtime.shutdown().await?;
     }
 
     Ok(())
@@ -6014,11 +5872,11 @@ async fn remembered_current_cwd_stays_at_launch_across_in_app_resumes() -> Resul
         });
     }
     let state_db =
-        crate::init_state_db_for_app_server_target(&config, &crate::AppServerTarget::Embedded)
+        crate::init_state_db_for_cli_runtime_target(&config, &crate::CliRuntimeTarget::Embedded)
             .await?;
-    let mut app_server = crate::start_app_server_for_picker(
+    let mut cli_runtime = crate::start_cli_runtime_for_picker(
         &config,
-        &crate::AppServerTarget::Embedded,
+        &crate::CliRuntimeTarget::Embedded,
         state_db.clone(),
         Arc::new(EnvironmentManager::default_for_tests()),
     )
@@ -6033,7 +5891,7 @@ async fn remembered_current_cwd_stays_at_launch_across_in_app_resumes() -> Resul
 
     for target_session in targets {
         let control = app
-            .resume_target_session(&mut tui, &mut app_server, target_session)
+            .resume_target_session(&mut tui, &mut cli_runtime, target_session)
             .await?;
 
         assert!(matches!(control, AppRunControl::Continue));
@@ -6046,7 +5904,7 @@ async fn remembered_current_cwd_stays_at_launch_across_in_app_resumes() -> Resul
             &launch_cwd,
         ));
     }
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
     Ok(())
 }
 
@@ -6110,12 +5968,12 @@ async fn prompt_edit_forks_before_selected_prompt_and_preserves_source() -> Resu
     }
 
     let source_thread_id = ThreadId::from_string(&source_thread_id)?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&config)).await?;
-    let started = app_server
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(&config)).await?;
+    let started = cli_runtime
         .resume_thread(
             config.clone(),
             source_thread_id,
-            crate::app_server_session::ResumeModelSettings::OverrideFromCurrentConfig,
+            crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig,
         )
         .await?;
     app.enqueue_primary_thread_session(started.session, started.turns)
@@ -6136,7 +5994,7 @@ async fn prompt_edit_forks_before_selected_prompt_and_preserves_source() -> Resu
 
     let control = Box::pin(app.handle_event(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         AppEvent::ForkSessionForPromptEdit {
             thread_id: source_thread_id,
             nth_user_message: 1,
@@ -6158,7 +6016,7 @@ async fn prompt_edit_forks_before_selected_prompt_and_preserves_source() -> Resu
     );
     assert_eq!(std::fs::read_to_string(&source_path)?, source_before);
     assert_eq!(
-        app_server
+        cli_runtime
             .thread_read(source_thread_id, /*include_turns*/ true)
             .await?
             .turns
@@ -6168,7 +6026,7 @@ async fn prompt_edit_forks_before_selected_prompt_and_preserves_source() -> Resu
         vec!["turn-1", "turn-2"]
     );
     assert_eq!(
-        app_server
+        cli_runtime
             .thread_read(forked_thread_id, /*include_turns*/ true)
             .await?
             .turns
@@ -6200,7 +6058,7 @@ async fn prompt_edit_forks_before_selected_prompt_and_preserves_source() -> Resu
             .iter()
             .any(|line| line.contains("Thread forked from"))
     );
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
 
     Ok(())
 }
@@ -6219,12 +6077,12 @@ async fn prompt_edit_before_first_prompt_starts_fresh_thread() -> Result<()> {
     )
     .expect("materialized rollout should be created");
     let source_thread_id = ThreadId::from_string(&source_thread_id)?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&config)).await?;
-    let started = app_server
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(&config)).await?;
+    let started = cli_runtime
         .resume_thread(
             config.clone(),
             source_thread_id,
-            crate::app_server_session::ResumeModelSettings::OverrideFromCurrentConfig,
+            crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig,
         )
         .await?;
     app.enqueue_primary_thread_session(started.session, started.turns)
@@ -6234,7 +6092,7 @@ async fn prompt_edit_before_first_prompt_starts_fresh_thread() -> Result<()> {
 
     let control = Box::pin(app.handle_event(
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         AppEvent::ForkSessionForPromptEdit {
             thread_id: source_thread_id,
             nth_user_message: 0,
@@ -6268,7 +6126,7 @@ async fn prompt_edit_before_first_prompt_starts_fresh_thread() -> Result<()> {
             .iter()
             .any(|line| line.contains("Thread forked from"))
     );
-    app_server.shutdown().await?;
+    cli_runtime.shutdown().await?;
 
     Ok(())
 }
@@ -6286,11 +6144,11 @@ async fn replay_thread_snapshot_replays_turn_history_in_order() {
             turns: vec![
                 Turn {
                     id: "turn-1".to_string(),
-                    items_view: codex_app_server_protocol::TurnItemsView::Full,
+                    items_view: codex_cli_protocol::TurnItemsView::Full,
                     items: vec![ThreadItem::UserMessage {
                         id: "user-1".to_string(),
                         client_id: None,
-                        content: vec![AppServerUserInput::Text {
+                        content: vec![CliRuntimeUserInput::Text {
                             text: "first prompt".to_string(),
                             text_elements: Vec::new(),
                         }],
@@ -6303,12 +6161,12 @@ async fn replay_thread_snapshot_replays_turn_history_in_order() {
                 },
                 Turn {
                     id: "turn-2".to_string(),
-                    items_view: codex_app_server_protocol::TurnItemsView::Full,
+                    items_view: codex_cli_protocol::TurnItemsView::Full,
                     items: vec![
                         ThreadItem::UserMessage {
                             id: "user-2".to_string(),
                             client_id: None,
-                            content: vec![AppServerUserInput::Text {
+                            content: vec![CliRuntimeUserInput::Text {
                                 text: "third prompt".to_string(),
                                 text_elements: Vec::new(),
                             }],
@@ -6398,25 +6256,22 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
             session: None,
             turns: Vec::new(),
             events: vec![ThreadBufferedEvent::Notification(Box::new(
-                ServerNotification::ItemStarted(
-                    codex_app_server_protocol::ItemStartedNotification {
-                        thread_id: "thread-1".to_string(),
-                        turn_id: "turn-1".to_string(),
-                        started_at_ms: 0,
-                        item: ThreadItem::CollabAgentToolCall {
-                            id: "wait-1".to_string(),
-                            tool: codex_app_server_protocol::CollabAgentTool::Wait,
-                            status:
-                                codex_app_server_protocol::CollabAgentToolCallStatus::InProgress,
-                            sender_thread_id: ThreadId::new().to_string(),
-                            receiver_thread_ids: vec![receiver_thread_id.to_string()],
-                            prompt: None,
-                            model: None,
-                            reasoning_effort: None,
-                            agents_states: HashMap::new(),
-                        },
+                ServerNotification::ItemStarted(codex_cli_protocol::ItemStartedNotification {
+                    thread_id: "thread-1".to_string(),
+                    turn_id: "turn-1".to_string(),
+                    started_at_ms: 0,
+                    item: ThreadItem::CollabAgentToolCall {
+                        id: "wait-1".to_string(),
+                        tool: codex_cli_protocol::CollabAgentTool::Wait,
+                        status: codex_cli_protocol::CollabAgentToolCallStatus::InProgress,
+                        sender_thread_id: ThreadId::new().to_string(),
+                        receiver_thread_ids: vec![receiver_thread_id.to_string()],
+                        prompt: None,
+                        model: None,
+                        reasoning_effort: None,
+                        agents_states: HashMap::new(),
                     },
-                ),
+                }),
             ))],
             input_state: None,
         },
@@ -6457,7 +6312,7 @@ async fn refreshed_snapshot_session_persists_resumed_turns() {
         vec![ThreadItem::UserMessage {
             id: "user-1".to_string(),
             client_id: None,
-            content: vec![AppServerUserInput::Text {
+            content: vec![CliRuntimeUserInput::Text {
                 text: "restored prompt".to_string(),
                 text_elements: Vec::new(),
             }],
@@ -6478,7 +6333,7 @@ async fn refreshed_snapshot_session_persists_resumed_turns() {
 
     app.apply_refreshed_snapshot_thread(
         thread_id,
-        AppServerStartedThread {
+        CliRuntimeStartedThread {
             session: resumed_session.clone(),
             turns: resumed_turns.clone(),
             blocks_direct_input: true,
@@ -6569,12 +6424,12 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
         while app_event_rx.try_recv().is_ok() {}
         while op_rx.try_recv().is_ok() {}
 
-        let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+        let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
             app.chat_widget.config_ref(),
         ))
         .await
         .expect("embedded app server");
-        Box::pin(app.shutdown_current_thread(&mut app_server)).await;
+        Box::pin(app.shutdown_current_thread(&mut cli_runtime)).await;
 
         assert!(
             op_rx.try_recv().is_err(),
@@ -6590,12 +6445,12 @@ async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails()
     let thread_id = ThreadId::new();
     app.active_thread_id = Some(thread_id);
 
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
     .expect("embedded app server");
-    let control = Box::pin(app.handle_exit_mode(&mut app_server, ExitMode::ShutdownFirst)).await;
+    let control = Box::pin(app.handle_exit_mode(&mut cli_runtime, ExitMode::ShutdownFirst)).await;
 
     assert_eq!(app.pending_shutdown_exit_thread_id, None);
     assert!(matches!(
@@ -6605,17 +6460,17 @@ async fn shutdown_first_exit_returns_immediate_exit_when_shutdown_submit_fails()
 }
 
 #[tokio::test]
-async fn shutdown_first_exit_uses_app_server_shutdown_without_submitting_op() {
+async fn shutdown_first_exit_uses_cli_runtime_shutdown_without_submitting_op() {
     let (mut app, _app_event_rx, mut op_rx) = Box::pin(make_test_app_with_channels()).await;
     let thread_id = ThreadId::new();
     app.active_thread_id = Some(thread_id);
 
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+    let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
         app.chat_widget.config_ref(),
     ))
     .await
     .expect("embedded app server");
-    let control = Box::pin(app.handle_exit_mode(&mut app_server, ExitMode::ShutdownFirst)).await;
+    let control = Box::pin(app.handle_exit_mode(&mut cli_runtime, ExitMode::ShutdownFirst)).await;
 
     assert_eq!(app.pending_shutdown_exit_thread_id, None);
     assert!(matches!(
@@ -6632,12 +6487,12 @@ async fn shutdown_first_exit_uses_app_server_shutdown_without_submitting_op() {
 async fn interrupt_without_active_turn_is_treated_as_handled() {
     Box::pin(async {
         let mut app = make_test_app().await;
-        let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(
+        let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
             app.chat_widget.config_ref(),
         ))
         .await
         .expect("embedded app server");
-        let started = app_server
+        let started = cli_runtime
             .start_thread(app.chat_widget.config_ref())
             .await
             .expect("thread/start should succeed");
@@ -6648,8 +6503,8 @@ async fn interrupt_without_active_turn_is_treated_as_handled() {
         app.backtrack.primed = true;
         let op = AppCommand::interrupt();
 
-        let handled = Box::pin(app.try_submit_active_thread_op_via_app_server(
-            &mut app_server,
+        let handled = Box::pin(app.try_submit_active_thread_op_via_cli_runtime(
+            &mut cli_runtime,
             thread_id,
             &op,
         ))
@@ -6666,11 +6521,11 @@ async fn interrupt_without_active_turn_is_treated_as_handled() {
 async fn override_turn_context_sends_thread_settings_update() {
     Box::pin(async {
         let mut app = make_test_app().await;
-        let mut app_server =
-            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref())
+        let mut cli_runtime =
+            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref())
                 .await
                 .expect("embedded app server");
-        let started = app_server
+        let started = cli_runtime
             .start_thread(app.chat_widget.config_ref())
             .await
             .expect("thread/start should succeed");
@@ -6707,7 +6562,7 @@ async fn override_turn_context_sends_thread_settings_update() {
         );
 
         let handled = app
-            .try_submit_active_thread_op_via_app_server(&mut app_server, thread_id, &op)
+            .try_submit_active_thread_op_via_cli_runtime(&mut cli_runtime, thread_id, &op)
             .await
             .expect("settings update submission should not fail");
 
@@ -6721,7 +6576,7 @@ async fn override_turn_context_sends_thread_settings_update() {
             "thread/settings/update response is only an ack; cached state changes on notification"
         );
 
-        let notification = next_thread_settings_updated(&mut app_server, thread_id).await;
+        let notification = next_thread_settings_updated(&mut cli_runtime, thread_id).await;
         assert_eq!(notification.thread_settings.model, "gpt-5.4");
         assert_eq!(
             notification.thread_settings.effort,
@@ -6754,9 +6609,9 @@ async fn override_turn_context_sends_thread_settings_update() {
             Some(Personality::Pragmatic)
         );
 
-        app.handle_app_server_event(
-            &app_server,
-            codex_app_server_client::AppServerEvent::ServerNotification(Box::new(
+        app.handle_cli_runtime_event(
+            &cli_runtime,
+            codex_cli_runtime_client::CliRuntimeEvent::ServerNotification(Box::new(
                 ServerNotification::ThreadSettingsUpdated(notification),
             )),
         )
@@ -6820,11 +6675,11 @@ async fn selecting_cyber_model_defaults_active_thread_to_auto_review() {
         model.model_specialty = Some("cyber".to_string());
         app.model_catalog = Arc::new(ModelCatalog::new(vec![model]));
 
-        let mut app_server =
-            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref())
+        let mut cli_runtime =
+            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref())
                 .await
                 .expect("embedded app server");
-        let started = app_server
+        let started = cli_runtime
             .start_thread(app.chat_widget.config_ref())
             .await
             .expect("thread/start should succeed");
@@ -6841,13 +6696,13 @@ async fn selecting_cyber_model_defaults_active_thread_to_auto_review() {
         let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
         app.handle_event(
             &mut tui,
-            &mut app_server,
+            &mut cli_runtime,
             AppEvent::UpdateModel("gpt-5.4".to_string()),
         )
         .await
         .expect("model selection should succeed");
 
-        let notification = next_thread_settings_updated(&mut app_server, thread_id).await;
+        let notification = next_thread_settings_updated(&mut cli_runtime, thread_id).await;
         assert_eq!(
             notification.thread_settings.approval_policy,
             AskForApproval::OnRequest
@@ -6894,11 +6749,11 @@ async fn changing_cyber_model_reasoning_preserves_selected_permissions() {
             .await
         );
 
-        let mut app_server =
-            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref())
+        let mut cli_runtime =
+            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref())
                 .await
                 .expect("embedded app server");
-        let started = app_server
+        let started = cli_runtime
             .start_thread(app.chat_widget.config_ref())
             .await
             .expect("thread/start should succeed");
@@ -6922,7 +6777,7 @@ async fn changing_cyber_model_reasoning_preserves_selected_permissions() {
                     });
                 app.handle_event(
                     &mut tui,
-                    &mut app_server,
+                    &mut cli_runtime,
                     AppEvent::ApplyAdvancedReasoning {
                         model: model_name.clone(),
                         effort: effort.clone(),
@@ -6933,21 +6788,21 @@ async fn changing_cyber_model_reasoning_preserves_selected_permissions() {
             } else {
                 app.handle_event(
                     &mut tui,
-                    &mut app_server,
+                    &mut cli_runtime,
                     AppEvent::UpdateModel(model_name.clone()),
                 )
                 .await
                 .expect("same-model selection should succeed");
                 app.handle_event(
                     &mut tui,
-                    &mut app_server,
+                    &mut cli_runtime,
                     AppEvent::UpdateReasoningEffort(Some(effort.clone())),
                 )
                 .await
                 .expect("reasoning selection should succeed");
             }
 
-            let settings = next_thread_settings_updated(&mut app_server, thread_id)
+            let settings = next_thread_settings_updated(&mut cli_runtime, thread_id)
                 .await
                 .thread_settings;
             assert_eq!(settings.effort, Some(effort));
@@ -6996,11 +6851,11 @@ async fn selecting_cyber_model_falls_back_to_user_when_auto_review_is_unavailabl
 
     assert_eq!(
         params.approval_policy,
-        Some(codex_app_server_protocol::AskForApproval::OnRequest)
+        Some(codex_cli_protocol::AskForApproval::OnRequest)
     );
     assert_eq!(
         params.approvals_reviewer,
-        Some(codex_app_server_protocol::ApprovalsReviewer::User)
+        Some(codex_cli_protocol::ApprovalsReviewer::User)
     );
 }
 
@@ -7041,11 +6896,11 @@ async fn selecting_cyber_model_respects_auto_review_requirements() {
         model.model_specialty = Some("cyber".to_string());
         app.model_catalog = Arc::new(ModelCatalog::new(vec![model]));
 
-        let mut app_server =
-            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref())
+        let mut cli_runtime =
+            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref())
                 .await
                 .expect("embedded app server");
-        let started = app_server
+        let started = cli_runtime
             .start_thread(app.chat_widget.config_ref())
             .await
             .expect("thread/start should succeed");
@@ -7061,13 +6916,13 @@ async fn selecting_cyber_model_respects_auto_review_requirements() {
         let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
         app.handle_event(
             &mut tui,
-            &mut app_server,
+            &mut cli_runtime,
             AppEvent::UpdateModel("gpt-5.4".to_string()),
         )
         .await
         .expect("model selection should succeed");
 
-        let notification = next_thread_settings_updated(&mut app_server, thread_id).await;
+        let notification = next_thread_settings_updated(&mut cli_runtime, thread_id).await;
         assert_eq!(
             notification.thread_settings.approval_policy,
             AskForApproval::UnlessTrusted
@@ -7176,12 +7031,12 @@ async fn inactive_thread_settings_notification_updates_cached_collaboration_mode
         thread_settings: ThreadSettings {
             cwd: test_absolute_path("/tmp/thread-settings"),
             approval_policy: AskForApproval::OnRequest,
-            approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::AutoReview,
-            sandbox_policy: codex_app_server_protocol::SandboxPolicy::ReadOnly {
+            approvals_reviewer: codex_cli_protocol::ApprovalsReviewer::AutoReview,
+            sandbox_policy: codex_cli_protocol::SandboxPolicy::ReadOnly {
                 network_access: false,
             },
             active_permission_profile: Some(
-                codex_app_server_protocol::ActivePermissionProfile::read_only(),
+                codex_cli_protocol::ActivePermissionProfile::read_only(),
             ),
             model: "gpt-plan".to_string(),
             model_provider: "openai".to_string(),
@@ -7396,6 +7251,6 @@ async fn side_backtrack_rejection_reports_unavailable_message_snapshot() {
         rendered
     );
 }
-async fn start_config_write_test_app_server(app: &App) -> Result<AppServerSession> {
-    Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await
+async fn start_config_write_test_cli_runtime(app: &App) -> Result<CliRuntimeSession> {
+    Box::pin(crate::start_embedded_cli_runtime_for_picker(&app.config)).await
 }

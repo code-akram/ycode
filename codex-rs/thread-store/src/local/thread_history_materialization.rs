@@ -2,8 +2,8 @@ use std::io::SeekFrom;
 use std::path::Path;
 
 use chrono::DateTime;
-use codex_app_server_protocol::ThreadHistoryChangeSet;
-use codex_app_server_protocol::project_rollout_line;
+use codex_cli_protocol::ThreadHistoryChangeSet;
+use codex_cli_protocol::project_rollout_line;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::RolloutLine;
 use tokio::io::AsyncReadExt;

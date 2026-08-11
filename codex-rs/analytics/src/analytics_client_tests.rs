@@ -1,11 +1,11 @@
 use crate::client::AnalyticsEventsClient;
 use crate::client::AnalyticsEventsQueue;
-use crate::events::AppServerRpcTransport;
+use crate::events::CliRuntimeRpcTransport;
 use crate::events::CodexAcceptedLineFingerprintsEventParams;
 use crate::events::CodexAcceptedLineFingerprintsEventRequest;
 use crate::events::CodexAppMentionedEventRequest;
-use crate::events::CodexAppServerClientMetadata;
 use crate::events::CodexAppUsedEventRequest;
+use crate::events::CodexCliRuntimeClientMetadata;
 use crate::events::CodexCommandExecutionEventParams;
 use crate::events::CodexCommandExecutionEventRequest;
 use crate::events::CodexCompactionEventRequest;
@@ -91,63 +91,63 @@ use crate::facts::TurnTokenUsageFact;
 use crate::reducer::AnalyticsReducer;
 use crate::reducer::normalize_path_for_skill_id;
 use crate::reducer::skill_id_for_local_skill;
-use codex_app_server_protocol::ApprovalsReviewer as AppServerApprovalsReviewer;
-use codex_app_server_protocol::AskForApproval as AppServerAskForApproval;
-use codex_app_server_protocol::ClientInfo;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ClientResponsePayload;
-use codex_app_server_protocol::CodexErrorInfo;
-use codex_app_server_protocol::CollabAgentTool;
-use codex_app_server_protocol::CollabAgentToolCallStatus;
-use codex_app_server_protocol::CommandAction;
-use codex_app_server_protocol::CommandExecutionApprovalDecision;
-use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
-use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
-use codex_app_server_protocol::CommandExecutionSource;
-use codex_app_server_protocol::CommandExecutionStatus;
-use codex_app_server_protocol::DynamicToolCallStatus;
-use codex_app_server_protocol::GuardianApprovalReview;
-use codex_app_server_protocol::GuardianApprovalReviewAction;
-use codex_app_server_protocol::GuardianApprovalReviewStatus;
-use codex_app_server_protocol::GuardianCommandSource as AppServerGuardianCommandSource;
-use codex_app_server_protocol::ImageGenerationItem;
-use codex_app_server_protocol::InitializeCapabilities;
-use codex_app_server_protocol::InitializeParams;
-use codex_app_server_protocol::ItemCompletedNotification;
-use codex_app_server_protocol::ItemGuardianApprovalReviewCompletedNotification;
-use codex_app_server_protocol::ItemStartedNotification;
-use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::NonSteerableTurnKind;
-use codex_app_server_protocol::PatchApplyStatus;
-use codex_app_server_protocol::PermissionsRequestApprovalParams;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::RequestPermissionProfile;
-use codex_app_server_protocol::SandboxPolicy as AppServerSandboxPolicy;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::ServerResponse;
-use codex_app_server_protocol::SessionSource as AppServerSessionSource;
-use codex_app_server_protocol::SubAgentActivityKind;
-use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadArchiveParams;
-use codex_app_server_protocol::ThreadArchiveResponse;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::ThreadResumeResponse;
-use codex_app_server_protocol::ThreadSource as AppServerThreadSource;
-use codex_app_server_protocol::ThreadStartResponse;
-use codex_app_server_protocol::ThreadStatus as AppServerThreadStatus;
-use codex_app_server_protocol::Turn;
-use codex_app_server_protocol::TurnCompletedNotification;
-use codex_app_server_protocol::TurnDiffUpdatedNotification;
-use codex_app_server_protocol::TurnError as AppServerTurnError;
-use codex_app_server_protocol::TurnInterruptResponse;
-use codex_app_server_protocol::TurnStartParams;
-use codex_app_server_protocol::TurnStartedNotification;
-use codex_app_server_protocol::TurnStatus as AppServerTurnStatus;
-use codex_app_server_protocol::TurnSteerParams;
-use codex_app_server_protocol::TurnSteerResponse;
-use codex_app_server_protocol::UserInput;
-use codex_app_server_protocol::WebSearchItem;
+use codex_cli_protocol::ApprovalsReviewer as CliRuntimeApprovalsReviewer;
+use codex_cli_protocol::AskForApproval as CliRuntimeAskForApproval;
+use codex_cli_protocol::ClientInfo;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ClientResponsePayload;
+use codex_cli_protocol::CodexErrorInfo;
+use codex_cli_protocol::CollabAgentTool;
+use codex_cli_protocol::CollabAgentToolCallStatus;
+use codex_cli_protocol::CommandAction;
+use codex_cli_protocol::CommandExecutionApprovalDecision;
+use codex_cli_protocol::CommandExecutionRequestApprovalParams;
+use codex_cli_protocol::CommandExecutionRequestApprovalResponse;
+use codex_cli_protocol::CommandExecutionSource;
+use codex_cli_protocol::CommandExecutionStatus;
+use codex_cli_protocol::DynamicToolCallStatus;
+use codex_cli_protocol::GuardianApprovalReview;
+use codex_cli_protocol::GuardianApprovalReviewAction;
+use codex_cli_protocol::GuardianApprovalReviewStatus;
+use codex_cli_protocol::GuardianCommandSource as CliRuntimeGuardianCommandSource;
+use codex_cli_protocol::ImageGenerationItem;
+use codex_cli_protocol::InitializeCapabilities;
+use codex_cli_protocol::InitializeParams;
+use codex_cli_protocol::ItemCompletedNotification;
+use codex_cli_protocol::ItemGuardianApprovalReviewCompletedNotification;
+use codex_cli_protocol::ItemStartedNotification;
+use codex_cli_protocol::JSONRPCErrorError;
+use codex_cli_protocol::NonSteerableTurnKind;
+use codex_cli_protocol::PatchApplyStatus;
+use codex_cli_protocol::PermissionsRequestApprovalParams;
+use codex_cli_protocol::RequestId;
+use codex_cli_protocol::RequestPermissionProfile;
+use codex_cli_protocol::SandboxPolicy as CliRuntimeSandboxPolicy;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::ServerResponse;
+use codex_cli_protocol::SessionSource as CliRuntimeSessionSource;
+use codex_cli_protocol::SubAgentActivityKind;
+use codex_cli_protocol::Thread;
+use codex_cli_protocol::ThreadArchiveParams;
+use codex_cli_protocol::ThreadArchiveResponse;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::ThreadResumeResponse;
+use codex_cli_protocol::ThreadSource as CliRuntimeThreadSource;
+use codex_cli_protocol::ThreadStartResponse;
+use codex_cli_protocol::ThreadStatus as CliRuntimeThreadStatus;
+use codex_cli_protocol::Turn;
+use codex_cli_protocol::TurnCompletedNotification;
+use codex_cli_protocol::TurnDiffUpdatedNotification;
+use codex_cli_protocol::TurnError as CliRuntimeTurnError;
+use codex_cli_protocol::TurnInterruptResponse;
+use codex_cli_protocol::TurnStartParams;
+use codex_cli_protocol::TurnStartedNotification;
+use codex_cli_protocol::TurnStatus as CliRuntimeTurnStatus;
+use codex_cli_protocol::TurnSteerParams;
+use codex_cli_protocol::TurnSteerResponse;
+use codex_cli_protocol::UserInput;
+use codex_cli_protocol::WebSearchItem;
 use codex_login::default_client::DEFAULT_ORIGINATOR;
 use codex_login::default_client::originator;
 use codex_plugin::PluginCapabilitySummary;
@@ -195,8 +195,8 @@ fn test_tracking_context(thread_id: &str, turn_id: &str) -> TrackEventsContext {
 fn sample_thread_with_metadata(
     thread_id: &str,
     ephemeral: bool,
-    source: AppServerSessionSource,
-    thread_source: Option<AppServerThreadSource>,
+    source: CliRuntimeSessionSource,
+    thread_source: Option<CliRuntimeThreadSource>,
     parent_thread_id: Option<String>,
 ) -> Thread {
     Thread {
@@ -214,7 +214,7 @@ fn sample_thread_with_metadata(
         created_at: 1,
         updated_at: 2,
         recency_at: Some(2),
-        status: AppServerThreadStatus::Idle,
+        status: CliRuntimeThreadStatus::Idle,
         path: None,
         cwd: test_path_buf("/tmp").abs(),
         cli_version: "0.0.0".to_string(),
@@ -238,8 +238,8 @@ fn sample_thread_start_response(
         thread: sample_thread_with_metadata(
             thread_id,
             ephemeral,
-            AppServerSessionSource::Exec,
-            Some(AppServerThreadSource::User),
+            CliRuntimeSessionSource::Exec,
+            Some(CliRuntimeThreadSource::User),
             /*parent_thread_id*/ None,
         ),
         model: model.to_string(),
@@ -248,21 +248,21 @@ fn sample_thread_start_response(
         cwd: test_path_buf("/tmp").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
-        approval_policy: AppServerAskForApproval::OnRequest,
-        approvals_reviewer: AppServerApprovalsReviewer::User,
-        sandbox: AppServerSandboxPolicy::DangerFullAccess,
+        approval_policy: CliRuntimeAskForApproval::OnRequest,
+        approvals_reviewer: CliRuntimeApprovalsReviewer::User,
+        sandbox: CliRuntimeSandboxPolicy::DangerFullAccess,
         active_permission_profile: None,
         reasoning_effort: None,
         multi_agent_mode: Default::default(),
     })
 }
 
-fn sample_app_server_client_metadata() -> CodexAppServerClientMetadata {
-    CodexAppServerClientMetadata {
+fn sample_cli_runtime_client_metadata() -> CodexCliRuntimeClientMetadata {
+    CodexCliRuntimeClientMetadata {
         product_client_id: DEFAULT_ORIGINATOR.to_string(),
         client_name: Some("codex-tui".to_string()),
         client_version: Some("1.0.0".to_string()),
-        rpc_transport: AppServerRpcTransport::Stdio,
+        rpc_transport: CliRuntimeRpcTransport::Stdio,
         experimental_api_enabled: Some(true),
     }
 }
@@ -285,8 +285,8 @@ fn sample_thread_resume_response(
         thread_id,
         ephemeral,
         model,
-        AppServerSessionSource::Exec,
-        Some(AppServerThreadSource::User),
+        CliRuntimeSessionSource::Exec,
+        Some(CliRuntimeThreadSource::User),
         /*parent_thread_id*/ None,
     )
 }
@@ -295,8 +295,8 @@ fn sample_thread_resume_response_with_source(
     thread_id: &str,
     ephemeral: bool,
     model: &str,
-    source: AppServerSessionSource,
-    thread_source: Option<AppServerThreadSource>,
+    source: CliRuntimeSessionSource,
+    thread_source: Option<CliRuntimeThreadSource>,
     parent_thread_id: Option<String>,
 ) -> ClientResponsePayload {
     ClientResponsePayload::ThreadResume(ThreadResumeResponse {
@@ -313,9 +313,9 @@ fn sample_thread_resume_response_with_source(
         cwd: test_path_buf("/tmp").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
-        approval_policy: AppServerAskForApproval::OnRequest,
-        approvals_reviewer: AppServerApprovalsReviewer::User,
-        sandbox: AppServerSandboxPolicy::DangerFullAccess,
+        approval_policy: CliRuntimeAskForApproval::OnRequest,
+        approvals_reviewer: CliRuntimeApprovalsReviewer::User,
+        sandbox: CliRuntimeSandboxPolicy::DangerFullAccess,
         active_permission_profile: None,
         reasoning_effort: None,
         multi_agent_mode: Default::default(),
@@ -347,12 +347,12 @@ fn sample_turn_start_request(thread_id: &str, request_id: i64) -> ClientRequest 
 }
 
 fn sample_turn_start_response(turn_id: &str) -> ClientResponsePayload {
-    ClientResponsePayload::TurnStart(codex_app_server_protocol::TurnStartResponse {
+    ClientResponsePayload::TurnStart(codex_cli_protocol::TurnStartResponse {
         turn: Turn {
             id: turn_id.to_string(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
+            items_view: codex_cli_protocol::TurnItemsView::Full,
             items: vec![],
-            status: AppServerTurnStatus::InProgress,
+            status: CliRuntimeTurnStatus::InProgress,
             error: None,
             started_at: None,
             completed_at: None,
@@ -366,9 +366,9 @@ fn sample_turn_started_notification(thread_id: &str, turn_id: &str) -> ServerNot
         thread_id: thread_id.to_string(),
         turn: Turn {
             id: turn_id.to_string(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
+            items_view: codex_cli_protocol::TurnItemsView::Full,
             items: vec![],
-            status: AppServerTurnStatus::InProgress,
+            status: CliRuntimeTurnStatus::InProgress,
             error: None,
             started_at: Some(455),
             completed_at: None,
@@ -396,17 +396,17 @@ fn sample_turn_token_usage_fact(thread_id: &str, turn_id: &str) -> TurnTokenUsag
 fn sample_turn_completed_notification(
     thread_id: &str,
     turn_id: &str,
-    status: AppServerTurnStatus,
-    codex_error_info: Option<codex_app_server_protocol::CodexErrorInfo>,
+    status: CliRuntimeTurnStatus,
+    codex_error_info: Option<codex_cli_protocol::CodexErrorInfo>,
 ) -> ServerNotification {
     ServerNotification::TurnCompleted(TurnCompletedNotification {
         thread_id: thread_id.to_string(),
         turn: Turn {
             id: turn_id.to_string(),
-            items_view: codex_app_server_protocol::TurnItemsView::Full,
+            items_view: codex_cli_protocol::TurnItemsView::Full,
             items: vec![],
             status,
-            error: codex_error_info.map(|codex_error_info| AppServerTurnError {
+            error: codex_error_info.map(|codex_error_info| CliRuntimeTurnError {
                 message: "turn failed".to_string(),
                 codex_error_info: Some(codex_error_info),
                 additional_details: None,
@@ -510,7 +510,7 @@ fn non_steerable_review_error() -> JSONRPCErrorError {
         code: -32600,
         message: "cannot steer a review turn".to_string(),
         data: Some(
-            serde_json::to_value(AppServerTurnError {
+            serde_json::to_value(CliRuntimeTurnError {
                 message: "cannot steer a review turn".to_string(),
                 codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                     turn_kind: NonSteerableTurnKind::Review,
@@ -567,7 +567,7 @@ async fn ingest_rejected_turn_steer(
                 },
                 product_client_id: "codex-web".to_string(),
                 runtime: sample_runtime_metadata(),
-                rpc_transport: AppServerRpcTransport::Stdio,
+                rpc_transport: CliRuntimeRpcTransport::Stdio,
             },
             out,
         )
@@ -629,7 +629,7 @@ async fn ingest_initialize(reducer: &mut AnalyticsReducer, out: &mut Vec<TrackEv
                 },
                 product_client_id: "codex-tui".to_string(),
                 runtime: sample_runtime_metadata(),
-                rpc_transport: AppServerRpcTransport::Stdio,
+                rpc_transport: CliRuntimeRpcTransport::Stdio,
             },
             out,
         )
@@ -827,7 +827,7 @@ fn sample_initialize_fact(connection_id: u64) -> AnalyticsFact {
             runtime_os_version: "24.04".to_string(),
             runtime_arch: "x86_64".to_string(),
         },
-        rpc_transport: AppServerRpcTransport::Websocket,
+        rpc_transport: CliRuntimeRpcTransport::Websocket,
     }
 }
 
@@ -850,7 +850,7 @@ async fn ingest_complete_child_turn(
         AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
             thread_id,
             turn_id,
-            AppServerTurnStatus::Completed,
+            CliRuntimeTurnStatus::Completed,
             /*codex_error_info*/ None,
         ))),
     ] {
@@ -957,7 +957,7 @@ fn sample_permissions_approval_request(request_id: i64) -> ServerRequest {
             cwd: test_path_buf("/tmp").abs(),
             reason: Some("need network".to_string()),
             permissions: RequestPermissionProfile {
-                network: Some(codex_app_server_protocol::AdditionalNetworkPermissions {
+                network: Some(codex_cli_protocol::AdditionalNetworkPermissions {
                     enabled: Some(true),
                 }),
                 file_system: None,
@@ -990,7 +990,7 @@ fn sample_guardian_review_completed(
             completed_at_ms: 1_042,
             review_id: review_id.to_string(),
             target_item_id: target_item_id.map(str::to_string),
-            decision_source: codex_app_server_protocol::AutoReviewDecisionSource::Agent,
+            decision_source: codex_cli_protocol::AutoReviewDecisionSource::Agent,
             review: GuardianApprovalReview {
                 status,
                 risk_level: None,
@@ -998,7 +998,7 @@ fn sample_guardian_review_completed(
                 rationale: None,
             },
             action: GuardianApprovalReviewAction::Command {
-                source: AppServerGuardianCommandSource::Shell,
+                source: CliRuntimeGuardianCommandSource::Shell,
                 command: "echo hi".to_string(),
                 cwd: test_path_buf("/tmp").abs(),
             },
@@ -1227,7 +1227,7 @@ index 1111111..2222222
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut events,
@@ -1298,7 +1298,7 @@ index 1111111..2222222
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut events,
@@ -1385,7 +1385,7 @@ index 1111111..2222222
         AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
             "thread-2",
             "turn-2",
-            AppServerTurnStatus::Completed,
+            CliRuntimeTurnStatus::Completed,
             /*codex_error_info*/ None,
         ))),
     ] {
@@ -1449,7 +1449,7 @@ fn compaction_event_serializes_expected_shape() {
                 duration_ms: Some(6543),
             },
             "session-thread-1".to_string(),
-            sample_app_server_client_metadata(),
+            sample_cli_runtime_client_metadata(),
             sample_runtime_metadata(),
             Some(ThreadSource::User),
             /*subagent_source*/ None,
@@ -1467,7 +1467,7 @@ fn compaction_event_serializes_expected_shape() {
                 "thread_id": "thread-1",
                 "session_id": "session-thread-1",
                 "turn_id": "turn-1",
-                "app_server_client": {
+                "cli_runtime_client": {
                     "product_client_id": DEFAULT_ORIGINATOR,
                     "client_name": "codex-tui",
                     "client_version": "1.0.0",
@@ -1544,7 +1544,7 @@ async fn image_preparation_fact_is_included_in_turn_event() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut events,
@@ -1594,11 +1594,11 @@ fn thread_initialized_event_serializes_expected_shape() {
         event_params: ThreadInitializedEventParams {
             thread_id: "thread-0".to_string(),
             session_id: "session-thread-0".to_string(),
-            app_server_client: CodexAppServerClientMetadata {
+            cli_runtime_client: CodexCliRuntimeClientMetadata {
                 product_client_id: DEFAULT_ORIGINATOR.to_string(),
                 client_name: Some("codex-tui".to_string()),
                 client_version: Some("1.0.0".to_string()),
-                rpc_transport: AppServerRpcTransport::Stdio,
+                rpc_transport: CliRuntimeRpcTransport::Stdio,
                 experimental_api_enabled: Some(true),
             },
             runtime: CodexRuntimeMetadata {
@@ -1627,7 +1627,7 @@ fn thread_initialized_event_serializes_expected_shape() {
             "event_params": {
                 "thread_id": "thread-0",
                 "session_id": "session-thread-0",
-                "app_server_client": {
+                "cli_runtime_client": {
                     "product_client_id": DEFAULT_ORIGINATOR,
                     "client_name": "codex-tui",
                     "client_version": "1.0.0",
@@ -1667,11 +1667,11 @@ fn command_execution_event_serializes_expected_shape() {
                 parent_call_id: None,
                 originating_response_id: None,
                 subsequent_response_id: None,
-                app_server_client: CodexAppServerClientMetadata {
+                cli_runtime_client: CodexCliRuntimeClientMetadata {
                     product_client_id: "codex_tui".to_string(),
                     client_name: Some("codex-tui".to_string()),
                     client_version: Some("1.2.3".to_string()),
-                    rpc_transport: AppServerRpcTransport::Websocket,
+                    rpc_transport: CliRuntimeRpcTransport::Websocket,
                     experimental_api_enabled: Some(true),
                 },
                 runtime: CodexRuntimeMetadata {
@@ -1723,7 +1723,7 @@ fn command_execution_event_serializes_expected_shape() {
                 "parent_call_id": null,
                 "originating_response_id": null,
                 "subsequent_response_id": null,
-                "app_server_client": {
+                "cli_runtime_client": {
                     "product_client_id": "codex_tui",
                     "client_name": "codex-tui",
                     "client_version": "1.2.3",
@@ -1775,11 +1775,11 @@ fn review_event_serializes_expected_shape() {
             turn_id: "turn-1".to_string(),
             item_id: None,
             review_id: "review-1".to_string(),
-            app_server_client: CodexAppServerClientMetadata {
+            cli_runtime_client: CodexCliRuntimeClientMetadata {
                 product_client_id: "codex_tui".to_string(),
                 client_name: Some("codex-tui".to_string()),
                 client_version: Some("1.2.3".to_string()),
-                rpc_transport: AppServerRpcTransport::Websocket,
+                rpc_transport: CliRuntimeRpcTransport::Websocket,
                 experimental_api_enabled: Some(true),
             },
             runtime: CodexRuntimeMetadata {
@@ -1813,7 +1813,7 @@ fn review_event_serializes_expected_shape() {
                 "turn_id": "turn-1",
                 "item_id": null,
                 "review_id": "review-1",
-                "app_server_client": {
+                "cli_runtime_client": {
                     "product_client_id": "codex_tui",
                     "client_name": "codex-tui",
                     "client_version": "1.2.3",
@@ -1887,7 +1887,7 @@ async fn initialize_caches_client_and_thread_lifecycle_publishes_once_initialize
                     runtime_os_version: "24.04".to_string(),
                     runtime_arch: "x86_64".to_string(),
                 },
-                rpc_transport: AppServerRpcTransport::Websocket,
+                rpc_transport: CliRuntimeRpcTransport::Websocket,
             },
             &mut events,
         )
@@ -1913,23 +1913,23 @@ async fn initialize_caches_client_and_thread_lifecycle_publishes_once_initialize
     assert_eq!(payload[0]["event_type"], "codex_thread_initialized");
     assert_eq!(payload[0]["event_params"]["session_id"], "session-thread-1");
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["product_client_id"],
+        payload[0]["event_params"]["cli_runtime_client"]["product_client_id"],
         DEFAULT_ORIGINATOR
     );
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["client_name"],
+        payload[0]["event_params"]["cli_runtime_client"]["client_name"],
         "codex-tui"
     );
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["client_version"],
+        payload[0]["event_params"]["cli_runtime_client"]["client_version"],
         "1.0.0"
     );
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["rpc_transport"],
+        payload[0]["event_params"]["cli_runtime_client"]["rpc_transport"],
         "websocket"
     );
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["experimental_api_enabled"],
+        payload[0]["event_params"]["cli_runtime_client"]["experimental_api_enabled"],
         false
     );
     assert_eq!(
@@ -1983,14 +1983,14 @@ async fn thread_originator_overrides_shared_connection_across_thread_events() {
             .map(|event| {
                 json!({
                     "thread_id": event["event_params"]["thread_id"],
-                    "app_server_client": event["event_params"]["app_server_client"],
+                    "cli_runtime_client": event["event_params"]["cli_runtime_client"],
                 })
             })
             .collect::<Vec<_>>(),
         vec![
             json!({
                 "thread_id": "thread-work",
-                "app_server_client": {
+                "cli_runtime_client": {
                     "product_client_id": TEST_PRODUCT_CLIENT_ID,
                     "client_name": "codex-tui",
                     "client_version": "1.0.0",
@@ -2000,7 +2000,7 @@ async fn thread_originator_overrides_shared_connection_across_thread_events() {
             }),
             json!({
                 "thread_id": "thread-default",
-                "app_server_client": {
+                "cli_runtime_client": {
                     "product_client_id": DEFAULT_ORIGINATOR,
                     "client_name": "codex-tui",
                     "client_version": "1.0.0",
@@ -2078,7 +2078,7 @@ async fn thread_originator_overrides_shared_connection_across_thread_events() {
                 json!({
                     "event_type": event["event_type"],
                     "product_client_id":
-                        event["event_params"]["app_server_client"]["product_client_id"],
+                        event["event_params"]["cli_runtime_client"]["product_client_id"],
                 })
             })
             .collect::<Vec<_>>(),
@@ -2186,7 +2186,7 @@ async fn compaction_event_ingests_custom_fact() {
                 },
                 product_client_id: DEFAULT_ORIGINATOR.to_string(),
                 runtime: sample_runtime_metadata(),
-                rpc_transport: AppServerRpcTransport::Websocket,
+                rpc_transport: CliRuntimeRpcTransport::Websocket,
             },
             &mut events,
         )
@@ -2200,14 +2200,14 @@ async fn compaction_event_ingests_custom_fact() {
                     "thread-1",
                     /*ephemeral*/ false,
                     "gpt-5",
-                    AppServerSessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                    CliRuntimeSessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                         parent_thread_id,
                         depth: 1,
                         agent_path: None,
                         agent_nickname: None,
                         agent_role: None,
                     }),
-                    Some(AppServerThreadSource::Subagent),
+                    Some(CliRuntimeThreadSource::Subagent),
                     Some(parent_thread_id.to_string()),
                 )),
                 thread_originator: None,
@@ -2261,15 +2261,15 @@ async fn compaction_event_ingests_custom_fact() {
         json!(null)
     );
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["product_client_id"],
+        payload[0]["event_params"]["cli_runtime_client"]["product_client_id"],
         DEFAULT_ORIGINATOR
     );
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["client_name"],
+        payload[0]["event_params"]["cli_runtime_client"]["client_name"],
         "codex-tui"
     );
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["rpc_transport"],
+        payload[0]["event_params"]["cli_runtime_client"]["rpc_transport"],
         "websocket"
     );
     assert_eq!(
@@ -2316,7 +2316,7 @@ async fn guardian_review_event_ingests_custom_fact_with_optional_target_item() {
                 },
                 product_client_id: DEFAULT_ORIGINATOR.to_string(),
                 runtime: sample_runtime_metadata(),
-                rpc_transport: AppServerRpcTransport::Websocket,
+                rpc_transport: CliRuntimeRpcTransport::Websocket,
             },
             &mut events,
         )
@@ -2403,7 +2403,7 @@ async fn guardian_review_event_ingests_custom_fact_with_optional_target_item() {
         "delegated_subagent"
     );
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["product_client_id"],
+        payload[0]["event_params"]["cli_runtime_client"]["product_client_id"],
         DEFAULT_ORIGINATOR
     );
     assert_eq!(
@@ -2575,7 +2575,7 @@ async fn item_lifecycle_notifications_publish_command_execution_event() {
     assert_eq!(payload[0]["event_params"]["duration_ms"], 45);
     assert_eq!(payload[0]["event_params"]["execution_duration_ms"], 42);
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["client_name"],
+        payload[0]["event_params"]["cli_runtime_client"]["client_name"],
         "codex-tui"
     );
     assert_eq!(payload[0]["event_params"]["thread_source"], "user");
@@ -3037,19 +3037,19 @@ fn subagent_thread_started_review_serializes_expected_shape() {
     let payload = serde_json::to_value(&event).expect("serialize review subagent event");
     assert_eq!(payload["event_params"]["thread_source"], "subagent");
     assert_eq!(
-        payload["event_params"]["app_server_client"]["product_client_id"],
+        payload["event_params"]["cli_runtime_client"]["product_client_id"],
         "codex-tui"
     );
     assert_eq!(
-        payload["event_params"]["app_server_client"]["client_name"],
+        payload["event_params"]["cli_runtime_client"]["client_name"],
         "codex-tui"
     );
     assert_eq!(
-        payload["event_params"]["app_server_client"]["client_version"],
+        payload["event_params"]["cli_runtime_client"]["client_version"],
         "1.0.0"
     );
     assert_eq!(
-        payload["event_params"]["app_server_client"]["rpc_transport"],
+        payload["event_params"]["cli_runtime_client"]["rpc_transport"],
         "in_process"
     );
     assert_eq!(payload["event_params"]["created_at"], 123);
@@ -3216,7 +3216,7 @@ async fn subagent_thread_started_publishes_without_initialize() {
     assert_eq!(payload.as_array().expect("events array").len(), 1);
     assert_eq!(payload[0]["event_type"], "codex_thread_initialized");
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["product_client_id"],
+        payload[0]["event_params"]["cli_runtime_client"]["product_client_id"],
         "codex-tui"
     );
     assert_eq!(payload[0]["event_params"]["thread_source"], "subagent");
@@ -3246,7 +3246,7 @@ async fn subagent_events_keep_thread_originator_with_explicit_turn_connection() 
                 },
                 product_client_id: "parent-client".to_string(),
                 runtime: sample_runtime_metadata(),
-                rpc_transport: AppServerRpcTransport::Stdio,
+                rpc_transport: CliRuntimeRpcTransport::Stdio,
             },
             &mut events,
         )
@@ -3328,7 +3328,7 @@ async fn subagent_events_keep_thread_originator_with_explicit_turn_connection() 
     assert_eq!(payload[0]["event_params"]["session_id"], "session-root");
     assert_eq!(payload[0]["event_params"]["thread_id"], "thread-review");
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["product_client_id"],
+        payload[0]["event_params"]["cli_runtime_client"]["product_client_id"],
         "parent-client"
     );
     assert_eq!(
@@ -3349,7 +3349,7 @@ async fn subagent_events_keep_thread_originator_with_explicit_turn_connection() 
         params.parent_thread_id.as_deref(),
         Some("44444444-4444-4444-4444-444444444444")
     );
-    assert_eq!(params.app_server_client.product_client_id, "parent-client");
+    assert_eq!(params.cli_runtime_client.product_client_id, "parent-client");
     assert_eq!(params.runtime.codex_rs_version, "0.1.0");
 
     reducer
@@ -3395,11 +3395,11 @@ async fn subagent_events_keep_thread_originator_with_explicit_turn_connection() 
         panic!("expected one turn event");
     };
     assert_eq!(
-        event.event_params.app_server_client.product_client_id,
+        event.event_params.cli_runtime_client.product_client_id,
         "parent-client"
     );
     assert_eq!(
-        event.event_params.app_server_client.client_name.as_deref(),
+        event.event_params.cli_runtime_client.client_name.as_deref(),
         Some("codex-tui")
     );
 }
@@ -3485,7 +3485,7 @@ async fn subagent_tool_items_inherit_parent_connection_metadata() {
     assert_eq!(payload[0]["event_params"]["subagent_source"], "review");
     assert_eq!(payload[0]["event_params"]["parent_thread_id"], "thread-1");
     assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["client_name"],
+        payload[0]["event_params"]["cli_runtime_client"]["client_name"],
         "codex-tui"
     );
 }
@@ -4087,7 +4087,7 @@ async fn reducer_ingests_external_agent_config_import_completed_fact() {
             AnalyticsFact::Custom(CustomAnalyticsFact::ExternalAgentConfigImportCompleted(
                 ExternalAgentConfigImportCompletedInput {
                     import_id: "import-1".to_string(),
-                    source: "app_server".to_string(),
+                    source: "cli_runtime".to_string(),
                     provider_id: "test-provider-42".to_string(),
                     item_type: "PLUGINS".to_string(),
                     success_count: 2,
@@ -4105,7 +4105,7 @@ async fn reducer_ingests_external_agent_config_import_completed_fact() {
             "event_type": "codex_onboarding_external_agent_import_complete",
             "event_params": {
                 "import_id": "import-1",
-                "source": "app_server",
+                "source": "cli_runtime",
                 "provider_id": "test-provider-42",
                 "type": "PLUGINS",
                 "success_count": 2,
@@ -4123,7 +4123,7 @@ fn external_agent_config_import_failure_event_serializes_expected_shape() {
             event_type: "codex_onboarding_external_agent_import_failure",
             event_params: CodexOnboardingExternalAgentImportFailureMetadata {
                 import_id: "import-1".to_string(),
-                source: "app_server".to_string(),
+                source: "cli_runtime".to_string(),
                 provider_id: "test-provider-42".to_string(),
                 item_type: "PLUGINS".to_string(),
                 failure_stage: "plugin_import".to_string(),
@@ -4142,7 +4142,7 @@ fn external_agent_config_import_failure_event_serializes_expected_shape() {
             "event_type": "codex_onboarding_external_agent_import_failure",
             "event_params": {
                 "import_id": "import-1",
-                "source": "app_server",
+                "source": "cli_runtime",
                 "provider_id": "test-provider-42",
                 "type": "PLUGINS",
                 "failure_stage": "plugin_import",
@@ -4164,7 +4164,7 @@ async fn reducer_ingests_external_agent_config_import_failure_fact() {
             AnalyticsFact::Custom(CustomAnalyticsFact::ExternalAgentConfigImportFailure(
                 ExternalAgentConfigImportFailureInput {
                     import_id: "import-1".to_string(),
-                    source: "app_server".to_string(),
+                    source: "cli_runtime".to_string(),
                     provider_id: "test-provider-42".to_string(),
                     item_type: "PLUGINS".to_string(),
                     failure_stage: "plugin_import".to_string(),
@@ -4183,7 +4183,7 @@ async fn reducer_ingests_external_agent_config_import_failure_fact() {
             "event_type": "codex_onboarding_external_agent_import_failure",
             "event_params": {
                 "import_id": "import-1",
-                "source": "app_server",
+                "source": "cli_runtime",
                 "provider_id": "test-provider-42",
                 "type": "PLUGINS",
                 "failure_stage": "plugin_import",
@@ -4203,7 +4203,7 @@ fn turn_event_serializes_expected_shape() {
             thread_id: "thread-2".to_string(),
             session_id: "session-thread-2".to_string(),
             turn_id: "turn-2".to_string(),
-            app_server_client: sample_app_server_client_metadata(),
+            cli_runtime_client: sample_cli_runtime_client_metadata(),
             runtime: sample_runtime_metadata(),
             submission_type: None,
             ephemeral: false,
@@ -4276,7 +4276,7 @@ fn turn_event_serializes_expected_shape() {
                 "session_id": "session-thread-2",
                 "turn_id": "turn-2",
                 "submission_type": null,
-                "app_server_client": {
+                "cli_runtime_client": {
                     "product_client_id": "codex_cli_rs",
                     "client_name": "codex-tui",
                     "client_version": "1.0.0",
@@ -4413,7 +4413,7 @@ async fn accepted_turn_steer_emits_expected_event() {
             > 0
     );
     assert_eq!(
-        payload["event_params"]["app_server_client"]["product_client_id"],
+        payload["event_params"]["cli_runtime_client"]["product_client_id"],
         json!("codex-tui")
     );
     assert_eq!(
@@ -4444,7 +4444,7 @@ async fn rejected_turn_steer_uses_request_connection_metadata() {
     assert_eq!(payload["event_params"]["accepted_turn_id"], json!(null));
     assert_eq!(payload["event_params"]["num_input_images"], json!(1));
     assert_eq!(
-        payload["event_params"]["app_server_client"]["product_client_id"],
+        payload["event_params"]["cli_runtime_client"]["product_client_id"],
         json!("codex-tui")
     );
     assert_eq!(
@@ -4579,7 +4579,7 @@ async fn turn_start_error_response_discards_pending_start_request() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -4608,7 +4608,7 @@ async fn turn_lifecycle_emits_turn_event() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -4625,7 +4625,7 @@ async fn turn_lifecycle_emits_turn_event() {
     );
     assert_eq!(payload["event_params"]["turn_id"], json!("turn-2"));
     assert_eq!(
-        payload["event_params"]["app_server_client"],
+        payload["event_params"]["cli_runtime_client"],
         json!({
             "product_client_id": "codex-tui",
             "client_name": "codex-tui",
@@ -4804,7 +4804,7 @@ async fn turn_event_counts_completed_tool_items() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -4856,7 +4856,7 @@ async fn item_completed_without_turn_state_does_not_create_turn_state() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -4958,7 +4958,7 @@ async fn accepted_steers_increment_turn_steer_count() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -4992,7 +4992,7 @@ async fn turn_does_not_emit_without_required_prerequisites() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -5017,7 +5017,7 @@ async fn turn_does_not_emit_without_required_prerequisites() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -5057,8 +5057,8 @@ async fn turn_lifecycle_emits_failed_turn_event() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Failed,
-                Some(codex_app_server_protocol::CodexErrorInfo::BadRequest),
+                CliRuntimeTurnStatus::Failed,
+                Some(codex_cli_protocol::CodexErrorInfo::BadRequest),
             ))),
             &mut out,
         )
@@ -5119,7 +5119,7 @@ async fn rejected_turn_interrupt_does_not_tag_interrupted_turn_event() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Interrupted,
+                CliRuntimeTurnStatus::Interrupted,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -5178,7 +5178,7 @@ async fn accepted_turn_interrupt_records_requested_at_on_turn_event() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Interrupted,
+                CliRuntimeTurnStatus::Interrupted,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -5256,7 +5256,7 @@ async fn accepted_turn_interrupt_retries_preserve_earliest_requested_at() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Interrupted,
+                CliRuntimeTurnStatus::Interrupted,
                 /*codex_error_info*/ None,
             ))),
             &mut out,
@@ -5290,7 +5290,7 @@ async fn turn_completed_without_started_notification_emits_null_started_at() {
             AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
                 "thread-2",
                 "turn-2",
-                AppServerTurnStatus::Completed,
+                CliRuntimeTurnStatus::Completed,
                 /*codex_error_info*/ None,
             ))),
             &mut out,

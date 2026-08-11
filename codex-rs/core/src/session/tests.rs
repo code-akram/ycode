@@ -469,7 +469,7 @@ async fn regular_turn_emits_turn_started_with_trace_id_without_waiting_for_start
         traceparent: Some("00-00000000000000000000000000000011-0000000000000022-01".into()),
         tracestate: Some("vendor=value".into()),
     };
-    let request_span = info_span!("app_server.request");
+    let request_span = info_span!("cli_runtime.request");
     assert!(set_parent_from_w3c_trace_context(
         &request_span,
         &request_parent
@@ -3779,8 +3779,8 @@ async fn set_rate_limits_retains_previous_credits() {
         thread_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
-        app_server_client_name: None,
-        app_server_client_version: None,
+        cli_runtime_client_name: None,
+        cli_runtime_client_version: None,
         session_source: SessionSource::Exec,
         history_mode: Default::default(),
         forked_from_thread_id: None,
@@ -3888,8 +3888,8 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         thread_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
-        app_server_client_name: None,
-        app_server_client_version: None,
+        cli_runtime_client_name: None,
+        cli_runtime_client_version: None,
         session_source: SessionSource::Exec,
         history_mode: Default::default(),
         forked_from_thread_id: None,
@@ -4345,8 +4345,8 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
         thread_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
-        app_server_client_name: None,
-        app_server_client_version: None,
+        cli_runtime_client_name: None,
+        cli_runtime_client_version: None,
         session_source: SessionSource::Exec,
         history_mode: Default::default(),
         forked_from_thread_id: None,
@@ -4389,7 +4389,7 @@ async fn emit_subagent_session_started_includes_fork_lineage_and_originator() {
 
     emit_subagent_session_started(
         &analytics_events_client,
-        AppServerClientMetadata {
+        CliRuntimeClientMetadata {
             client_name: Some("codex-tui".to_string()),
             client_version: Some("1.0.0".to_string()),
         },
@@ -4436,7 +4436,7 @@ async fn emit_subagent_session_started_includes_fork_lineage_and_originator() {
         forked_from_thread_id.to_string()
     );
     assert_eq!(
-        event["event_params"]["app_server_client"]["product_client_id"],
+        event["event_params"]["cli_runtime_client"]["product_client_id"],
         "test_originator"
     );
 }
@@ -5140,8 +5140,8 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         thread_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
-        app_server_client_name: None,
-        app_server_client_version: None,
+        cli_runtime_client_name: None,
+        cli_runtime_client_version: None,
         session_source: SessionSource::Exec,
         history_mode: Default::default(),
         forked_from_thread_id: None,
@@ -5276,8 +5276,8 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         thread_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
-        app_server_client_name: None,
-        app_server_client_version: None,
+        cli_runtime_client_name: None,
+        cli_runtime_client_version: None,
         session_source: SessionSource::Exec,
         history_mode: Default::default(),
         forked_from_thread_id: None,
@@ -5534,8 +5534,8 @@ async fn make_session_with_config_and_rx(
         thread_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
-        app_server_client_name: None,
-        app_server_client_version: None,
+        cli_runtime_client_name: None,
+        cli_runtime_client_version: None,
         session_source: SessionSource::Exec,
         history_mode: Default::default(),
         forked_from_thread_id: None,
@@ -5643,8 +5643,8 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         thread_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
-        app_server_client_name: None,
-        app_server_client_version: None,
+        cli_runtime_client_name: None,
+        cli_runtime_client_version: None,
         session_source: session_source.clone(),
         history_mode: Default::default(),
         forked_from_thread_id: None,
@@ -6406,7 +6406,7 @@ async fn submit_with_id_captures_current_span_trace_context() {
         traceparent: Some("00-00000000000000000000000000000011-0000000000000022-01".into()),
         tracestate: Some("vendor=value".into()),
     };
-    let request_span = info_span!("app_server.request");
+    let request_span = info_span!("cli_runtime.request");
     assert!(set_parent_from_w3c_trace_context(
         &request_span,
         &request_parent
@@ -6443,7 +6443,7 @@ async fn new_default_turn_captures_current_span_trace_id() {
         traceparent: Some("00-00000000000000000000000000000011-0000000000000022-01".into()),
         tracestate: Some("vendor=value".into()),
     };
-    let request_span = info_span!("app_server.request");
+    let request_span = info_span!("cli_runtime.request");
     assert!(set_parent_from_w3c_trace_context(
         &request_span,
         &request_parent
@@ -6864,7 +6864,7 @@ async fn spawn_task_turn_span_inherits_dispatch_trace_context() {
         traceparent: Some("00-00000000000000000000000000000011-0000000000000022-01".into()),
         tracestate: Some("vendor=value".into()),
     };
-    let request_span = tracing::info_span!("app_server.request");
+    let request_span = tracing::info_span!("cli_runtime.request");
     assert!(set_parent_from_w3c_trace_context(
         &request_span,
         &request_parent
@@ -7462,8 +7462,8 @@ where
         thread_name: None,
         original_config_do_not_use: Arc::clone(&config),
         metrics_service_name: None,
-        app_server_client_name: None,
-        app_server_client_version: None,
+        cli_runtime_client_name: None,
+        cli_runtime_client_version: None,
         session_source: SessionSource::Exec,
         history_mode: Default::default(),
         forked_from_thread_id: None,

@@ -10,7 +10,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use super::live_output::LiveCommandOutput;
-use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
+use codex_cli_protocol::CommandExecutionSource as ExecCommandSource;
 use codex_protocol::parse_command::ParsedCommand;
 use itertools::Either;
 

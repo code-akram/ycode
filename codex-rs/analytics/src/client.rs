@@ -1,4 +1,4 @@
-use crate::events::AppServerRpcTransport;
+use crate::events::CliRuntimeRpcTransport;
 use crate::events::GuardianReviewAnalyticsResult;
 use crate::events::GuardianReviewTrackContext;
 use crate::events::TrackEventRequest;
@@ -32,14 +32,14 @@ use crate::facts::TurnResolvedConfigFact;
 use crate::facts::TurnTokenUsageFact;
 use crate::now_unix_millis;
 use crate::reducer::AnalyticsReducer;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ClientResponsePayload;
-use codex_app_server_protocol::InitializeParams;
-use codex_app_server_protocol::JSONRPCErrorError;
-use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::ServerResponse;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ClientResponsePayload;
+use codex_cli_protocol::InitializeParams;
+use codex_cli_protocol::JSONRPCErrorError;
+use codex_cli_protocol::RequestId;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::ServerResponse;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::default_client::create_client;
@@ -274,7 +274,7 @@ impl AnalyticsEventsClient {
         connection_id: u64,
         params: InitializeParams,
         product_client_id: String,
-        rpc_transport: AppServerRpcTransport,
+        rpc_transport: CliRuntimeRpcTransport,
     ) {
         self.record_fact(AnalyticsFact::Initialize {
             connection_id,

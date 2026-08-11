@@ -173,7 +173,7 @@ async fn exec_resume_last_appends_to_existing_file() -> anyhow::Result<()> {
 
     let output = test
         .cmd_with_server(&server)
-        .env("RUST_LOG", "codex_app_server::outgoing_message=trace")
+        .env("RUST_LOG", "codex_cli_runtime::outgoing_message=trace")
         .arg("--skip-git-repo-check")
         .arg("-C")
         .arg(&repo_root)
@@ -186,7 +186,7 @@ async fn exec_resume_last_appends_to_existing_file() -> anyhow::Result<()> {
     assert!(output.status.success(), "resume failed: {stderr}");
     assert_eq!(
         stderr
-            .matches("app-server event: thread/tokenUsage/updated")
+            .matches("cli-runtime event: thread/tokenUsage/updated")
             .count(),
         1,
         "resume should not replay restored token usage: {stderr}"

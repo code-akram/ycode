@@ -111,7 +111,7 @@
 //! # Remote Image Rows (Up/Down/Delete)
 //!
 //! Remote image URLs are rendered as non-editable `[Image #N]` rows above the textarea (inside the
-//! same composer block). These rows represent image attachments rehydrated from app-server/backtrack
+//! same composer block). These rows represent image attachments rehydrated from cli-runtime/backtrack
 //! history; TUI users can remove them, but cannot type into that row region.
 //!
 //! Keyboard behavior:
@@ -295,7 +295,7 @@ use crate::history_cell;
 use crate::skills_helpers::skill_display_name;
 use crate::tui::FrameRequester;
 use crate::ui_consts::LIVE_PREFIX_COLS;
-use codex_app_server_protocol::SkillMetadata;
+use codex_cli_protocol::SkillMetadata;
 use codex_file_search::FileMatch;
 use codex_plugin::PluginCapabilitySummary;
 use std::cell::OnceCell;

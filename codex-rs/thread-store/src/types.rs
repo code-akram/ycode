@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chrono::DateTime;
 use chrono::Utc;
-use codex_app_server_protocol::CodexErrorInfo;
+use codex_cli_protocol::CodexErrorInfo;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
@@ -415,7 +415,7 @@ pub struct ListTurnsParams {
 pub struct StoredTurn {
     /// Turn id.
     pub turn_id: String,
-    /// Projected app-server item snapshots associated with this turn, according to `items_view`.
+    /// Projected cli-runtime item snapshots associated with this turn, according to `items_view`.
     pub items: Vec<StoredThreadItem>,
     /// Amount of item detail included in `items`.
     pub items_view: StoredTurnItemsView,
@@ -472,7 +472,7 @@ pub enum ItemSortKey {
     UpdatedAtOrdinal,
 }
 
-/// A projected app-server `ThreadItem` snapshot within a turn.
+/// A projected cli-runtime `ThreadItem` snapshot within a turn.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredThreadItem {
     /// Turn containing this item.
@@ -483,7 +483,7 @@ pub struct StoredThreadItem {
     pub updated_at_ordinal: u64,
     /// Unix timestamp (milliseconds) when this logical item was first projected.
     pub created_at_ms: i64,
-    /// Serialized app-server ThreadItem snapshot.
+    /// Serialized cli-runtime ThreadItem snapshot.
     pub item_json: Vec<u8>,
 }
 

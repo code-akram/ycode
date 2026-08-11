@@ -38,10 +38,9 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
-use crate::app_server_approval_conversions::file_update_changes_to_display;
 use crate::approval_events::ApplyPatchApprovalRequestEvent;
 use crate::approval_events::ExecApprovalRequestEvent;
 use crate::bottom_pane::StatusLineItem;
@@ -59,6 +58,7 @@ use crate::mention_codec::encode_history_mentions;
 use crate::model_catalog::ModelCatalog;
 use crate::multi_agents;
 use crate::multi_agents::AgentMetadata;
+use crate::runtime_approval_conversions::file_update_changes_to_display;
 use crate::session_state::SessionNetworkProxyRuntime;
 use crate::session_state::ThreadSessionState;
 use crate::status::RateLimitWindowDisplay;
@@ -75,39 +75,39 @@ use crate::text_formatting::proper_join;
 use crate::token_usage::TokenUsage;
 use crate::token_usage::TokenUsageInfo;
 use crate::version::CODEX_CLI_VERSION;
-use codex_app_server_protocol::AddCreditsNudgeCreditType;
-use codex_app_server_protocol::AddCreditsNudgeEmailStatus;
-use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
-use codex_app_server_protocol::CollabAgentTool;
-use codex_app_server_protocol::CollabAgentToolCallStatus;
-use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
-use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
-use codex_app_server_protocol::CreditsSnapshot;
-use codex_app_server_protocol::ErrorNotification;
-use codex_app_server_protocol::FileChangeRequestApprovalParams;
-use codex_app_server_protocol::GuardianApprovalReviewAction;
-use codex_app_server_protocol::ItemCompletedNotification;
-use codex_app_server_protocol::ItemStartedNotification;
-use codex_app_server_protocol::ModelVerification as AppServerModelVerification;
-use codex_app_server_protocol::RateLimitReachedType;
-use codex_app_server_protocol::RateLimitSnapshot;
-use codex_app_server_protocol::ReviewTarget;
-use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ServerRequest;
-use codex_app_server_protocol::SkillMetadata;
-use codex_app_server_protocol::SkillsListResponse;
-use codex_app_server_protocol::ThreadGoal as AppThreadGoal;
-use codex_app_server_protocol::ThreadGoalStatus as AppThreadGoalStatus;
-use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::ThreadSettings;
-use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
-use codex_app_server_protocol::ThreadTokenUsage;
-use codex_app_server_protocol::ToolRequestUserInputParams;
-use codex_app_server_protocol::Turn;
-use codex_app_server_protocol::TurnCompletedNotification;
-use codex_app_server_protocol::TurnPlanStepStatus;
-use codex_app_server_protocol::TurnStatus;
-use codex_app_server_protocol::UserInput;
+use codex_cli_protocol::AddCreditsNudgeCreditType;
+use codex_cli_protocol::AddCreditsNudgeEmailStatus;
+use codex_cli_protocol::CodexErrorInfo as CliRuntimeCodexErrorInfo;
+use codex_cli_protocol::CollabAgentTool;
+use codex_cli_protocol::CollabAgentToolCallStatus;
+use codex_cli_protocol::CommandExecutionRequestApprovalParams;
+use codex_cli_protocol::CommandExecutionSource as ExecCommandSource;
+use codex_cli_protocol::CreditsSnapshot;
+use codex_cli_protocol::ErrorNotification;
+use codex_cli_protocol::FileChangeRequestApprovalParams;
+use codex_cli_protocol::GuardianApprovalReviewAction;
+use codex_cli_protocol::ItemCompletedNotification;
+use codex_cli_protocol::ItemStartedNotification;
+use codex_cli_protocol::ModelVerification as CliRuntimeModelVerification;
+use codex_cli_protocol::RateLimitReachedType;
+use codex_cli_protocol::RateLimitSnapshot;
+use codex_cli_protocol::ReviewTarget;
+use codex_cli_protocol::ServerNotification;
+use codex_cli_protocol::ServerRequest;
+use codex_cli_protocol::SkillMetadata;
+use codex_cli_protocol::SkillsListResponse;
+use codex_cli_protocol::ThreadGoal as AppThreadGoal;
+use codex_cli_protocol::ThreadGoalStatus as AppThreadGoalStatus;
+use codex_cli_protocol::ThreadItem;
+use codex_cli_protocol::ThreadSettings;
+use codex_cli_protocol::ThreadSettingsUpdatedNotification;
+use codex_cli_protocol::ThreadTokenUsage;
+use codex_cli_protocol::ToolRequestUserInputParams;
+use codex_cli_protocol::Turn;
+use codex_cli_protocol::TurnCompletedNotification;
+use codex_cli_protocol::TurnPlanStepStatus;
+use codex_cli_protocol::TurnStatus;
+use codex_cli_protocol::UserInput;
 use codex_config::Constrained;
 use codex_config::ConstraintResult;
 use codex_config::types::ApprovalsReviewer;
@@ -370,9 +370,9 @@ mod rate_limits;
 use self::rate_limits::RateLimitErrorKind;
 use self::rate_limits::RateLimitSwitchPromptState;
 use self::rate_limits::RateLimitWarningState;
-use self::rate_limits::app_server_rate_limit_error_kind;
+use self::rate_limits::cli_runtime_rate_limit_error_kind;
 pub(crate) use self::rate_limits::fallback_limit_label;
-use self::rate_limits::is_app_server_cyber_policy_error;
+use self::rate_limits::is_cli_runtime_cyber_policy_error;
 mod reset_credits;
 pub(crate) use self::rate_limits::limit_label_for_window;
 mod reasoning_shortcuts;
@@ -421,7 +421,7 @@ use self::user_messages::UserMessageDisplay;
 #[cfg(test)]
 use self::user_messages::UserMessageHistoryOverride;
 use self::user_messages::UserMessageHistoryRecord;
-use self::user_messages::app_server_text_elements;
+use self::user_messages::cli_runtime_text_elements;
 pub(crate) use self::user_messages::create_initial_user_message;
 pub(crate) use self::user_messages::mention_bindings_from_user_inputs;
 use self::user_messages::merge_user_messages;
@@ -442,7 +442,7 @@ use crate::streaming::controller::StreamController;
 use crate::workspace_command::WorkspaceCommandRunner;
 
 use chrono::Local;
-use codex_app_server_protocol::AskForApproval;
+use codex_cli_protocol::AskForApproval;
 use codex_file_search::FileMatch;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::PermissionProfile;
@@ -472,7 +472,7 @@ pub(crate) struct ChatWidgetInit {
     /// App-server-backed runner used by status surfaces for workspace metadata probes.
     ///
     /// Tests that do not exercise git status-line refreshes may leave this unset. Production TUI
-    /// construction provides a runner for the active app-server session.
+    /// construction provides a runner for the active cli-runtime session.
     pub(crate) workspace_command_runner: Option<WorkspaceCommandRunner>,
     pub(crate) initial_user_message: Option<UserMessage>,
     pub(crate) enhanced_keys_supported: bool,
@@ -667,7 +667,7 @@ pub(crate) struct ChatWidget {
     current_cwd: Option<PathBuf>,
     // App-server-backed command runner for status-line workspace metadata lookups.
     workspace_command_runner: Option<WorkspaceCommandRunner>,
-    // Instruction source files loaded for the current session, supplied by app-server.
+    // Instruction source files loaded for the current session, supplied by cli-runtime.
     instruction_source_paths: Vec<PathUri>,
     // Runtime network proxy bind addresses from SessionConfigured.
     session_network_proxy: Option<SessionNetworkProxyRuntime>,
@@ -864,7 +864,7 @@ fn patch_approval_request_from_params(
 }
 
 fn request_permissions_from_params(
-    params: codex_app_server_protocol::PermissionsRequestApprovalParams,
+    params: codex_cli_protocol::PermissionsRequestApprovalParams,
 ) -> std::io::Result<RequestPermissionsEvent> {
     Ok(RequestPermissionsEvent {
         turn_id: params.turn_id,
@@ -877,7 +877,7 @@ fn request_permissions_from_params(
     })
 }
 
-fn token_usage_info_from_app_server(token_usage: ThreadTokenUsage) -> TokenUsageInfo {
+fn token_usage_info_from_cli_runtime(token_usage: ThreadTokenUsage) -> TokenUsageInfo {
     TokenUsageInfo {
         total_token_usage: TokenUsage {
             total_tokens: token_usage.total.total_tokens,
@@ -963,11 +963,11 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    pub(crate) fn dismiss_app_server_request(&mut self, request: &ResolvedAppServerRequest) {
+    pub(crate) fn dismiss_cli_runtime_request(&mut self, request: &ResolvedCliRuntimeRequest) {
         // A remotely resolved request must not remain user-actionable. It may be
         // materialized in the bottom pane or still deferred behind active streaming.
         let removed_deferred = self.interrupts.remove_resolved_prompt(request);
-        let removed_visible = self.bottom_pane.dismiss_app_server_request(request);
+        let removed_visible = self.bottom_pane.dismiss_cli_runtime_request(request);
         if removed_deferred || removed_visible {
             self.request_redraw();
         }
@@ -1447,7 +1447,7 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    fn add_app_server_stub_message(&mut self, feature: &str) {
+    fn add_cli_runtime_stub_message(&mut self, feature: &str) {
         warn!(feature, "stubbed unsupported TUI feature");
         self.add_error_message(format!("{feature}: {TUI_STUB_MESSAGE}"));
     }

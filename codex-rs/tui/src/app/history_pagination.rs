@@ -3,24 +3,24 @@
 use std::collections::HashSet;
 
 use super::*;
-use crate::app_server_session::HISTORY_ITEM_PAGE_LIMIT;
-use crate::app_server_session::thread_items_page_params;
 use crate::history_cell::SessionInfoCell;
 use crate::history_cell::UserHistoryCell;
 use crate::pager_overlay::TranscriptHistoryState;
+use crate::runtime_session::HISTORY_ITEM_PAGE_LIMIT;
+use crate::runtime_session::thread_items_page_params;
 use crate::thread_transcript::RawReasoningVisibility;
 use crate::thread_transcript::thread_items_to_transcript_cells;
-use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ThreadItemsListResponse;
+use codex_cli_protocol::ClientRequest;
+use codex_cli_protocol::ThreadItemsListResponse;
 
 impl App {
     /// Start one bounded page request shared by scrollback refill and the transcript overlay.
     pub(crate) fn request_older_history_page(
         &self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
     ) -> bool {
-        let Some(cursor) = app_server.begin_older_history_page(thread_id) else {
+        let Some(cursor) = cli_runtime.begin_older_history_page(thread_id) else {
             return false;
         };
         tracing::debug!(
@@ -29,8 +29,8 @@ impl App {
             overlay = self.overlay.is_some(),
             "loading older transcript history page"
         );
-        let request_id = app_server.next_request_id();
-        let request_handle = app_server.request_handle();
+        let request_id = cli_runtime.next_request_id();
+        let request_handle = cli_runtime.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
             let result = request_handle
@@ -57,13 +57,13 @@ impl App {
     pub(super) async fn handle_older_history_page(
         &mut self,
         tui: &mut tui::Tui,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         thread_id: ThreadId,
         cursor: &str,
         result: Result<ThreadItemsListResponse, String>,
     ) -> Result<()> {
         if self.chat_widget.thread_id() != Some(thread_id) {
-            app_server.cancel_older_history_page(thread_id);
+            cli_runtime.cancel_older_history_page(thread_id);
             return Ok(());
         }
         let page = result.map_err(|err| color_eyre::eyre::eyre!(err))?;
@@ -72,7 +72,7 @@ impl App {
             .get(&thread_id)
             .map(|channel| Arc::clone(&channel.store))
         else {
-            app_server.cancel_older_history_page(thread_id);
+            cli_runtime.cancel_older_history_page(thread_id);
             return Ok(());
         };
         let (cwd, mut turns) = {
@@ -85,7 +85,7 @@ impl App {
                 store.turns.clone(),
             )
         };
-        let mut items = app_server
+        let mut items = cli_runtime
             .apply_older_history_page(thread_id, cursor, page, &mut turns)
             .await?;
         let mut hidden_item_ids = HashSet::new();
@@ -216,7 +216,7 @@ impl App {
                     .count(),
             );
         }
-        self.scrollback_has_older_history = app_server.has_older_history(thread_id);
+        self.scrollback_has_older_history = cli_runtime.has_older_history(thread_id);
         let mut continue_to_start = false;
         if let Some(Overlay::Transcript(overlay)) = self.overlay.as_mut() {
             let index = overlay.prepend(cells.clone(), width);
@@ -242,13 +242,13 @@ impl App {
                 .len();
             self.schedule_immediate_resize_reflow(tui);
             if self.scrollback_history_needs_top_up(rendered_rows)
-                && self.request_older_history_page(app_server, thread_id)
+                && self.request_older_history_page(cli_runtime, thread_id)
             {
                 return Ok(());
             }
         }
         if continue_to_start
-            && self.request_older_history_page(app_server, thread_id)
+            && self.request_older_history_page(cli_runtime, thread_id)
             && let Some(Overlay::Transcript(overlay)) = self.overlay.as_mut()
         {
             overlay.set_history_state(TranscriptHistoryState::LoadingBeginning);

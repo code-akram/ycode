@@ -48,10 +48,10 @@ async fn exec_approval_emits_proposed_command_and_decision_history() {
 }
 
 #[test]
-fn app_server_exec_approval_request_splits_shell_wrapped_command() {
+fn cli_runtime_exec_approval_request_splits_shell_wrapped_command() {
     let script = r#"python3 -c 'print("Hello, world!")'"#;
     let request = exec_approval_request_from_params(
-        AppServerCommandExecutionRequestApprovalParams {
+        CliRuntimeCommandExecutionRequestApprovalParams {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "item-1".to_string(),
@@ -121,7 +121,7 @@ async fn exec_approval_uses_approval_id_when_present() {
             assert_eq!(id, "approval-subcommand");
             assert_matches!(
                 decision,
-                codex_app_server_protocol::CommandExecutionApprovalDecision::Accept
+                codex_cli_protocol::CommandExecutionApprovalDecision::Accept
             );
             found = true;
             break;
@@ -354,12 +354,12 @@ async fn exec_end_without_begin_uses_event_command() {
     ];
     let command_actions = codex_shell_command::parse_command::parse_command(&command)
         .into_iter()
-        .map(|parsed| AppServerCommandAction::from_core_with_cwd(parsed, &chat.config.cwd))
+        .map(|parsed| CliRuntimeCommandAction::from_core_with_cwd(parsed, &chat.config.cwd))
         .collect();
     let cwd = chat.config.cwd.clone();
     handle_exec_end(
         &mut chat,
-        AppServerThreadItem::CommandExecution {
+        CliRuntimeThreadItem::CommandExecution {
             id: "call-orphan".to_string(),
             command: codex_shell_command::parse_command::shlex_join(&command),
             cwd: cwd.into(),
@@ -367,7 +367,7 @@ async fn exec_end_without_begin_uses_event_command() {
             plugin_id: None,
             script_path: None,
             source: ExecCommandSource::Agent,
-            status: AppServerCommandExecutionStatus::Completed,
+            status: CliRuntimeCommandExecutionStatus::Completed,
             command_actions,
             aggregated_output: Some("done".to_string()),
             exit_code: Some(0),
@@ -1455,7 +1455,7 @@ async fn apply_patch_events_emit_history_cells() {
         "c1",
         "turn-c1",
         end_changes,
-        AppServerPatchApplyStatus::Completed,
+        CliRuntimePatchApplyStatus::Completed,
     );
     let cells = drain_insert_history(&mut rx);
     assert!(
@@ -1586,7 +1586,7 @@ async fn apply_patch_approval_sends_op_with_call_id() {
             assert_eq!(id, "call-999");
             assert_matches!(
                 decision,
-                codex_app_server_protocol::FileChangeApprovalDecision::Accept
+                codex_cli_protocol::FileChangeApprovalDecision::Accept
             );
             found = true;
             break;
@@ -1638,7 +1638,7 @@ async fn apply_patch_full_flow_integration_like() {
             assert_eq!(id, "call-1");
             assert_matches!(
                 decision,
-                codex_app_server_protocol::FileChangeApprovalDecision::Accept
+                codex_cli_protocol::FileChangeApprovalDecision::Accept
             );
         }
         other => panic!("unexpected op forwarded: {other:?}"),
@@ -1661,7 +1661,7 @@ async fn apply_patch_full_flow_integration_like() {
         "call-1",
         "turn-call-1",
         end_changes,
-        AppServerPatchApplyStatus::Completed,
+        CliRuntimePatchApplyStatus::Completed,
     );
 }
 

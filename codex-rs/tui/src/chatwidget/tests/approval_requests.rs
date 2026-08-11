@@ -49,10 +49,10 @@ async fn exec_approval_emits_proposed_command_and_decision_history() {
 }
 
 #[test]
-fn app_server_exec_approval_request_splits_shell_wrapped_command() {
+fn cli_runtime_exec_approval_request_splits_shell_wrapped_command() {
     let script = r#"python3 -c 'print("Hello, world!")'"#;
     let request = exec_approval_request_from_params(
-        AppServerCommandExecutionRequestApprovalParams {
+        CliRuntimeCommandExecutionRequestApprovalParams {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "item-1".to_string(),
@@ -86,7 +86,7 @@ fn app_server_exec_approval_request_splits_shell_wrapped_command() {
 }
 
 #[test]
-fn app_server_exec_approval_request_preserves_permissions_context() {
+fn cli_runtime_exec_approval_request_preserves_permissions_context() {
     let read_path = AbsolutePathBuf::try_from(PathBuf::from(test_path_display("/tmp/read-only")))
         .expect("absolute read path");
     let write_path = AbsolutePathBuf::try_from(PathBuf::from(test_path_display("/tmp/write")))
@@ -94,7 +94,7 @@ fn app_server_exec_approval_request_preserves_permissions_context() {
     let read_api_path = LegacyAppPathString::from_abs_path(&read_path);
     let write_api_path = LegacyAppPathString::from_abs_path(&write_path);
     let request = exec_approval_request_from_params(
-        AppServerCommandExecutionRequestApprovalParams {
+        CliRuntimeCommandExecutionRequestApprovalParams {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "item-1".to_string(),
@@ -102,18 +102,18 @@ fn app_server_exec_approval_request_preserves_permissions_context() {
             approval_id: Some("approval-1".to_string()),
             environment_id: None,
             reason: None,
-            network_approval_context: Some(codex_app_server_protocol::NetworkApprovalContext {
+            network_approval_context: Some(codex_cli_protocol::NetworkApprovalContext {
                 host: "example.com".to_string(),
-                protocol: codex_app_server_protocol::NetworkApprovalProtocol::Socks5Tcp,
+                protocol: codex_cli_protocol::NetworkApprovalProtocol::Socks5Tcp,
             }),
             command: Some("ls".to_string()),
             cwd: Some(test_path_buf("/tmp").abs().into()),
             command_actions: None,
-            additional_permissions: Some(AppServerAdditionalPermissionProfile {
-                network: Some(AppServerAdditionalNetworkPermissions {
+            additional_permissions: Some(CliRuntimeAdditionalPermissionProfile {
+                network: Some(CliRuntimeAdditionalNetworkPermissions {
                     enabled: Some(true),
                 }),
-                file_system: Some(AppServerAdditionalFileSystemPermissions {
+                file_system: Some(CliRuntimeAdditionalFileSystemPermissions {
                     read: Some(vec![read_api_path.clone()]),
                     write: Some(vec![write_api_path.clone()]),
                     glob_scan_max_depth: None,
@@ -129,18 +129,18 @@ fn app_server_exec_approval_request_preserves_permissions_context() {
 
     assert_eq!(
         request.network_approval_context,
-        Some(codex_app_server_protocol::NetworkApprovalContext {
+        Some(codex_cli_protocol::NetworkApprovalContext {
             host: "example.com".to_string(),
-            protocol: codex_app_server_protocol::NetworkApprovalProtocol::Socks5Tcp,
+            protocol: codex_cli_protocol::NetworkApprovalProtocol::Socks5Tcp,
         })
     );
     assert_eq!(
         request.additional_permissions,
-        Some(AppServerAdditionalPermissionProfile {
-            network: Some(AppServerAdditionalNetworkPermissions {
+        Some(CliRuntimeAdditionalPermissionProfile {
+            network: Some(CliRuntimeAdditionalNetworkPermissions {
                 enabled: Some(true),
             }),
-            file_system: Some(AppServerAdditionalFileSystemPermissions {
+            file_system: Some(CliRuntimeAdditionalFileSystemPermissions {
                 read: Some(vec![read_api_path]),
                 write: Some(vec![write_api_path]),
                 glob_scan_max_depth: None,
@@ -154,7 +154,7 @@ fn app_server_exec_approval_request_preserves_permissions_context() {
 async fn network_exec_approval_history_describes_session_host_allowance() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let request = exec_approval_request_from_params(
-        AppServerCommandExecutionRequestApprovalParams {
+        CliRuntimeCommandExecutionRequestApprovalParams {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "item-1".to_string(),
@@ -162,9 +162,9 @@ async fn network_exec_approval_history_describes_session_host_allowance() {
             approval_id: Some("approval-1".to_string()),
             environment_id: None,
             reason: None,
-            network_approval_context: Some(codex_app_server_protocol::NetworkApprovalContext {
+            network_approval_context: Some(codex_cli_protocol::NetworkApprovalContext {
                 host: "example.com".to_string(),
-                protocol: codex_app_server_protocol::NetworkApprovalProtocol::Https,
+                protocol: codex_cli_protocol::NetworkApprovalProtocol::Https,
             }),
             command: Some("network-access https://example.com:8443".to_string()),
             cwd: None,
@@ -173,8 +173,8 @@ async fn network_exec_approval_history_describes_session_host_allowance() {
             proposed_execpolicy_amendment: None,
             proposed_network_policy_amendments: None,
             available_decisions: Some(vec![
-                codex_app_server_protocol::CommandExecutionApprovalDecision::AcceptForSession,
-                codex_app_server_protocol::CommandExecutionApprovalDecision::Cancel,
+                codex_cli_protocol::CommandExecutionApprovalDecision::AcceptForSession,
+                codex_cli_protocol::CommandExecutionApprovalDecision::Cancel,
             ]),
         },
         &test_path_buf("/tmp").abs(),
@@ -196,7 +196,7 @@ async fn network_exec_approval_history_describes_session_host_allowance() {
 async fn network_exec_approval_history_describes_one_time_host_allowance() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let request = exec_approval_request_from_params(
-        AppServerCommandExecutionRequestApprovalParams {
+        CliRuntimeCommandExecutionRequestApprovalParams {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "item-1".to_string(),
@@ -204,9 +204,9 @@ async fn network_exec_approval_history_describes_one_time_host_allowance() {
             approval_id: Some("approval-1".to_string()),
             environment_id: None,
             reason: None,
-            network_approval_context: Some(codex_app_server_protocol::NetworkApprovalContext {
+            network_approval_context: Some(codex_cli_protocol::NetworkApprovalContext {
                 host: "example.com".to_string(),
-                protocol: codex_app_server_protocol::NetworkApprovalProtocol::Http,
+                protocol: codex_cli_protocol::NetworkApprovalProtocol::Http,
             }),
             command: None,
             cwd: None,
@@ -215,8 +215,8 @@ async fn network_exec_approval_history_describes_one_time_host_allowance() {
             proposed_execpolicy_amendment: None,
             proposed_network_policy_amendments: None,
             available_decisions: Some(vec![
-                codex_app_server_protocol::CommandExecutionApprovalDecision::Accept,
-                codex_app_server_protocol::CommandExecutionApprovalDecision::Cancel,
+                codex_cli_protocol::CommandExecutionApprovalDecision::Accept,
+                codex_cli_protocol::CommandExecutionApprovalDecision::Cancel,
             ]),
         },
         &test_path_buf("/tmp").abs(),
@@ -238,7 +238,7 @@ async fn network_exec_approval_history_describes_one_time_host_allowance() {
 async fn network_exec_approval_history_describes_canceled_host_request() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let request = exec_approval_request_from_params(
-        AppServerCommandExecutionRequestApprovalParams {
+        CliRuntimeCommandExecutionRequestApprovalParams {
             thread_id: "thread-1".to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "item-1".to_string(),
@@ -246,9 +246,9 @@ async fn network_exec_approval_history_describes_canceled_host_request() {
             approval_id: Some("approval-1".to_string()),
             environment_id: None,
             reason: None,
-            network_approval_context: Some(codex_app_server_protocol::NetworkApprovalContext {
+            network_approval_context: Some(codex_cli_protocol::NetworkApprovalContext {
                 host: "example.com".to_string(),
-                protocol: codex_app_server_protocol::NetworkApprovalProtocol::Socks5Tcp,
+                protocol: codex_cli_protocol::NetworkApprovalProtocol::Socks5Tcp,
             }),
             command: Some("network-access socks5-tcp://example.com:1080".to_string()),
             cwd: None,
@@ -257,8 +257,8 @@ async fn network_exec_approval_history_describes_canceled_host_request() {
             proposed_execpolicy_amendment: None,
             proposed_network_policy_amendments: None,
             available_decisions: Some(vec![
-                codex_app_server_protocol::CommandExecutionApprovalDecision::Accept,
-                codex_app_server_protocol::CommandExecutionApprovalDecision::Cancel,
+                codex_cli_protocol::CommandExecutionApprovalDecision::Accept,
+                codex_cli_protocol::CommandExecutionApprovalDecision::Cancel,
             ]),
         },
         &test_path_buf("/tmp").abs(),
@@ -277,7 +277,7 @@ async fn network_exec_approval_history_describes_canceled_host_request() {
 }
 
 #[test]
-fn app_server_request_permissions_preserves_file_system_permissions() {
+fn cli_runtime_request_permissions_preserves_file_system_permissions() {
     let read_path = AbsolutePathBuf::try_from(PathBuf::from(test_path_display("/tmp/read-only")))
         .expect("absolute read path");
     let write_path = AbsolutePathBuf::try_from(PathBuf::from(test_path_display("/tmp/write")))
@@ -287,7 +287,7 @@ fn app_server_request_permissions_preserves_file_system_permissions() {
     let cwd =
         AbsolutePathBuf::try_from(PathBuf::from(test_path_display("/tmp"))).expect("absolute cwd");
 
-    let request = request_permissions_from_params(AppServerPermissionsRequestApprovalParams {
+    let request = request_permissions_from_params(CliRuntimePermissionsRequestApprovalParams {
         thread_id: "thread-1".to_string(),
         turn_id: "turn-1".to_string(),
         item_id: "item-1".to_string(),
@@ -295,11 +295,11 @@ fn app_server_request_permissions_preserves_file_system_permissions() {
         started_at_ms: 0,
         cwd: cwd.clone(),
         reason: Some("Select a workspace root".to_string()),
-        permissions: codex_app_server_protocol::RequestPermissionProfile {
-            network: Some(AppServerAdditionalNetworkPermissions {
+        permissions: codex_cli_protocol::RequestPermissionProfile {
+            network: Some(CliRuntimeAdditionalNetworkPermissions {
                 enabled: Some(true),
             }),
-            file_system: Some(AppServerAdditionalFileSystemPermissions {
+            file_system: Some(CliRuntimeAdditionalFileSystemPermissions {
                 read: Some(vec![read_api_path]),
                 write: Some(vec![write_api_path]),
                 glob_scan_max_depth: None,
@@ -362,7 +362,7 @@ async fn exec_approval_uses_approval_id_when_present() {
             assert_eq!(id, "approval-subcommand");
             assert_matches!(
                 decision,
-                codex_app_server_protocol::CommandExecutionApprovalDecision::Accept
+                codex_cli_protocol::CommandExecutionApprovalDecision::Accept
             );
             found = true;
             break;

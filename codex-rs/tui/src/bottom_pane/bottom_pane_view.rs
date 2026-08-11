@@ -1,8 +1,8 @@
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
 use crate::bottom_pane::ApprovalRequest;
 use crate::keymap::KeymapContextSet;
 use crate::render::renderable::Renderable;
-use codex_app_server_protocol::ToolRequestUserInputParams;
+use codex_cli_protocol::ToolRequestUserInputParams;
 use crossterm::event::KeyEvent;
 use std::time::Instant;
 
@@ -128,7 +128,7 @@ pub(crate) trait BottomPaneView: Renderable {
     /// Dismiss a request that was resolved by another client.
     ///
     /// Returns `true` when the view changed state.
-    fn dismiss_app_server_request(&mut self, _request: &ResolvedAppServerRequest) -> bool {
+    fn dismiss_cli_runtime_request(&mut self, _request: &ResolvedCliRuntimeRequest) -> bool {
         false
     }
 

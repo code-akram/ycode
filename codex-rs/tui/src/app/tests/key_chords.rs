@@ -1,19 +1,19 @@
 use super::App;
-use super::AppServerSession;
+use super::CliRuntimeSession;
 use super::Result;
 use super::RuntimeKeymap;
 use super::TuiEvent;
 use super::make_test_app;
-use super::start_config_write_test_app_server;
+use super::start_config_write_test_cli_runtime;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::chatwidget::tests::helpers::render_bottom_popup;
 use crate::keymap::KeymapContext;
 use crate::test_support::test_path_display;
 use crate::tui::Tui;
-use codex_app_server_protocol::ToolRequestUserInputOption;
-use codex_app_server_protocol::ToolRequestUserInputParams;
-use codex_app_server_protocol::ToolRequestUserInputQuestion;
+use codex_cli_protocol::ToolRequestUserInputOption;
+use codex_cli_protocol::ToolRequestUserInputParams;
+use codex_cli_protocol::ToolRequestUserInputQuestion;
 use codex_config::types::KeybindingSpec;
 use codex_config::types::KeybindingsSpec;
 use codex_config::types::TuiKeymap;
@@ -22,7 +22,7 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use pretty_assertions::assert_eq;
 
-async fn chord_app() -> Result<(App, Tui, AppServerSession)> {
+async fn chord_app() -> Result<(App, Tui, CliRuntimeSession)> {
     let mut app = make_test_app().await;
     let mut config = TuiKeymap::default();
     config.global.open_transcript = Some(KeybindingsSpec::One(KeybindingSpec(
@@ -40,18 +40,18 @@ async fn chord_app() -> Result<(App, Tui, AppServerSession)> {
     app.chat_widget.apply_keymap_update(config, &runtime);
     app.keymap = runtime;
 
-    let app_server = start_config_write_test_app_server(&app).await?;
+    let cli_runtime = start_config_write_test_cli_runtime(&app).await?;
     let tui = crate::tui::test_support::make_test_tui()?;
-    Ok((app, tui, app_server))
+    Ok((app, tui, cli_runtime))
 }
 
 async fn press(
     app: &mut App,
     tui: &mut Tui,
-    app_server: &mut AppServerSession,
+    cli_runtime: &mut CliRuntimeSession,
     key: KeyEvent,
 ) -> Result<()> {
-    app.handle_tui_event(tui, app_server, TuiEvent::Key(key))
+    app.handle_tui_event(tui, cli_runtime, TuiEvent::Key(key))
         .await?;
     Ok(())
 }
@@ -62,9 +62,9 @@ fn ctrl(ch: char) -> KeyEvent {
 
 #[tokio::test]
 async fn completed_global_chord_reuses_the_existing_action_handler() -> Result<()> {
-    let (mut app, mut tui, mut app_server) = chord_app().await?;
+    let (mut app, mut tui, mut cli_runtime) = chord_app().await?;
 
-    press(&mut app, &mut tui, &mut app_server, ctrl('x')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('x')).await?;
     assert!(app.key_chord_matcher.is_pending());
     assert!(app.overlay.is_none());
     insta::assert_snapshot!(
@@ -77,7 +77,7 @@ async fn completed_global_chord_reuses_the_existing_action_handler() -> Result<(
         "
     );
 
-    press(&mut app, &mut tui, &mut app_server, ctrl('t')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('t')).await?;
     assert!(!app.key_chord_matcher.is_pending());
     assert!(app.overlay.is_some());
     Ok(())
@@ -85,16 +85,16 @@ async fn completed_global_chord_reuses_the_existing_action_handler() -> Result<(
 
 #[tokio::test]
 async fn wrong_second_stroke_passes_through_but_escape_is_consumed() -> Result<()> {
-    let (mut app, mut tui, mut app_server) = chord_app().await?;
+    let (mut app, mut tui, mut cli_runtime) = chord_app().await?;
 
-    press(&mut app, &mut tui, &mut app_server, ctrl('x')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('x')).await?;
     let wrong_second = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
     assert_eq!(
         app.route_key_chord_event(&mut tui, wrong_second),
         Some(wrong_second)
     );
 
-    press(&mut app, &mut tui, &mut app_server, ctrl('x')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('x')).await?;
     let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
     assert_eq!(app.route_key_chord_event(&mut tui, escape), None);
     assert!(!app.key_chord_matcher.is_pending());
@@ -104,7 +104,7 @@ async fn wrong_second_stroke_passes_through_but_escape_is_consumed() -> Result<(
 
 #[tokio::test]
 async fn physical_dispatch_band_events_are_dropped() -> Result<()> {
-    let (mut app, mut tui, mut app_server) = chord_app().await?;
+    let (mut app, mut tui, mut cli_runtime) = chord_app().await?;
     let (code, modifiers) = app
         .keymap
         .app
@@ -116,7 +116,7 @@ async fn physical_dispatch_band_events_are_dropped() -> Result<()> {
     press(
         &mut app,
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         KeyEvent::new(code, modifiers),
     )
     .await?;
@@ -127,7 +127,7 @@ async fn physical_dispatch_band_events_are_dropped() -> Result<()> {
 
 #[tokio::test]
 async fn physical_chords_route_list_and_mixed_request_input_modals() -> Result<()> {
-    let (mut app, mut tui, mut app_server) = chord_app().await?;
+    let (mut app, mut tui, mut cli_runtime) = chord_app().await?;
     app.chat_widget.show_selection_view(SelectionViewParams {
         view_id: Some("list"),
         items: ["First", "Second"]
@@ -145,7 +145,7 @@ async fn physical_chords_route_list_and_mixed_request_input_modals() -> Result<(
         Some(0)
     );
 
-    press(&mut app, &mut tui, &mut app_server, ctrl('x')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('x')).await?;
     assert!(app.key_chord_matcher.is_pending());
     assert_eq!(
         app.chat_widget.selected_index_for_present_view("list"),
@@ -154,7 +154,7 @@ async fn physical_chords_route_list_and_mixed_request_input_modals() -> Result<(
     press(
         &mut app,
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         KeyCode::Char('j').into(),
     )
     .await?;
@@ -163,8 +163,8 @@ async fn physical_chords_route_list_and_mixed_request_input_modals() -> Result<(
         Some(1)
     );
 
-    press(&mut app, &mut tui, &mut app_server, ctrl('x')).await?;
-    press(&mut app, &mut tui, &mut app_server, KeyCode::Enter.into()).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('x')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, KeyCode::Enter.into()).await?;
     assert_eq!(
         app.chat_widget.selected_index_for_present_view("list"),
         None
@@ -199,19 +199,19 @@ async fn physical_chords_route_list_and_mixed_request_input_modals() -> Result<(
     assert!(contexts.contains(KeymapContext::List));
     assert!(render_bottom_popup(&app.chat_widget, /*width*/ 80).contains("› 1. First"));
 
-    press(&mut app, &mut tui, &mut app_server, ctrl('x')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('x')).await?;
     assert!(app.key_chord_matcher.is_pending());
     press(
         &mut app,
         &mut tui,
-        &mut app_server,
+        &mut cli_runtime,
         KeyCode::Char('j').into(),
     )
     .await?;
     assert!(render_bottom_popup(&app.chat_widget, /*width*/ 80).contains("› 2. Second"));
 
-    press(&mut app, &mut tui, &mut app_server, ctrl('x')).await?;
-    press(&mut app, &mut tui, &mut app_server, ctrl('u')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('x')).await?;
+    press(&mut app, &mut tui, &mut cli_runtime, ctrl('u')).await?;
     assert!(app.chat_widget.can_launch_external_editor());
     Ok(())
 }

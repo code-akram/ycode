@@ -178,7 +178,7 @@ impl ChatWidget {
         if !text.is_empty() {
             items.push(UserInput::Text {
                 text: text.clone(),
-                text_elements: app_server_text_elements(&text_elements),
+                text_elements: cli_runtime_text_elements(&text_elements),
             });
         }
 

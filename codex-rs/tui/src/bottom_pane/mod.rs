@@ -16,7 +16,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
 use crate::app_event::AppEvent;
 use crate::app_event::HistoryLookupResponse;
 use crate::app_event_sender::AppEventSender;
@@ -36,8 +36,8 @@ use crate::terminal_palette::effective_stdout_color_level;
 use crate::tui::FrameRequester;
 pub(crate) use bottom_pane_view::BottomPaneView;
 pub(crate) use bottom_pane_view::ViewCompletion;
-use codex_app_server_protocol::SkillMetadata;
-use codex_app_server_protocol::ToolRequestUserInputParams;
+use codex_cli_protocol::SkillMetadata;
+use codex_cli_protocol::ToolRequestUserInputParams;
 use codex_features::Features;
 use codex_file_search::FileMatch;
 use codex_plugin::PluginCapabilitySummary;
@@ -1475,9 +1475,9 @@ impl BottomPane {
         self.push_view(Box::new(modal));
     }
 
-    pub(crate) fn dismiss_app_server_request(
+    pub(crate) fn dismiss_cli_runtime_request(
         &mut self,
-        request: &ResolvedAppServerRequest,
+        request: &ResolvedCliRuntimeRequest,
     ) -> bool {
         let delayed_len = self.delayed_approval_requests.len();
         self.delayed_approval_requests
@@ -1495,7 +1495,7 @@ impl BottomPane {
         let mut completed_indices = Vec::new();
         for index in (0..self.view_stack.len()).rev() {
             let view = &mut self.view_stack[index];
-            if !view.dismiss_app_server_request(request) {
+            if !view.dismiss_cli_runtime_request(request) {
                 continue;
             }
             changed = true;
@@ -1782,14 +1782,14 @@ impl Renderable for BottomPane {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::app_server_requests::ResolvedAppServerRequest;
+    use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
     use crate::app_command::AppCommand as Op;
     use crate::app_event::AppEvent;
     use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
     use crate::status_indicator_widget::StatusDetailsCapitalization;
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
-    use codex_app_server_protocol::CommandExecutionApprovalDecision;
+    use codex_cli_protocol::CommandExecutionApprovalDecision;
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyEventKind;
@@ -1882,8 +1882,8 @@ mod tests {
             self.id
         }
 
-        fn dismiss_app_server_request(&mut self, request: &ResolvedAppServerRequest) -> bool {
-            let ResolvedAppServerRequest::ExecApproval { id } = request else {
+        fn dismiss_cli_runtime_request(&mut self, request: &ResolvedCliRuntimeRequest) -> bool {
+            let ResolvedCliRuntimeRequest::ExecApproval { id } = request else {
                 return false;
             };
             if self.dismiss_exec_id != Some(id.as_str()) {
@@ -2120,7 +2120,7 @@ mod tests {
     }
 
     #[test]
-    fn dismiss_app_server_request_prunes_delayed_approval() {
+    fn dismiss_cli_runtime_request_prunes_delayed_approval() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let features = Features::with_defaults();
@@ -2130,7 +2130,7 @@ mod tests {
         pane.push_approval_request(exec_request(), &features);
 
         assert!(
-            pane.dismiss_app_server_request(&ResolvedAppServerRequest::ExecApproval {
+            pane.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::ExecApproval {
                 id: "1".to_string(),
             })
         );
@@ -2141,7 +2141,7 @@ mod tests {
     }
 
     #[test]
-    fn dismiss_app_server_request_removes_matching_buried_view() {
+    fn dismiss_cli_runtime_request_removes_matching_buried_view() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let mut pane = test_pane(tx);
@@ -2158,7 +2158,7 @@ mod tests {
         }));
 
         assert!(
-            pane.dismiss_app_server_request(&ResolvedAppServerRequest::ExecApproval {
+            pane.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::ExecApproval {
                 id: "request-1".to_string(),
             })
         );
@@ -2170,7 +2170,7 @@ mod tests {
     }
 
     #[test]
-    fn dismiss_app_server_request_returns_false_when_no_view_matches() {
+    fn dismiss_cli_runtime_request_returns_false_when_no_view_matches() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let mut pane = test_pane(tx);
@@ -2187,7 +2187,7 @@ mod tests {
         }));
 
         assert!(
-            !pane.dismiss_app_server_request(&ResolvedAppServerRequest::ExecApproval {
+            !pane.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::ExecApproval {
                 id: "request-1".to_string(),
             })
         );

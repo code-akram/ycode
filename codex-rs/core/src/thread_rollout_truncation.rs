@@ -5,8 +5,8 @@
 
 use crate::context_manager::is_user_turn_boundary;
 use crate::event_mapping;
-use codex_app_server_protocol::TurnStatus;
-use codex_app_server_protocol::build_turns_from_rollout_items;
+use codex_cli_protocol::TurnStatus;
+use codex_cli_protocol::build_turns_from_rollout_items;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::TurnItem;

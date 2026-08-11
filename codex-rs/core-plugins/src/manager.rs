@@ -168,7 +168,7 @@ pub struct RecommendedPluginCandidatesInput<'a> {
     pub loaded_plugins: &'a PluginLoadOutcome,
     pub auth: Option<&'a CodexAuth>,
     pub disabled_tools: &'a [ToolSuggestDisabledTool],
-    pub app_server_client_name: Option<&'a str>,
+    pub cli_runtime_client_name: Option<&'a str>,
 }
 
 #[derive(Clone, PartialEq, Eq)]

@@ -3,10 +3,10 @@
 #![deny(private_bounds, private_interfaces, unreachable_pub)]
 
 pub use codex_analytics::AnalyticsEventsClient;
-pub use codex_app_server_protocol::ServerNotification;
-pub use codex_app_server_protocol::item_event_to_server_notification;
 pub use codex_arg0::Arg0DispatchPaths;
 pub use codex_arg0::arg0_dispatch_or_else;
+pub use codex_cli_protocol::ServerNotification;
+pub use codex_cli_protocol::item_event_to_server_notification;
 pub use codex_config::ConfigLayerStack;
 pub use codex_config::config_toml::ProjectConfig;
 pub use codex_config::config_toml::RealtimeAudioConfig;

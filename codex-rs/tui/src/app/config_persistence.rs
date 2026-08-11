@@ -21,7 +21,7 @@ async fn build_config_on_runtime_worker(
 pub(super) fn resume_model_settings_for_overrides(
     config: &Config,
     harness_overrides: &ConfigOverrides,
-) -> crate::app_server_session::ResumeModelSettings {
+) -> crate::runtime_session::ResumeModelSettings {
     let has_layer_override = config.config_layer_stack.layers_high_to_low().any(|layer| {
         matches!(
             &layer.name,
@@ -38,9 +38,9 @@ pub(super) fn resume_model_settings_for_overrides(
         || harness_overrides.model_provider.is_some()
         || has_layer_override
     {
-        crate::app_server_session::ResumeModelSettings::OverrideFromCurrentConfig
+        crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig
     } else {
-        crate::app_server_session::ResumeModelSettings::RestoreFromThread
+        crate::runtime_session::ResumeModelSettings::RestoreFromThread
     }
 }
 
@@ -223,11 +223,11 @@ impl App {
 
     pub(super) async fn read_effective_config_after_overridden_write(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         setting: &str,
     ) -> Option<ConfigReadResponse> {
         let cwd = self.chat_widget.config_ref().cwd.display().to_string();
-        match crate::config_update::read_effective_config(app_server.request_handle(), cwd).await {
+        match crate::config_update::read_effective_config(cli_runtime.request_handle(), cwd).await {
             Ok(response) => Some(response),
             Err(err) => {
                 tracing::warn!(
@@ -358,7 +358,7 @@ impl App {
 
     pub(super) async fn update_feature_flags(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         updates: Vec<(Feature, bool)>,
     ) {
         if updates.is_empty() {
@@ -467,7 +467,7 @@ impl App {
         // config edit fails. Runtime/UI state is patched below only after the
         // durable config update succeeds.
         let write_response = match crate::config_update::write_config_batch(
-            app_server.request_handle(),
+            cli_runtime.request_handle(),
             config_edits,
         )
         .await
@@ -492,7 +492,7 @@ impl App {
             ));
             if let Some(effective_config) = self
                 .read_effective_config_after_overridden_write(
-                    app_server,
+                    cli_runtime,
                     "Experimental feature changes",
                 )
                 .await
@@ -600,27 +600,25 @@ impl App {
 
     pub(super) async fn update_memory_settings(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         use_memories: bool,
         generate_memories: bool,
     ) -> bool {
         let edits =
             crate::config_update::build_memory_settings_edits(use_memories, generate_memories);
 
-        let write_response = match crate::config_update::write_config_batch(
-            app_server.request_handle(),
-            edits,
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(err) => {
-                tracing::error!(error = %err, "failed to persist memory settings");
-                self.chat_widget
-                    .add_error_message(format!("Failed to save memory settings: {err}"));
-                return false;
-            }
-        };
+        let write_response =
+            match crate::config_update::write_config_batch(cli_runtime.request_handle(), edits)
+                .await
+            {
+                Ok(response) => response,
+                Err(err) => {
+                    tracing::error!(error = %err, "failed to persist memory settings");
+                    self.chat_widget
+                        .add_error_message(format!("Failed to save memory settings: {err}"));
+                    return false;
+                }
+            };
         if write_response.status == WriteStatus::OkOverridden {
             let message = overridden_write_message(&write_response);
             tracing::warn!(
@@ -631,7 +629,7 @@ impl App {
                 "Memory setting changes were saved but not applied: {message}"
             ));
             let Some(effective_config) = self
-                .read_effective_config_after_overridden_write(app_server, "Memory setting changes")
+                .read_effective_config_after_overridden_write(cli_runtime, "Memory setting changes")
                 .await
             else {
                 return false;
@@ -646,15 +644,15 @@ impl App {
         true
     }
 
-    pub(super) async fn update_memory_settings_with_app_server(
+    pub(super) async fn update_memory_settings_with_cli_runtime(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
         use_memories: bool,
         generate_memories: bool,
     ) {
         let previous_generate_memories = self.config.memories.generate_memories;
         if !self
-            .update_memory_settings(app_server, use_memories, generate_memories)
+            .update_memory_settings(cli_runtime, use_memories, generate_memories)
             .await
         {
             return;
@@ -675,7 +673,7 @@ impl App {
             ThreadMemoryMode::Disabled
         };
 
-        if let Err(err) = app_server.thread_memory_mode_set(thread_id, mode).await {
+        if let Err(err) = cli_runtime.thread_memory_mode_set(thread_id, mode).await {
             tracing::error!(error = %err, %thread_id, "failed to update thread memory mode");
             self.chat_widget.add_error_message(format!(
                 "Saved memory settings, but failed to update the current thread: {err}"
@@ -683,11 +681,11 @@ impl App {
         }
     }
 
-    pub(super) async fn reset_memories_with_app_server(
+    pub(super) async fn reset_memories_with_cli_runtime(
         &mut self,
-        app_server: &mut AppServerSession,
+        cli_runtime: &mut CliRuntimeSession,
     ) {
-        if let Err(err) = app_server.memory_reset().await {
+        if let Err(err) = cli_runtime.memory_reset().await {
             tracing::error!(error = %err, "failed to reset memories");
             self.chat_widget
                 .add_error_message(format!("Failed to reset memories: {err}"));
@@ -798,7 +796,7 @@ impl App {
             })
     }
 
-    pub(super) fn resume_model_settings(&self) -> crate::app_server_session::ResumeModelSettings {
+    pub(super) fn resume_model_settings(&self) -> crate::runtime_session::ResumeModelSettings {
         resume_model_settings_for_overrides(&self.config, &self.harness_overrides)
     }
 
@@ -910,7 +908,7 @@ impl App {
             .any(|(feature, _)| *feature == Feature::GuardianApproval)
             || !self.config.features.enabled(Feature::GuardianApproval)
             || sandbox_mode_from_effective_config(effective_config)
-                != Some(AppServerSandboxMode::WorkspaceWrite)
+                != Some(CliRuntimeSandboxMode::WorkspaceWrite)
         {
             return;
         }
@@ -1025,7 +1023,7 @@ fn approvals_reviewer_from_effective_config(
     effective_config
         .config
         .approvals_reviewer
-        .map(codex_app_server_protocol::ApprovalsReviewer::to_core)
+        .map(codex_cli_protocol::ApprovalsReviewer::to_core)
 }
 
 fn approval_policy_from_effective_config(
@@ -1036,7 +1034,7 @@ fn approval_policy_from_effective_config(
 
 fn sandbox_mode_from_effective_config(
     effective_config: &ConfigReadResponse,
-) -> Option<AppServerSandboxMode> {
+) -> Option<CliRuntimeSandboxMode> {
     effective_config.config.sandbox_mode
 }
 
@@ -1265,7 +1263,7 @@ mod tests {
 
         assert_eq!(
             app.resume_model_settings(),
-            crate::app_server_session::ResumeModelSettings::RestoreFromThread
+            crate::runtime_session::ResumeModelSettings::RestoreFromThread
         );
         let profile_path = test_path_buf("/tmp/work.config.toml").abs();
         let profile = "work"
@@ -1274,19 +1272,19 @@ mod tests {
         for (key, expected) in [
             (
                 "model",
-                crate::app_server_session::ResumeModelSettings::OverrideFromCurrentConfig,
+                crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig,
             ),
             (
                 "model_provider",
-                crate::app_server_session::ResumeModelSettings::OverrideFromCurrentConfig,
+                crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig,
             ),
             (
                 "model_reasoning_effort",
-                crate::app_server_session::ResumeModelSettings::OverrideFromCurrentConfig,
+                crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig,
             ),
             (
                 "sandbox_mode",
-                crate::app_server_session::ResumeModelSettings::RestoreFromThread,
+                crate::runtime_session::ResumeModelSettings::RestoreFromThread,
             ),
         ] {
             let config = TomlValue::Table(toml::map::Map::from_iter([(
@@ -1321,13 +1319,13 @@ mod tests {
             .expect("user config layer stack");
         assert_eq!(
             app.resume_model_settings(),
-            crate::app_server_session::ResumeModelSettings::RestoreFromThread
+            crate::runtime_session::ResumeModelSettings::RestoreFromThread
         );
 
         app.harness_overrides.model_provider = Some("custom-provider".to_string());
         assert_eq!(
             app.resume_model_settings(),
-            crate::app_server_session::ResumeModelSettings::OverrideFromCurrentConfig
+            crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig
         );
     }
 
@@ -1515,8 +1513,8 @@ terminal_resize_reflow_max_rows = 9000
         let effective_config: ConfigReadResponse = serde_json::from_value(serde_json::json!({
             "config": {
                 "approval_policy": AskForApproval::OnRequest,
-                "approvals_reviewer": codex_app_server_protocol::ApprovalsReviewer::AutoReview,
-                "sandbox_mode": AppServerSandboxMode::WorkspaceWrite,
+                "approvals_reviewer": codex_cli_protocol::ApprovalsReviewer::AutoReview,
+                "sandbox_mode": CliRuntimeSandboxMode::WorkspaceWrite,
                 "features": {
                     "guardian_approval": false,
                 },

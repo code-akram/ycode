@@ -1,9 +1,9 @@
 use super::*;
 use crate::test_support::recorded_http_client_urls;
 use crate::test_support::recording_remote_plugin_service_config;
-use codex_app_server_protocol::PluginAuthPolicy;
-use codex_app_server_protocol::PluginInstallPolicy;
-use codex_app_server_protocol::PluginInterface;
+use codex_cli_protocol::PluginAuthPolicy;
+use codex_cli_protocol::PluginInstallPolicy;
+use codex_cli_protocol::PluginInterface;
 use codex_login::CodexAuth;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;

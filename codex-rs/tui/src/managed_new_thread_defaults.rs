@@ -1,6 +1,6 @@
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigOverrides;
-use codex_app_server_protocol::NewThreadModelDefaults;
+use codex_cli_protocol::NewThreadModelDefaults;
 use codex_protocol::config_types::ServiceTier;
 use toml::Value as TomlValue;
 

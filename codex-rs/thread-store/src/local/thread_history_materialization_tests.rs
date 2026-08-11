@@ -4,7 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use chrono::Utc;
-use codex_app_server_protocol::ThreadItem;
+use codex_cli_protocol::ThreadItem;
 use codex_protocol::ThreadId;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::AgentMessageItem;

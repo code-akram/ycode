@@ -504,14 +504,14 @@ impl AgentControl {
         )) = notification_source.as_ref()
         {
             let client_metadata = match state.get_thread(*parent_thread_id).await {
-                Ok(parent_thread) => parent_thread.session.app_server_client_metadata().await,
+                Ok(parent_thread) => parent_thread.session.cli_runtime_client_metadata().await,
                 Err(error) => {
                     tracing::warn!(
                         error = %error,
                         parent_thread_id = %parent_thread_id,
                         "skipping subagent thread analytics: failed to load parent thread metadata"
                     );
-                    crate::session::session::AppServerClientMetadata {
+                    crate::session::session::CliRuntimeClientMetadata {
                         client_name: None,
                         client_version: None,
                     }
