@@ -17,7 +17,6 @@ fn has_parameter(tool: &ToolSpec, parameter_name: &str) -> bool {
 fn exec_command_tool_matches_expected_spec() {
     let tool = create_exec_command_tool(CommandToolOptions {
         allow_login_shell: true,
-        exec_permission_approvals_enabled: false,
     });
 
     let description = if cfg!(windows) {
@@ -35,7 +34,7 @@ fn exec_command_tool_matches_expected_spec() {
         "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms."
     };
 
-    let mut properties = BTreeMap::from([
+    let properties = BTreeMap::from([
         (
             "cmd".to_string(),
             JsonSchema::string(Some("Shell command to execute.".to_string())),
@@ -77,10 +76,6 @@ fn exec_command_tool_matches_expected_spec() {
                 )),
         ),
     ]);
-    properties.extend(create_approval_parameters(
-        /*exec_permission_approvals_enabled*/ false,
-    ));
-
     assert_eq!(
         tool,
         ToolSpec::Function(ResponsesApiTool {
@@ -103,7 +98,6 @@ fn exec_command_tool_can_hide_shell_parameter() {
     let tool = create_exec_command_tool_with_environment_id(
         CommandToolOptions {
             allow_login_shell: true,
-            exec_permission_approvals_enabled: false,
         },
         /*include_environment_id*/ false,
         /*include_shell_parameter*/ false,
@@ -164,49 +158,9 @@ fn write_stdin_tool_matches_expected_spec() {
 }
 
 #[test]
-fn request_permissions_tool_includes_full_permission_schema() {
-    let tool =
-        create_request_permissions_tool("Request extra permissions for this turn.".to_string());
-
-    let properties = BTreeMap::from([
-        (
-            "reason".to_string(),
-            JsonSchema::string(Some(
-                "Optional short explanation for why additional permissions are needed.".to_string(),
-            )),
-        ),
-        (
-            "environment_id".to_string(),
-            JsonSchema::string(Some(
-                "Environment id from <environment_context>. Omit to use the primary environment."
-                    .to_string(),
-            )),
-        ),
-        ("permissions".to_string(), permission_profile_schema()),
-    ]);
-
-    assert_eq!(
-        tool,
-        ToolSpec::Function(ResponsesApiTool {
-            name: "request_permissions".to_string(),
-            description: "Request extra permissions for this turn.".to_string(),
-            strict: false,
-            defer_loading: None,
-            parameters: JsonSchema::object(
-                properties,
-                Some(vec!["permissions".to_string()]),
-                Some(false.into())
-            ),
-            output_schema: None,
-        })
-    );
-}
-
-#[test]
 fn shell_command_tool_matches_expected_spec() {
     let tool = create_shell_command_tool(CommandToolOptions {
         allow_login_shell: true,
-        exec_permission_approvals_enabled: false,
     });
 
     let description = if cfg!(windows) {
@@ -228,7 +182,7 @@ Examples of valid command strings:
             .to_string()
     };
 
-    let mut properties = BTreeMap::from([
+    let properties = BTreeMap::from([
         (
             "command".to_string(),
             JsonSchema::string(Some(
@@ -255,10 +209,6 @@ Examples of valid command strings:
             )),
         ),
     ]);
-    properties.extend(create_approval_parameters(
-        /*exec_permission_approvals_enabled*/ false,
-    ));
-
     assert_eq!(
         tool,
         ToolSpec::Function(ResponsesApiTool {

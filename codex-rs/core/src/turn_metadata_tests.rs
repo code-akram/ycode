@@ -6,13 +6,11 @@ use crate::responses_metadata::CompactionTurnMetadata;
 use crate::responses_metadata::INSTALLATION_ID_KEY;
 use crate::responses_metadata::PARENT_TURN_ID_KEY;
 use crate::responses_metadata::WINDOW_ID_KEY;
-use crate::sandbox_tags::permission_profile_sandbox_tag;
 use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::CompactionTrigger;
 use codex_protocol::ToolName;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
@@ -143,7 +141,6 @@ async fn detached_memory_responses_metadata_omits_turn_identity() {
         String::new(),
         &SessionSource::Unknown,
         &repo_path,
-        Some("none"),
     )
     .await
     .turn_metadata_json()
@@ -189,7 +186,6 @@ async fn detached_memory_responses_metadata_omits_empty_workspace_metadata() {
         String::new(),
         &SessionSource::Unknown,
         &cwd,
-        /*sandbox*/ None,
     )
     .await
     .turn_metadata_json()
@@ -200,51 +196,9 @@ async fn detached_memory_responses_metadata_omits_empty_workspace_metadata() {
 }
 
 #[test]
-fn turn_metadata_state_uses_platform_sandbox_tag() {
-    let temp_dir = TempDir::new().expect("temp dir");
-    let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
-
-    let state = TurnMetadataState::new(
-        "session-a".to_string(),
-        "thread-a".to_string(),
-        /*forked_from_thread_id*/ None,
-        /*parent_thread_id*/ None,
-        &SessionSource::Exec,
-        /*thread_source*/ None,
-        "turn-a".to_string(),
-        cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
-    );
-
-    let header = test_turn_metadata_header(&state);
-    let json: Value = serde_json::from_str(&header).expect("json");
-    let sandbox_name = json.get("sandbox").and_then(Value::as_str);
-    let session_id = json.get("session_id").and_then(Value::as_str);
-    let thread_id = json.get("thread_id").and_then(Value::as_str);
-
-    assert!(json.get("request_kind").is_none());
-    let expected_sandbox = permission_profile_sandbox_tag(
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
-    );
-    assert_eq!(sandbox_name, Some(expected_sandbox));
-    assert_eq!(session_id, Some("session-a"));
-    assert_eq!(thread_id, Some("thread-a"));
-    assert!(json.get("forked_from_thread_id").is_none());
-    assert!(json.get("parent_thread_id").is_none());
-    assert!(json.get("subagent_kind").is_none());
-    assert!(json.get("session_source").is_none());
-}
-
-#[test]
 fn turn_metadata_state_includes_root_fork_lineage() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
     let source_thread_id =
         ThreadId::from_string("11111111-1111-4111-8111-111111111111").expect("thread id");
 
@@ -257,9 +211,6 @@ fn turn_metadata_state_includes_root_fork_lineage() {
         /*thread_source*/ None,
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
 
     let header = test_turn_metadata_header(&state);
@@ -277,7 +228,6 @@ fn turn_metadata_state_includes_root_fork_lineage() {
 fn turn_metadata_state_includes_thread_spawn_subagent_parent_without_fork() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
     let parent_thread_id =
         ThreadId::from_string("22222222-2222-4222-8222-222222222222").expect("thread id");
 
@@ -296,9 +246,6 @@ fn turn_metadata_state_includes_thread_spawn_subagent_parent_without_fork() {
         /*thread_source*/ None,
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
 
     let header = test_turn_metadata_header(&state);
@@ -316,7 +263,6 @@ fn turn_metadata_state_includes_thread_spawn_subagent_parent_without_fork() {
 fn turn_metadata_state_includes_forked_thread_spawn_subagent_lineage() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
     let parent_thread_id =
         ThreadId::from_string("33333333-3333-4333-8333-333333333333").expect("thread id");
 
@@ -335,9 +281,6 @@ fn turn_metadata_state_includes_forked_thread_spawn_subagent_lineage() {
         /*thread_source*/ None,
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
 
     let header = test_turn_metadata_header(&state);
@@ -358,7 +301,6 @@ fn turn_metadata_state_includes_forked_thread_spawn_subagent_lineage() {
 fn turn_metadata_state_includes_known_parent_for_non_thread_spawn_subagents_without_fork() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
     let parent_thread_id =
         ThreadId::from_string("44444444-4444-4444-8444-444444444444").expect("thread id");
     let sources = [
@@ -376,9 +318,6 @@ fn turn_metadata_state_includes_known_parent_for_non_thread_spawn_subagents_with
             /*thread_source*/ None,
             "turn-a".to_string(),
             cwd.clone(),
-            &permission_profile,
-            WindowsSandboxLevel::Disabled,
-            /*enforce_managed_network*/ false,
         );
 
         let header = test_turn_metadata_header(&state);
@@ -397,7 +336,6 @@ fn turn_metadata_state_includes_known_parent_for_non_thread_spawn_subagents_with
 fn turn_metadata_state_includes_turn_started_at_unix_ms_after_start() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
 
     let state = TurnMetadataState::new(
         "session-a".to_string(),
@@ -408,9 +346,6 @@ fn turn_metadata_state_includes_turn_started_at_unix_ms_after_start() {
         /*thread_source*/ None,
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
     state.set_turn_started_at_unix_ms(/*turn_started_at_unix_ms*/ 1_700_000_000_123);
 
@@ -427,7 +362,6 @@ fn turn_metadata_state_includes_turn_started_at_unix_ms_after_start() {
 fn turn_metadata_state_includes_model_and_reasoning_effort_only_in_request_meta() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
 
     let state = TurnMetadataState::new(
         "session-a".to_string(),
@@ -438,9 +372,6 @@ fn turn_metadata_state_includes_model_and_reasoning_effort_only_in_request_meta(
         /*thread_source*/ None,
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
 
     let header = test_turn_metadata_header(&state);
@@ -476,7 +407,6 @@ fn turn_metadata_state_includes_model_and_reasoning_effort_only_in_request_meta(
 fn turn_metadata_state_marks_user_input_requested_during_turn_only_for_extension_tool_meta() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
 
     let state = TurnMetadataState::new(
         "session-a".to_string(),
@@ -487,9 +417,6 @@ fn turn_metadata_state_marks_user_input_requested_during_turn_only_for_extension
         /*thread_source*/ None,
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
 
     let header = test_turn_metadata_header(&state);
@@ -529,7 +456,6 @@ fn turn_metadata_state_marks_user_input_requested_during_turn_only_for_extension
 fn turn_metadata_state_ignores_client_reserved_metadata_before_start() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
 
     let state = TurnMetadataState::new(
         "session-a".to_string(),
@@ -540,9 +466,6 @@ fn turn_metadata_state_ignores_client_reserved_metadata_before_start() {
         /*thread_source*/ None,
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
     state.set_responsesapi_client_metadata(HashMap::from([
         (
@@ -580,7 +503,6 @@ fn turn_metadata_state_ignores_client_reserved_metadata_before_start() {
 fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
     let source_thread_id =
         ThreadId::from_string("44444444-4444-4444-8444-444444444444").expect("thread id");
     let parent_thread_id =
@@ -601,9 +523,6 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
         Some(ThreadSource::Feature("automation".to_string())),
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
     state.set_parent_turn_id("parent-turn-a".to_string());
     state.set_responsesapi_client_metadata(HashMap::from([
@@ -742,7 +661,6 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
 fn turn_metadata_state_overlays_compaction_only_on_compaction_requests() {
     let temp_dir = TempDir::new().expect("temp dir");
     let cwd = temp_dir.path().abs();
-    let permission_profile = PermissionProfile::read_only();
     let state = TurnMetadataState::new(
         "session-a".to_string(),
         "thread-a".to_string(),
@@ -752,9 +670,6 @@ fn turn_metadata_state_overlays_compaction_only_on_compaction_requests() {
         /*thread_source*/ None,
         "turn-a".to_string(),
         cwd,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     );
     state.set_responsesapi_client_metadata(HashMap::from([(
         "compaction".to_string(),
@@ -797,7 +712,6 @@ fn turn_metadata_state_overlays_compaction_only_on_compaction_requests() {
 async fn turn_metadata_state_preserves_lineage_after_git_enrichment() {
     let (_temp_dir, repo_path) = create_clean_git_repo("repo").await;
 
-    let permission_profile = PermissionProfile::read_only();
     let parent_thread_id =
         ThreadId::from_string("66666666-6666-4666-8666-666666666666").expect("thread id");
     let state = Arc::new(TurnMetadataState::new(
@@ -815,9 +729,6 @@ async fn turn_metadata_state_preserves_lineage_after_git_enrichment() {
         /*thread_source*/ None,
         "turn-a".to_string(),
         repo_path,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     ));
 
     state.spawn_git_enrichment_task();
@@ -847,7 +758,6 @@ async fn turn_metadata_state_coalesces_concurrent_git_enrichment() {
         .expect("commit hash")
         .trim()
         .to_string();
-    let permission_profile = PermissionProfile::read_only();
     let state = Arc::new(TurnMetadataState::new(
         "session-a".to_string(),
         "thread-a".to_string(),
@@ -857,9 +767,6 @@ async fn turn_metadata_state_coalesces_concurrent_git_enrichment() {
         /*thread_source*/ None,
         "turn-a".to_string(),
         repo_path.clone(),
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     ));
     let barrier = Arc::new(tokio::sync::Barrier::new(8));
     let tasks = (0..8)
@@ -900,7 +807,6 @@ async fn turn_metadata_state_coalesces_concurrent_git_enrichment() {
 #[tokio::test]
 async fn turn_metadata_state_git_enrichment_cancellation_is_retryable_and_errors_stay_empty() {
     let (_temp_dir, repo_path) = create_clean_git_repo("repo").await;
-    let permission_profile = PermissionProfile::read_only();
     let state = Arc::new(TurnMetadataState::new(
         "session-a".to_string(),
         "thread-a".to_string(),
@@ -910,9 +816,6 @@ async fn turn_metadata_state_git_enrichment_cancellation_is_retryable_and_errors
         /*thread_source*/ None,
         "turn-a".to_string(),
         repo_path,
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     ));
     state.spawn_git_enrichment_task();
     state.cancel_git_enrichment_task();
@@ -943,9 +846,6 @@ async fn turn_metadata_state_git_enrichment_cancellation_is_retryable_and_errors
         /*thread_source*/ None,
         "turn-b".to_string(),
         invalid_repo.path().abs(),
-        &permission_profile,
-        WindowsSandboxLevel::Disabled,
-        /*enforce_managed_network*/ false,
     ));
     invalid_state.spawn_git_enrichment_task();
     tokio::time::timeout(Duration::from_secs(2), async {

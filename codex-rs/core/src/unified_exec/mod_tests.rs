@@ -19,7 +19,6 @@ use codex_exec_server::ReadResponse;
 use codex_exec_server::StartedExecProcess;
 use codex_exec_server::WriteResponse;
 use codex_exec_server::WriteStatus;
-use codex_sandboxing::SandboxType;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::approx_tokens_from_byte_count;
@@ -64,28 +63,17 @@ fn shell_env() -> HashMap<String, String> {
 }
 
 fn test_exec_request(
-    turn: &TurnContext,
     command: Vec<String>,
     cwd: AbsolutePathBuf,
     env: HashMap<String, String>,
 ) -> ExecRequest {
-    let windows_sandbox_private_desktop = false;
-    let permission_profile = turn.permission_profile();
-    let network = None;
     let arg0 = None;
     ExecRequest::new(
         command,
-        cwd,
+        cwd.into(),
         env,
-        network,
-        /*network_environment_id*/ None,
         ExecExpiration::DefaultTimeout,
         ExecCapturePolicy::ShellTool,
-        SandboxType::None,
-        turn.config.effective_workspace_roots(),
-        turn.windows_sandbox_level,
-        windows_sandbox_private_desktop,
-        permission_profile,
         arg0,
     )
 }
@@ -105,14 +93,13 @@ async fn exec_command_with_tty(
         .as_ref()
         .map_or_else(|| turn.cwd.clone(), |workdir| turn.cwd.join(workdir));
     let command = vec!["bash".to_string(), "-lc".to_string(), cmd.to_string()];
-    let request = test_exec_request(turn, command.clone(), cwd.clone(), shell_env());
+    let request = test_exec_request(command.clone(), cwd.clone(), shell_env());
 
     let process = Arc::new(
         manager
             .open_session_with_prepared_exec_env(
                 process_id,
                 &request,
-                /*network_policy_decider*/ None,
                 tty,
                 Box::new(NoopSpawnLifecycle),
                 turn.environments
@@ -136,7 +123,6 @@ async fn exec_command_with_tty(
             initial_exec_command_active: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             hook_command: cmd.to_string(),
             tty,
-            network_approval: None,
             session: Arc::downgrade(session),
             last_used: started_at,
         };
@@ -225,7 +211,6 @@ impl BlockingTerminateExecProcess {
             exit_code: None,
             closed: false,
             failure: None,
-            sandbox_denied: false,
         })
     }
 
@@ -291,7 +276,6 @@ async fn blocking_terminate_unified_process(
                 allow_terminate,
                 wake_tx,
             }),
-            sandbox_type: Some(codex_sandboxing::SandboxType::None),
         })
         .await?,
     ))
@@ -609,7 +593,6 @@ async fn terminating_initial_exec_command_rechecks_initial_response_state() -> a
             initial_exec_command_active: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             hook_command: "sleep 60".to_string(),
             tty: true,
-            network_approval: None,
             session: Arc::downgrade(&session),
             last_used: Instant::now(),
         },
@@ -682,7 +665,6 @@ async fn terminating_during_stdin_poll_returns_exited_response() -> anyhow::Resu
             initial_exec_command_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             hook_command: "sleep 60".to_string(),
             tty: true,
-            network_approval: None,
             session: Arc::downgrade(&session),
             last_used,
         },
@@ -732,7 +714,6 @@ async fn completed_pipe_commands_preserve_exit_code() -> anyhow::Result<()> {
     #[allow(deprecated)]
     let cwd = turn.cwd.clone();
     let request = test_exec_request(
-        &turn,
         vec!["bash".to_string(), "-lc".to_string(), "exit 17".to_string()],
         cwd,
         shell_env(),
@@ -743,7 +724,6 @@ async fn completed_pipe_commands_preserve_exit_code() -> anyhow::Result<()> {
         .open_session_with_prepared_exec_env(
             /*process_id*/ 1234,
             &request,
-            /*network_policy_decider*/ None,
             /*tty*/ false,
             Box::new(NoopSpawnLifecycle),
             &environment,
@@ -771,9 +751,8 @@ async fn unified_exec_uses_remote_exec_server_when_configured() -> anyhow::Resul
     skip_if_no_remote_env!(Ok(()));
 
     let remote_test_env = remote_test_env().await?;
-    let (_, turn) = make_session_and_context().await;
+    let (_, _turn) = make_session_and_context().await;
     let request = test_exec_request(
-        &turn,
         vec!["bash".to_string(), "-i".to_string()],
         remote_test_env.cwd().clone(),
         shell_env(),
@@ -784,7 +763,6 @@ async fn unified_exec_uses_remote_exec_server_when_configured() -> anyhow::Resul
         .open_session_with_prepared_exec_env(
             /*process_id*/ 1234,
             &request,
-            /*network_policy_decider*/ None,
             /*tty*/ true,
             Box::new(NoopSpawnLifecycle),
             remote_test_env.environment(),
@@ -821,7 +799,6 @@ async fn remote_exec_server_rejects_inherited_fd_launches() -> anyhow::Result<()
     #[allow(deprecated)]
     let cwd = turn.cwd.clone();
     let request = test_exec_request(
-        &turn,
         vec!["bash".to_string(), "-lc".to_string(), "echo ok".to_string()],
         cwd,
         shell_env(),
@@ -832,7 +809,6 @@ async fn remote_exec_server_rejects_inherited_fd_launches() -> anyhow::Result<()
         .open_session_with_prepared_exec_env(
             /*process_id*/ 1234,
             &request,
-            /*network_policy_decider*/ None,
             /*tty*/ true,
             Box::new(TestSpawnLifecycle {
                 inherited_fds: vec![42],

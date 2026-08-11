@@ -9,7 +9,6 @@ use crate::config::PermissionProfileSnapshot;
 use crate::exec_env::CODEX_PERMISSION_PROFILE_ENV_VAR;
 use crate::exec_env::create_env;
 use crate::exec_env::inject_permission_profile_env;
-use crate::sandboxing::SandboxPermissions;
 use crate::session::step_context::StepContext;
 use crate::session::tests::make_session_and_context;
 use crate::session::turn_context::EnvironmentConfig;
@@ -72,9 +71,6 @@ async fn shell_command_handler_to_exec_params_uses_selected_environment() {
     let workdir = Some("subdir".to_string());
     let login = None;
     let timeout_ms = Some(1234);
-    let sandbox_permissions = SandboxPermissions::RequireEscalated;
-    let justification = Some("because tests".to_string());
-
     let selected_shell = Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/selected/bin/bash"),
@@ -114,10 +110,10 @@ async fn shell_command_handler_to_exec_params_uses_selected_environment() {
         workdir,
         login,
         timeout_ms,
-        sandbox_permissions: Some(sandbox_permissions),
+        sandbox_permissions: None,
         additional_permissions: None,
         prefix_rule: None,
-        justification: justification.clone(),
+        justification: None,
     };
 
     let exec_params = ShellCommandHandler::to_exec_params(
@@ -137,14 +133,7 @@ async fn shell_command_handler_to_exec_params_uses_selected_environment() {
         exec_params.env.get(CODEX_PERMISSION_PROFILE_ENV_VAR),
         Some(&active_permission_profile.id)
     );
-    assert_eq!(exec_params.network, turn_context.network);
-    assert_eq!(
-        exec_params.network_environment_id.as_deref(),
-        Some("selected-environment")
-    );
     assert_eq!(exec_params.expiration.timeout_ms(), timeout_ms);
-    assert_eq!(exec_params.sandbox_permissions, sandbox_permissions);
-    assert_eq!(exec_params.justification, justification);
     assert_eq!(exec_params.arg0, None);
 }
 
@@ -214,44 +203,6 @@ async fn shell_command_handler_defaults_to_non_login_when_disallowed() {
         session
             .user_shell()
             .derive_exec_args("echo hello", /*use_login_shell*/ false)
-    );
-}
-
-#[tokio::test]
-async fn shell_command_handler_rejects_justification_without_sandbox_permissions() {
-    let (session, turn_context) = make_session_and_context().await;
-    let turn_environment = turn_context
-        .environments
-        .primary()
-        .expect("primary environment");
-    let cwd = turn_environment
-        .cwd()
-        .to_abs_path()
-        .expect("native environment cwd");
-    let params = ShellCommandToolCallParams {
-        command: "echo hello".to_string(),
-        workdir: None,
-        login: None,
-        timeout_ms: None,
-        sandbox_permissions: None,
-        additional_permissions: None,
-        prefix_rule: None,
-        justification: Some("Allow this command".to_string()),
-    };
-
-    let err = ShellCommandHandler::to_exec_params(
-        &params,
-        &session,
-        &turn_context,
-        turn_environment,
-        cwd,
-    )
-    .expect_err("justification without sandbox permissions should be rejected");
-
-    assert!(
-        err.to_string()
-            .contains("`justification` requires an explicit `sandbox_permissions`"),
-        "unexpected error: {err}"
     );
 }
 

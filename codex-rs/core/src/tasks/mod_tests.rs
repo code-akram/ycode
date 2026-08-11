@@ -1,12 +1,10 @@
 use super::TASK_COMPACT_METRIC;
 use super::emit_compact_metric;
 use super::emit_turn_memory_metric;
-use super::emit_turn_network_proxy_metric;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_otel::SessionTelemetry;
 use codex_otel::TURN_MEMORY_METRIC;
-use codex_otel::TURN_NETWORK_PROXY_METRIC;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use opentelemetry::KeyValue;
@@ -73,56 +71,6 @@ fn metric_point(resource_metrics: &ResourceMetrics, name: &str) -> (BTreeMap<Str
         },
         _ => panic!("unexpected counter data type"),
     }
-}
-
-#[test]
-fn emit_turn_network_proxy_metric_records_active_turn() {
-    let session_telemetry = test_session_telemetry();
-
-    emit_turn_network_proxy_metric(
-        &session_telemetry,
-        /*network_proxy_active*/ true,
-        ("tmp_mem_enabled", "true"),
-    );
-
-    let snapshot = session_telemetry
-        .snapshot_metrics()
-        .expect("runtime metrics snapshot");
-    let (attrs, value) = metric_point(&snapshot, TURN_NETWORK_PROXY_METRIC);
-
-    assert_eq!(value, 1);
-    assert_eq!(
-        attrs,
-        BTreeMap::from([
-            ("active".to_string(), "true".to_string()),
-            ("tmp_mem_enabled".to_string(), "true".to_string()),
-        ])
-    );
-}
-
-#[test]
-fn emit_turn_network_proxy_metric_records_inactive_turn() {
-    let session_telemetry = test_session_telemetry();
-
-    emit_turn_network_proxy_metric(
-        &session_telemetry,
-        /*network_proxy_active*/ false,
-        ("tmp_mem_enabled", "false"),
-    );
-
-    let snapshot = session_telemetry
-        .snapshot_metrics()
-        .expect("runtime metrics snapshot");
-    let (attrs, value) = metric_point(&snapshot, TURN_NETWORK_PROXY_METRIC);
-
-    assert_eq!(value, 1);
-    assert_eq!(
-        attrs,
-        BTreeMap::from([
-            ("active".to_string(), "false".to_string()),
-            ("tmp_mem_enabled".to_string(), "false".to_string()),
-        ])
-    );
 }
 
 #[test]

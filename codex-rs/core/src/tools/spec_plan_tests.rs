@@ -602,11 +602,7 @@ async fn shell_family_registers_visible_unified_exec_and_hidden_legacy_shell() {
 
 #[tokio::test]
 async fn login_shell_parameter_follows_selected_environment() {
-    for (tool_name, guardian) in [
-        ("shell_command", false),
-        ("exec_command", false),
-        ("exec_command", true),
-    ] {
+    for tool_name in ["shell_command", "exec_command"] {
         for allow_login_shell in [false, true] {
             let plan = probe(|turn| {
                 set_feature(turn, Feature::ShellTool, /*enabled*/ true);
@@ -625,13 +621,6 @@ async fn login_shell_parameter_follows_selected_environment() {
                     panic!("primary environment should be ready");
                 };
                 environment.config.allow_login_shell = allow_login_shell;
-                if guardian {
-                    turn.session_source = codex_protocol::protocol::SessionSource::SubAgent(
-                        codex_protocol::protocol::SubAgentSource::Other(
-                            crate::guardian::GUARDIAN_REVIEWER_NAME.to_string(),
-                        ),
-                    );
-                }
             })
             .await;
 

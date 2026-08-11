@@ -151,7 +151,6 @@ async fn spawn_v2_subagent(
             Some(ThreadSource::Subagent),
             /*metrics_service_name*/ None,
             /*inherited_environments*/ None,
-            /*inherited_exec_policy*/ None,
             /*environments*/ None,
         )
         .await

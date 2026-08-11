@@ -8121,7 +8121,6 @@ async fn prompt_instruction_blocks_can_be_disabled_from_config() -> std::io::Res
     std::fs::write(
         codex_home.path().join(CONFIG_TOML_FILE),
         r#"include_permissions_instructions = false
-include_agent_settings_instructions = false
 include_environment_context = false
 
 [skills]
@@ -8136,7 +8135,6 @@ include_instructions = false
         .await?;
 
     assert!(!config.include_permissions_instructions);
-    assert!(!config.include_agent_settings_instructions);
     assert!(!config.include_skill_instructions);
     assert!(!config.include_environment_context);
     Ok(())

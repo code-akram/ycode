@@ -350,10 +350,10 @@ mod tests {
         let turn_id = turn.sub_id.clone();
         let model = turn.model_info.slug.clone();
         let truncation_policy = turn.model_info.truncation_policy.into();
-        let expected_sandbox_cwds = turn
+        let expected_cwds = turn
             .environments
             .turn_environments()
-            .map(|environment| Some(environment.cwd().clone()))
+            .filter_map(|environment| environment.cwd().to_abs_path().ok())
             .collect::<Vec<_>>();
         let history_item = ResponseItem::Message {
             id: None,
@@ -411,9 +411,9 @@ mod tests {
             captured_call
                 .environments
                 .iter()
-                .map(|environment| environment.file_system_sandbox_context.cwd.clone())
+                .map(|environment| environment.cwd.clone())
                 .collect::<Vec<_>>(),
-            expected_sandbox_cwds
+            expected_cwds
         );
         assert_eq!(
             strip_response_item_ids(captured_call.conversation_history.items()),

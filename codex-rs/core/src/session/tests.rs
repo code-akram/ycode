@@ -6,7 +6,6 @@ use crate::config::ConfigBuilder;
 use crate::config::ConfigOverrides;
 use crate::config::test_config;
 use crate::context::ContextualUserFragment;
-use crate::context::TurnAborted;
 use crate::environment_selection::ThreadEnvironments;
 use crate::environment_selection::TurnEnvironmentState;
 use crate::function_tool::FunctionCallError;
@@ -25,7 +24,6 @@ use codex_config::RequirementSource;
 use codex_config::Sourced;
 use codex_config::loader::project_trust_key;
 use codex_config::types::ToolSuggestDisabledTool;
-use core_test_support::test_codex::local_selections;
 
 use codex_features::Feature;
 use codex_http_client::ClientRouteClass;
@@ -49,7 +47,6 @@ use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::exec_output::ExecToolCallOutput;
 use codex_protocol::models::AgentMessageInputContent;
-use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
@@ -65,8 +62,6 @@ use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::protocol::NonSteerableTurnKind;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelections;
-use codex_protocol::request_permissions::PermissionGrantScope;
-use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_tools::ToolSpec;
 use codex_utils_path_uri::PathUri;
 use tracing::Span;
@@ -79,12 +74,6 @@ use crate::tasks::SessionTaskResult;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::execute_user_shell_command;
 use crate::tools::ToolRouter;
-use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolPayload;
-use crate::tools::handlers::ExecCommandHandler;
-use crate::tools::handlers::RequestPermissionsHandler;
-use crate::tools::handlers::ShellCommandHandler;
-use crate::tools::registry::ToolExecutor;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_config::config_toml::ConfigToml;
@@ -94,10 +83,6 @@ use codex_config::permissions_toml::FilesystemPermissionsToml;
 use codex_config::permissions_toml::NetworkToml;
 use codex_config::permissions_toml::PermissionProfileToml;
 use codex_config::permissions_toml::PermissionsToml;
-use codex_execpolicy::Decision;
-use codex_execpolicy::NetworkRuleProtocol;
-use codex_execpolicy::Policy;
-use codex_network_proxy::NetworkProxyConfig;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_otel::TelemetryAuthMode;
@@ -114,11 +99,9 @@ use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::CreditsSnapshot;
-use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::MultiAgentVersion;
-use codex_protocol::protocol::NetworkApprovalProtocol;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::RateLimitWindow;
 use codex_protocol::protocol::RealtimeAudioFrame;
@@ -167,7 +150,6 @@ use opentelemetry_sdk::metrics::data::MetricData;
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use std::path::Path;
 use std::time::Duration;
-use tokio::sync::Semaphore;
 use tokio::time::sleep;
 use tokio::time::timeout;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -784,494 +766,6 @@ fn assistant_message_stream_parsers_seed_buffered_prefix_stays_out_of_finish_tai
     assert_eq!(parsed.citations, vec!["doc".to_string()]);
     assert_eq!(tail.visible_text, "");
     assert_eq!(tail.citations, Vec::<String>::new());
-}
-
-#[test]
-fn validated_network_policy_amendment_host_allows_normalized_match() {
-    let amendment = NetworkPolicyAmendment {
-        host: "ExAmPlE.Com.:443".to_string(),
-        action: NetworkPolicyRuleAction::Allow,
-    };
-    let context = NetworkApprovalContext {
-        host: "example.com".to_string(),
-        protocol: NetworkApprovalProtocol::Https,
-    };
-
-    let host = Session::validated_network_policy_amendment_host(&amendment, &context)
-        .expect("normalized hosts should match");
-
-    assert_eq!(host, "example.com");
-}
-
-#[test]
-fn validated_network_policy_amendment_host_rejects_mismatch() {
-    let amendment = NetworkPolicyAmendment {
-        host: "evil.example.com".to_string(),
-        action: NetworkPolicyRuleAction::Deny,
-    };
-    let context = NetworkApprovalContext {
-        host: "api.example.com".to_string(),
-        protocol: NetworkApprovalProtocol::Https,
-    };
-
-    let err = Session::validated_network_policy_amendment_host(&amendment, &context)
-        .expect_err("mismatched hosts should be rejected");
-
-    let message = err.to_string();
-    assert!(message.contains("does not match approved host"));
-}
-
-#[tokio::test]
-async fn start_managed_network_proxy_applies_execpolicy_network_rules() -> anyhow::Result<()> {
-    let permission_profile = PermissionProfile::workspace_write();
-    let spec = crate::config::NetworkProxySpec::from_config_and_constraints(
-        NetworkProxyConfig::default(),
-        /*requirements*/ None,
-        &permission_profile,
-    )?;
-    let mut exec_policy = Policy::empty();
-    exec_policy.add_network_rule(
-        "example.com",
-        NetworkRuleProtocol::Https,
-        Decision::Allow,
-        /*justification*/ None,
-    )?;
-
-    let (started_proxy, _) = Session::start_managed_network_proxy(
-        &spec,
-        &exec_policy,
-        &permission_profile,
-        /*network_policy_decider*/ None,
-        /*blocked_request_observer*/ None,
-        /*managed_network_requirements_enabled*/ false,
-        crate::config::NetworkProxyAuditMetadata::default(),
-    )
-    .await?;
-
-    let current_cfg = started_proxy.proxy().current_cfg().await?;
-    assert_eq!(
-        current_cfg.allowed_domains(),
-        Some(vec!["example.com".to_string()])
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn start_managed_network_proxy_ignores_invalid_execpolicy_network_rules() -> anyhow::Result<()>
-{
-    let permission_profile = PermissionProfile::workspace_write();
-    let spec = crate::config::NetworkProxySpec::from_config_and_constraints(
-        NetworkProxyConfig::default(),
-        Some(NetworkConstraints {
-            domains: Some(NetworkDomainPermissionsToml {
-                entries: std::collections::BTreeMap::from([(
-                    "managed.example.com".to_string(),
-                    NetworkDomainPermissionToml::Allow,
-                )]),
-            }),
-            managed_allowed_domains_only: Some(true),
-            ..Default::default()
-        }),
-        &permission_profile,
-    )?;
-    let mut exec_policy = Policy::empty();
-    exec_policy.add_network_rule(
-        "example.com",
-        NetworkRuleProtocol::Https,
-        Decision::Allow,
-        /*justification*/ None,
-    )?;
-
-    let (started_proxy, _) = Session::start_managed_network_proxy(
-        &spec,
-        &exec_policy,
-        &permission_profile,
-        /*network_policy_decider*/ None,
-        /*blocked_request_observer*/ None,
-        /*managed_network_requirements_enabled*/ false,
-        crate::config::NetworkProxyAuditMetadata::default(),
-    )
-    .await?;
-
-    let current_cfg = started_proxy.proxy().current_cfg().await?;
-    assert_eq!(
-        current_cfg.allowed_domains(),
-        Some(vec!["managed.example.com".to_string()])
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn managed_network_proxy_decider_survives_full_access_start() -> anyhow::Result<()> {
-    let full_access_permission_profile = PermissionProfile::Disabled;
-    let spec = crate::config::NetworkProxySpec::from_config_and_constraints(
-        NetworkProxyConfig::default(),
-        Some(NetworkConstraints {
-            enabled: Some(true),
-            ..Default::default()
-        }),
-        &full_access_permission_profile,
-    )?;
-    let exec_policy = Policy::empty();
-    let decider_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let network_policy_decider: Arc<dyn codex_network_proxy::NetworkPolicyDecider> = Arc::new({
-        let decider_calls = Arc::clone(&decider_calls);
-        move |_request| {
-            decider_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            async { codex_network_proxy::NetworkDecision::ask("not_allowed") }
-        }
-    });
-
-    let (started_proxy, _) = Session::start_managed_network_proxy(
-        &spec,
-        &exec_policy,
-        &full_access_permission_profile,
-        Some(network_policy_decider),
-        /*blocked_request_observer*/ None,
-        /*managed_network_requirements_enabled*/ true,
-        crate::config::NetworkProxyAuditMetadata::default(),
-    )
-    .await?;
-
-    let spec = spec.recompute_for_permission_profile(&PermissionProfile::workspace_write())?;
-    spec.apply_to_started_proxy(&started_proxy).await?;
-    let current_cfg = started_proxy.proxy().current_cfg().await?;
-    assert_eq!(current_cfg.allowed_domains(), None);
-
-    use tokio::io::AsyncReadExt as _;
-    use tokio::io::AsyncWriteExt as _;
-
-    let prepared = started_proxy
-        .proxy()
-        .prepare_for_remote_environment(std::collections::HashMap::new(), "test-bridge")?;
-    let proxy_addr = prepared.env["HTTP_PROXY"]
-        .strip_prefix("http://")
-        .expect("HTTP proxy URL")
-        .parse::<std::net::SocketAddr>()?;
-    let mut stream = tokio::net::TcpStream::connect(proxy_addr).await?;
-    stream
-        .write_all(
-            b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n",
-        )
-        .await?;
-    let mut buffer = [0_u8; 4096];
-    let bytes_read = tokio::time::timeout(StdDuration::from_secs(2), stream.read(&mut buffer))
-        .await
-        .expect("timed out waiting for proxy response")?;
-    let response = String::from_utf8_lossy(&buffer[..bytes_read]);
-
-    assert!(
-        response.starts_with("HTTP/1.1 403 Forbidden"),
-        "unexpected proxy response: {response}"
-    );
-    assert!(
-        response.contains("x-proxy-error: blocked-by-allowlist"),
-        "unexpected proxy response: {response}"
-    );
-    assert_eq!(
-        decider_calls.load(std::sync::atomic::Ordering::SeqCst),
-        1,
-        "unexpected proxy response: {response}"
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn new_turn_refreshes_managed_network_proxy_for_sandbox_change() -> anyhow::Result<()> {
-    let (session, _turn_context) = make_session_and_context().await;
-    let initial_permission_profile = PermissionProfile::workspace_write();
-
-    let mut network_config = NetworkProxyConfig::default();
-    network_config.set_allowed_domains(vec!["evil.com".to_string()]);
-    let requirements = NetworkConstraints {
-        domains: Some(NetworkDomainPermissionsToml {
-            entries: std::collections::BTreeMap::from([(
-                "*.example.com".to_string(),
-                NetworkDomainPermissionToml::Allow,
-            )]),
-        }),
-        ..Default::default()
-    };
-    let spec = crate::config::NetworkProxySpec::from_config_and_constraints(
-        network_config,
-        Some(requirements),
-        &initial_permission_profile,
-    )?;
-    let (started_proxy, _) = Session::start_managed_network_proxy(
-        &spec,
-        &Policy::empty(),
-        &initial_permission_profile,
-        /*network_policy_decider*/ None,
-        /*blocked_request_observer*/ None,
-        /*managed_network_requirements_enabled*/ false,
-        crate::config::NetworkProxyAuditMetadata::default(),
-    )
-    .await?;
-    assert_eq!(
-        started_proxy.proxy().current_cfg().await?.allowed_domains(),
-        Some(vec!["*.example.com".to_string(), "evil.com".to_string()])
-    );
-
-    {
-        let mut state = session.state.lock().await;
-        let mut config = (*state.session_configuration.original_config_do_not_use).clone();
-        config.permissions.network = Some(spec);
-        config
-            .permissions
-            .set_permission_profile(initial_permission_profile.clone())
-            .expect("test setup should allow permission profile");
-        state.session_configuration.original_config_do_not_use = Arc::new(config);
-        state
-            .session_configuration
-            .set_permission_profile_for_tests(initial_permission_profile)
-            .expect("test setup should allow permission profile");
-    }
-    session
-        .services
-        .network_proxy
-        .store(Some(Arc::new(started_proxy)));
-
-    session
-        .new_turn_with_sub_id(
-            "sandbox-policy-change".to_string(),
-            SessionSettingsUpdate {
-                sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
-                ..Default::default()
-            },
-        )
-        .await?;
-
-    let started_proxy = session
-        .services
-        .network_proxy
-        .load_full()
-        .expect("managed network proxy should be present");
-    assert_eq!(
-        started_proxy.proxy().current_cfg().await?.allowed_domains(),
-        Some(vec!["*.example.com".to_string()])
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn danger_full_access_turns_do_not_expose_managed_network_proxy() -> anyhow::Result<()> {
-    let network_spec = crate::config::NetworkProxySpec::from_config_and_constraints(
-        NetworkProxyConfig::default(),
-        Some(NetworkConstraints {
-            enabled: Some(true),
-            ..Default::default()
-        }),
-        &PermissionProfile::Disabled,
-    )?;
-
-    let session = make_session_with_config(move |config| {
-        config
-            .permissions
-            .set_permission_profile(PermissionProfile::Disabled)
-            .expect("test setup should allow permission profile");
-        config.permissions.network = Some(network_spec);
-    })
-    .await?;
-
-    let turn_context = session.new_default_turn().await;
-    assert!(turn_context.network.is_none());
-    Ok(())
-}
-
-#[tokio::test]
-async fn danger_full_access_tool_attempts_do_not_enforce_managed_network() -> anyhow::Result<()> {
-    #[derive(Default)]
-    struct ProbeToolRuntime {
-        enforce_managed_network: Vec<bool>,
-    }
-
-    impl crate::tools::sandboxing::Approvable<TurnEnvironment> for ProbeToolRuntime {
-        fn approval_action(
-            &self,
-            _req: &TurnEnvironment,
-            call_id: &str,
-        ) -> std::io::Result<crate::tools::sandboxing::ApprovalAction> {
-            Ok(crate::tools::sandboxing::ApprovalAction::Shell {
-                id: call_id.to_string(),
-                environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
-                command: Vec::new(),
-                hook_command: String::new(),
-                cwd: PathUri::from_abs_path(&std::env::temp_dir().abs()),
-                sandbox_permissions: crate::sandboxing::SandboxPermissions::UseDefault,
-                additional_permissions: None,
-                justification: None,
-                proposed_execpolicy_amendment: None,
-            })
-        }
-    }
-
-    impl crate::tools::sandboxing::Sandboxable for ProbeToolRuntime {
-        fn sandbox_preference(&self) -> codex_sandboxing::SandboxablePreference {
-            codex_sandboxing::SandboxablePreference::Auto
-        }
-    }
-
-    impl crate::tools::sandboxing::ToolRuntime<TurnEnvironment, ()> for ProbeToolRuntime {
-        fn turn_environment<'a>(&self, req: &'a TurnEnvironment) -> &'a TurnEnvironment {
-            req
-        }
-
-        async fn run(
-            &mut self,
-            _req: &TurnEnvironment,
-            attempt: &crate::tools::sandboxing::SandboxAttempt<'_>,
-            _ctx: &crate::tools::sandboxing::ToolCtx,
-        ) -> Result<(), crate::tools::sandboxing::ToolError> {
-            self.enforce_managed_network
-                .push(attempt.enforce_managed_network);
-            Ok(())
-        }
-    }
-
-    let network_spec = crate::config::NetworkProxySpec::from_config_and_constraints(
-        NetworkProxyConfig::default(),
-        Some(NetworkConstraints {
-            enabled: Some(true),
-            ..Default::default()
-        }),
-        &PermissionProfile::Disabled,
-    )?;
-
-    let session = make_session_with_config(move |config| {
-        config
-            .permissions
-            .set_permission_profile(PermissionProfile::Disabled)
-            .expect("test setup should allow permission profile");
-        config.permissions.network = Some(network_spec);
-
-        let layers = config
-            .config_layer_stack
-            .all_layers_low_to_high()
-            .cloned()
-            .collect();
-        let mut requirements = config.config_layer_stack.requirements().clone();
-        requirements.network = Some(Sourced::new(
-            NetworkConstraints {
-                enabled: Some(true),
-                ..Default::default()
-            },
-            RequirementSource::LegacyManagedConfigTomlFromMdm,
-        ));
-        let mut requirements_toml = config.config_layer_stack.requirements_toml().clone();
-        requirements_toml.network = Some(codex_config::NetworkRequirementsToml {
-            enabled: Some(true),
-            ..Default::default()
-        });
-        config.config_layer_stack = ConfigLayerStack::new(layers, requirements, requirements_toml)
-            .expect("rebuild config layer stack with network requirements");
-    })
-    .await?;
-
-    let turn = session.new_default_turn().await;
-    assert!(turn.network.is_none());
-
-    let mut orchestrator = crate::tools::orchestrator::ToolOrchestrator::new();
-    let mut tool = ProbeToolRuntime::default();
-    let tool_ctx = crate::tools::sandboxing::ToolCtx {
-        session: Arc::clone(&session),
-        turn: Arc::clone(&turn),
-        call_id: "probe-call".to_string(),
-        tool_name: codex_tools::ToolName::plain("probe"),
-    };
-
-    orchestrator
-        .run(
-            &mut tool,
-            turn.environments
-                .primary()
-                .expect("turn should have a primary environment"),
-            &tool_ctx,
-            turn.as_ref(),
-            AskForApproval::Never,
-        )
-        .await
-        .expect("probe runtime should succeed");
-
-    assert_eq!(tool.enforce_managed_network, vec![false]);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn workspace_write_turns_continue_to_expose_managed_network_proxy() -> anyhow::Result<()> {
-    let permission_profile = PermissionProfile::workspace_write();
-    let network_spec = crate::config::NetworkProxySpec::from_config_and_constraints(
-        NetworkProxyConfig::default(),
-        Some(NetworkConstraints {
-            enabled: Some(true),
-            ..Default::default()
-        }),
-        &permission_profile,
-    )?;
-
-    let session = make_session_with_config(move |config| {
-        config
-            .permissions
-            .set_permission_profile(permission_profile)
-            .expect("test setup should allow permission profile");
-        config.permissions.network = Some(network_spec);
-    })
-    .await?;
-
-    let turn_context = session.new_default_turn().await;
-    assert!(turn_context.network.is_some());
-    Ok(())
-}
-
-#[tokio::test]
-async fn user_shell_commands_do_not_inherit_managed_network_proxy() -> anyhow::Result<()> {
-    let permission_profile = PermissionProfile::workspace_write();
-    let network_spec = crate::config::NetworkProxySpec::from_config_and_constraints(
-        NetworkProxyConfig::default(),
-        Some(NetworkConstraints {
-            enabled: Some(true),
-            ..Default::default()
-        }),
-        &permission_profile,
-    )?;
-
-    let (session, rx) = make_session_with_config_and_rx(move |config| {
-        config
-            .permissions
-            .set_permission_profile(permission_profile)
-            .expect("test setup should allow permission profile");
-        config.permissions.network = Some(network_spec);
-    })
-    .await?;
-
-    let turn_context = session.new_default_turn().await;
-    assert!(turn_context.network.is_some());
-
-    #[cfg(windows)]
-    let command = r#"$val = $env:HTTP_PROXY; if ([string]::IsNullOrEmpty($val)) { $val = 'not-set' } ; [System.Console]::Write($val)"#.to_string();
-    #[cfg(not(windows))]
-    let command = r#"sh -c "printf '%s' \"${HTTP_PROXY:-not-set}\"""#.to_string();
-
-    execute_user_shell_command(
-        Arc::clone(&session),
-        turn_context,
-        command,
-        CancellationToken::new(),
-        UserShellCommandMode::StandaloneTurn,
-    )
-    .await;
-
-    loop {
-        let event = rx.recv().await.expect("channel open");
-        if let EventMsg::ExecCommandEnd(event) = event.msg {
-            assert_eq!(event.exit_code, 0);
-            assert_eq!(event.stdout.trim(), "not-set");
-            break;
-        }
-    }
-
-    Ok(())
 }
 
 #[tokio::test]
@@ -2907,36 +2401,6 @@ async fn record_initial_history_assigns_and_persists_id_for_forked_response_item
         persisted_item_id.map(ResponseItemId::as_str),
         Some(live_item_id.as_str())
     );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn session_configured_reports_permission_profile_for_external_sandbox() -> anyhow::Result<()>
-{
-    let server = start_mock_server().await;
-    let sandbox_policy = SandboxPolicy::ExternalSandbox {
-        network_access: codex_protocol::protocol::NetworkAccess::Restricted,
-    };
-    let permission_profile = PermissionProfile::External {
-        network: NetworkSandboxPolicy::Restricted,
-    };
-    let expected_permission_profile = permission_profile.clone();
-    let mut builder = test_codex().with_config(move |config| {
-        config
-            .permissions
-            .set_permission_profile(permission_profile.clone())
-            .expect("set permission profile");
-        config
-            .set_legacy_sandbox_policy(sandbox_policy)
-            .expect("set sandbox policy");
-    });
-
-    let test = builder.build(&server).await?;
-
-    assert_eq!(
-        test.session_configured.permission_profile, expected_permission_profile,
-        "ExternalSandbox is represented explicitly instead of as a lossy root-write profile"
-    );
-    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -5122,7 +4586,6 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         "11111111-1111-4111-8111-111111111111".to_string(),
         auth_manager,
         models_manager,
-        Arc::new(ExecPolicyManager::default()),
         tx_event,
         agent_status_tx,
         InitialHistory::New,
@@ -5192,7 +4655,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         config.model_provider.clone(),
     );
     let agent_control = AgentControl::default();
-    let exec_policy = Arc::new(ExecPolicyManager::default());
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let model = get_model_offline_for_tests(config.model.as_deref());
     let model_info =
@@ -5277,7 +4739,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         config.codex_home.clone(),
         /*bundled_skills_enabled*/ true,
     ));
-    let network_approval = Arc::new(NetworkApprovalService::default());
     let executed_tool_calls = config
         .features
         .enabled(Feature::ExecutedToolCallMetadata)
@@ -5301,7 +4762,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
         user_shell: Arc::new(default_user_shell()),
         show_raw_agent_reasoning: config.show_raw_agent_reasoning,
-        exec_policy,
         auth_manager: auth_manager.clone(),
         openai_file_upload_client_pool: RouteAwareClientPool::new_without_request_logging(
             config.http_client_factory(),
@@ -5310,8 +4770,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         .with_legacy_custom_ca_fallback(),
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
-        tool_approvals: Mutex::new(ApprovalStore::default()),
-        guardian_rejection_circuit_breaker: Mutex::new(Default::default()),
         runtime_handle: tokio::runtime::Handle::current(),
         skills_service,
         agents_md_manager: Arc::new(AgentsMdManager::new(/*user_instructions*/ None)),
@@ -5323,10 +4781,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         thread_extension_data: codex_extension_api::ExtensionData::new(thread_id.to_string()),
         selected_capability_roots: Vec::new(),
         agent_control,
-        network_proxy: arc_swap::ArcSwapOption::from(None),
-        network_proxy_audit_metadata: crate::config::NetworkProxyAuditMetadata::default(),
-        managed_network_requirements_configured: false,
-        network_approval: Arc::clone(&network_approval),
         state_db: None,
         live_thread: None,
         thread_store: Arc::new(codex_thread_store::LocalThreadStore::new(
@@ -5393,7 +4847,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         per_turn_config,
         model_info,
         &models_manager,
-        /*network*/ None,
         resolved_turn_environments,
         session_configuration.cwd().clone(),
         "turn_id".to_string(),
@@ -5405,14 +4858,12 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         tx_event,
         agent_status: agent_status_tx,
         state: Mutex::new(state),
-        managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         conversation: Arc::new(RealtimeConversationManager::new()),
         active_turn: Mutex::new(None),
         pending_user_message_admissions: Default::default(),
         input_queue: super::input_queue::InputQueue::new(),
-        guardian_review_session: crate::guardian::GuardianReviewSessionManager::default(),
         services,
         git_enrichment_policy: GitEnrichmentPolicy::Fresh,
         fork_persistence: ForkPersistence::Copied,
@@ -5515,7 +4966,6 @@ async fn make_session_with_config_and_rx(
         "11111111-1111-4111-8111-111111111111".to_string(),
         auth_manager,
         models_manager,
-        Arc::new(ExecPolicyManager::default()),
         tx_event,
         agent_status_tx,
         InitialHistory::New,
@@ -5623,7 +5073,6 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         "11111111-1111-4111-8111-111111111111".to_string(),
         auth_manager,
         models_manager,
-        Arc::new(ExecPolicyManager::default()),
         tx_event,
         agent_status_tx,
         initial_history,
@@ -5727,617 +5176,6 @@ async fn resumed_subagent_session_restores_persisted_session_id() {
     };
     assert_eq!(event.session_id, parent_session_id);
     assert_eq!(event.thread_id, thread_id);
-}
-
-#[tokio::test]
-async fn notify_request_permissions_response_ignores_unmatched_call_id() {
-    let (session, _turn_context) = make_session_and_context().await;
-    *session.active_turn.lock().await = Some(ActiveTurn::default());
-
-    session
-        .notify_request_permissions_response(
-            "missing",
-            codex_protocol::request_permissions::RequestPermissionsResponse {
-                permissions: RequestPermissionProfile {
-                    network: Some(codex_protocol::models::NetworkPermissions {
-                        enabled: Some(true),
-                    }),
-                    ..RequestPermissionProfile::default()
-                },
-                scope: PermissionGrantScope::Turn,
-                strict_auto_review: false,
-            },
-        )
-        .await;
-
-    assert_eq!(
-        session
-            .granted_turn_permissions(codex_exec_server::LOCAL_ENVIRONMENT_ID)
-            .await,
-        None
-    );
-}
-
-#[tokio::test]
-async fn record_granted_request_permissions_for_turn_uses_originating_turn() {
-    let (session, _turn_context) = make_session_and_context().await;
-    let originating_active_turn = ActiveTurn::default();
-    let originating_turn_state = Arc::clone(&originating_active_turn.turn_state);
-    *session.active_turn.lock().await = Some(originating_active_turn);
-
-    let current_active_turn = ActiveTurn::default();
-    let current_turn_state = Arc::clone(&current_active_turn.turn_state);
-    *session.active_turn.lock().await = Some(current_active_turn);
-
-    let requested_permissions = RequestPermissionProfile {
-        network: Some(codex_protocol::models::NetworkPermissions {
-            enabled: Some(true),
-        }),
-        ..RequestPermissionProfile::default()
-    };
-    session
-        .record_granted_request_permissions_for_turn(
-            &codex_protocol::request_permissions::RequestPermissionsResponse {
-                permissions: requested_permissions.clone(),
-                scope: PermissionGrantScope::Turn,
-                strict_auto_review: false,
-            },
-            codex_exec_server::LOCAL_ENVIRONMENT_ID,
-            Some(&originating_turn_state),
-        )
-        .await;
-
-    assert_eq!(
-        originating_turn_state
-            .lock()
-            .await
-            .granted_permissions(codex_exec_server::LOCAL_ENVIRONMENT_ID),
-        Some(requested_permissions.into())
-    );
-    assert_eq!(
-        current_turn_state
-            .lock()
-            .await
-            .granted_permissions(codex_exec_server::LOCAL_ENVIRONMENT_ID),
-        None
-    );
-    assert_eq!(
-        session
-            .granted_turn_permissions(codex_exec_server::LOCAL_ENVIRONMENT_ID)
-            .await,
-        None
-    );
-}
-
-#[tokio::test]
-async fn request_permission_grants_are_environment_keyed() {
-    let (session, _turn_context) = make_session_and_context().await;
-    let originating_active_turn = ActiveTurn::default();
-    let originating_turn_state = Arc::clone(&originating_active_turn.turn_state);
-    *session.active_turn.lock().await = Some(originating_active_turn);
-
-    let requested_permissions = RequestPermissionProfile {
-        network: Some(codex_protocol::models::NetworkPermissions {
-            enabled: Some(true),
-        }),
-        ..RequestPermissionProfile::default()
-    };
-    session
-        .record_granted_request_permissions_for_turn(
-            &codex_protocol::request_permissions::RequestPermissionsResponse {
-                permissions: requested_permissions.clone(),
-                scope: PermissionGrantScope::Turn,
-                strict_auto_review: false,
-            },
-            "remote",
-            Some(&originating_turn_state),
-        )
-        .await;
-
-    {
-        let turn_state = originating_turn_state.lock().await;
-        assert_eq!(
-            turn_state.granted_permissions("remote"),
-            Some(requested_permissions.clone().into())
-        );
-        assert_eq!(turn_state.granted_permissions("local"), None);
-    }
-
-    session
-        .record_granted_request_permissions_for_turn(
-            &codex_protocol::request_permissions::RequestPermissionsResponse {
-                permissions: requested_permissions.clone(),
-                scope: PermissionGrantScope::Session,
-                strict_auto_review: false,
-            },
-            "remote",
-            /*originating_turn_state*/ None,
-        )
-        .await;
-
-    assert_eq!(
-        session.granted_session_permissions("remote").await,
-        Some(requested_permissions.into())
-    );
-    assert_eq!(session.granted_session_permissions("local").await, None);
-}
-
-#[tokio::test]
-async fn enable_strict_auto_review_for_turn_uses_originating_turn() {
-    let (session, _turn_context) = make_session_and_context().await;
-    let originating_active_turn = ActiveTurn::default();
-    let originating_turn_state = Arc::clone(&originating_active_turn.turn_state);
-    *session.active_turn.lock().await = Some(originating_active_turn);
-
-    let requested_permissions = RequestPermissionProfile {
-        network: Some(codex_protocol::models::NetworkPermissions {
-            enabled: Some(true),
-        }),
-        ..RequestPermissionProfile::default()
-    };
-    session
-        .record_granted_request_permissions_for_turn(
-            &codex_protocol::request_permissions::RequestPermissionsResponse {
-                permissions: requested_permissions.clone(),
-                scope: PermissionGrantScope::Turn,
-                strict_auto_review: true,
-            },
-            codex_exec_server::LOCAL_ENVIRONMENT_ID,
-            Some(&originating_turn_state),
-        )
-        .await;
-
-    assert!(
-        originating_turn_state
-            .lock()
-            .await
-            .strict_auto_review_enabled()
-    );
-}
-
-#[test]
-fn strict_auto_review_session_scope_grants_no_permissions() {
-    let requested_permissions = RequestPermissionProfile {
-        network: Some(codex_protocol::models::NetworkPermissions {
-            enabled: Some(true),
-        }),
-        ..RequestPermissionProfile::default()
-    };
-
-    let response = Session::normalize_request_permissions_response(
-        requested_permissions.clone(),
-        codex_protocol::request_permissions::RequestPermissionsResponse {
-            permissions: requested_permissions,
-            scope: PermissionGrantScope::Session,
-            strict_auto_review: true,
-        },
-        std::path::Path::new("/tmp"),
-    );
-
-    assert_eq!(
-        response,
-        codex_protocol::request_permissions::RequestPermissionsResponse {
-            permissions: RequestPermissionProfile::default(),
-            scope: PermissionGrantScope::Turn,
-            strict_auto_review: false,
-        }
-    );
-}
-
-#[tokio::test]
-async fn request_permissions_emits_event_when_granular_policy_allows_requests() {
-    let (session, mut turn_context, rx) = make_session_and_context_with_rx().await;
-    *session.active_turn.lock().await = Some(ActiveTurn::default());
-    let turn_context_mut = Arc::get_mut(&mut turn_context).expect("single thread settings ref");
-    Arc::make_mut(&mut turn_context_mut.config)
-        .permissions
-        .approval_policy
-        .set(AskForApproval::Granular(GranularApprovalConfig {
-            sandbox_approval: true,
-            rules: true,
-            skill_approval: true,
-            request_permissions: true,
-        }))
-        .expect("test setup should allow updating approval policy");
-
-    let session = Arc::new(session);
-    let turn_context = Arc::new(turn_context);
-    let call_id = "call-1".to_string();
-    let expected_response = codex_protocol::request_permissions::RequestPermissionsResponse {
-        permissions: RequestPermissionProfile {
-            network: Some(codex_protocol::models::NetworkPermissions {
-                enabled: Some(true),
-            }),
-            ..RequestPermissionProfile::default()
-        },
-        scope: PermissionGrantScope::Turn,
-        strict_auto_review: false,
-    };
-
-    let handle = tokio::spawn({
-        let session = Arc::clone(&session);
-        let turn_context = Arc::clone(&turn_context);
-        let call_id = call_id.clone();
-        async move {
-            let environment = turn_context
-                .environments
-                .primary()
-                .expect("primary environment")
-                .selection();
-            session
-                .request_permissions_for_environment(
-                    &turn_context,
-                    call_id,
-                    codex_protocol::request_permissions::RequestPermissionsArgs {
-                        environment_id: None,
-                        reason: Some("need network".to_string()),
-                        permissions: RequestPermissionProfile {
-                            network: Some(codex_protocol::models::NetworkPermissions {
-                                enabled: Some(true),
-                            }),
-                            ..RequestPermissionProfile::default()
-                        },
-                    },
-                    environment,
-                    CancellationToken::new(),
-                )
-                .await
-        }
-    });
-
-    let request_event = tokio::time::timeout(StdDuration::from_secs(1), rx.recv())
-        .await
-        .expect("request_permissions event timed out")
-        .expect("request_permissions event missing");
-    let EventMsg::RequestPermissions(request) = request_event.msg else {
-        panic!("expected request_permissions event");
-    };
-    assert_eq!(request.call_id, call_id);
-    assert_eq!(
-        request.environment_id.as_deref(),
-        Some(codex_exec_server::LOCAL_ENVIRONMENT_ID)
-    );
-    #[allow(deprecated)]
-    let turn_cwd = turn_context.cwd.clone();
-    assert_eq!(request.cwd, Some(turn_cwd));
-
-    session
-        .notify_request_permissions_response(&request.call_id, expected_response.clone())
-        .await;
-
-    let response = tokio::time::timeout(StdDuration::from_secs(1), handle)
-        .await
-        .expect("request_permissions future timed out")
-        .expect("request_permissions join error");
-
-    assert_eq!(response, Some(expected_response));
-}
-
-#[tokio::test]
-async fn request_permissions_tool_resolves_relative_paths_against_selected_environment() {
-    let (session, mut turn_context, rx) = make_session_and_context_with_rx().await;
-    *session.active_turn.lock().await = Some(ActiveTurn::default());
-    let environment_cwd = {
-        #[allow(deprecated)]
-        let legacy_cwd = turn_context.cwd.clone();
-        legacy_cwd.join("request-permissions-environment")
-    };
-    std::fs::create_dir_all(environment_cwd.as_path()).expect("create environment cwd");
-    let turn_context_mut = Arc::get_mut(&mut turn_context).expect("single thread settings ref");
-    Arc::make_mut(&mut turn_context_mut.config)
-        .permissions
-        .approval_policy
-        .set(AskForApproval::Granular(GranularApprovalConfig {
-            sandbox_approval: true,
-            rules: true,
-            skill_approval: true,
-            request_permissions: true,
-        }))
-        .expect("test setup should allow updating approval policy");
-    let current_environment = turn_context_mut
-        .environments
-        .primary()
-        .expect("primary environment")
-        .clone();
-    turn_context_mut.environments.environments[0] =
-        TurnEnvironmentState::Ready(TurnEnvironment::new(
-            "remote".to_string(),
-            current_environment.environment,
-            PathUri::from_abs_path(&environment_cwd),
-            Vec::new(),
-            current_environment.shell,
-            current_environment.config,
-        ));
-
-    let call_id = "call-1".to_string();
-    let handler = RequestPermissionsHandler;
-    let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
-    let step_context = StepContext::for_test(Arc::clone(&turn_context));
-    let handle = tokio::spawn({
-        let session = Arc::clone(&session);
-        let turn_context = Arc::clone(&turn_context);
-        let step_context = Arc::clone(&step_context);
-        let tracker = Arc::clone(&tracker);
-        let call_id = call_id.clone();
-        async move {
-            handler
-                .handle(ToolInvocation {
-                    session,
-                    step_context,
-                    turn: turn_context,
-                    cancellation_token: CancellationToken::new(),
-                    tracker,
-                    call_id,
-                    tool_name: codex_tools::ToolName::plain("request_permissions"),
-                    source: ToolCallSource::Direct,
-                    payload: ToolPayload::Function {
-                        arguments: json!({
-                            "environment_id": "remote",
-                            "reason": "need write",
-                            "permissions": {
-                                "file_system": {
-                                    "entries": [{
-                                        "path": {
-                                            "type": "path",
-                                            "path": "relative.txt",
-                                        },
-                                        "access": "write",
-                                    }],
-                                },
-                            },
-                        })
-                        .to_string(),
-                    },
-                })
-                .await
-        }
-    });
-
-    let request_event = tokio::time::timeout(StdDuration::from_secs(1), rx.recv())
-        .await
-        .expect("request_permissions event timed out")
-        .expect("request_permissions event missing");
-    let EventMsg::RequestPermissions(request) = request_event.msg else {
-        panic!("expected request_permissions event");
-    };
-    let expected_permissions = RequestPermissionProfile {
-        file_system: Some(FileSystemPermissions {
-            entries: vec![FileSystemSandboxEntry {
-                path: FileSystemPath::Path {
-                    path: environment_cwd.join("relative.txt"),
-                },
-                access: FileSystemAccessMode::Write,
-                missing_path_behavior: None,
-            }],
-            glob_scan_max_depth: None,
-        }),
-        ..Default::default()
-    };
-    assert_eq!(request.environment_id.as_deref(), Some("remote"));
-    assert_eq!(request.permissions, expected_permissions);
-
-    session
-        .notify_request_permissions_response(
-            &request.call_id,
-            codex_protocol::request_permissions::RequestPermissionsResponse {
-                permissions: request.permissions,
-                scope: PermissionGrantScope::Turn,
-                strict_auto_review: false,
-            },
-        )
-        .await;
-    tokio::time::timeout(StdDuration::from_secs(1), handle)
-        .await
-        .expect("request_permissions handler timed out")
-        .expect("request_permissions handler join error")
-        .expect("request_permissions handler should succeed");
-}
-
-#[tokio::test]
-async fn request_permissions_tool_rejects_unknown_environment_id() {
-    let (session, turn_context) = make_session_and_context().await;
-    let turn_context = Arc::new(turn_context);
-    let step_context = StepContext::for_test(Arc::clone(&turn_context));
-    let result = RequestPermissionsHandler
-        .handle(ToolInvocation {
-            session: Arc::new(session),
-            step_context,
-            turn: turn_context,
-            cancellation_token: CancellationToken::new(),
-            tracker: Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
-            call_id: "call-1".to_string(),
-            tool_name: codex_tools::ToolName::plain("request_permissions"),
-            source: ToolCallSource::Direct,
-            payload: ToolPayload::Function {
-                arguments: json!({
-                    "environment_id": "missing",
-                    "permissions": {
-                        "network": {
-                            "enabled": true,
-                        },
-                    },
-                })
-                .to_string(),
-            },
-        })
-        .await;
-
-    let Err(FunctionCallError::RespondToModel(output)) = result else {
-        panic!("expected unknown environment id to be rejected");
-    };
-    assert_eq!(output, "unknown turn environment id `missing`");
-}
-
-#[tokio::test]
-async fn request_permissions_response_materializes_session_cwd_grants_before_recording() {
-    let (session, mut turn_context, rx) = make_session_and_context_with_rx().await;
-    *session.active_turn.lock().await = Some(ActiveTurn::default());
-    let turn_context_mut = Arc::get_mut(&mut turn_context).expect("single thread settings ref");
-    Arc::make_mut(&mut turn_context_mut.config)
-        .permissions
-        .approval_policy
-        .set(AskForApproval::Granular(GranularApprovalConfig {
-            sandbox_approval: true,
-            rules: true,
-            skill_approval: true,
-            request_permissions: true,
-        }))
-        .expect("test setup should allow updating approval policy");
-
-    let session = Arc::new(session);
-    let turn_context = Arc::new(turn_context);
-    let call_id = "call-1".to_string();
-    let requested_permissions = RequestPermissionProfile {
-        file_system: Some(FileSystemPermissions {
-            entries: vec![FileSystemSandboxEntry {
-                path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
-                },
-                access: FileSystemAccessMode::Write,
-                missing_path_behavior: None,
-            }],
-            glob_scan_max_depth: None,
-        }),
-        ..Default::default()
-    };
-
-    let handle = tokio::spawn({
-        let session = Arc::clone(&session);
-        let turn_context = Arc::clone(&turn_context);
-        let call_id = call_id.clone();
-        let requested_permissions = requested_permissions.clone();
-        async move {
-            let environment = turn_context
-                .environments
-                .primary()
-                .expect("primary environment")
-                .selection();
-            session
-                .request_permissions_for_environment(
-                    &turn_context,
-                    call_id,
-                    codex_protocol::request_permissions::RequestPermissionsArgs {
-                        environment_id: None,
-                        reason: Some("need cwd write".to_string()),
-                        permissions: requested_permissions,
-                    },
-                    environment,
-                    CancellationToken::new(),
-                )
-                .await
-        }
-    });
-
-    let request_event = tokio::time::timeout(StdDuration::from_secs(1), rx.recv())
-        .await
-        .expect("request_permissions event timed out")
-        .expect("request_permissions event missing");
-    let EventMsg::RequestPermissions(request) = request_event.msg else {
-        panic!("expected request_permissions event");
-    };
-    assert_eq!(
-        request.environment_id.as_deref(),
-        Some(codex_exec_server::LOCAL_ENVIRONMENT_ID)
-    );
-    let request_cwd = request.cwd.clone().expect("request cwd");
-
-    session
-        .notify_request_permissions_response(
-            &request.call_id,
-            codex_protocol::request_permissions::RequestPermissionsResponse {
-                permissions: request.permissions,
-                scope: PermissionGrantScope::Session,
-                strict_auto_review: false,
-            },
-        )
-        .await;
-
-    let expected_permissions = RequestPermissionProfile {
-        file_system: Some(FileSystemPermissions::from_read_write_roots(
-            /*read*/ None,
-            Some(vec![request_cwd]),
-        )),
-        ..Default::default()
-    };
-    let expected_response = codex_protocol::request_permissions::RequestPermissionsResponse {
-        permissions: expected_permissions.clone(),
-        scope: PermissionGrantScope::Session,
-        strict_auto_review: false,
-    };
-
-    let response = tokio::time::timeout(StdDuration::from_secs(1), handle)
-        .await
-        .expect("request_permissions future timed out")
-        .expect("request_permissions join error");
-
-    assert_eq!(response, Some(expected_response));
-    assert_eq!(
-        session
-            .granted_session_permissions(codex_exec_server::LOCAL_ENVIRONMENT_ID)
-            .await,
-        Some(expected_permissions.into())
-    );
-}
-
-#[tokio::test]
-async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_requests() {
-    let (session, mut turn_context, rx) = make_session_and_context_with_rx().await;
-    *session.active_turn.lock().await = Some(ActiveTurn::default());
-    let turn_context_mut = Arc::get_mut(&mut turn_context).expect("single thread settings ref");
-    Arc::make_mut(&mut turn_context_mut.config)
-        .permissions
-        .approval_policy
-        .set(AskForApproval::Granular(GranularApprovalConfig {
-            sandbox_approval: true,
-            rules: true,
-            skill_approval: true,
-            request_permissions: false,
-        }))
-        .expect("test setup should allow updating approval policy");
-
-    let session = Arc::new(session);
-    let turn_context = Arc::new(turn_context);
-    let call_id = "call-1".to_string();
-    let environment = turn_context
-        .environments
-        .primary()
-        .expect("primary environment")
-        .selection();
-    let response = session
-        .request_permissions_for_environment(
-            &turn_context,
-            call_id,
-            codex_protocol::request_permissions::RequestPermissionsArgs {
-                environment_id: None,
-                reason: Some("need network".to_string()),
-                permissions: RequestPermissionProfile {
-                    network: Some(codex_protocol::models::NetworkPermissions {
-                        enabled: Some(true),
-                    }),
-                    ..RequestPermissionProfile::default()
-                },
-            },
-            environment,
-            CancellationToken::new(),
-        )
-        .await;
-
-    assert_eq!(
-        response,
-        Some(
-            codex_protocol::request_permissions::RequestPermissionsResponse {
-                permissions: RequestPermissionProfile::default(),
-                scope: PermissionGrantScope::Turn,
-                strict_auto_review: false,
-            }
-        )
-    );
-    assert!(
-        tokio::time::timeout(StdDuration::from_millis(100), rx.recv())
-            .await
-            .is_err(),
-        "request_permissions should not emit an event when granular.request_permissions is false"
-    );
 }
 
 #[tokio::test]
@@ -6501,50 +5339,6 @@ fn op_kind_for_input_and_context_ops() {
         }
         .kind(),
         "thread_settings"
-    );
-}
-
-#[tokio::test]
-async fn user_turn_updates_approvals_reviewer() {
-    let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
-    let config = session.get_config().await;
-    handlers::user_input_or_turn(
-        &session,
-        "sub-1".to_string(),
-        Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".to_string(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
-                environments: Some(local_selections(config.cwd.clone())),
-                approval_policy: Some(config.permissions.approval_policy.value()),
-                approvals_reviewer: Some(codex_config::types::ApprovalsReviewer::AutoReview),
-                sandbox_policy: Some(config.legacy_sandbox_policy()),
-                summary: config.model_reasoning_summary,
-                personality: config.personality,
-                agent_settings: Some(codex_protocol::config_types::AgentSettings {
-                    settings: codex_protocol::config_types::Settings {
-                        model: turn_context.model_info.slug.clone(),
-                        reasoning_effort: config.model_reasoning_effort.clone(),
-                        developer_instructions: None,
-                    },
-                }),
-                ..Default::default()
-            },
-        },
-        /*client_user_message_id*/ None,
-        /*parent_turn_id*/ None,
-    )
-    .await;
-
-    let state = session.state.lock().await;
-    assert_eq!(
-        state.session_configuration.approvals_reviewer,
-        codex_config::types::ApprovalsReviewer::AutoReview
     );
 }
 
@@ -7187,145 +5981,6 @@ async fn shutdown_and_wait_waits_when_shutdown_is_already_in_progress() {
         .expect("shutdown waiter");
 }
 
-#[tokio::test]
-async fn shutdown_and_wait_shuts_down_cached_guardian_subagent() {
-    let (parent_session, parent_turn_context) = make_session_and_context().await;
-    let parent_session = Arc::new(parent_session);
-    let parent_config = Arc::clone(&parent_turn_context.config);
-    let (parent_tx_sub, parent_rx_sub) = async_channel::bounded(4);
-    let (_parent_tx_event, parent_rx_event) = async_channel::unbounded();
-    let parent_session_for_loop = Arc::clone(&parent_session);
-    let parent_session_loop_handle = tokio::spawn(async move {
-        submission_loop(parent_session_for_loop, parent_config, parent_rx_sub).await;
-    });
-    let parent_io = SessionIo {
-        tx_sub: parent_tx_sub,
-        rx_event: parent_rx_event,
-        agent_status: watch::channel(AgentStatus::PendingInit).1,
-        session_loop_termination: session_loop_termination_from_handle(parent_session_loop_handle),
-    };
-
-    let (child_session, _child_turn_context) = make_session_and_context().await;
-    let (child_tx_sub, child_rx_sub) = async_channel::bounded(4);
-    let (_child_tx_event, child_rx_event) = async_channel::unbounded();
-    let (child_shutdown_tx, child_shutdown_rx) = tokio::sync::oneshot::channel();
-    let child_session_loop_handle = tokio::spawn(async move {
-        let shutdown: Submission = child_rx_sub
-            .recv()
-            .await
-            .expect("child shutdown submission");
-        assert_eq!(shutdown.op, Op::Shutdown);
-        child_shutdown_tx
-            .send(())
-            .expect("child shutdown signal should be delivered");
-    });
-    let child_session = Arc::new(child_session);
-    let child_io = SessionIo {
-        tx_sub: child_tx_sub,
-        rx_event: child_rx_event,
-        agent_status: watch::channel(AgentStatus::PendingInit).1,
-        session_loop_termination: session_loop_termination_from_handle(child_session_loop_handle),
-    };
-    parent_session
-        .guardian_review_session
-        .cache_for_test(child_session, child_io)
-        .await;
-
-    parent_io
-        .shutdown_and_wait()
-        .await
-        .expect("parent shutdown should succeed");
-
-    child_shutdown_rx
-        .await
-        .expect("guardian subagent should receive a shutdown op");
-}
-
-#[tokio::test]
-async fn cached_guardian_subagent_exposes_its_rollout_path() {
-    let (parent_session, _parent_turn_context) = make_session_and_context().await;
-    let parent_session = Arc::new(parent_session);
-
-    let (mut child_session, _child_turn_context) = make_session_and_context().await;
-    let child_rollout_path = attach_thread_persistence(&mut child_session).await;
-    let (child_tx_sub, _child_rx_sub) = async_channel::bounded(4);
-    let (_child_tx_event, child_rx_event) = async_channel::unbounded();
-    let child_session_loop_handle = tokio::spawn(async {});
-    let child_session = Arc::new(child_session);
-    let child_io = SessionIo {
-        tx_sub: child_tx_sub,
-        rx_event: child_rx_event,
-        agent_status: watch::channel(AgentStatus::PendingInit).1,
-        session_loop_termination: session_loop_termination_from_handle(child_session_loop_handle),
-    };
-    parent_session
-        .guardian_review_session
-        .cache_for_test(child_session, child_io)
-        .await;
-
-    assert_eq!(
-        parent_session
-            .guardian_review_session
-            .trunk_rollout_path()
-            .await,
-        Some(child_rollout_path)
-    );
-}
-
-#[tokio::test]
-async fn shutdown_and_wait_shuts_down_tracked_ephemeral_guardian_review() {
-    let (parent_session, parent_turn_context) = make_session_and_context().await;
-    let parent_session = Arc::new(parent_session);
-    let parent_config = Arc::clone(&parent_turn_context.config);
-    let (parent_tx_sub, parent_rx_sub) = async_channel::bounded(4);
-    let (_parent_tx_event, parent_rx_event) = async_channel::unbounded();
-    let parent_session_for_loop = Arc::clone(&parent_session);
-    let parent_session_loop_handle = tokio::spawn(async move {
-        submission_loop(parent_session_for_loop, parent_config, parent_rx_sub).await;
-    });
-    let parent_io = SessionIo {
-        tx_sub: parent_tx_sub,
-        rx_event: parent_rx_event,
-        agent_status: watch::channel(AgentStatus::PendingInit).1,
-        session_loop_termination: session_loop_termination_from_handle(parent_session_loop_handle),
-    };
-
-    let (child_session, _child_turn_context) = make_session_and_context().await;
-    let (child_tx_sub, child_rx_sub) = async_channel::bounded(4);
-    let (_child_tx_event, child_rx_event) = async_channel::unbounded();
-    let (child_shutdown_tx, child_shutdown_rx) = tokio::sync::oneshot::channel();
-    let child_session_loop_handle = tokio::spawn(async move {
-        let shutdown: Submission = child_rx_sub
-            .recv()
-            .await
-            .expect("child shutdown submission");
-        assert_eq!(shutdown.op, Op::Shutdown);
-        child_shutdown_tx
-            .send(())
-            .expect("child shutdown signal should be delivered");
-    });
-    let child_session = Arc::new(child_session);
-    let child_io = SessionIo {
-        tx_sub: child_tx_sub,
-        rx_event: child_rx_event,
-        agent_status: watch::channel(AgentStatus::PendingInit).1,
-        session_loop_termination: session_loop_termination_from_handle(child_session_loop_handle),
-    };
-    parent_session
-        .guardian_review_session
-        .register_ephemeral_for_test(child_session, child_io)
-        .await;
-
-    parent_io
-        .shutdown_and_wait()
-        .await
-        .expect("parent shutdown should succeed");
-
-    child_shutdown_rx
-        .await
-        .expect("ephemeral guardian review should receive a shutdown op");
-}
-
 async fn make_session_and_context_with_auth_and_config_and_rx<F>(
     auth: CodexAuth,
     dynamic_tools: Vec<DynamicToolSpec>,
@@ -7374,7 +6029,6 @@ where
         config.model_provider.clone(),
     );
     let agent_control = AgentControl::default();
-    let exec_policy = Arc::new(ExecPolicyManager::default());
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let model = get_model_offline_for_tests(config.model.as_deref());
     let model_info =
@@ -7458,7 +6112,6 @@ where
         config.codex_home.clone(),
         /*bundled_skills_enabled*/ true,
     ));
-    let network_approval = Arc::new(NetworkApprovalService::default());
     let executed_tool_calls = config
         .features
         .enabled(Feature::ExecutedToolCallMetadata)
@@ -7482,7 +6135,6 @@ where
         rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
         user_shell: Arc::new(default_user_shell()),
         show_raw_agent_reasoning: config.show_raw_agent_reasoning,
-        exec_policy,
         auth_manager: Arc::clone(&auth_manager),
         openai_file_upload_client_pool: RouteAwareClientPool::new_without_request_logging(
             config.http_client_factory(),
@@ -7491,8 +6143,6 @@ where
         .with_legacy_custom_ca_fallback(),
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
-        tool_approvals: Mutex::new(ApprovalStore::default()),
-        guardian_rejection_circuit_breaker: Mutex::new(Default::default()),
         runtime_handle: tokio::runtime::Handle::current(),
         skills_service,
         agents_md_manager: Arc::new(AgentsMdManager::new(/*user_instructions*/ None)),
@@ -7504,10 +6154,6 @@ where
         thread_extension_data: codex_extension_api::ExtensionData::new(thread_id.to_string()),
         selected_capability_roots: Vec::new(),
         agent_control,
-        network_proxy: arc_swap::ArcSwapOption::from(None),
-        network_proxy_audit_metadata: crate::config::NetworkProxyAuditMetadata::default(),
-        managed_network_requirements_configured: false,
-        network_approval: Arc::clone(&network_approval),
         state_db: state_db.clone(),
         live_thread: None,
         thread_store: Arc::new(codex_thread_store::LocalThreadStore::new(
@@ -7574,7 +6220,6 @@ where
         per_turn_config,
         model_info,
         &models_manager,
-        /*network*/ None,
         resolved_turn_environments,
         session_configuration.cwd().clone(),
         "turn_id".to_string(),
@@ -7586,14 +6231,12 @@ where
         tx_event,
         agent_status: agent_status_tx,
         state: Mutex::new(state),
-        managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         conversation: Arc::new(RealtimeConversationManager::new()),
         active_turn: Mutex::new(None),
         pending_user_message_admissions: Default::default(),
         input_queue: super::input_queue::InputQueue::new(),
-        guardian_review_session: crate::guardian::GuardianReviewSessionManager::default(),
         services,
         git_enrichment_policy: GitEnrichmentPolicy::Fresh,
         fork_persistence: ForkPersistence::Copied,
@@ -7719,52 +6362,6 @@ async fn conflicting_ready_environment_root_ids_keep_first_location() {
             .map(|_| Ok(()))
             .unwrap_or_else(|| Err("expected conflicting root location warning".to_string()))
     });
-}
-
-#[tokio::test]
-async fn capability_discovery_uses_environment_permission_profile() {
-    let (session, mut turn_context) = make_session_and_context().await;
-    Arc::make_mut(&mut turn_context.config)
-        .permissions
-        .set_permission_profile(PermissionProfile::Disabled)
-        .expect("unrestricted permission profile should be allowed");
-    let mut environment = turn_context
-        .environments
-        .primary()
-        .expect("primary environment")
-        .clone();
-    let mut file_system_policy = PermissionProfile::read_only().file_system_sandbox_policy();
-    file_system_policy.entries.push(FileSystemSandboxEntry {
-        path: FileSystemPath::GlobPattern {
-            pattern: "**/*.env".to_string(),
-        },
-        access: FileSystemAccessMode::Deny,
-        missing_path_behavior: None,
-    });
-    environment.config.permission_profile =
-        PermissionProfileSnapshot::legacy(PermissionProfile::from_runtime_permissions(
-            &file_system_policy,
-            NetworkSandboxPolicy::Restricted,
-        ));
-    let expected_sandbox = turn_context
-        .file_system_sandbox_context(/*additional_permissions*/ None, &environment);
-    let environment_id = environment.environment_id.clone();
-    turn_context.environments.environments[0] = TurnEnvironmentState::Ready(environment);
-
-    let discovery = session
-        .executor_capability_discovery_for_step(
-            &turn_context.config,
-            /*ready_selected_capability_roots*/ &[],
-            &turn_context.environments,
-            turn_context.windows_sandbox_level,
-        )
-        .await
-        .expect("restricted environment should trigger capability discovery");
-
-    assert_eq!(
-        discovery.sandbox_contexts().get(&environment_id),
-        Some(&expected_sandbox)
-    );
 }
 
 #[tokio::test]
@@ -9042,131 +7639,6 @@ impl SessionTask for NeverEndingTask {
     }
 }
 
-#[derive(Clone, Copy)]
-struct GuardianDeniedApprovalTask;
-
-impl SessionTask for GuardianDeniedApprovalTask {
-    fn kind(&self) -> TaskKind {
-        TaskKind::Regular
-    }
-
-    fn span_name(&self) -> &'static str {
-        "session_task.guardian_denied_approval"
-    }
-
-    async fn run(
-        self: Arc<Self>,
-        session: Arc<Session>,
-        ctx: Arc<TurnContext>,
-        _input: Vec<TurnInput>,
-        cancellation_token: CancellationToken,
-    ) -> SessionTaskResult {
-        for _ in 0..3 {
-            crate::guardian::record_guardian_denial_for_test(&session, &ctx, &ctx.sub_id).await;
-        }
-
-        cancellation_token.cancelled().await;
-        Ok(None)
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn guardian_auto_review_emits_thread_idle_after_interrupt() {
-    struct ThreadIdleRecorder(async_channel::Sender<()>);
-
-    impl codex_extension_api::ThreadLifecycleContributor<crate::config::Config> for ThreadIdleRecorder {
-        fn on_thread_idle<'a>(
-            &'a self,
-            _input: codex_extension_api::ThreadIdleInput<'a>,
-        ) -> codex_extension_api::ExtensionFuture<'a, ()> {
-            Box::pin(async move {
-                self.0.send(()).await.expect("idle receiver open");
-            })
-        }
-    }
-
-    let (mut session, turn_context) = make_session_and_context().await;
-    let (idle_tx, idle_rx) = async_channel::bounded(1);
-    let mut builder = codex_extension_api::ExtensionRegistryBuilder::<crate::config::Config>::new();
-    builder.thread_lifecycle_contributor(Arc::new(ThreadIdleRecorder(idle_tx)));
-    session.services.extensions = Arc::new(builder.build());
-
-    Arc::new(session)
-        .spawn_task(
-            Arc::new(turn_context),
-            Vec::new(),
-            GuardianDeniedApprovalTask,
-        )
-        .await;
-
-    timeout(StdDuration::from_secs(5), idle_rx.recv())
-        .await
-        .expect("guardian interrupt should emit thread idle lifecycle")
-        .expect("idle receiver open");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn guardian_helper_review_interrupts_after_three_consecutive_denials() {
-    let (sess, tc, rx) = make_session_and_context_with_rx().await;
-    let input = vec![TurnInput::UserInput {
-        content: vec![UserInput::Text {
-            text: "keep turn active for helper reviews".to_string(),
-            text_elements: Vec::new(),
-        }],
-        client_id: None,
-    }];
-    sess.spawn_task(
-        Arc::clone(&tc),
-        input,
-        NeverEndingTask {
-            kind: TaskKind::Regular,
-            listen_to_cancellation_token: true,
-        },
-    )
-    .await;
-
-    let session_for_review = Arc::clone(&sess);
-    let turn_for_review = Arc::clone(&tc);
-    let turn_id = tc.sub_id.clone();
-    let review_thread = std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("helper review runtime");
-        runtime.block_on(async move {
-            for _ in 0..3 {
-                crate::guardian::record_guardian_denial_for_test(
-                    &session_for_review,
-                    &turn_for_review,
-                    &turn_id,
-                )
-                .await;
-            }
-        });
-    });
-    review_thread.join().expect("helper review thread");
-
-    let mut observed = Vec::new();
-    let aborted = timeout(StdDuration::from_secs(5), async {
-        loop {
-            let event = rx.recv().await.expect("event");
-            if let EventMsg::TurnAborted(event) = &event.msg {
-                let event = event.clone();
-                observed.push(EventMsg::TurnAborted(event.clone()));
-                break event;
-            }
-            observed.push(event.msg);
-        }
-    })
-    .await
-    .unwrap_or_else(|_| {
-        panic!(
-            "helper review circuit breaker should interrupt the turn; observed events: {observed:?}"
-        )
-    });
-    assert_eq!(aborted.reason, TurnAbortReason::Interrupted);
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn turn_complete_flushes_terminal_event_after_delivery() {
     let (mut sess, tc, rx) = make_session_and_context_with_rx().await;
@@ -9668,10 +8140,7 @@ async fn steer_input_enforces_expected_turn_id() {
 
 #[tokio::test]
 async fn steer_input_rejects_non_regular_turns() {
-    for (task_kind, turn_kind) in [
-        (TaskKind::Review, NonSteerableTurnKind::Review),
-        (TaskKind::Compact, NonSteerableTurnKind::Compact),
-    ] {
+    for (task_kind, turn_kind) in [(TaskKind::Compact, NonSteerableTurnKind::Compact)] {
         let (sess, _tc, _rx) = make_session_and_context_with_rx().await;
         let input = vec![TurnInput::UserInput {
             content: vec![UserInput::Text {
@@ -10270,109 +8739,6 @@ async fn sample_rollout(
     )
 }
 
-#[tokio::test]
-async fn rejects_escalated_permissions_when_policy_not_on_request() {
-    use crate::exec_policy::ExecApprovalRequest;
-    use crate::sandboxing::SandboxPermissions;
-    use crate::tools::sandboxing::ExecApprovalRequirement;
-    use crate::turn_diff_tracker::TurnDiffTracker;
-    use codex_protocol::protocol::AskForApproval;
-    use codex_tools::ShellCommandBackendConfig;
-
-    let (session, mut turn_context_raw) = make_session_and_context().await;
-    // Ensure policy is NOT OnRequest so the early rejection path triggers
-    Arc::make_mut(&mut turn_context_raw.config)
-        .permissions
-        .approval_policy
-        .set(AskForApproval::Never)
-        .expect("test setup should allow updating approval policy");
-    let session = Arc::new(session);
-    let mut turn_context = Arc::new(turn_context_raw);
-    let step_context = StepContext::for_test(Arc::clone(&turn_context));
-
-    let command_script = "echo hi";
-    let timeout_ms = 1000;
-    let sandbox_permissions = SandboxPermissions::RequireEscalated;
-
-    let turn_diff_tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
-
-    let tool_name = "shell_command";
-    let call_id = "test-call".to_string();
-
-    let handler = ShellCommandHandler::from(ShellCommandBackendConfig::Classic);
-    #[allow(deprecated)]
-    let workdir = Some(turn_context.cwd.to_string_lossy().to_string());
-    let resp = handler
-        .handle(ToolInvocation {
-            session: Arc::clone(&session),
-            turn: Arc::clone(&turn_context),
-            step_context,
-            cancellation_token: CancellationToken::new(),
-            tracker: Arc::clone(&turn_diff_tracker),
-            call_id,
-            tool_name: codex_tools::ToolName::plain(tool_name),
-            source: crate::tools::context::ToolCallSource::Direct,
-            payload: ToolPayload::Function {
-                arguments: serde_json::json!({
-                    "command": command_script,
-                    "workdir": workdir,
-                    "timeout_ms": timeout_ms,
-                    "sandbox_permissions": sandbox_permissions,
-                    "justification": Some("test"),
-                })
-                .to_string(),
-            },
-        })
-        .await;
-
-    let Err(FunctionCallError::RespondToModel(output)) = resp else {
-        panic!("expected error result");
-    };
-
-    let expected = format!(
-        "approval policy is {policy:?}; reject command — you should not ask for escalated permissions if the approval policy is {policy:?}",
-        policy = turn_context.approval_policy()
-    );
-
-    pretty_assertions::assert_eq!(output, expected);
-    pretty_assertions::assert_eq!(
-        session
-            .granted_turn_permissions(codex_exec_server::LOCAL_ENVIRONMENT_ID)
-            .await,
-        None
-    );
-
-    // The rejection should not poison the non-escalated path for the same
-    // command. Force DangerFullAccess so this check stays focused on approval
-    // policy rather than platform-specific sandbox behavior.
-    let turn_context_mut = Arc::get_mut(&mut turn_context).expect("unique thread settings Arc");
-    Arc::make_mut(&mut turn_context_mut.config)
-        .permissions
-        .set_permission_profile(PermissionProfile::Disabled)
-        .expect("test setup should allow updating permission profile");
-
-    let command = session.user_shell().derive_exec_args(
-        command_script,
-        turn_context.config.permissions.allow_login_shell,
-    );
-    let exec_approval_requirement = session
-        .services
-        .exec_policy
-        .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-            command: &command,
-            approval_policy: turn_context.approval_policy(),
-            permission_profile: turn_context.permission_profile(),
-            windows_sandbox_level: turn_context.windows_sandbox_level,
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            prefix_rule: None,
-        })
-        .await;
-    assert!(matches!(
-        exec_approval_requirement,
-        ExecApprovalRequirement::Skip { .. }
-    ));
-}
-
 #[cfg(unix)]
 #[tokio::test]
 async fn shell_tool_cancellation_waits_for_runtime_cleanup() -> anyhow::Result<()> {
@@ -10442,57 +8808,6 @@ while :; do sleep 1; done"#,
         .expect("cancelled shell tool should return a response item");
     assert_eq!(std::fs::read_to_string(cleanup_marker)?, "cleaned");
     Ok(())
-}
-
-#[tokio::test]
-async fn unified_exec_rejects_escalated_permissions_when_policy_not_on_request() {
-    use crate::sandboxing::SandboxPermissions;
-    use crate::turn_diff_tracker::TurnDiffTracker;
-    use codex_protocol::protocol::AskForApproval;
-
-    let (session, mut turn_context_raw) = make_session_and_context().await;
-    Arc::make_mut(&mut turn_context_raw.config)
-        .permissions
-        .approval_policy
-        .set(AskForApproval::Never)
-        .expect("test setup should allow updating approval policy");
-    let session = Arc::new(session);
-    let turn_context = Arc::new(turn_context_raw);
-    let step_context = StepContext::for_test(Arc::clone(&turn_context));
-    let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
-
-    let handler = ExecCommandHandler::default();
-    let resp = handler
-        .handle(ToolInvocation {
-            session: Arc::clone(&session),
-            turn: Arc::clone(&turn_context),
-            step_context,
-            cancellation_token: CancellationToken::new(),
-            tracker: Arc::clone(&tracker),
-            call_id: "exec-call".to_string(),
-            tool_name: codex_tools::ToolName::plain("exec_command"),
-            source: crate::tools::context::ToolCallSource::Direct,
-            payload: ToolPayload::Function {
-                arguments: serde_json::json!({
-                    "cmd": "echo hi",
-                    "sandbox_permissions": SandboxPermissions::RequireEscalated,
-                    "justification": "need unsandboxed execution",
-                })
-                .to_string(),
-            },
-        })
-        .await;
-
-    let Err(FunctionCallError::RespondToModel(output)) = resp else {
-        panic!("expected error result");
-    };
-
-    let expected = format!(
-        "approval policy is {policy:?}; reject command — you cannot ask for escalated permissions if the approval policy is {policy:?}",
-        policy = turn_context.approval_policy()
-    );
-
-    pretty_assertions::assert_eq!(output, expected);
 }
 
 #[tokio::test]
