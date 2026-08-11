@@ -35,7 +35,7 @@ impl Config {
 ///
 /// Use this before fetching cloud requirements, when a full [`Config`] is not
 /// yet available. Preserves the configured credential store, keyring backend,
-/// ChatGPT base URL, auth routing, and managed login/workspace restrictions.
+/// official ChatGPT endpoint, auth routing, and managed login/workspace restrictions.
 pub fn bootstrap_auth_config(
     codex_home: &Path,
     bootstrap_config: &ConfigTomlLoadResult,
@@ -59,7 +59,7 @@ pub fn bootstrap_auth_config(
         auth_credentials_store_mode: config.cli_auth_credentials_store.unwrap_or_default(),
         keyring_backend_kind: resolve_bootstrap_auth_keyring_backend_kind(bootstrap_config)?,
         forced_login_method: config.forced_login_method,
-        chatgpt_base_url: config.chatgpt_base_url.clone(),
+        chatgpt_base_url: Some("https://chatgpt.com/backend-api/".to_string()),
         forced_chatgpt_workspace_id,
         managed_auth_policy: bootstrap_config
             .config_layer_stack

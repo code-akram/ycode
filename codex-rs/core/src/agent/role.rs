@@ -31,7 +31,7 @@ const AGENT_TYPE_UNAVAILABLE_ERROR: &str = "agent type is currently not availabl
 /// Applies a named role layer to `config` while preserving caller-owned provider settings.
 ///
 /// The role layer is inserted at session-flag precedence so it can override persisted config, but
-/// the caller's current `model_provider` and `service_tier` remain sticky runtime choices unless
+/// the caller's current `service_tier` remains a sticky runtime choice unless
 /// the role explicitly sets the corresponding top-level config key. Rebuilding the config without
 /// those overrides would make a spawned agent silently fall back to default settings.
 pub(crate) async fn apply_role_to_config(
@@ -104,14 +104,12 @@ async fn apply_role_to_config_inner(
     {
         return Ok(());
     }
-    let preserve_current_provider = role_layer_toml.get("model_provider").is_none();
     let preserve_current_service_tier = role_layer_toml.get("service_tier").is_none();
 
     *config = reload::build_next_config(
         config,
         role_layer_toml,
         developer_instructions,
-        preserve_current_provider,
         preserve_current_service_tier,
     )
     .await?;
@@ -169,7 +167,6 @@ mod reload {
         config: &Config,
         role_layer_toml: TomlValue,
         developer_instructions: RoleDeveloperInstructions,
-        preserve_current_provider: bool,
         preserve_current_service_tier: bool,
     ) -> anyhow::Result<Config> {
         let preserve_current_model = role_layer_toml.get("model").is_none();
@@ -178,7 +175,6 @@ mod reload {
         let mut overrides = reload_overrides(
             config,
             preserve_current_model,
-            preserve_current_provider,
             preserve_current_service_tier,
         );
         if let (RoleDeveloperInstructions::PreserveCallerInstructions, Some(_), None) = (
@@ -253,7 +249,6 @@ mod reload {
     fn reload_overrides(
         config: &Config,
         preserve_current_model: bool,
-        preserve_current_provider: bool,
         preserve_current_service_tier: bool,
     ) -> ConfigOverrides {
         ConfigOverrides {
@@ -261,7 +256,6 @@ mod reload {
             model: preserve_current_model
                 .then(|| config.model.clone())
                 .flatten(),
-            model_provider: preserve_current_provider.then(|| config.model_provider_id.clone()),
             service_tier: preserve_current_service_tier.then(|| config.service_tier.clone()),
             psp: Some(config.psp),
             main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),

@@ -1,5 +1,3 @@
-use crate::config::edit::ConfigEdit;
-use crate::config::edit::ConfigEditsBuilder;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::unified_exec::DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS;
 use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
@@ -23,7 +21,6 @@ use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
 use codex_config::config_toml::ThreadStoreToml;
-use codex_config::config_toml::validate_model_providers;
 use codex_config::loader::load_config_layers_state;
 use codex_config::loader::project_trust_key;
 use codex_config::permissions_toml::PermissionsToml;
@@ -69,11 +66,9 @@ use codex_login::AuthManagerConfig;
 use codex_login::AuthRouteConfig;
 use codex_memories_read::memory_root;
 use codex_model_provider::ProviderCapabilities;
-use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
+use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_model_provider_info::built_in_model_providers;
-use codex_model_provider_info::merge_configured_model_providers;
 use codex_models_manager::ModelsManagerConfig;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
@@ -107,7 +102,6 @@ use http::HeaderValue;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -616,7 +610,7 @@ pub struct Config {
     /// active context or only tokens after the carried compaction-window prefix.
     pub model_auto_compact_token_limit_scope: AutoCompactTokenLimitScope,
 
-    /// Key into the model_providers map that specifies which provider to use.
+    /// Stable identifier for the official OpenAI provider recorded in session metadata.
     pub model_provider_id: String,
 
     /// Info needed to make an API request to the model.
@@ -794,7 +788,6 @@ pub struct Config {
     pub cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
 
     /// Combined provider map (defaults plus user-defined providers).
-    pub model_providers: HashMap<String, ModelProviderInfo>,
 
     /// Maximum number of bytes to include from an AGENTS.md project doc file.
     pub project_doc_max_bytes: usize,
@@ -1959,22 +1952,6 @@ pub fn set_project_trust_level(
         .apply_blocking()
 }
 
-/// Save the default OSS provider preference to config.toml
-pub fn set_default_oss_provider(codex_home: &Path, provider: &str) -> std::io::Result<()> {
-    codex_config::config_toml::validate_oss_provider(provider)?;
-    use toml_edit::value;
-
-    let edits = [ConfigEdit::SetPath {
-        segments: vec!["oss_provider".to_string()],
-        value: value(provider),
-    }];
-
-    ConfigEditsBuilder::new(codex_home)
-        .with_edits(edits)
-        .apply_blocking()
-        .map_err(|err| std::io::Error::other(format!("failed to persist config.toml: {err}")))
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentRoleConfig {
     /// Human-facing role documentation used in spawn tool guidance.
@@ -2212,7 +2189,6 @@ pub struct ConfigOverrides {
     pub sandbox_mode: Option<SandboxMode>,
     pub permission_profile: Option<PermissionProfile>,
     pub default_permissions: Option<String>,
-    pub model_provider: Option<String>,
     pub service_tier: Option<Option<String>>,
     pub codex_self_exe: Option<PathBuf>,
     pub main_execve_wrapper_exe: Option<PathBuf>,
@@ -2235,20 +2211,6 @@ pub struct ConfigOverrides {
 fn dedupe_absolute_paths(paths: &mut Vec<AbsolutePathBuf>) {
     let mut seen = HashSet::new();
     paths.retain(|path| seen.insert(path.clone()));
-}
-
-/// Resolves the OSS provider from CLI override or global config.
-/// Returns `None` if no provider is configured at any level.
-pub fn resolve_oss_provider(
-    explicit_provider: Option<&str>,
-    config_toml: &ConfigToml,
-) -> Option<String> {
-    if let Some(provider) = explicit_provider {
-        // Explicit provider specified (e.g., via --local-provider)
-        Some(provider.to_string())
-    } else {
-        config_toml.oss_provider.clone()
-    }
 }
 
 /// Resolve the web search mode from explicit config and feature flags.
@@ -2833,8 +2795,6 @@ impl Config {
             ));
         }
 
-        validate_model_providers(&cfg.model_providers)
-            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
         let orchestrator = cfg.orchestrator.as_ref();
         let orchestrator_skills_enabled =
             resolve_orchestrator_feature_enabled(orchestrator.and_then(|value| value.skills.as_ref()));
@@ -2886,7 +2846,6 @@ impl Config {
             sandbox_mode,
             permission_profile,
             default_permissions: default_permissions_override,
-            model_provider,
             service_tier: service_tier_override,
             codex_self_exe,
             main_execve_wrapper_exe,
@@ -3017,12 +2976,12 @@ impl Config {
             default_permissions_override.as_deref(),
             permission_config_syntax,
         );
-        let explicit_permission_profile_mode = default_permissions_override.is_some()
+        let _explicit_permission_profile_mode = default_permissions_override.is_some()
             || matches!(
                 permission_config_syntax,
                 Some(PermissionConfigSyntax::Profiles)
             );
-        let custom_permission_profiles: Vec<PermissionProfileCatalogEntry> =
+        let _custom_permission_profiles: Vec<PermissionProfileCatalogEntry> =
             permission_profile_catalog_from_permissions(
             &config_layer_stack,
             effective_permission_selection.profiles.as_ref(),
@@ -3283,29 +3242,9 @@ impl Config {
             agent_roles::load_agent_roles(fs, &cfg, &config_layer_stack, &mut startup_warnings)
                 .await?;
 
-        let openai_base_url = cfg
-            .openai_base_url
-            .clone()
-            .filter(|value| !value.is_empty());
-
-        let model_providers =
-            merge_configured_model_providers(built_in_model_providers(openai_base_url), cfg.model_providers)
-                .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
-
-        let model_provider_id = model_provider
-            .or(cfg.model_provider)
-            .unwrap_or_else(|| "openai".to_string());
-        let model_provider = model_providers
-            .get(&model_provider_id)
-            .ok_or_else(|| {
-                let message = if model_provider_id == LEGACY_OLLAMA_CHAT_PROVIDER_ID {
-                    OLLAMA_CHAT_PROVIDER_REMOVED_ERROR.to_string()
-                } else {
-                    format!("Model provider `{model_provider_id}` not found")
-                };
-                std::io::Error::new(std::io::ErrorKind::NotFound, message)
-            })?
-            .clone();
+        let model_providers = built_in_model_providers();
+        let model_provider_id = OPENAI_PROVIDER_ID.to_string();
+        let model_provider = model_providers[OPENAI_PROVIDER_ID].clone();
 
         let shell_environment_policy = cfg.shell_environment_policy.into();
         let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);
@@ -3469,7 +3408,7 @@ impl Config {
             .or(file_base_instructions)
             .or(cfg.instructions.clone());
         let developer_instructions = developer_instructions.or(cfg.developer_instructions);
-        let include_permissions_instructions = cfg.include_permissions_instructions.unwrap_or(true);
+        let _include_permissions_instructions = cfg.include_permissions_instructions.unwrap_or(true);
         let include_skill_instructions = cfg
             .skills
             .as_ref()
@@ -3589,7 +3528,7 @@ impl Config {
         )?;
 
         let network_permission_profile = constrained_permission_profile.get().clone();
-        let network = build_network_proxy_spec(
+        let _network = build_network_proxy_spec(
             configured_network_proxy_config,
             network_requirements,
             &network_permission_profile,
@@ -3630,7 +3569,7 @@ impl Config {
             .value
             .set(effective_permission_profile)
             .map_err(std::io::Error::from)?;
-        let permission_profile_state = PermissionProfileState::from_constrained_active_profile(
+        let _permission_profile_state = PermissionProfileState::from_constrained_active_profile(
             constrained_permission_profile.value,
             active_permission_profile,
             profile_workspace_roots,
@@ -3683,7 +3622,6 @@ impl Config {
                 cfg.cli_auth_credentials_store.unwrap_or_default(),
                 env!("CARGO_PKG_VERSION"),
             ),
-            model_providers,
             project_doc_max_bytes: cfg.project_doc_max_bytes.unwrap_or(AGENTS_MD_MAX_BYTES),
             project_doc_fallback_filenames: cfg
                 .project_doc_fallback_filenames
@@ -3747,9 +3685,7 @@ impl Config {
             model_reasoning_summary: cfg.model_reasoning_summary,
             model_catalog,
             model_verbosity: cfg.model_verbosity,
-            chatgpt_base_url: cfg
-                .chatgpt_base_url
-                .unwrap_or("https://chatgpt.com/backend-api/".to_string()),
+            chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
             respect_system_proxy,
             psp: psp.unwrap_or_default(),
             realtime_audio: cfg
@@ -3758,9 +3694,8 @@ impl Config {
                     microphone: audio.microphone,
                     speaker: audio.speaker,
                 }),
-            experimental_realtime_ws_base_url: cfg.experimental_realtime_ws_base_url,
-            experimental_realtime_webrtc_call_base_url: cfg
-                .experimental_realtime_webrtc_call_base_url,
+            experimental_realtime_ws_base_url: None,
+            experimental_realtime_webrtc_call_base_url: None,
             experimental_realtime_ws_model: cfg.experimental_realtime_ws_model,
             realtime: cfg
                 .realtime

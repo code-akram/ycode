@@ -448,13 +448,10 @@ fn image_generation_available(turn_context: &TurnContext) -> bool {
         return false;
     }
 
-    let provider = turn_context.provider.info();
-    provider.uses_openai_actor_authorization()
-        || (provider.requires_openai_auth
-            && turn_context
-                .auth_manager
-                .as_deref()
-                .is_some_and(AuthManager::current_auth_uses_codex_backend))
+    turn_context
+        .auth_manager
+        .as_deref()
+        .is_some_and(AuthManager::current_auth_uses_codex_backend)
 }
 
 fn wait_agent_timeout_options(turn_context: &TurnContext) -> WaitAgentTimeoutOptions {

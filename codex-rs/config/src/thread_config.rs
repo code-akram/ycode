@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
 use crate::ConfigLayerSource;
-use codex_model_provider_info::ModelProviderInfo;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use thiserror::Error;
 use toml::Value as TomlValue;
@@ -25,8 +23,6 @@ pub struct ThreadConfigContext {
 /// Config values owned by the service that starts or manages the session.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SessionThreadConfig {
-    pub model_provider: Option<String>,
-    pub model_providers: HashMap<String, ModelProviderInfo>,
     pub features: BTreeMap<String, bool>,
 }
 
@@ -178,24 +174,6 @@ fn session_thread_config_to_toml(
 ) -> Result<TomlValue, ThreadConfigLoadError> {
     let mut table = toml::map::Map::new();
 
-    if let Some(model_provider) = config.model_provider {
-        table.insert(
-            "model_provider".to_string(),
-            TomlValue::String(model_provider),
-        );
-    }
-
-    if !config.model_providers.is_empty() {
-        let model_providers = TomlValue::try_from(config.model_providers).map_err(|err| {
-            ThreadConfigLoadError::new(
-                ThreadConfigLoadErrorCode::Parse,
-                /*status_code*/ None,
-                format!("failed to convert session model providers to config TOML: {err}"),
-            )
-        })?;
-        table.insert("model_providers".to_string(), model_providers);
-    }
-
     if !config.features.is_empty() {
         let features = config
             .features
@@ -210,8 +188,6 @@ fn session_thread_config_to_toml(
 
 #[cfg(test)]
 mod tests {
-    use codex_model_provider_info::ModelProviderInfo;
-    use codex_model_provider_info::WireApi;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -220,8 +196,6 @@ mod tests {
     async fn loader_returns_session_and_user_sources() {
         let loader = StaticThreadConfigLoader::new(vec![
             ThreadConfigSource::Session(SessionThreadConfig {
-                model_provider: Some("local".to_string()),
-                model_providers: HashMap::from([("local".to_string(), test_provider("local"))]),
                 features: BTreeMap::from([("plugins".to_string(), false)]),
             }),
             ThreadConfigSource::User(UserThreadConfig::default()),
@@ -239,8 +213,6 @@ mod tests {
             sources,
             vec![
                 ThreadConfigSource::Session(SessionThreadConfig {
-                    model_provider: Some("local".to_string()),
-                    model_providers: HashMap::from([("local".to_string(), test_provider("local"))]),
                     features: BTreeMap::from([("plugins".to_string(), false)]),
                 }),
                 ThreadConfigSource::User(UserThreadConfig::default()),
@@ -253,8 +225,6 @@ mod tests {
         let loader = StaticThreadConfigLoader::new(vec![
             ThreadConfigSource::User(UserThreadConfig::default()),
             ThreadConfigSource::Session(SessionThreadConfig {
-                model_provider: Some("local".to_string()),
-                model_providers: HashMap::from([("local".to_string(), test_provider("local"))]),
                 features: BTreeMap::from([("plugins".to_string(), false)]),
             }),
         ]);
@@ -276,44 +246,11 @@ mod tests {
             vec![ConfigLayerEntry::new(
                 ConfigLayerSource::SessionFlags,
                 toml::toml! {
-                    model_provider = "local"
-
-                    [model_providers.local]
-                    name = "local"
-                    base_url = "http://127.0.0.1:8061/api/codex"
-                    wire_api = "responses"
-                    requires_openai_auth = false
-                    supports_websockets = true
-                    supports_standalone_web_search = true
-
                     [features]
                     plugins = false
                 }
                 .into()
             )]
         );
-    }
-
-    fn test_provider(name: &str) -> ModelProviderInfo {
-        ModelProviderInfo {
-            name: name.to_string(),
-            base_url: Some("http://127.0.0.1:8061/api/codex".to_string()),
-            env_key: None,
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            auth: None,
-            aws: None,
-            wire_api: WireApi::Responses,
-            query_params: None,
-            http_headers: None,
-            env_http_headers: None,
-            request_max_retries: None,
-            stream_max_retries: None,
-            stream_idle_timeout_ms: None,
-            websocket_connect_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: true,
-            supports_standalone_web_search: true,
-        }
     }
 }

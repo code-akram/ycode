@@ -1,12 +1,5 @@
 use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::num::NonZeroU64;
 use std::time::Duration;
-
-use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::WireApi;
-use codex_protocol::config_types::ModelProviderAuthInfo;
-use codex_utils_absolute_path::AbsolutePathBuf;
 
 use super::SessionThreadConfig;
 use super::ThreadConfigContext;
@@ -135,164 +128,9 @@ fn thread_config_source_from_proto(
 fn session_thread_config_from_proto(
     config: proto::SessionThreadConfig,
 ) -> Result<SessionThreadConfig, ThreadConfigLoadError> {
-    let model_providers = config
-        .model_providers
-        .into_iter()
-        .map(model_provider_from_proto)
-        .collect::<Result<HashMap<_, _>, _>>()?;
-
     Ok(SessionThreadConfig {
-        model_provider: config.model_provider,
-        model_providers,
         features: config.features.into_iter().collect::<BTreeMap<_, _>>(),
     })
-}
-
-fn model_provider_from_proto(
-    provider: proto::ModelProvider,
-) -> Result<(String, ModelProviderInfo), ThreadConfigLoadError> {
-    if provider.id.is_empty() {
-        return Err(parse_error(
-            "remote thread config returned model provider without an id",
-        ));
-    }
-    let id = provider.id;
-    let wire_api = match proto::WireApi::try_from(provider.wire_api) {
-        Ok(proto::WireApi::Responses) => WireApi::Responses,
-        Ok(proto::WireApi::Unspecified) => {
-            return Err(parse_error("remote thread config omitted wire_api"));
-        }
-        Err(_) => {
-            return Err(parse_error(format!(
-                "remote thread config returned unknown wire_api: {}",
-                provider.wire_api
-            )));
-        }
-    };
-    let info = ModelProviderInfo {
-        name: provider.name,
-        base_url: provider.base_url,
-        env_key: provider.env_key,
-        env_key_instructions: provider.env_key_instructions,
-        experimental_bearer_token: provider.experimental_bearer_token,
-        auth: provider
-            .auth
-            .map(model_provider_auth_from_proto)
-            .transpose()?,
-        aws: None,
-        wire_api,
-        query_params: provider.query_params.map(|map| map.values),
-        http_headers: provider.http_headers.map(|map| map.values),
-        env_http_headers: provider.env_http_headers.map(|map| map.values),
-        request_max_retries: provider.request_max_retries,
-        stream_max_retries: provider.stream_max_retries,
-        stream_idle_timeout_ms: provider.stream_idle_timeout_ms,
-        websocket_connect_timeout_ms: provider.websocket_connect_timeout_ms,
-        requires_openai_auth: provider.requires_openai_auth,
-        supports_websockets: provider.supports_websockets,
-        supports_standalone_web_search: provider.supports_standalone_web_search,
-    };
-    Ok((id, info))
-}
-
-#[cfg(test)]
-fn model_provider_to_proto(
-    id: impl Into<String>,
-    provider: ModelProviderInfo,
-) -> proto::ModelProvider {
-    let ModelProviderInfo {
-        name,
-        base_url,
-        env_key,
-        env_key_instructions,
-        experimental_bearer_token,
-        auth,
-        aws: _,
-        wire_api,
-        query_params,
-        http_headers,
-        env_http_headers,
-        request_max_retries,
-        stream_max_retries,
-        stream_idle_timeout_ms,
-        websocket_connect_timeout_ms,
-        requires_openai_auth,
-        supports_websockets,
-        supports_standalone_web_search,
-    } = provider;
-
-    proto::ModelProvider {
-        id: id.into(),
-        name,
-        base_url,
-        env_key,
-        env_key_instructions,
-        experimental_bearer_token,
-        auth: auth.map(model_provider_auth_to_proto),
-        wire_api: proto_wire_api(wire_api).into(),
-        query_params: query_params.map(proto_string_map),
-        http_headers: http_headers.map(proto_string_map),
-        env_http_headers: env_http_headers.map(proto_string_map),
-        request_max_retries,
-        stream_max_retries,
-        stream_idle_timeout_ms,
-        websocket_connect_timeout_ms,
-        requires_openai_auth,
-        supports_websockets,
-        supports_standalone_web_search,
-    }
-}
-
-fn model_provider_auth_from_proto(
-    auth: proto::ModelProviderAuthInfo,
-) -> Result<ModelProviderAuthInfo, ThreadConfigLoadError> {
-    let timeout_ms = NonZeroU64::new(auth.timeout_ms)
-        .ok_or_else(|| parse_error("remote thread config returned zero auth timeout_ms"))?;
-    let cwd = AbsolutePathBuf::from_absolute_path_checked(&auth.cwd).map_err(|err| {
-        parse_error(format!(
-            "remote thread config returned invalid auth cwd {:?}: {err}",
-            auth.cwd
-        ))
-    })?;
-
-    Ok(ModelProviderAuthInfo {
-        command: auth.command,
-        args: auth.args,
-        timeout_ms,
-        refresh_interval_ms: auth.refresh_interval_ms,
-        cwd,
-    })
-}
-
-#[cfg(test)]
-fn model_provider_auth_to_proto(auth: ModelProviderAuthInfo) -> proto::ModelProviderAuthInfo {
-    let ModelProviderAuthInfo {
-        command,
-        args,
-        timeout_ms,
-        refresh_interval_ms,
-        cwd,
-    } = auth;
-
-    proto::ModelProviderAuthInfo {
-        command,
-        args,
-        timeout_ms: timeout_ms.get(),
-        refresh_interval_ms,
-        cwd: cwd.to_string_lossy().into_owned(),
-    }
-}
-
-#[cfg(test)]
-fn proto_string_map(values: HashMap<String, String>) -> proto::StringMap {
-    proto::StringMap { values }
-}
-
-#[cfg(test)]
-fn proto_wire_api(wire_api: WireApi) -> proto::WireApi {
-    match wire_api {
-        WireApi::Responses => proto::WireApi::Responses,
-    }
 }
 
 fn parse_error(message: impl Into<String>) -> ThreadConfigLoadError {
@@ -307,11 +145,7 @@ fn parse_error(message: impl Into<String>) -> ThreadConfigLoadError {
 mod tests {
     use std::collections::BTreeMap;
     use std::collections::HashMap;
-    use std::num::NonZeroU64;
 
-    use codex_model_provider_info::ModelProviderInfo;
-    use codex_model_provider_info::WireApi;
-    use codex_protocol::config_types::ModelProviderAuthInfo;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use tonic::Request;
@@ -420,79 +254,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn model_provider_proto_roundtrips_through_domain_type() {
-        let expected = expected_provider();
-        let proto = model_provider_to_proto("local", expected.clone());
-        assert!(proto.supports_standalone_web_search);
-        let (id, actual) = model_provider_from_proto(proto).expect("model provider from proto");
-
-        assert_eq!(id, "local");
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn model_provider_proto_defaults_standalone_web_search_to_false() {
-        let expected = ModelProviderInfo {
-            supports_standalone_web_search: false,
-            ..expected_provider()
-        };
-        let proto = model_provider_to_proto("local", expected.clone());
-        assert!(!proto.supports_standalone_web_search);
-        let (id, actual) = model_provider_from_proto(proto).expect("model provider from proto");
-
-        assert_eq!(id, "local");
-        assert_eq!(actual, expected);
-    }
-
     fn proto_sources() -> Vec<proto::ThreadConfigSource> {
-        let workspace_cwd = workspace_dir().to_string_lossy().into_owned();
         vec![
             proto::ThreadConfigSource {
                 source: Some(proto::thread_config_source::Source::Session(
                     proto::SessionThreadConfig {
-                        model_provider: Some("local".to_string()),
-                        model_providers: vec![proto::ModelProvider {
-                            id: "local".to_string(),
-                            name: "Local".to_string(),
-                            base_url: Some("http://127.0.0.1:8061/api/codex".to_string()),
-                            env_key: None,
-                            env_key_instructions: None,
-                            experimental_bearer_token: None,
-                            auth: Some(proto::ModelProviderAuthInfo {
-                                command: "token-helper".to_string(),
-                                args: vec!["--json".to_string()],
-                                timeout_ms: 5_000,
-                                refresh_interval_ms: 300_000,
-                                cwd: workspace_cwd,
-                            }),
-                            wire_api: proto::WireApi::Responses.into(),
-                            query_params: Some(proto::StringMap {
-                                values: HashMap::from([(
-                                    "api-version".to_string(),
-                                    "2026-04-16".to_string(),
-                                )]),
-                            }),
-                            http_headers: Some(proto::StringMap {
-                                values: HashMap::from([(
-                                    "X-Test".to_string(),
-                                    "enabled".to_string(),
-                                )]),
-                            }),
-                            env_http_headers: Some(proto::StringMap {
-                                values: HashMap::from([(
-                                    "X-Env".to_string(),
-                                    "LOCAL_HEADER".to_string(),
-                                )]),
-                            }),
-                            request_max_retries: Some(7),
-                            stream_max_retries: Some(8),
-                            stream_idle_timeout_ms: Some(9_000),
-                            websocket_connect_timeout_ms: Some(10_000),
-                            requires_openai_auth: false,
-                            supports_websockets: true,
-                            supports_standalone_web_search: true,
-                        }],
                         features: HashMap::from([
                             ("plugins".to_string(), false),
                             ("tools".to_string(), true),
@@ -511,8 +277,6 @@ mod tests {
     fn expected_sources() -> Vec<ThreadConfigSource> {
         vec![
             ThreadConfigSource::Session(SessionThreadConfig {
-                model_provider: Some("local".to_string()),
-                model_providers: HashMap::from([("local".to_string(), expected_provider())]),
                 features: BTreeMap::from([
                     ("plugins".to_string(), false),
                     ("tools".to_string(), true),
@@ -520,44 +284,6 @@ mod tests {
             }),
             ThreadConfigSource::User(UserThreadConfig::default()),
         ]
-    }
-
-    fn expected_provider() -> ModelProviderInfo {
-        ModelProviderInfo {
-            name: "Local".to_string(),
-            base_url: Some("http://127.0.0.1:8061/api/codex".to_string()),
-            env_key: None,
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            auth: Some(ModelProviderAuthInfo {
-                command: "token-helper".to_string(),
-                args: vec!["--json".to_string()],
-                timeout_ms: NonZeroU64::new(5_000).expect("non-zero timeout"),
-                refresh_interval_ms: 300_000,
-                cwd: workspace_dir(),
-            }),
-            wire_api: WireApi::Responses,
-            query_params: Some(HashMap::from([(
-                "api-version".to_string(),
-                "2026-04-16".to_string(),
-            )])),
-            http_headers: Some(HashMap::from([(
-                "X-Test".to_string(),
-                "enabled".to_string(),
-            )])),
-            env_http_headers: Some(HashMap::from([(
-                "X-Env".to_string(),
-                "LOCAL_HEADER".to_string(),
-            )])),
-            request_max_retries: Some(7),
-            stream_max_retries: Some(8),
-            stream_idle_timeout_ms: Some(9_000),
-            websocket_connect_timeout_ms: Some(10_000),
-            requires_openai_auth: false,
-            supports_websockets: true,
-            supports_standalone_web_search: true,
-            aws: None,
-        }
     }
 
     fn workspace_dir() -> AbsolutePathBuf {

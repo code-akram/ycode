@@ -259,18 +259,10 @@ pub(crate) enum ThreadParamsMode {
 /// Determines where model settings come from when resuming a thread.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ResumeModelSettings {
-    /// Sends the current config's model, provider, and reasoning effort as explicit overrides.
+    /// Sends the current config's model and reasoning effort as explicit overrides.
     OverrideFromCurrentConfig,
     /// Omits those overrides so cli-runtime restores the settings saved with the thread.
     RestoreFromThread,
-}
-
-impl ThreadParamsMode {
-    fn model_provider_from_config(self, config: &Config) -> Option<String> {
-        match self {
-            Self::Embedded => Some(config.model_provider_id.clone()),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -413,9 +405,6 @@ impl CliRuntimeSession {
                     feedback_audience,
                     true,
                 )
-            }
-            Some(Account::AmazonBedrock { .. }) => {
-                (None, None, None, None, FeedbackAudience::External, false)
             }
             None => (None, None, None, None, FeedbackAudience::External, false),
         };
@@ -1328,7 +1317,7 @@ pub(crate) fn status_account_display_from_auth_mode(
             email: None,
             plan: plan_type.map(plan_type_display_name),
         }),
-        Some(AuthMode::Headers) | Some(AuthMode::BedrockApiKey) => None,
+        Some(AuthMode::Headers) => None,
         None => None,
     }
 }
@@ -1445,7 +1434,6 @@ fn thread_start_params_from_config(
 ) -> ThreadStartParams {
     ThreadStartParams {
         model: config.model.clone(),
-        model_provider: thread_params_mode.model_provider_from_config(config),
         service_tier: service_tier_override_from_config(config),
         cwd: thread_cwd_from_config(config, thread_params_mode, remote_cwd_override),
         runtime_workspace_roots: Some(config.workspace_roots.clone()),
@@ -1477,17 +1465,13 @@ fn thread_resume_params_from_config(
             config_overrides = None;
         }
     }
-    let (model, model_provider) = match model_settings {
-        ResumeModelSettings::OverrideFromCurrentConfig => (
-            config.model.clone(),
-            thread_params_mode.model_provider_from_config(&config),
-        ),
-        ResumeModelSettings::RestoreFromThread => (None, None),
+    let model = match model_settings {
+        ResumeModelSettings::OverrideFromCurrentConfig => config.model.clone(),
+        ResumeModelSettings::RestoreFromThread => None,
     };
     ThreadResumeParams {
         thread_id: thread_id.to_string(),
         model,
-        model_provider,
         service_tier: service_tier_override_from_config(&config),
         cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
         runtime_workspace_roots: Some(config.workspace_roots.clone()),
@@ -1508,7 +1492,6 @@ fn thread_fork_params_from_config(
     ThreadForkParams {
         thread_id: thread_id.to_string(),
         model: config.model.clone(),
-        model_provider: thread_params_mode.model_provider_from_config(&config),
         service_tier: service_tier_override_from_config(&config),
         cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
         runtime_workspace_roots: Some(config.workspace_roots.clone()),

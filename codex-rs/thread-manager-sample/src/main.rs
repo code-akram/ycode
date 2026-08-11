@@ -171,7 +171,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
     let codex_home = find_codex_home().context("find Codex home")?;
     let cwd = AbsolutePathBuf::current_dir().context("resolve current directory")?;
     let model_provider_id = OPENAI_PROVIDER_ID.to_string();
-    let model_providers = built_in_model_providers(/*openai_base_url*/ None);
+    let model_providers = built_in_model_providers();
     let model_provider = model_providers
         .get(&model_provider_id)
         .context("OpenAI model provider should be available")?

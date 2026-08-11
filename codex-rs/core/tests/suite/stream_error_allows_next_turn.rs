@@ -1,5 +1,4 @@
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::WireApi;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
@@ -60,28 +59,12 @@ async fn continue_after_stream_error() {
         .mount(&server)
         .await;
 
-    // Configure a provider that uses the Responses API and points at our mock
-    // server. Use an existing env var (PATH) to satisfy the auth plumbing
-    // without requiring a real secret.
     let provider = ModelProviderInfo {
-        name: "mock-openai".into(),
-        base_url: Some(format!("{}/v1", server.uri())),
-        env_key: Some("PATH".into()),
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        aws: None,
-        wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
         request_max_retries: Some(1),
         stream_max_retries: Some(1),
         stream_idle_timeout_ms: Some(2_000),
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
         supports_websockets: false,
-        supports_standalone_web_search: false,
+        ..ModelProviderInfo::create_openai_provider(Some(format!("{}/v1", server.uri())))
     };
 
     let TestCodex { codex, .. } = test_codex()

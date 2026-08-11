@@ -32,7 +32,6 @@ use codex_login::CodexAuth;
 use codex_login::default_client::add_originator_header;
 use codex_login::default_client::default_headers;
 use codex_login::read_openai_api_key_from_env;
-use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
@@ -1187,7 +1186,7 @@ async fn prepare_realtime_start(
     let originator = sess.originator().await;
     let mut extra_headers = match transport {
         ConversationStartTransport::Websocket => {
-            let realtime_api_key = realtime_api_key(auth.as_ref(), &provider)?;
+            let realtime_api_key = realtime_api_key(auth.as_ref())?;
             realtime_request_headers(
                 requested_realtime_session_id.as_deref(),
                 Some(realtime_api_key.as_str()),
@@ -1618,24 +1617,14 @@ fn wrap_realtime_delegation_input(
     RealtimeDelegation::new(input, transcript_delta, source).render()
 }
 
-fn realtime_api_key(auth: Option<&CodexAuth>, provider: &ModelProviderInfo) -> CodexResult<String> {
-    if let Some(api_key) = provider.api_key()? {
-        return Ok(api_key);
-    }
-
-    if let Some(token) = provider.experimental_bearer_token.clone() {
-        return Ok(token);
-    }
-
+fn realtime_api_key(auth: Option<&CodexAuth>) -> CodexResult<String> {
     if let Some(api_key) = auth.and_then(CodexAuth::api_key) {
         return Ok(api_key.to_string());
     }
 
     // TODO(aibrahim): Remove this temporary fallback once realtime auth no longer
     // requires API key auth for ChatGPT/SIWC sessions.
-    if provider.is_openai()
-        && let Some(api_key) = read_openai_api_key_from_env()
-    {
+    if let Some(api_key) = read_openai_api_key_from_env() {
         return Ok(api_key);
     }
 

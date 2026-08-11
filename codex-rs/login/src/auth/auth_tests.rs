@@ -10,7 +10,6 @@ use codex_protocol::protocol::SessionSource;
 
 use base64::Engine;
 use codex_protocol::config_types::ForcedLoginMethod;
-use codex_protocol::config_types::ModelProviderAuthInfo;
 use pretty_assertions::assert_eq;
 use serde::Serialize;
 use serde_json::json;
@@ -195,7 +194,6 @@ async fn stored_agent_identity_jwt_keeps_auth_json_unchanged() -> anyhow::Result
             last_refresh: None,
             agent_identity: Some(AgentIdentityStorage::Jwt(agent_identity.clone())),
             personal_access_token: None,
-            bedrock_api_key: None,
         },
         AuthCredentialsStoreMode::File,
         AuthKeyringBackendKind::Direct,
@@ -274,7 +272,6 @@ async fn login_with_access_token_writes_only_personal_access_token() {
             last_refresh: None,
             agent_identity: None,
             personal_access_token: Some("at-login-test".to_string()),
-            bedrock_api_key: None,
         }
     );
     assert_eq!(auth.resolved_mode(), AuthMode::PersonalAccessToken);
@@ -891,7 +888,6 @@ async fn pro_account_with_no_api_key_uses_chatgpt_auth() {
             last_refresh: Some(last_refresh),
             agent_identity: None,
             personal_access_token: None,
-            bedrock_api_key: None,
         },
         auth_dot_json
     );
@@ -939,7 +935,6 @@ fn logout_removes_auth_file() -> Result<(), std::io::Error> {
         last_refresh: None,
         agent_identity: None,
         personal_access_token: None,
-        bedrock_api_key: None,
     };
     super::save_auth(
         dir.path(),
@@ -1052,84 +1047,6 @@ async fn refresh_failure_is_scoped_to_the_matching_auth_snapshot() {
     assert_eq!(manager.refresh_failure_for_auth(&updated_auth), None);
 }
 
-#[tokio::test]
-async fn external_bearer_only_auth_manager_uses_cached_provider_token() {
-    let script = ProviderAuthScript::new(&["provider-token", "next-token"]).unwrap();
-    let manager = AuthManager::external_bearer_only(script.auth_config());
-
-    let first = manager
-        .auth()
-        .await
-        .and_then(|auth| auth.api_key().map(str::to_string));
-    let second = manager
-        .auth()
-        .await
-        .and_then(|auth| auth.api_key().map(str::to_string));
-
-    assert_eq!(first.as_deref(), Some("provider-token"));
-    assert_eq!(second.as_deref(), Some("provider-token"));
-    assert_eq!(manager.auth_mode(), Some(AuthMode::ApiKey));
-    assert_eq!(manager.get_api_auth_mode(), Some(AuthMode::ApiKey));
-}
-
-#[tokio::test]
-async fn external_bearer_only_auth_manager_disables_auto_refresh_when_interval_is_zero() {
-    let script = ProviderAuthScript::new(&["provider-token", "next-token"]).unwrap();
-    let mut auth_config = script.auth_config();
-    auth_config.refresh_interval_ms = 0;
-    let manager = AuthManager::external_bearer_only(auth_config);
-
-    let first = manager
-        .auth()
-        .await
-        .and_then(|auth| auth.api_key().map(str::to_string));
-    let second = manager
-        .auth()
-        .await
-        .and_then(|auth| auth.api_key().map(str::to_string));
-
-    assert_eq!(first.as_deref(), Some("provider-token"));
-    assert_eq!(second.as_deref(), Some("provider-token"));
-}
-
-#[tokio::test]
-async fn external_bearer_only_auth_manager_returns_none_when_command_fails() {
-    let script = ProviderAuthScript::new_failing().unwrap();
-    let manager = AuthManager::external_bearer_only(script.auth_config());
-
-    assert_eq!(manager.auth().await, None);
-}
-
-#[tokio::test]
-async fn unauthorized_recovery_uses_external_refresh_for_bearer_manager() {
-    let script = ProviderAuthScript::new(&["provider-token", "refreshed-provider-token"]).unwrap();
-    let mut auth_config = script.auth_config();
-    auth_config.refresh_interval_ms = 0;
-    let manager = AuthManager::external_bearer_only(auth_config);
-    let mut recovery = manager.unauthorized_recovery();
-    let initial_token = manager
-        .auth()
-        .await
-        .and_then(|auth| auth.api_key().map(str::to_string));
-
-    assert!(recovery.has_next());
-    assert_eq!(recovery.mode_name(), "external");
-    assert_eq!(recovery.step_name(), "external_refresh");
-
-    let result = recovery
-        .next()
-        .await
-        .expect("external refresh should succeed");
-
-    assert_eq!(result.auth_state_changed(), Some(true));
-    let refreshed_token = manager
-        .auth()
-        .await
-        .and_then(|auth| auth.api_key().map(str::to_string));
-    assert_eq!(initial_token.as_deref(), Some("provider-token"));
-    assert_eq!(refreshed_token.as_deref(), Some("refreshed-provider-token"));
-}
-
 #[derive(Clone)]
 struct StaticExternalAuth(CodexAuth);
 
@@ -1180,134 +1097,6 @@ async fn external_auth_provider_can_install_headers() {
             .auth_cached()
             .is_some_and(|auth| auth.is_chatgpt_auth())
     );
-}
-
-struct ProviderAuthScript {
-    tempdir: TempDir,
-    command: String,
-    args: Vec<String>,
-}
-
-impl ProviderAuthScript {
-    fn new(tokens: &[&str]) -> std::io::Result<Self> {
-        let tempdir = tempfile::tempdir()?;
-        let token_file = tempdir.path().join("tokens.txt");
-        // `cmd.exe`'s `set /p` treats LF-only input as one line, so use CRLF on Windows.
-        let token_line_ending = if cfg!(windows) { "\r\n" } else { "\n" };
-        let mut token_file_contents = String::new();
-        for token in tokens {
-            token_file_contents.push_str(token);
-            token_file_contents.push_str(token_line_ending);
-        }
-        std::fs::write(&token_file, token_file_contents)?;
-
-        #[cfg(unix)]
-        let (command, args) = {
-            let script_path = tempdir.path().join("print-token.sh");
-            std::fs::write(
-                &script_path,
-                r#"#!/bin/sh
-first_line=$(sed -n '1p' tokens.txt)
-printf '%s\n' "$first_line"
-tail -n +2 tokens.txt > tokens.next
-mv tokens.next tokens.txt
-"#,
-            )?;
-            let mut permissions = std::fs::metadata(&script_path)?.permissions();
-            {
-                use std::os::unix::fs::PermissionsExt;
-                permissions.set_mode(0o755);
-            }
-            std::fs::set_permissions(&script_path, permissions)?;
-            ("./print-token.sh".to_string(), Vec::new())
-        };
-
-        #[cfg(windows)]
-        let (command, args) = {
-            let script_path = tempdir.path().join("print-token.cmd");
-            std::fs::write(
-                &script_path,
-                r#"@echo off
-setlocal EnableExtensions DisableDelayedExpansion
-set "first_line="
-<tokens.txt set /p "first_line="
-if not defined first_line exit /b 1
-setlocal EnableDelayedExpansion
-echo(!first_line!
-endlocal
-more +1 tokens.txt > tokens.next
-move /y tokens.next tokens.txt >nul
-"#,
-            )?;
-            (
-                "cmd.exe".to_string(),
-                vec![
-                    "/d".to_string(),
-                    "/s".to_string(),
-                    "/c".to_string(),
-                    ".\\print-token.cmd".to_string(),
-                ],
-            )
-        };
-
-        Ok(Self {
-            tempdir,
-            command,
-            args,
-        })
-    }
-
-    fn new_failing() -> std::io::Result<Self> {
-        let tempdir = tempfile::tempdir()?;
-
-        #[cfg(unix)]
-        let (command, args) = {
-            let script_path = tempdir.path().join("fail.sh");
-            std::fs::write(
-                &script_path,
-                r#"#!/bin/sh
-exit 1
-"#,
-            )?;
-            let mut permissions = std::fs::metadata(&script_path)?.permissions();
-            {
-                use std::os::unix::fs::PermissionsExt;
-                permissions.set_mode(0o755);
-            }
-            std::fs::set_permissions(&script_path, permissions)?;
-            ("./fail.sh".to_string(), Vec::new())
-        };
-
-        #[cfg(windows)]
-        let (command, args) = (
-            "cmd.exe".to_string(),
-            vec![
-                "/d".to_string(),
-                "/s".to_string(),
-                "/c".to_string(),
-                "exit /b 1".to_string(),
-            ],
-        );
-
-        Ok(Self {
-            tempdir,
-            command,
-            args,
-        })
-    }
-
-    fn auth_config(&self) -> ModelProviderAuthInfo {
-        serde_json::from_value(json!({
-            "command": self.command,
-            "args": self.args,
-            // Process startup can be slow on loaded Windows CI workers, so leave enough slack to
-            // avoid turning these auth-cache assertions into a process-launch timing test.
-            "timeout_ms": 10_000,
-            "refresh_interval_ms": 60000,
-            "cwd": self.tempdir.path(),
-        }))
-        .expect("provider auth config should deserialize")
-    }
 }
 
 struct AuthFileParams {
@@ -1828,7 +1617,6 @@ async fn workspace_policy_rejects_agent_identity_before_hydration() {
                 last_refresh: None,
                 agent_identity: Some(stored_agent_identity),
                 personal_access_token: None,
-                bedrock_api_key: None,
             },
             AuthCredentialsStoreMode::File,
             AuthKeyringBackendKind::Direct,
@@ -2065,7 +1853,6 @@ async fn enforce_login_restrictions_logs_out_for_agent_identity_workspace_mismat
             last_refresh: None,
             agent_identity: Some(AgentIdentityStorage::Jwt(agent_identity)),
             personal_access_token: None,
-            bedrock_api_key: None,
         },
         AuthCredentialsStoreMode::File,
         AuthKeyringBackendKind::default(),

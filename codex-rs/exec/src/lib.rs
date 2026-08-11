@@ -56,7 +56,6 @@ use codex_core::config::ConfigOverrides;
 use codex_core::config::ConfigTomlLoadResult;
 use codex_core::config::find_codex_home;
 use codex_core::config::load_config_toml_with_layer_stack;
-use codex_core::config::resolve_oss_provider;
 use codex_core::config::resolve_profile_v2_config_path;
 use codex_core::find_thread_meta_by_name_str;
 use codex_core::path_utils;
@@ -66,8 +65,6 @@ use codex_git_utils::get_git_repo_root;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::default_client::set_default_originator;
 use codex_login::enforce_login_restrictions;
-use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
-use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_otel::set_parent_from_context;
 use codex_otel::traceparent_context_from_env;
 use codex_protocol::SessionId;
@@ -80,8 +77,6 @@ use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::canonicalize_existing_preserving_symlinks;
 use codex_utils_cli::SharedCliOptions;
-use codex_utils_oss::ensure_oss_provider_ready;
-use codex_utils_oss::get_default_model_for_oss_provider;
 use event_processor_with_human_output::EventProcessorWithHumanOutput;
 pub use event_processor_with_jsonl_output::CodexStatus;
 pub use event_processor_with_jsonl_output::CollectedThreadEvents;
@@ -183,8 +178,6 @@ struct ExecRunArgs {
     images: Vec<PathBuf>,
     json_mode: bool,
     last_message_file: Option<PathBuf>,
-    model_provider: Option<String>,
-    oss: bool,
     output_schema_path: Option<PathBuf>,
     prompt: Option<String>,
     skip_git_repo_check: bool,
@@ -232,8 +225,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let SharedCliOptions {
         images,
         model: model_cli_arg,
-        oss,
-        oss_provider,
         config_profile_v2,
         cwd,
     } = shared;
@@ -297,63 +288,19 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         CloudConfigBundleLoader::default(),
     )
     .await;
-    let bootstrap_config_toml = &bootstrap_config.config_toml;
+    let _bootstrap_config_toml = &bootstrap_config.config_toml;
     let cloud_config_bundle = CloudConfigBundleLoader::default();
     let run_cli_overrides = cli_kv_overrides.clone();
     let run_loader_overrides = loader_overrides.clone();
     let run_cloud_config_bundle = cloud_config_bundle.clone();
 
-    let model_provider = if oss {
-        let bootstrap_config_with_cloud_config;
-        let config_toml_for_oss = if oss_provider.is_none() {
-            // The first load intentionally skips cloud config so we can read
-            // auth/base-url settings needed to fetch the bundle. If OSS mode
-            // needs a default provider from config, reload with the bundle.
-            bootstrap_config_with_cloud_config = load_bootstrap_config_or_exit(
-                &codex_home,
-                Some(&config_cwd),
-                cli_kv_overrides.clone(),
-                loader_overrides.clone(),
-                strict_config,
-                cloud_config_bundle.clone(),
-            )
-            .await;
-            &bootstrap_config_with_cloud_config.config_toml
-        } else {
-            bootstrap_config_toml
-        };
-
-        let resolved = resolve_oss_provider(oss_provider.as_deref(), config_toml_for_oss);
-
-        if let Some(provider) = resolved {
-            Some(provider)
-        } else {
-            return Err(anyhow::anyhow!(
-                "No default OSS provider configured. Use --local-provider=provider or set oss_provider to one of: {LMSTUDIO_OSS_PROVIDER_ID}, {OLLAMA_OSS_PROVIDER_ID} in config.toml"
-            ));
-        }
-    } else {
-        None // No OSS mode enabled
-    };
-
-    // When using `--oss`, let the bootstrapper pick the model based on selected provider
-    let model = if let Some(model) = model_cli_arg {
-        Some(model)
-    } else if oss {
-        model_provider
-            .as_ref()
-            .and_then(|provider_id| get_default_model_for_oss_provider(provider_id))
-            .map(std::borrow::ToOwned::to_owned)
-    } else {
-        None // No model specified, will use the default.
-    };
+    let model = model_cli_arg;
 
     let overrides = ConfigOverrides {
         model,
         review_model: None,
         cwd: resolved_cwd,
         workspace_roots: None,
-        model_provider: model_provider.clone(),
         service_tier: None,
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
@@ -362,7 +309,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         developer_instructions: None,
         personality: None,
         compact_prompt: None,
-        show_raw_agent_reasoning: oss.then_some(true),
         tools_web_search_request: None,
         ephemeral: ephemeral.then_some(true),
         psp: Some(psp),
@@ -475,8 +421,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         images,
         json_mode,
         last_message_file,
-        model_provider,
-        oss,
         output_schema_path,
         prompt,
         skip_git_repo_check,
@@ -536,8 +480,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         images,
         json_mode,
         last_message_file,
-        model_provider,
-        oss,
         output_schema_path,
         prompt,
         skip_git_repo_check,
@@ -552,23 +494,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
             last_message_file.clone(),
         )),
     };
-    if oss {
-        // We're in the oss section, so provider_id should be Some
-        // Let's handle None case gracefully though just in case
-        let provider_id = match model_provider.as_ref() {
-            Some(id) => id,
-            None => {
-                error!("OSS provider unexpectedly not set when oss flag is used");
-                return Err(anyhow::anyhow!(
-                    "OSS provider not set but oss flag was used"
-                ));
-            }
-        };
-        ensure_oss_provider_ready(provider_id, &config)
-            .await
-            .map_err(|e| anyhow::anyhow!("OSS setup failed: {e}"))?;
-    }
-
     let default_cwd = config.cwd.to_path_buf();
     let default_effort = config.model_reasoning_effort.clone();
 
@@ -867,7 +792,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
 fn thread_start_params_from_config(config: &Config) -> ThreadStartParams {
     ThreadStartParams {
         model: config.model.clone(),
-        model_provider: Some(config.model_provider_id.clone()),
         cwd: Some(config.cwd.to_string_lossy().to_string()),
         runtime_workspace_roots: Some(config.workspace_roots.clone()),
         config: thread_config_overrides_from_config(config),
@@ -881,7 +805,6 @@ fn thread_resume_params_from_config(config: &Config, thread_id: String) -> Threa
     ThreadResumeParams {
         thread_id,
         model: config.model.clone(),
-        model_provider: Some(config.model_provider_id.clone()),
         cwd: Some(config.cwd.to_string_lossy().to_string()),
         runtime_workspace_roots: Some(config.workspace_roots.clone()),
         config: thread_config_overrides_from_config(config),

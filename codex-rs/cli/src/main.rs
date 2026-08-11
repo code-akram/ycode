@@ -7,17 +7,14 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_arg0::arg0_dispatch_or_else;
 use codex_chatgpt::apply_command::ApplyCommand;
 use codex_chatgpt::apply_command::run_apply_command;
-use codex_cli::read_access_token_from_stdin;
 use codex_cli::read_api_key_from_stdin;
 use codex_cli::run_login_status;
-use codex_cli::run_login_with_access_token;
 use codex_cli::run_login_with_api_key;
 use codex_cli::run_login_with_chatgpt;
 use codex_cli::run_login_with_device_code;
 use codex_cli::run_logout;
 use codex_cloud_tasks::Cli as CloudTasksCli;
 use codex_exec::Cli as ExecCli;
-use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
 use codex_rollout_trace::REDUCED_STATE_FILE_NAME;
 use codex_rollout_trace::replay_bundle;
 use codex_state::StateRuntime;
@@ -147,10 +144,6 @@ enum Subcommand {
     /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
-
-    /// Internal: run the responses API proxy.
-    #[clap(hide = true)]
-    ResponsesApiProxy(ResponsesApiProxyArgs),
 
     /// Inspect feature flags.
     Features(FeaturesCli),
@@ -328,12 +321,6 @@ struct LoginCommand {
     with_api_key: bool,
 
     #[arg(
-        long = "with-access-token",
-        help = "Read the access token from stdin (e.g. `printenv CODEX_ACCESS_TOKEN | codex login --with-access-token`)"
-    )]
-    with_access_token: bool,
-
-    #[arg(
         long = "api-key",
         num_args = 0..=1,
         default_missing_value = "",
@@ -345,15 +332,6 @@ struct LoginCommand {
 
     #[arg(long = "device-auth")]
     use_device_code: bool,
-
-    /// EXPERIMENTAL: Use custom OAuth issuer base URL (advanced)
-    /// Override the OAuth issuer base URL (advanced)
-    #[arg(long = "experimental_issuer", value_name = "URL", hide = true)]
-    issuer_base_url: Option<String>,
-
-    /// EXPERIMENTAL: Use custom OAuth client ID (advanced)
-    #[arg(long = "experimental_client-id", value_name = "CLIENT_ID", hide = true)]
-    client_id: Option<String>,
 
     #[command(subcommand)]
     action: Option<LoginSubcommand>,
@@ -693,18 +671,8 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     run_login_status(login_cli.config_overrides).await;
                 }
                 None => {
-                    if login_cli.with_api_key && login_cli.with_access_token {
-                        eprintln!(
-                            "Choose one login credential source: --with-api-key or --with-access-token."
-                        );
-                        std::process::exit(1);
-                    } else if login_cli.use_device_code {
-                        run_login_with_device_code(
-                            login_cli.config_overrides,
-                            login_cli.issuer_base_url,
-                            login_cli.client_id,
-                        )
-                        .await;
+                    if login_cli.use_device_code {
+                        run_login_with_device_code(login_cli.config_overrides).await;
                     } else if login_cli.api_key.is_some() {
                         eprintln!(
                             "The --api-key flag is no longer supported. Pipe the key instead, e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`."
@@ -713,9 +681,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     } else if login_cli.with_api_key {
                         let api_key = read_api_key_from_stdin();
                         run_login_with_api_key(login_cli.config_overrides, api_key).await;
-                    } else if login_cli.with_access_token {
-                        let access_token = read_access_token_from_stdin();
-                        run_login_with_access_token(login_cli.config_overrides, access_token).await;
                     } else {
                         run_login_with_chatgpt(login_cli.config_overrides).await;
                     }
@@ -777,10 +742,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_config_overrides.clone(),
             );
             run_apply_command(apply_cli, /*cwd*/ None).await?;
-        }
-        Some(Subcommand::ResponsesApiProxy(args)) => {
-            tokio::task::spawn_blocking(move || codex_responses_api_proxy::run_main(args))
-                .await??;
         }
         Some(Subcommand::Features(FeaturesCli { sub })) => match sub {
             FeaturesSubcommand::List => {
@@ -956,7 +917,6 @@ async fn run_debug_prompt_input_command(
         cwd: shared.cwd,
         codex_self_exe: arg0_paths.codex_self_exe,
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe,
-        show_raw_agent_reasoning: shared.oss.then_some(true),
         ephemeral: Some(true),
         ..Default::default()
     };
@@ -1135,7 +1095,6 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::Cloud(_)) => Some("cloud"),
         Some(Subcommand::Debug(_)) => Some("debug"),
         Some(Subcommand::Apply(_)) => Some("apply"),
-        Some(Subcommand::ResponsesApiProxy(_)) => Some("responses-api-proxy"),
         Some(Subcommand::Features(_)) => Some("features"),
     }
 }
@@ -2146,7 +2105,6 @@ mod tests {
                 "codex",
                 "resume",
                 "sid",
-                "--oss",
                 "--search",
                 "--sandbox",
                 "workspace-write",
@@ -2166,7 +2124,6 @@ mod tests {
         );
 
         assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
-        assert!(interactive.oss);
         assert_eq!(interactive.config_profile_v2.as_deref(), Some("my-config"));
         assert_matches!(
             interactive.sandbox_mode,

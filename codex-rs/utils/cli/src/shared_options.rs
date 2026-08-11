@@ -20,15 +20,6 @@ pub struct SharedCliOptions {
     #[arg(long, short = 'm')]
     pub model: Option<String>,
 
-    /// Use open-source provider.
-    #[arg(long = "oss", default_value_t = false)]
-    pub oss: bool,
-
-    /// Specify which local provider to use (lmstudio or ollama).
-    /// If not specified with --oss, will use config default or show selection.
-    #[arg(long = "local-provider")]
-    pub oss_provider: Option<String>,
-
     /// Layer $CODEX_HOME/<name>.config.toml on top of the base user config.
     #[arg(long = "profile", short = 'p')]
     pub config_profile_v2: Option<ProfileV2Name>,
@@ -43,28 +34,18 @@ impl SharedCliOptions {
         let Self {
             images,
             model,
-            oss,
-            oss_provider,
             config_profile_v2,
             cwd,
         } = self;
         let Self {
             images: root_images,
             model: root_model,
-            oss: root_oss,
-            oss_provider: root_oss_provider,
             config_profile_v2: root_config_profile_v2,
             cwd: root_cwd,
         } = root;
 
         if model.is_none() {
             model.clone_from(root_model);
-        }
-        if *root_oss {
-            *oss = true;
-        }
-        if oss_provider.is_none() {
-            oss_provider.clone_from(root_oss_provider);
         }
         if config_profile_v2.is_none() {
             config_profile_v2.clone_from(root_config_profile_v2);
@@ -83,20 +64,12 @@ impl SharedCliOptions {
         let Self {
             images,
             model,
-            oss,
-            oss_provider,
             config_profile_v2,
             cwd,
         } = subcommand;
 
         if let Some(model) = model {
             self.model = Some(model);
-        }
-        if oss {
-            self.oss = true;
-        }
-        if let Some(oss_provider) = oss_provider {
-            self.oss_provider = Some(oss_provider);
         }
         if let Some(config_profile_v2) = config_profile_v2 {
             self.config_profile_v2 = Some(config_profile_v2);

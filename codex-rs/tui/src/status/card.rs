@@ -11,7 +11,6 @@ use crate::version::CODEX_CLI_VERSION;
 use crate::width::display_width;
 use chrono::DateTime;
 use chrono::Local;
-use codex_model_provider_info::WireApi;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -252,23 +251,21 @@ impl StatusHistoryCell {
             ("model", model_name.to_string()),
             ("provider", config.model_provider_id.clone()),
         ];
-        if config.model_provider.wire_api == WireApi::Responses {
-            let effort_value = reasoning_effort_override
-                .unwrap_or_else(|| config.model_reasoning_effort.clone())
-                .map(|effort| effort.to_string())
-                .unwrap_or_else(|| "none".to_string());
-            config_entries.push(("reasoning effort", effort_value));
-            config_entries.push((
-                "reasoning summaries",
-                config
-                    .model_reasoning_summary
-                    .map(|summary| summary.to_string())
-                    .unwrap_or_else(|| "auto".to_string()),
-            ));
-        }
+        let effort_value = reasoning_effort_override
+            .unwrap_or_else(|| config.model_reasoning_effort.clone())
+            .map(|effort| effort.to_string())
+            .unwrap_or_else(|| "none".to_string());
+        config_entries.push(("reasoning effort", effort_value));
+        config_entries.push((
+            "reasoning summaries",
+            config
+                .model_reasoning_summary
+                .map(|summary| summary.to_string())
+                .unwrap_or_else(|| "auto".to_string()),
+        ));
         let (model_name, model_details) = compose_model_display(model_name, &config_entries);
         let model_provider = format_model_provider(config, runtime_model_provider_base_url);
-        let show_chatgpt_usage_link = config.model_provider.requires_openai_auth;
+        let show_chatgpt_usage_link = true;
         let account = compose_account_display(account_display);
         let session_id = session_id.as_ref().map(std::string::ToString::to_string);
         let forked_from = forked_from.map(|id| id.to_string());
@@ -605,7 +602,7 @@ impl HistoryCell for StatusHistoryCell {
         );
         lines.push(Line::from(Vec::<Span<'static>>::new()));
         // The ChatGPT usage page only applies to providers backed by OpenAI auth;
-        // providers like Bedrock manage limits and billing elsewhere.
+        // Keep the usage link limited to the official ChatGPT account path.
         if self.show_chatgpt_usage_link {
             lines.extend(note_lines);
             lines.push(Line::from(Vec::<Span<'static>>::new()));

@@ -82,7 +82,6 @@ pub use crate::images::ImageResponse;
 pub use crate::images::ImageUrl;
 pub use crate::provider::Provider;
 pub use crate::provider::RetryConfig;
-pub use crate::provider::is_azure_responses_provider;
 pub use crate::requests::Compression;
 pub use crate::search::AllowedCaller;
 pub use crate::search::ApproximateLocation;

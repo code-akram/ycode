@@ -45,9 +45,6 @@ pub enum ProviderAccount {
         email: Option<String>,
         plan_type: PlanType,
     },
-    AmazonBedrock {
-        uses_codex_managed_credentials: bool,
-    },
 }
 
 impl PlanType {

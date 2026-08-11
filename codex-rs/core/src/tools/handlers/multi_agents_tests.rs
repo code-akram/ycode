@@ -25,7 +25,6 @@ use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
-use codex_model_provider::create_model_provider;
 use codex_model_provider_info::built_in_model_providers;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
@@ -104,7 +103,7 @@ fn parse_agent_id(id: &str) -> ThreadId {
 fn thread_manager() -> ThreadManager {
     ThreadManager::with_models_provider_for_tests(
         CodexAuth::from_api_key("dummy"),
-        built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None)["openai"].clone(),
+        built_in_model_providers()["openai"].clone(),
     )
 }
 
@@ -121,7 +120,6 @@ async fn install_role_with_model_override(turn: &mut TurnContext) -> String {
     tokio::fs::write(
         &role_config_path,
         r#"model = "gpt-5-role-override"
-model_provider = "ollama"
 model_reasoning_effort = "minimal"
 "#,
     )
@@ -264,16 +262,11 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
     let manager = thread_manager();
     session.services.agent_control = manager.agent_control();
     let mut config = (*turn.config).clone();
-    let provider_info =
-        built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None)["ollama"].clone();
-    config.model_provider_id = "ollama".to_string();
-    config.model_provider = provider_info.clone();
     config
         .permissions
         .approval_policy
         .set(AskForApproval::OnRequest)
         .expect("approval policy should be set");
-    turn.provider = create_model_provider(provider_info, turn.auth_manager.clone());
     turn.config = Arc::new(config);
 
     let invocation = invocation(
@@ -306,7 +299,7 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
         .config_snapshot()
         .await;
     assert_eq!(snapshot.approval_policy, AskForApproval::OnRequest);
-    assert_eq!(snapshot.model_provider_id, "ollama");
+    assert_eq!(snapshot.model_provider_id, "openai");
 }
 
 #[tokio::test]
@@ -934,7 +927,7 @@ async fn multi_agent_v2_spawn_partial_fork_turns_allows_agent_type_override() {
         .await;
 
     assert_eq!(snapshot.model, "gpt-5-role-override");
-    assert_eq!(snapshot.model_provider_id, "ollama");
+    assert_eq!(snapshot.model_provider_id, "openai");
     assert_eq!(snapshot.reasoning_effort, Some(ReasoningEffort::Minimal));
 }
 

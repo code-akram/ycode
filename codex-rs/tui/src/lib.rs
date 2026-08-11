@@ -10,7 +10,6 @@ use crate::legacy_core::config::ConfigTomlLoadResult;
 use crate::legacy_core::config::load_config_toml_with_layer_stack;
 #[cfg(test)]
 use crate::legacy_core::config::resolve_bootstrap_http_client_factory;
-use crate::legacy_core::config::resolve_oss_provider;
 use crate::legacy_core::config::resolve_profile_v2_config_path;
 use crate::session_resume::ResolveCwdOutcome;
 use crate::session_resume::ResumeCwdContext;
@@ -51,8 +50,6 @@ use codex_state::log_db;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::canonicalize_existing_preserving_symlinks;
 use codex_utils_home_dir::find_codex_home;
-use codex_utils_oss::ensure_oss_provider_ready;
-use codex_utils_oss::get_default_model_for_oss_provider;
 use color_eyre::eyre::WrapErr;
 use cwd_prompt::CwdPromptAction;
 use runtime_session::CliRuntimeSession;
@@ -134,7 +131,6 @@ mod notifications;
 #[cfg(any(not(debug_assertions), test))]
 mod npm_registry;
 pub(crate) mod onboarding;
-mod oss_selection;
 mod pager_overlay;
 pub(crate) mod public_widgets;
 mod render;
@@ -666,10 +662,7 @@ pub async fn run_main(
             .push("web_search=\"live\"".to_string());
     }
 
-    // When using `--oss`, let the bootstrapper pick the model (defaulting to
-    // gpt-oss:20b) and ensure it is present locally. Also, force the built‑in
     let raw_overrides = cli.config_overrides.raw_overrides.clone();
-    // `oss` model provider.
     let overrides_cli = codex_utils_cli::CliConfigOverrides { raw_overrides };
     let cli_kv_overrides = match overrides_cli.parse_overrides() {
         // Parse `-c` overrides from the CLI.
@@ -726,7 +719,7 @@ pub async fn run_main(
         CloudConfigBundleLoader::default(),
     )
     .await;
-    let bootstrap_config_toml = &bootstrap_config.config_toml;
+    let _bootstrap_config_toml = &bootstrap_config.config_toml;
     let cloud_config_bundle = CloudConfigBundleLoader::default();
 
     let cwd_override = if cli_runtime_target.uses_remote_workspace() {
@@ -735,69 +728,13 @@ pub async fn run_main(
         cwd.clone()
     };
 
-    let mut manually_selected_oss_provider = None;
-    let model_provider_override = if cli.oss {
-        let bootstrap_config_with_cloud_config;
-        let config_toml_for_oss = if cli.oss_provider.is_none() {
-            // The first load intentionally skips cloud config so we can read
-            // auth/base-url settings needed to fetch the bundle. If OSS mode
-            // needs a default provider from config, reload with the bundle.
-            bootstrap_config_with_cloud_config = load_bootstrap_config_or_exit(
-                &codex_home,
-                config_cwd.as_ref(),
-                cli_kv_overrides.clone(),
-                loader_overrides.clone(),
-                strict_config,
-                cloud_config_bundle.clone(),
-            )
-            .await;
-            &bootstrap_config_with_cloud_config.config_toml
-        } else {
-            bootstrap_config_toml
-        };
-
-        let resolved = resolve_oss_provider(cli.oss_provider.as_deref(), config_toml_for_oss);
-
-        if let Some(provider) = resolved {
-            Some(provider)
-        } else {
-            // No provider configured, prompt the user
-            let selection = oss_selection::select_oss_provider().await?;
-            let provider = selection.provider;
-            if provider == "__CANCELLED__" {
-                return Err(std::io::Error::other(
-                    "OSS provider selection was cancelled by user",
-                ));
-            }
-            if selection.manually_selected {
-                manually_selected_oss_provider = Some(provider.clone());
-            }
-            Some(provider)
-        }
-    } else {
-        None
-    };
-
-    // When using `--oss`, let the bootstrapper pick the model based on selected provider
-    let model = if let Some(model) = &cli.model {
-        Some(model.clone())
-    } else if cli.oss {
-        // Use the provider from model_provider_override
-        model_provider_override
-            .as_ref()
-            .and_then(|provider_id| get_default_model_for_oss_provider(provider_id))
-            .map(std::borrow::ToOwned::to_owned)
-    } else {
-        None // No model specified, will use the default.
-    };
+    let model = cli.model.clone();
 
     let overrides = ConfigOverrides {
         model,
         cwd: cwd_override,
-        model_provider: model_provider_override.clone(),
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
-        show_raw_agent_reasoning: cli.oss.then_some(true),
         psp: Some(cli.psp),
         ..Default::default()
     };
@@ -910,21 +847,6 @@ pub async fn run_main(
     let feedback_layer = feedback.logger_layer();
     let feedback_metadata_layer = feedback.metadata_layer();
 
-    if cli.oss && model_provider_override.is_some() {
-        // We're in the oss section, so provider_id should be Some
-        // Let's handle None case gracefully though just in case
-        let provider_id = match model_provider_override.as_ref() {
-            Some(id) => id,
-            None => {
-                error!("OSS provider unexpectedly not set when oss flag is used");
-                return Err(std::io::Error::other(
-                    "OSS provider not set but oss flag was used",
-                ));
-            }
-        };
-        ensure_oss_provider_ready(provider_id, &config).await?;
-    }
-
     let otel_logger_layer = otel.as_ref().and_then(|o| o.logger_layer());
 
     let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
@@ -951,7 +873,6 @@ pub async fn run_main(
         cli_runtime_target,
         remote_cwd_override,
         config,
-        manually_selected_oss_provider,
         overrides,
         cli_kv_overrides,
         cloud_config_bundle,
@@ -983,7 +904,6 @@ async fn run_ratatui_app(
     cli_runtime_target: CliRuntimeTarget,
     remote_cwd_override: Option<PathBuf>,
     initial_config: Config,
-    manually_selected_oss_provider: Option<String>,
     overrides: ConfigOverrides,
     cli_kv_overrides: Vec<(String, toml::Value)>,
     mut cloud_config_bundle: CloudConfigBundleLoader,
@@ -1066,31 +986,14 @@ async fn run_ratatui_app(
         }
     }
     .with_remote_cwd_override(remote_cwd_override.clone());
-    if let Some(provider) = manually_selected_oss_provider.as_deref()
-        && let Err(err) = config_update::write_config_batch(
-            runtime_session.request_handle(),
-            vec![config_update::build_oss_provider_edit(provider)],
-        )
-        .await
-    {
-        warn!(
-            %err,
-            provider,
-            "Failed to persist selected OSS provider preference"
-        );
-    }
     let mut cli_runtime = Some(runtime_session);
 
     let should_show_trust_screen_flag =
         !uses_remote_workspace && should_show_trust_screen(&initial_config);
-    let login_status = if initial_config.model_provider.requires_openai_auth {
-        let Some(cli_runtime) = cli_runtime.as_mut() else {
-            unreachable!("app server should exist when auth is required");
-        };
-        get_login_status(cli_runtime, &initial_config).await?
-    } else {
-        LoginStatus::NotAuthenticated
+    let Some(cli_runtime_session) = cli_runtime.as_mut() else {
+        unreachable!("cli runtime should exist when auth is required");
     };
+    let login_status = get_login_status(cli_runtime_session).await?;
     let should_show_onboarding =
         should_show_onboarding(login_status, &initial_config, should_show_trust_screen_flag);
 
@@ -1509,19 +1412,11 @@ pub enum LoginStatus {
 /// Determines the user's authentication mode using a lightweight account read
 /// rather than a full `bootstrap`, avoiding the model-list fetch and
 /// rate-limit round-trip that `bootstrap` would trigger.
-async fn get_login_status(
-    cli_runtime: &mut CliRuntimeSession,
-    config: &Config,
-) -> color_eyre::Result<LoginStatus> {
-    if !config.model_provider.requires_openai_auth {
-        return Ok(LoginStatus::NotAuthenticated);
-    }
-
+async fn get_login_status(cli_runtime: &mut CliRuntimeSession) -> color_eyre::Result<LoginStatus> {
     let account = cli_runtime.read_account().await?;
     Ok(match account.account {
         Some(CliRuntimeAccount::ApiKey {}) => LoginStatus::AuthMode(AuthMode::ApiKey),
         Some(CliRuntimeAccount::Chatgpt { .. }) => LoginStatus::AuthMode(AuthMode::Chatgpt),
-        Some(CliRuntimeAccount::AmazonBedrock { .. }) => LoginStatus::NotAuthenticated,
         None => LoginStatus::NotAuthenticated,
     })
 }
@@ -1628,13 +1523,7 @@ fn should_show_onboarding(
     should_show_login_screen(login_status, config)
 }
 
-fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool {
-    // Only show the login screen for providers that actually require OpenAI auth
-    // (OpenAI or equivalents). For OSS/other providers, skip login entirely.
-    if !config.model_provider.requires_openai_auth {
-        return false;
-    }
-
+fn should_show_login_screen(login_status: LoginStatus, _config: &Config) -> bool {
     login_status == LoginStatus::NotAuthenticated
 }
 

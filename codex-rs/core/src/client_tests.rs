@@ -28,11 +28,8 @@ use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider::BearerAuthProvider;
 use codex_model_provider::SharedModelProvider;
-use codex_model_provider::create_model_provider;
 use codex_model_provider_info::CHATGPT_CODEX_BASE_URL;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::WireApi;
-use codex_model_provider_info::create_oss_provider_with_base_url;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
 use codex_protocol::auth::AuthMode;
@@ -92,7 +89,8 @@ fn test_model_client_with_thread_id(
     thread_id: ThreadId,
     session_source: SessionSource,
 ) -> ModelClient {
-    let provider = create_oss_provider_with_base_url("https://example.com/v1", WireApi::Responses);
+    let provider =
+        ModelProviderInfo::create_openai_provider(Some("https://example.com/v1".to_string()));
     ModelClient::new(
         /*auth_manager*/ None,
         AgentIdentityAuthPolicy::JwtOnly,
@@ -653,39 +651,6 @@ async fn response_stream_records_last_model_feedback_ids() {
 }
 
 #[tokio::test]
-async fn bedrock_unauthorized_error_uses_provider_mapping() {
-    let provider = create_model_provider(
-        ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None),
-        /*auth_manager*/ None,
-    );
-    let mut auth_recovery = None;
-    let url = "https://bedrock-mantle.us-east-2.api.aws/openai/v1/responses";
-    let error = super::handle_unauthorized(
-        TransportError::Http {
-            status: http::StatusCode::UNAUTHORIZED,
-            url: Some(url.to_string()),
-            headers: None,
-            body: Some(
-                "Signature expired: 20260609T133205Z is now earlier than 20260614T062525Z"
-                    .to_string(),
-            ),
-        },
-        &mut auth_recovery,
-        &test_session_telemetry(),
-        &provider,
-    )
-    .await
-    .expect_err("expired Bedrock signature should fail");
-
-    assert_eq!(
-        error.to_string(),
-        format!(
-            "Amazon Bedrock rejected the request because its AWS signature has expired. Refresh your AWS credentials and retry. If `AWS_BEARER_TOKEN_BEDROCK` is set, update or unset it, then restart Codex, url: {url}"
-        )
-    );
-}
-
-#[tokio::test]
 async fn dropped_backpressured_response_stream_traces_cancelled_partial_output()
 -> anyhow::Result<()> {
     let temp = TempDir::new()?;
@@ -808,7 +773,7 @@ fn model_client_with_counting_attestation(
     } else {
         (
             None,
-            create_oss_provider_with_base_url("https://example.com/v1", WireApi::Responses),
+            ModelProviderInfo::create_openai_provider(Some("https://example.com/v1".to_string())),
         )
     };
     let model_client = ModelClient::new(

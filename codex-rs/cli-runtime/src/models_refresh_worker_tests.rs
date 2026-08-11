@@ -46,10 +46,6 @@ impl TestModelsEndpoint {
 }
 
 impl ModelsEndpointClient for TestModelsEndpoint {
-    fn has_command_auth(&self) -> bool {
-        true
-    }
-
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool> {
         Box::pin(async { false })
     }

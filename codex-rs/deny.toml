@@ -230,7 +230,6 @@ deny = [
         "codex-http-client",
         # Intentional exception: this standalone, privileged Responses API proxy owns its blocking
         # upstream HTTP transport independently of Codex.
-        "codex-responses-api-proxy",
         # Temporary migration exceptions.
         "codex-cli-runtime",
         "codex-otel",

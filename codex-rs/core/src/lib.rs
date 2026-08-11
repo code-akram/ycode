@@ -73,7 +73,6 @@ mod stream_events_utils;
 pub mod test_support;
 mod unified_exec;
 pub use client::X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER;
-pub use codex_protocol::config_types::ModelProviderAuthInfo;
 mod event_mapping;
 mod thread_manager;
 pub(crate) mod web_search;

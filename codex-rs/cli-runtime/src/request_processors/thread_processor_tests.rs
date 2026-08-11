@@ -119,7 +119,6 @@ mod thread_processor_behavior_tests {
     use codex_config::StaticThreadConfigLoader;
     use codex_config::ThreadConfigSource;
     use codex_model_provider_info::ModelProviderInfo;
-    use codex_model_provider_info::WireApi;
     use codex_protocol::ThreadId;
     use codex_protocol::config_types::AgentSettings;
     use codex_protocol::config_types::Settings;
@@ -653,69 +652,6 @@ mod thread_processor_behavior_tests {
         );
     }
 
-    #[tokio::test]
-    async fn derive_config_from_params_uses_session_thread_config_model_provider() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let session_provider = ModelProviderInfo {
-            name: "session".to_string(),
-            base_url: Some("http://127.0.0.1:8061/api/codex".to_string()),
-            env_key: None,
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            auth: None,
-            aws: None,
-            wire_api: WireApi::Responses,
-            query_params: None,
-            http_headers: None,
-            env_http_headers: None,
-            request_max_retries: None,
-            stream_max_retries: None,
-            stream_idle_timeout_ms: None,
-            websocket_connect_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: true,
-            supports_standalone_web_search: false,
-        };
-        let config_manager = ConfigManager::new(
-            temp_dir.path().to_path_buf(),
-            Vec::new(),
-            LoaderOverrides::default(),
-            /*strict_config*/ false,
-            CloudConfigBundleLoader::default(),
-            Arg0DispatchPaths::default(),
-            Arc::new(StaticThreadConfigLoader::new(vec![
-                ThreadConfigSource::Session(SessionThreadConfig {
-                    model_provider: Some("session".to_string()),
-                    model_providers: HashMap::from([(
-                        "session".to_string(),
-                        session_provider.clone(),
-                    )]),
-                    features: BTreeMap::from([("plugins".to_string(), false)]),
-                }),
-            ])),
-        );
-        let config = config_manager
-            .load_with_overrides(
-                Some(HashMap::from([
-                    ("model_provider".to_string(), json!("request")),
-                    (
-                        "model_providers.session".to_string(),
-                        json!({
-                            "name": "request",
-                            "base_url": "http://127.0.0.1:9999/api/codex",
-                            "wire_api": "responses",
-                        }),
-                    ),
-                ])),
-                ConfigOverrides::default(),
-            )
-            .await?;
-
-        assert_eq!(config.model_provider_id, "session");
-        assert_eq!(config.model_provider, session_provider);
-        Ok(())
-    }
-
     #[test]
     fn collect_resume_override_mismatches_includes_service_tier() {
         let cwd = test_path_buf("/tmp").abs();
@@ -724,7 +660,6 @@ mod thread_processor_behavior_tests {
             history: None,
             path: None,
             model: None,
-            model_provider: None,
             service_tier: Some(Some("priority".to_string())),
             cwd: None,
             runtime_workspace_roots: None,
@@ -898,29 +833,6 @@ mod thread_processor_behavior_tests {
                 serde_json::Value::String("gpt-5.2-codex".to_string()),
             )]))
         );
-        Ok(())
-    }
-
-    #[test]
-    fn merge_persisted_resume_metadata_skips_persisted_values_when_provider_overridden()
-    -> Result<()> {
-        let mut request_overrides = None;
-        let mut typesafe_overrides = ConfigOverrides {
-            model_provider: Some("oss".to_string()),
-            ..Default::default()
-        };
-        let persisted_metadata =
-            test_thread_metadata(Some("gpt-5.1-codex-max"), Some(ReasoningEffort::High))?;
-
-        merge_persisted_resume_metadata(
-            &mut request_overrides,
-            &mut typesafe_overrides,
-            &persisted_metadata,
-        );
-
-        assert_eq!(typesafe_overrides.model, None);
-        assert_eq!(typesafe_overrides.model_provider, Some("oss".to_string()));
-        assert_eq!(request_overrides, None);
         Ok(())
     }
 

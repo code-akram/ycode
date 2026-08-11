@@ -19,7 +19,7 @@ use tokio::sync::oneshot;
 
 const CURRENT_MODEL: &str = "gpt-5.2";
 const FASTER_MODEL: &str = "gpt-5.4";
-const MODEL_PROVIDER_ID: &str = "safety-retry-test";
+const MODEL_PROVIDER_ID: &str = "openai";
 const PREVIOUS_PROMPT: &str = "Establish context";
 const RETRY_PROMPT: &str = "Handle the safety-buffered request";
 const COMMITTED_STEER: &str = "Keep the accepted steer";
@@ -165,29 +165,15 @@ async fn active_turn_interrupt_is_nonblocking_and_coalesces_repeated_requests() 
         format!(
             r#"
 model = "{CURRENT_MODEL}"
-model_provider = "{MODEL_PROVIDER_ID}"
-
-[model_providers.{MODEL_PROVIDER_ID}]
-name = "Interrupt test"
-base_url = "{}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
 "#,
-            server.uri()
         ),
     )?;
     app.config.codex_home = codex_home.path().to_path_buf().abs();
     app.config.sqlite = codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
     app.config.model = Some(CURRENT_MODEL.to_string());
     app.config.model_provider_id = MODEL_PROVIDER_ID.to_string();
-    app.config.model_provider = ModelProviderInfo {
-        name: "Interrupt test".to_string(),
-        base_url: Some(format!("{}/v1", server.uri())),
-        request_max_retries: Some(0),
-        stream_max_retries: Some(0),
-        ..ModelProviderInfo::default()
-    };
+    app.config.model_provider =
+        ModelProviderInfo::create_openai_provider(Some(format!("{}/v1", server.uri())));
 
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let mut cli_runtime =
@@ -381,32 +367,18 @@ async fn run_safety_retry(
         format!(
             r#"
 model = "{CURRENT_MODEL}"
-model_provider = "{MODEL_PROVIDER_ID}"
-
-[model_providers.{MODEL_PROVIDER_ID}]
-name = "Safety retry test"
-base_url = "{}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
 
 [features]
 goals = true
 "#,
-            server.uri()
         ),
     )?;
     app.config.codex_home = codex_home.path().to_path_buf().abs();
     app.config.sqlite = codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
     app.config.model = Some(CURRENT_MODEL.to_string());
     app.config.model_provider_id = MODEL_PROVIDER_ID.to_string();
-    app.config.model_provider = ModelProviderInfo {
-        name: "Safety retry test".to_string(),
-        base_url: Some(format!("{}/v1", server.uri())),
-        request_max_retries: Some(0),
-        stream_max_retries: Some(0),
-        ..ModelProviderInfo::default()
-    };
+    app.config.model_provider =
+        ModelProviderInfo::create_openai_provider(Some(format!("{}/v1", server.uri())));
     app.config
         .features
         .enable(Feature::Goals)

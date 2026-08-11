@@ -27,15 +27,12 @@ use tracing::info;
 const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
-/// Remote endpoint used by the OpenAI-compatible model manager.
+/// Remote endpoint used by the official OpenAI model manager.
 ///
 /// Implementations own provider-specific auth and transport details. The model
 /// manager owns refresh policy, cache behavior, and catalog merging; it calls
 /// this endpoint only when it decides a remote refresh should happen.
 pub trait ModelsEndpointClient: fmt::Debug + Send + Sync {
-    /// Returns whether this provider can authenticate command-scoped requests.
-    fn has_command_auth(&self) -> bool;
-
     /// Returns whether the currently resolved auth can use Codex backend-only models.
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool>;
 
@@ -206,7 +203,7 @@ pub type ModelsManagerFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a
 /// Shared model manager handle used across runtime services.
 pub type SharedModelsManager = Arc<dyn ModelsManager>;
 
-/// OpenAI-compatible model manager backed by bundled models, cache, and `/models`.
+/// Official OpenAI model manager backed by bundled models, cache, and `/models`.
 #[derive(Debug)]
 pub struct OpenAiModelsManager {
     remote_models: RwLock<Vec<ModelInfo>>,
@@ -224,7 +221,7 @@ pub struct StaticModelsManager {
 }
 
 impl OpenAiModelsManager {
-    /// Construct an OpenAI-compatible remote model manager.
+    /// Construct an official OpenAI remote model manager.
     pub fn new(
         codex_home: PathBuf,
         endpoint_client: Arc<dyn ModelsEndpointClient>,
@@ -241,7 +238,7 @@ impl OpenAiModelsManager {
         )
     }
 
-    /// Construct an OpenAI-compatible model manager with caching disabled.
+    /// Construct an official OpenAI model manager with caching disabled.
     pub fn new_without_cache(
         endpoint_client: Arc<dyn ModelsEndpointClient>,
         auth_manager: Option<Arc<AuthManager>>,
@@ -249,7 +246,7 @@ impl OpenAiModelsManager {
         Self::new_with_optional_cache(/*cache*/ None, endpoint_client, auth_manager)
     }
 
-    /// Constructs an OpenAI-compatible model manager with a caller-provided cache.
+    /// Constructs an official OpenAI model manager with a caller-provided cache.
     ///
     /// The cache is consulted by cache-aware refresh strategies. Cache misses and backend errors
     /// fall back to the models endpoint, and cache write failures do not fail model discovery.
@@ -424,7 +421,12 @@ impl OpenAiModelsManager {
     }
 
     async fn should_refresh_models(&self) -> bool {
-        self.endpoint_client.uses_codex_backend().await || self.endpoint_client.has_command_auth()
+        self.endpoint_client.uses_codex_backend().await
+            || self
+                .auth_manager
+                .as_ref()
+                .and_then(|auth_manager| auth_manager.auth_mode())
+                .is_some()
     }
 
     async fn get_etag(&self) -> Option<String> {

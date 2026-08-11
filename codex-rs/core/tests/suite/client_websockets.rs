@@ -13,7 +13,6 @@ use codex_http_client::OutboundProxyPolicy;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::WireApi;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_otel::SessionTelemetry;
@@ -2275,24 +2274,12 @@ fn websocket_provider_with_connect_timeout(
     websocket_connect_timeout_ms: Option<u64>,
 ) -> ModelProviderInfo {
     ModelProviderInfo {
-        name: "mock-ws".into(),
-        base_url: Some(format!("{}/v1", server.uri())),
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        aws: None,
-        wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
         request_max_retries: Some(0),
         stream_max_retries: Some(0),
         stream_idle_timeout_ms: Some(5_000),
         websocket_connect_timeout_ms,
-        requires_openai_auth: false,
         supports_websockets: true,
-        supports_standalone_web_search: false,
+        ..ModelProviderInfo::create_openai_provider(Some(format!("{}/v1", server.uri())))
     }
 }
 

@@ -711,17 +711,9 @@ async fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() {
         Ok(_) => panic!("expected thread to be removed"),
     }
 
-    let mut sender_config = harness.config.clone();
-    sender_config.model_provider_id = "ollama".to_string();
-    sender_config.model_provider = sender_config
-        .model_providers
-        .get("ollama")
-        .cloned()
-        .expect("ollama provider should be configured");
-
     harness
         .control
-        .ensure_v2_agent_loaded(sender_config, spawned_agent.thread_id)
+        .ensure_v2_agent_loaded(harness.config.clone(), spawned_agent.thread_id)
         .await
         .expect("known v2 agent should reload");
     let reloaded_child = harness
@@ -735,21 +727,9 @@ async fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() {
         "residency reload must preserve the worker model instead of inheriting its parent model",
     );
     assert_eq!(
-        (
-            reloaded_child.config_snapshot().await.model_provider_id,
-            reloaded_child
-                .session
-                .new_default_turn()
-                .await
-                .provider
-                .info()
-                .clone(),
-        ),
-        (
-            stored_child.model_provider,
-            harness.config.model_provider.clone()
-        ),
-        "residency reload must preserve the worker provider instead of inheriting its sender's provider",
+        reloaded_child.config_snapshot().await.model_provider_id,
+        stored_child.model_provider,
+        "residency reload must preserve the worker provider",
     );
 
     let communication = InterAgentCommunication::new(

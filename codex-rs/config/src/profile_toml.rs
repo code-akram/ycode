@@ -26,9 +26,6 @@ pub struct ConfigProfile {
     /// Optional explicit service tier request id for new turns (for example
     /// `default`, `priority`, or `flex`; legacy `fast` also works).
     pub service_tier: Option<String>,
-    /// The key in the `model_providers` map identifying the
-    /// [`ModelProviderInfo`] to use.
-    pub model_provider: Option<String>,
     #[serde(skip)]
     #[schemars(skip)]
     pub approval_policy: Option<AskForApproval>,
@@ -44,7 +41,6 @@ pub struct ConfigProfile {
     /// Optional path to a JSON model catalog (applied on startup only).
     pub model_catalog_json: Option<AbsolutePathBuf>,
     pub personality: Option<Personality>,
-    pub chatgpt_base_url: Option<String>,
     /// Optional path to a file containing model instructions.
     pub model_instructions_file: Option<AbsolutePathBuf>,
     /// Deprecated: ignored.
@@ -73,7 +69,6 @@ pub struct ConfigProfile {
     // Injects known feature keys into the schema and forbids unknown keys.
     #[schemars(schema_with = "crate::schema::features_schema")]
     pub features: Option<FeaturesToml>,
-    pub oss_provider: Option<String>,
 }
 
 /// TUI settings supported inside a named profile.

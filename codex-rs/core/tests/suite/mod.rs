@@ -38,7 +38,6 @@ mod apply_patch_cli;
 mod audio_truncation;
 mod auto_review;
 mod catalog_permission_messages;
-mod cli_stream;
 mod client;
 mod client_websockets;
 mod code_mode;
@@ -89,7 +88,6 @@ mod request_permissions;
 #[cfg(not(target_os = "windows"))]
 mod request_permissions_tool;
 mod request_user_input;
-mod responses_api_proxy_headers;
 mod responses_lite;
 mod resume;
 mod resume_warning;

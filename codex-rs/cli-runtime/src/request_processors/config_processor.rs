@@ -21,7 +21,6 @@ use codex_cli_protocol::ExperimentalFeatureEnablementSetParams;
 use codex_cli_protocol::ExperimentalFeatureEnablementSetResponse;
 use codex_cli_protocol::FeedbackRequirements;
 use codex_cli_protocol::JSONRPCErrorError;
-use codex_cli_protocol::ModelProviderCapabilitiesReadResponse;
 use codex_cli_protocol::ModelsRequirements;
 use codex_cli_protocol::NetworkDomainPermission;
 use codex_cli_protocol::NetworkRequirements;
@@ -34,7 +33,6 @@ use codex_config::SandboxModeRequirement as CoreSandboxModeRequirement;
 use codex_core::ThreadManager;
 use codex_features::canonical_feature_for_key;
 use codex_features::feature_for_key;
-use codex_model_provider::create_model_provider;
 use codex_protocol::config_types::WebSearchMode;
 use serde_json::json;
 use std::path::PathBuf;
@@ -145,19 +143,6 @@ impl ConfigRequestProcessor {
             )
             .await;
         Ok(None)
-    }
-
-    pub(crate) async fn model_provider_capabilities_read(
-        &self,
-    ) -> Result<ModelProviderCapabilitiesReadResponse, JSONRPCErrorError> {
-        let config = self.load_latest_config(/*fallback_cwd*/ None).await?;
-        let provider = create_model_provider(config.model_provider, /*auth_manager*/ None);
-        let capabilities = provider.capabilities();
-        Ok(ModelProviderCapabilitiesReadResponse {
-            namespace_tools: capabilities.namespace_tools,
-            image_generation: capabilities.image_generation,
-            web_search: capabilities.web_search,
-        })
     }
 
     pub(crate) async fn handle_config_mutation(&self) {

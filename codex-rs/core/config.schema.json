@@ -358,9 +358,6 @@
         "analytics": {
           "$ref": "#/definitions/AnalyticsConfigToml"
         },
-        "chatgpt_base_url": {
-          "type": "string"
-        },
         "experimental_compact_prompt_file": {
           "$ref": "#/definitions/AbsolutePathBuf"
         },
@@ -667,10 +664,6 @@
           ],
           "description": "Optional path to a file containing model instructions."
         },
-        "model_provider": {
-          "description": "The key in the `model_providers` map identifying the [`ModelProviderInfo`] to use.",
-          "type": "string"
-        },
         "model_reasoning_effort": {
           "$ref": "#/definitions/ReasoningEffort"
         },
@@ -679,9 +672,6 @@
         },
         "model_verbosity": {
           "$ref": "#/definitions/Verbosity"
-        },
-        "oss_provider": {
-          "type": "string"
         },
         "personality": {
           "$ref": "#/definitions/Personality"
@@ -1063,178 +1053,6 @@
         "format": "uint32",
         "minimum": 0.0,
         "type": "integer"
-      },
-      "type": "object"
-    },
-    "ModelProviderAuthInfo": {
-      "additionalProperties": false,
-      "description": "Configuration for obtaining a provider bearer token from a command.",
-      "properties": {
-        "args": {
-          "default": [],
-          "description": "Command arguments.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "command": {
-          "description": "Command to execute. Bare names are resolved via `PATH`; paths are resolved against `cwd`.",
-          "type": "string"
-        },
-        "cwd": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            }
-          ],
-          "description": "Working directory used when running the token command."
-        },
-        "refresh_interval_ms": {
-          "default": 300000,
-          "description": "Maximum age for the cached token before rerunning the command. Set to `0` to disable proactive refresh and only rerun after a 401 retry path.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "timeout_ms": {
-          "default": 5000,
-          "description": "Maximum time to wait for the token command to exit successfully.",
-          "format": "uint64",
-          "minimum": 1.0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "command"
-      ],
-      "type": "object"
-    },
-    "ModelProviderAwsAuthInfo": {
-      "additionalProperties": false,
-      "description": "AWS SigV4 auth configuration for a model provider.",
-      "properties": {
-        "profile": {
-          "description": "AWS profile name to use. When unset, the AWS SDK default chain decides.",
-          "type": "string"
-        },
-        "region": {
-          "description": "AWS region to use for provider-specific endpoints.",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "ModelProviderInfo": {
-      "additionalProperties": false,
-      "description": "Serializable representation of a provider definition.",
-      "properties": {
-        "auth": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelProviderAuthInfo"
-            }
-          ],
-          "description": "Command-backed bearer-token configuration for this provider."
-        },
-        "aws": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelProviderAwsAuthInfo"
-            }
-          ],
-          "description": "AWS SigV4 auth configuration for this provider."
-        },
-        "base_url": {
-          "description": "Base URL for the provider's OpenAI-compatible API.",
-          "type": "string"
-        },
-        "env_http_headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Optional HTTP headers to include in requests to this provider where the (key, value) pairs are the header name and _environment variable_ whose value should be used. If the environment variable is not set, or the value is empty, the header will not be included in the request.",
-          "type": "object"
-        },
-        "env_key": {
-          "description": "Environment variable that stores the user's API key for this provider.",
-          "type": "string"
-        },
-        "env_key_instructions": {
-          "description": "Optional instructions to help the user get a valid value for the variable and set it.",
-          "type": "string"
-        },
-        "experimental_bearer_token": {
-          "description": "Value to use with `Authorization: Bearer <token>` header. Use of this config is discouraged in favor of `env_key` for security reasons, but this may be necessary when using this programmatically.",
-          "type": "string"
-        },
-        "http_headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Additional HTTP headers to include in requests to this provider where the (key, value) pairs are the header name and value.",
-          "type": "object"
-        },
-        "name": {
-          "default": "",
-          "description": "Friendly display name.",
-          "type": "string"
-        },
-        "query_params": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Optional query parameters to append to the base URL.",
-          "type": "object"
-        },
-        "request_max_retries": {
-          "description": "Maximum number of times to retry a failed HTTP request to this provider.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "requires_openai_auth": {
-          "default": false,
-          "description": "Does this provider require an OpenAI API Key or ChatGPT login token? If true, user is presented with login screen on first run, and login preference and token/key are stored in auth.json. If false (which is the default), login screen is skipped, and API key (if needed) comes from the \"env_key\" environment variable.",
-          "type": "boolean"
-        },
-        "stream_idle_timeout_ms": {
-          "description": "Idle timeout (in milliseconds) to wait for activity on a streaming response before treating the connection as lost.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "stream_max_retries": {
-          "description": "Number of times to retry reconnecting a dropped streaming response before failing.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "supports_standalone_web_search": {
-          "default": false,
-          "description": "Whether this provider supports the standalone web-search endpoint.",
-          "type": "boolean"
-        },
-        "supports_websockets": {
-          "default": false,
-          "description": "Whether this provider supports the Responses API WebSocket transport.",
-          "type": "boolean"
-        },
-        "websocket_connect_timeout_ms": {
-          "description": "Maximum time (in milliseconds) to wait for a websocket connection attempt before treating it as failed.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "wire_api": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/WireApi"
-            }
-          ],
-          "default": "responses",
-          "description": "Which wire protocol this provider expects."
-        }
       },
       "type": "object"
     },
@@ -3646,18 +3464,6 @@
         }
       },
       "type": "object"
-    },
-    "WireApi": {
-      "description": "Wire protocol that the provider speaks.",
-      "oneOf": [
-        {
-          "description": "The Responses API exposed by OpenAI at `/v1/responses`.",
-          "enum": [
-            "responses"
-          ],
-          "type": "string"
-        }
-      ]
     }
   },
   "description": "Base config deserialized from ~/.codex/config.toml.",
@@ -3706,10 +3512,6 @@
       "minimum": 0.0,
       "type": "integer"
     },
-    "chatgpt_base_url": {
-      "description": "Base URL for requests to ChatGPT (as opposed to the OpenAI API).",
-      "type": "string"
-    },
     "check_for_update_on_startup": {
       "description": "When `true`, checks for Codex updates on startup and surfaces update prompts. Set to `false` only if your Codex updates are centrally managed. Defaults to `true`.",
       "type": "boolean"
@@ -3757,16 +3559,8 @@
       "description": "Experimental / do not use. Replaces the built-in realtime start instructions inserted into developer messages when realtime becomes active.",
       "type": "string"
     },
-    "experimental_realtime_webrtc_call_base_url": {
-      "description": "Experimental / do not use. Overrides only the WebRTC realtime call creation base URL. This is separate from `experimental_realtime_ws_base_url` because WebRTC call creation is HTTP, while sideband control is websocket.",
-      "type": "string"
-    },
     "experimental_realtime_ws_backend_prompt": {
       "description": "Experimental / do not use. Overrides only the realtime conversation websocket transport instructions (the `Op::RealtimeConversation` `/ws` session.update instructions) without changing normal prompts.",
-      "type": "string"
-    },
-    "experimental_realtime_ws_base_url": {
-      "description": "Experimental / do not use. Overrides only the realtime conversation websocket transport base URL (the `Op::RealtimeConversation` `/v1/realtime` connection) without changing normal provider HTTP requests.",
       "type": "string"
     },
     "experimental_realtime_ws_model": {
@@ -4193,18 +3987,6 @@
       ],
       "description": "Optional path to a file containing model instructions that will override the built-in instructions for the selected model. Users are STRONGLY DISCOURAGED from using this field, as deviating from the instructions sanctioned by Codex will likely degrade model performance."
     },
-    "model_provider": {
-      "description": "Provider to use from the model_providers map.",
-      "type": "string"
-    },
-    "model_providers": {
-      "additionalProperties": {
-        "$ref": "#/definitions/ModelProviderInfo"
-      },
-      "default": {},
-      "description": "User-defined provider entries that extend the built-in list. Built-in IDs cannot be overridden.",
-      "type": "object"
-    },
     "model_reasoning_effort": {
       "$ref": "#/definitions/ReasoningEffort"
     },
@@ -4235,10 +4017,6 @@
       },
       "type": "array"
     },
-    "openai_base_url": {
-      "description": "Base URL override for the built-in `openai` model provider.",
-      "type": "string"
-    },
     "orchestrator": {
       "allOf": [
         {
@@ -4246,10 +4024,6 @@
         }
       ],
       "description": "Orchestrator-owned feature settings."
-    },
-    "oss_provider": {
-      "description": "Preferred OSS provider for local models, e.g. \"lmstudio\" or \"ollama\".",
-      "type": "string"
     },
     "otel": {
       "allOf": [

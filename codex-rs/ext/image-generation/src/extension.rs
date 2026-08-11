@@ -38,9 +38,7 @@ impl ImageGenerationExtensionConfig {
     /// Resolves the image provider and save root for a thread.
     fn from_config(config: &Config, resolve_save_root: &SaveRootResolver) -> Self {
         Self {
-            available: config.model_provider.is_openai()
-                || config.model_provider.requires_openai_auth
-                || config.model_provider.uses_openai_actor_authorization(),
+            available: true,
             provider: config.model_provider.clone(),
             save_root: resolve_save_root(config),
         }

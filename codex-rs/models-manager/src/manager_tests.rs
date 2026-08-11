@@ -87,7 +87,6 @@ fn assert_models_contain(actual: &[ModelInfo], expected: &[ModelInfo]) {
 
 #[derive(Debug)]
 struct TestModelsEndpoint {
-    has_command_auth: bool,
     uses_codex_backend: bool,
     responses: Mutex<VecDeque<Vec<ModelInfo>>>,
     fetch_count: AtomicUsize,
@@ -186,7 +185,6 @@ impl ModelsCache for TestModelsCache {
 impl TestModelsEndpoint {
     fn new(responses: Vec<Vec<ModelInfo>>) -> Arc<Self> {
         Arc::new(Self {
-            has_command_auth: false,
             uses_codex_backend: true,
             responses: Mutex::new(responses.into()),
             fetch_count: AtomicUsize::new(0),
@@ -196,7 +194,6 @@ impl TestModelsEndpoint {
 
     fn without_refresh(responses: Vec<Vec<ModelInfo>>) -> Arc<Self> {
         Arc::new(Self {
-            has_command_auth: false,
             uses_codex_backend: false,
             responses: Mutex::new(responses.into()),
             fetch_count: AtomicUsize::new(0),
@@ -260,10 +257,6 @@ impl ExternalAuth for TestUnresolvedExternalApiKeyAuth {
 }
 
 impl ModelsEndpointClient for TestModelsEndpoint {
-    fn has_command_auth(&self) -> bool {
-        self.has_command_auth
-    }
-
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool> {
         Box::pin(async { self.uses_codex_backend })
     }
@@ -576,7 +569,6 @@ c2ln",
         last_refresh: Some(Utc::now()),
         agent_identity: None,
         personal_access_token: None,
-        bedrock_api_key: None,
     };
     std::fs::create_dir_all(codex_home).expect("codex home should be created");
     std::fs::write(
@@ -989,7 +981,6 @@ async fn refresh_available_models_keeps_merging_for_api_auth() {
     )];
     let codex_home = tempdir().expect("temp dir");
     let endpoint = Arc::new(TestModelsEndpoint {
-        has_command_auth: true,
         uses_codex_backend: false,
         responses: Mutex::new(vec![remote_models.clone()].into()),
         fetch_count: AtomicUsize::new(0),
@@ -1259,10 +1250,6 @@ impl TestAuthAwareModelsEndpoint {
 }
 
 impl ModelsEndpointClient for TestAuthAwareModelsEndpoint {
-    fn has_command_auth(&self) -> bool {
-        false
-    }
-
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool> {
         Box::pin(TestAuthAwareModelsEndpoint::uses_codex_backend(self))
     }

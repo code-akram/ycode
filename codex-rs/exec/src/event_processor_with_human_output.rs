@@ -8,7 +8,6 @@ use codex_cli_protocol::ThreadItem;
 use codex_cli_protocol::ThreadTokenUsage;
 use codex_cli_protocol::TurnStatus;
 use codex_core::config::Config;
-use codex_model_provider_info::WireApi;
 use codex_protocol::num_format::format_with_separators;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use owo_colors::OwoColorize;
@@ -379,23 +378,21 @@ fn config_summary_entries(
             session_configured_event.model_provider_id.clone(),
         ),
     ];
-    if config.model_provider.wire_api == WireApi::Responses {
-        entries.push((
-            "reasoning effort",
-            config
-                .model_reasoning_effort
-                .as_ref()
-                .map(std::string::ToString::to_string)
-                .unwrap_or_else(|| "none".to_string()),
-        ));
-        entries.push((
-            "reasoning summaries",
-            config
-                .model_reasoning_summary
-                .map(|summary| summary.to_string())
-                .unwrap_or_else(|| "none".to_string()),
-        ));
-    }
+    entries.push((
+        "reasoning effort",
+        config
+            .model_reasoning_effort
+            .as_ref()
+            .map(std::string::ToString::to_string)
+            .unwrap_or_else(|| "none".to_string()),
+    ));
+    entries.push((
+        "reasoning summaries",
+        config
+            .model_reasoning_summary
+            .map(|summary| summary.to_string())
+            .unwrap_or_else(|| "none".to_string()),
+    ));
     entries.push((
         "session id",
         session_configured_event.session_id.to_string(),

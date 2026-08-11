@@ -23,13 +23,6 @@ use crate::types::Tui;
 use crate::types::UriBasedFileOpener;
 use crate::types::WindowsToml;
 use codex_features::FeaturesToml;
-use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
-use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
-use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
-use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
-use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
-use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::config_types::Personality;
@@ -52,13 +45,6 @@ use serde::Deserializer;
 use serde::Serialize;
 use serde::de::Error as SerdeError;
 use serde_json::Value as JsonValue;
-
-const RESERVED_MODEL_PROVIDER_IDS: [&str; 4] = [
-    AMAZON_BEDROCK_PROVIDER_ID,
-    OPENAI_PROVIDER_ID,
-    OLLAMA_OSS_PROVIDER_ID,
-    LMSTUDIO_OSS_PROVIDER_ID,
-];
 
 pub const DEFAULT_PROJECT_DOC_MAX_BYTES: usize = 32 * 1024;
 
@@ -146,9 +132,6 @@ pub struct ConfigToml {
     pub model: Option<String>,
     /// Review model override used by the `/review` feature.
     pub review_model: Option<String>,
-
-    /// Provider to use from the model_providers map.
-    pub model_provider: Option<String>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
@@ -247,11 +230,6 @@ pub struct ConfigToml {
     #[serde(default)]
     pub cli_auth_credentials_store: Option<AuthCredentialsStoreMode>,
 
-    /// User-defined provider entries that extend the built-in list. Built-in
-    /// IDs cannot be overridden.
-    #[serde(default, deserialize_with = "deserialize_model_providers")]
-    pub model_providers: HashMap<String, ModelProviderInfo>,
-
     /// Maximum number of bytes to include from an AGENTS.md project doc file.
     #[serde(default = "default_project_doc_max_bytes")]
     pub project_doc_max_bytes: Option<usize>,
@@ -330,28 +308,13 @@ pub struct ConfigToml {
     /// `default`, `priority`, or `flex`; legacy `fast` also works).
     pub service_tier: Option<String>,
 
-    /// Base URL for requests to ChatGPT (as opposed to the OpenAI API).
-    pub chatgpt_base_url: Option<String>,
-
     /// Orchestrator-owned feature settings.
     pub orchestrator: Option<OrchestratorToml>,
-
-    /// Base URL override for the built-in `openai` model provider.
-    pub openai_base_url: Option<String>,
 
     /// Machine-local realtime audio device preferences used by realtime voice.
     #[serde(default)]
     pub audio: Option<RealtimeAudioToml>,
 
-    /// Experimental / do not use. Overrides only the realtime conversation
-    /// websocket transport base URL (the `Op::RealtimeConversation`
-    /// `/v1/realtime`
-    /// connection) without changing normal provider HTTP requests.
-    pub experimental_realtime_ws_base_url: Option<String>,
-    /// Experimental / do not use. Overrides only the WebRTC realtime call
-    /// creation base URL. This is separate from `experimental_realtime_ws_base_url`
-    /// because WebRTC call creation is HTTP, while sideband control is websocket.
-    pub experimental_realtime_webrtc_call_base_url: Option<String>,
     /// Experimental / do not use. Selects the realtime websocket model/snapshot
     /// used for the `Op::RealtimeConversation` connection.
     pub experimental_realtime_ws_model: Option<String>,
@@ -461,8 +424,6 @@ pub struct ConfigToml {
 
     pub experimental_compact_prompt_file: Option<AbsolutePathBuf>,
     pub experimental_use_unified_exec_tool: Option<bool>,
-    /// Preferred OSS provider for local models, e.g. "lmstudio" or "ollama".
-    pub oss_provider: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
@@ -853,80 +814,6 @@ fn project_config_for_lookup_key(
         .map(|(_, project_config)| (**project_config).clone())
 }
 
-pub fn validate_reserved_model_provider_ids(
-    model_providers: &HashMap<String, ModelProviderInfo>,
-) -> Result<(), String> {
-    let mut conflicts = model_providers
-        .keys()
-        .filter(|key| {
-            key.as_str() != AMAZON_BEDROCK_PROVIDER_ID
-                && RESERVED_MODEL_PROVIDER_IDS.contains(&key.as_str())
-        })
-        .map(|key| format!("`{key}`"))
-        .collect::<Vec<_>>();
-    conflicts.sort_unstable();
-    if conflicts.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "model_providers contains reserved built-in provider IDs: {}. \
-Built-in providers cannot be overridden. Rename your custom provider (for example, `openai-custom`).",
-            conflicts.join(", ")
-        ))
-    }
-}
-
-pub fn validate_model_providers(
-    model_providers: &HashMap<String, ModelProviderInfo>,
-) -> Result<(), String> {
-    validate_reserved_model_provider_ids(model_providers)?;
-    for (key, provider) in model_providers {
-        if key != AMAZON_BEDROCK_PROVIDER_ID {
-            if provider.aws.is_some() {
-                return Err(format!(
-                    "model_providers.{key}: provider aws is only supported for `{AMAZON_BEDROCK_PROVIDER_ID}`"
-                ));
-            }
-            if provider.name.trim().is_empty() {
-                return Err(format!(
-                    "model_providers.{key}: provider name must not be empty"
-                ));
-            }
-        }
-        provider
-            .validate()
-            .map_err(|message| format!("model_providers.{key}: {message}"))?;
-    }
-    Ok(())
-}
-
-fn deserialize_model_providers<'de, D>(
-    deserializer: D,
-) -> Result<HashMap<String, ModelProviderInfo>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let model_providers = HashMap::<String, ModelProviderInfo>::deserialize(deserializer)?;
-    validate_model_providers(&model_providers).map_err(serde::de::Error::custom)?;
-    Ok(model_providers)
-}
-
-pub fn validate_oss_provider(provider: &str) -> std::io::Result<()> {
-    match provider {
-        LMSTUDIO_OSS_PROVIDER_ID | OLLAMA_OSS_PROVIDER_ID => Ok(()),
-        LEGACY_OLLAMA_CHAT_PROVIDER_ID => Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            OLLAMA_CHAT_PROVIDER_REMOVED_ERROR,
-        )),
-        _ => Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!(
-                "Invalid OSS provider '{provider}'. Must be one of: {LMSTUDIO_OSS_PROVIDER_ID}, {OLLAMA_OSS_PROVIDER_ID}"
-            ),
-        )),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -977,22 +864,5 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("TOML list of strings"));
         assert!(message.contains("comma-separated strings are not supported"));
-    }
-
-    #[test]
-    fn amazon_bedrock_auth_command_must_not_be_empty() {
-        let err = toml::from_str::<ConfigToml>(
-            r#"
-[model_providers.amazon-bedrock.auth]
-command = "   "
-"#,
-        )
-        .expect_err("empty Amazon Bedrock auth command should be rejected");
-
-        assert!(
-            err.to_string().contains(
-                "model_providers.amazon-bedrock: provider auth.command must not be empty"
-            )
-        );
     }
 }

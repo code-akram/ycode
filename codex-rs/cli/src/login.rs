@@ -13,7 +13,6 @@ use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthRouteConfig;
 use codex_login::CLIENT_ID;
 use codex_login::ServerOptions;
-use codex_login::login_with_access_token;
 use codex_login::login_with_api_key;
 use codex_login::logout_with_revoke;
 use codex_login::run_device_code_login;
@@ -37,8 +36,6 @@ const CHATGPT_LOGIN_DISABLED_MESSAGE: &str =
     "ChatGPT login is disabled. Use API key login instead.";
 const API_KEY_LOGIN_DISABLED_MESSAGE: &str =
     "API key login is disabled. Use ChatGPT login instead.";
-const ACCESS_TOKEN_LOGIN_DISABLED_MESSAGE: &str =
-    "Access token login is disabled. Use API key login instead.";
 const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
 
 /// Installs a small file-backed tracing layer for direct `codex login` flows.
@@ -230,59 +227,11 @@ pub async fn run_login_with_api_key(
     }
 }
 
-pub async fn run_login_with_access_token(
-    cli_config_overrides: CliConfigOverrides,
-    access_token: String,
-) -> ! {
-    let config = load_config_or_exit(cli_config_overrides).await;
-    let _login_log_guard = init_login_file_logging(&config);
-    tracing::info!("starting access token login flow");
-
-    if !config
-        .auth_config()
-        .is_login_method_allowed(ForcedLoginMethod::Chatgpt)
-    {
-        eprintln!("{ACCESS_TOKEN_LOGIN_DISABLED_MESSAGE}");
-        std::process::exit(1);
-    }
-
-    let auth_route_config = config.auth_route_config();
-    let effective_chatgpt_workspaces = config.auth_config().effective_chatgpt_workspaces();
-    match login_with_access_token(
-        &config.codex_home,
-        &access_token,
-        config.cli_auth_credentials_store_mode,
-        effective_chatgpt_workspaces.as_deref(),
-        Some(&config.chatgpt_base_url),
-        config.auth_keyring_backend_kind(),
-        &auth_route_config,
-    )
-    .await
-    {
-        Ok(_) => {
-            eprintln!("{LOGIN_SUCCESS_MESSAGE}");
-            std::process::exit(0);
-        }
-        Err(e) => {
-            eprintln!("Error logging in with access token: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
 pub fn read_api_key_from_stdin() -> String {
     read_stdin_secret(
         "--with-api-key expects the API key on stdin. Try piping it, e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`.",
         "Reading API key from stdin...",
         "No API key provided via stdin.",
-    )
-}
-
-pub fn read_access_token_from_stdin() -> String {
-    read_stdin_secret(
-        "--with-access-token expects the access token on stdin. Try piping it, e.g. `printenv CODEX_ACCESS_TOKEN | codex login --with-access-token`.",
-        "Reading access token from stdin...",
-        "No access token provided via stdin.",
     )
 }
 
@@ -312,11 +261,7 @@ fn read_stdin_secret(terminal_message: &str, reading_message: &str, empty_messag
 }
 
 /// Login using the OAuth device code flow.
-pub async fn run_login_with_device_code(
-    cli_config_overrides: CliConfigOverrides,
-    issuer_base_url: Option<String>,
-    client_id: Option<String>,
-) -> ! {
+pub async fn run_login_with_device_code(cli_config_overrides: CliConfigOverrides) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
     let _login_log_guard = init_login_file_logging(&config);
     tracing::info!("starting device code login flow");
@@ -336,17 +281,14 @@ pub async fn run_login_with_device_code(
     )
     .await;
     let effective_chatgpt_workspaces = config.auth_config().effective_chatgpt_workspaces();
-    let mut opts = ServerOptions::new(
+    let opts = ServerOptions::new(
         config.codex_home.to_path_buf(),
-        client_id.unwrap_or(CLIENT_ID.to_string()),
+        CLIENT_ID.to_string(),
         effective_chatgpt_workspaces,
         config.cli_auth_credentials_store_mode,
         config.auth_keyring_backend_kind(),
         auth_route_config,
     );
-    if let Some(iss) = issuer_base_url {
-        opts.issuer = iss;
-    }
     match run_device_code_login(opts).await {
         Ok(()) => {
             eprintln!("{LOGIN_SUCCESS_MESSAGE}");
@@ -365,8 +307,6 @@ pub async fn run_login_with_device_code(
 /// falls back to starting the local browser login server.
 pub async fn run_login_with_device_code_fallback_to_browser(
     cli_config_overrides: CliConfigOverrides,
-    issuer_base_url: Option<String>,
-    client_id: Option<String>,
 ) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
     let _login_log_guard = init_login_file_logging(&config);
@@ -390,15 +330,12 @@ pub async fn run_login_with_device_code_fallback_to_browser(
     let effective_chatgpt_workspaces = config.auth_config().effective_chatgpt_workspaces();
     let mut opts = ServerOptions::new(
         config.codex_home.to_path_buf(),
-        client_id.unwrap_or(CLIENT_ID.to_string()),
+        CLIENT_ID.to_string(),
         effective_chatgpt_workspaces,
         config.cli_auth_credentials_store_mode,
         config.auth_keyring_backend_kind(),
         auth_route_config,
     );
-    if let Some(iss) = issuer_base_url {
-        opts.issuer = iss;
-    }
     opts.open_browser = false;
 
     match run_device_code_login(opts.clone()).await {
@@ -468,10 +405,6 @@ pub async fn run_login_status(cli_config_overrides: CliConfigOverrides) -> ! {
             }
             AuthMode::PersonalAccessToken => {
                 eprintln!("Logged in using personal access token");
-                std::process::exit(0);
-            }
-            AuthMode::BedrockApiKey => {
-                eprintln!("Logged in using Amazon Bedrock API key");
                 std::process::exit(0);
             }
         },

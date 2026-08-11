@@ -1,9 +1,6 @@
 mod common;
 
 #[cfg(unix)]
-#[path = "relay/version_skew.rs"]
-mod version_skew;
-
 #[path = "../src/proto/codex.exec_server.relay.v1.rs"]
 mod relay_proto;
 

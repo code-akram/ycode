@@ -30,14 +30,11 @@ pub(super) fn resume_model_settings_for_overrides(
                     profile: Some(_),
                     ..
                 }
-        ) && ["model", "model_provider", "model_reasoning_effort"]
+        ) && ["model", "model_reasoning_effort"]
             .iter()
             .any(|key| layer.config.get(*key).is_some())
     });
-    if harness_overrides.model.is_some()
-        || harness_overrides.model_provider.is_some()
-        || has_layer_override
-    {
+    if harness_overrides.model.is_some() || has_layer_override {
         crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig
     } else {
         crate::runtime_session::ResumeModelSettings::RestoreFromThread

@@ -131,7 +131,6 @@ use codex_model_provider::create_model_provider;
 #[cfg(test)]
 use codex_model_provider_info::DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::WireApi;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result;
 use codex_response_debug_context::extract_response_debug_context;
@@ -837,7 +836,7 @@ impl ModelClient {
     #[allow(clippy::too_many_arguments)]
     fn build_responses_request(
         &self,
-        provider: &codex_api::Provider,
+        _provider: &codex_api::Provider,
         prompt: &Prompt,
         model_info: &ModelInfo,
         effort: Option<ReasoningEffortConfig>,
@@ -923,7 +922,7 @@ impl ModelClient {
             tool_choice: "auto".to_string(),
             parallel_tool_calls: prompt.parallel_tool_calls && !model_info.use_responses_lite,
             reasoning: Some(reasoning),
-            store: provider.is_azure_responses_endpoint(),
+            store: false,
             stream: true,
             stream_options,
             include,
@@ -1312,7 +1311,7 @@ impl ModelClientSession {
         skip_all,
         fields(
             provider = %self.client.state.provider.info().name,
-            wire_api = %self.client.state.provider.info().wire_api,
+            transport.api = "responses",
             transport = "responses_websocket",
             api.path = "responses",
             turn.has_metadata_header = params.responses_metadata.has_turn_metadata()
@@ -1396,7 +1395,7 @@ impl ModelClientSession {
         skip_all,
         fields(
             model = %model_info.slug,
-            wire_api = %self.client.state.provider.info().wire_api,
+            transport.api = "responses",
             transport = "responses_http",
             http.method = "POST",
             api.path = "responses",
@@ -1523,7 +1522,7 @@ impl ModelClientSession {
         skip_all,
         fields(
             model = %model_info.slug,
-            wire_api = %self.client.state.provider.info().wire_api,
+            transport.api = "responses",
             transport = "responses_websocket",
             api.path = "responses",
             turn.has_metadata_header = responses_metadata.has_turn_metadata(),
@@ -1813,46 +1812,41 @@ impl ModelClientSession {
         responses_metadata: &CodexResponsesMetadata,
         inference_trace: &InferenceTraceContext,
     ) -> Result<ResponseStream> {
-        let wire_api = self.client.state.provider.info().wire_api;
-        match wire_api {
-            WireApi::Responses => {
-                if self.client.responses_websocket_enabled() {
-                    let request_trace = current_span_w3c_trace_context();
-                    match self
-                        .stream_responses_websocket(
-                            prompt,
-                            model_info,
-                            session_telemetry,
-                            effort.clone(),
-                            summary,
-                            service_tier.clone(),
-                            responses_metadata,
-                            /*warmup*/ false,
-                            request_trace,
-                            inference_trace,
-                        )
-                        .await?
-                    {
-                        WebsocketStreamOutcome::Stream(stream) => return Ok(stream),
-                        WebsocketStreamOutcome::FallbackToHttp => {
-                            self.try_switch_fallback_transport(session_telemetry, model_info);
-                        }
-                    }
-                }
-
-                self.stream_responses_api(
+        if self.client.responses_websocket_enabled() {
+            let request_trace = current_span_w3c_trace_context();
+            match self
+                .stream_responses_websocket(
                     prompt,
                     model_info,
                     session_telemetry,
-                    effort,
+                    effort.clone(),
                     summary,
-                    service_tier,
+                    service_tier.clone(),
                     responses_metadata,
+                    /*warmup*/ false,
+                    request_trace,
                     inference_trace,
                 )
-                .await
+                .await?
+            {
+                WebsocketStreamOutcome::Stream(stream) => return Ok(stream),
+                WebsocketStreamOutcome::FallbackToHttp => {
+                    self.try_switch_fallback_transport(session_telemetry, model_info);
+                }
             }
         }
+
+        self.stream_responses_api(
+            prompt,
+            model_info,
+            session_telemetry,
+            effort,
+            summary,
+            service_tier,
+            responses_metadata,
+            inference_trace,
+        )
+        .await
     }
 
     /// Permanently disables WebSockets for this Codex session and resets WebSocket state.
@@ -2146,7 +2140,7 @@ impl AuthRequestTelemetryContext {
         let auth_telemetry = auth_header_telemetry(api_auth);
         Self {
             auth_mode: auth_mode.map(|mode| match mode {
-                AuthMode::ApiKey | AuthMode::BedrockApiKey => "ApiKey",
+                AuthMode::ApiKey => "ApiKey",
                 AuthMode::Chatgpt
                 | AuthMode::ChatgptAuthTokens
                 | AuthMode::Headers

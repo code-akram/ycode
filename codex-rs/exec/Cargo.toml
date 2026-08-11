@@ -32,12 +32,10 @@ codex-core = { workspace = true }
 codex-feedback = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-login = { workspace = true }
-codex-model-provider-info = { workspace = true }
 codex-otel = { workspace = true }
 codex-protocol = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-cli = { workspace = true }
-codex-utils-oss = { workspace = true }
 owo-colors = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

@@ -38,7 +38,7 @@ use crate::auth::resolve_provider_auth;
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const MODELS_ENDPOINT: &str = "/models";
 
-/// Provider-owned OpenAI-compatible `/models` endpoint.
+/// Provider-owned official OpenAI `/models` endpoint.
 #[derive(Debug)]
 pub(crate) struct OpenAiModelsEndpoint {
     provider_info: ModelProviderInfo,
@@ -82,7 +82,7 @@ impl OpenAiModelsEndpoint {
         let auth = self.auth().await;
         let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
         let api_provider = self.provider_info.to_api_provider(auth_mode)?;
-        let api_auth = resolve_provider_auth(auth.as_ref(), &self.provider_info)?;
+        let api_auth = resolve_provider_auth(auth.as_ref())?;
         let request_url =
             ModelsClient::<ReqwestTransport>::request_url(&api_provider, client_version);
         let auth_telemetry = auth_header_telemetry(api_auth.as_ref());
@@ -124,10 +124,6 @@ impl OpenAiModelsEndpoint {
 }
 
 impl ModelsEndpointClient for OpenAiModelsEndpoint {
-    fn has_command_auth(&self) -> bool {
-        self.provider_info.has_command_auth()
-    }
-
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool> {
         Box::pin(OpenAiModelsEndpoint::uses_codex_backend(self))
     }
@@ -275,13 +271,11 @@ impl RequestTelemetry for ModelsRequestTelemetry {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU64;
     use std::sync::Mutex;
 
     use super::*;
     use codex_http_client::OutboundProxyPolicy;
     use codex_login::default_client::create_client;
-    use codex_protocol::config_types::ModelProviderAuthInfo;
     use codex_protocol::openai_models::ModelsResponse;
     use pretty_assertions::assert_eq;
     use wiremock::Mock;
@@ -311,43 +305,6 @@ mod tests {
                 Ok(ReqwestTransport::from_http_client(create_client()))
             })
         }
-    }
-
-    fn provider_info_with_command_auth() -> ModelProviderInfo {
-        ModelProviderInfo {
-            auth: Some(ModelProviderAuthInfo {
-                command: "print-token".to_string(),
-                args: Vec::new(),
-                timeout_ms: NonZeroU64::new(5_000).expect("timeout should be non-zero"),
-                refresh_interval_ms: 300_000,
-                cwd: std::env::current_dir()
-                    .expect("current dir should be available")
-                    .try_into()
-                    .expect("current dir should be absolute"),
-            }),
-            requires_openai_auth: false,
-            ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
-        }
-    }
-
-    #[test]
-    fn command_auth_provider_reports_command_auth_without_cached_auth() {
-        let endpoint = OpenAiModelsEndpoint::new(
-            provider_info_with_command_auth(),
-            /*auth_manager*/ None,
-        );
-
-        assert!(endpoint.has_command_auth());
-    }
-
-    #[test]
-    fn provider_without_command_auth_reports_no_command_auth() {
-        let endpoint = OpenAiModelsEndpoint::new(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            /*auth_manager*/ None,
-        );
-
-        assert!(!endpoint.has_command_auth());
     }
 
     #[tokio::test]

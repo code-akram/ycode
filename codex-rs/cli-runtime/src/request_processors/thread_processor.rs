@@ -45,14 +45,6 @@ fn collect_resume_override_mismatches(
             config_snapshot.model
         ));
     }
-    if let Some(requested_provider) = request.model_provider.as_deref()
-        && requested_provider != config_snapshot.model_provider_id
-    {
-        mismatch_details.push(format!(
-            "model_provider requested={requested_provider} active={}",
-            config_snapshot.model_provider_id
-        ));
-    }
     if let Some(requested_service_tier) = request.service_tier.as_ref()
         && requested_service_tier != &config_snapshot.service_tier
     {
@@ -115,7 +107,6 @@ fn merge_persisted_resume_metadata(
     }
 
     typesafe_overrides.model = persisted_metadata.model.clone();
-    typesafe_overrides.model_provider = Some(persisted_metadata.model_provider.clone());
 
     if let Some(reasoning_effort) = persisted_metadata.reasoning_effort.as_ref() {
         request_overrides.get_or_insert_with(HashMap::new).insert(
@@ -154,7 +145,6 @@ fn has_model_resume_override(
     typesafe_overrides: &ConfigOverrides,
 ) -> bool {
     typesafe_overrides.model.is_some()
-        || typesafe_overrides.model_provider.is_some()
         || request_overrides.is_some_and(|overrides| overrides.contains_key("model"))
         || request_overrides
             .is_some_and(|overrides| overrides.contains_key("model_reasoning_effort"))
@@ -891,8 +881,6 @@ impl ThreadRequestProcessor {
     ) -> Result<(), JSONRPCErrorError> {
         let ThreadStartParams {
             model,
-            model_provider,
-            allow_provider_model_fallback,
             service_tier,
             cwd,
             runtime_workspace_roots,
@@ -926,7 +914,6 @@ impl ThreadRequestProcessor {
             resolve_turn_environment_selections(self.thread_manager.as_ref(), environments)?;
         let mut typesafe_overrides = self.build_thread_config_overrides(
             model,
-            model_provider,
             service_tier,
             cwd,
             runtime_workspace_roots,
@@ -967,7 +954,7 @@ impl ThreadRequestProcessor {
                 thread_source.map(Into::into),
                 environments,
                 service_name,
-                allow_provider_model_fallback,
+                /*allow_provider_model_fallback*/ false,
                 experimental_raw_events,
                 request_trace,
                 initial_config_warnings,
@@ -1292,7 +1279,6 @@ impl ThreadRequestProcessor {
     fn build_thread_config_overrides(
         &self,
         model: Option<String>,
-        model_provider: Option<String>,
         service_tier: Option<Option<String>>,
         cwd: Option<String>,
         runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
@@ -1302,7 +1288,6 @@ impl ThreadRequestProcessor {
     ) -> ConfigOverrides {
         ConfigOverrides {
             model,
-            model_provider,
             service_tier,
             cwd: cwd.map(PathBuf::from),
             workspace_roots: runtime_workspace_roots,
@@ -2939,7 +2924,6 @@ impl ThreadRequestProcessor {
             history,
             path,
             model,
-            model_provider,
             service_tier,
             cwd,
             runtime_workspace_roots,
@@ -2992,7 +2976,6 @@ impl ThreadRequestProcessor {
         let runtime_workspace_roots = runtime_workspace_roots.map(resolve_runtime_workspace_roots);
         let mut typesafe_overrides = self.build_thread_config_overrides(
             model,
-            model_provider,
             service_tier,
             cwd,
             runtime_workspace_roots,
@@ -3807,7 +3790,6 @@ impl ThreadRequestProcessor {
             before_turn_id,
             path,
             model,
-            model_provider,
             service_tier,
             cwd,
             runtime_workspace_roots,
@@ -3913,7 +3895,6 @@ impl ThreadRequestProcessor {
         let runtime_workspace_roots = runtime_workspace_roots.map(resolve_runtime_workspace_roots);
         let mut typesafe_overrides = self.build_thread_config_overrides(
             model,
-            model_provider,
             service_tier,
             cwd,
             runtime_workspace_roots,

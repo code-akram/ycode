@@ -30,99 +30,11 @@ pub mod thread_config_source {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SessionThreadConfig {
-    #[prost(string, optional, tag = "1")]
-    pub model_provider: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, repeated, tag = "2")]
-    pub model_providers: ::prost::alloc::vec::Vec<ModelProvider>,
     #[prost(map = "string, bool", tag = "3")]
     pub features: ::std::collections::HashMap<::prost::alloc::string::String, bool>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UserThreadConfig {}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ModelProvider {
-    #[prost(string, tag = "1")]
-    pub id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "3")]
-    pub base_url: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "4")]
-    pub env_key: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "5")]
-    pub env_key_instructions: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag = "6")]
-    pub experimental_bearer_token: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, optional, tag = "7")]
-    pub auth: ::core::option::Option<ModelProviderAuthInfo>,
-    #[prost(enumeration = "WireApi", tag = "8")]
-    pub wire_api: i32,
-    #[prost(message, optional, tag = "9")]
-    pub query_params: ::core::option::Option<StringMap>,
-    #[prost(message, optional, tag = "10")]
-    pub http_headers: ::core::option::Option<StringMap>,
-    #[prost(message, optional, tag = "11")]
-    pub env_http_headers: ::core::option::Option<StringMap>,
-    #[prost(uint64, optional, tag = "12")]
-    pub request_max_retries: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "13")]
-    pub stream_max_retries: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "14")]
-    pub stream_idle_timeout_ms: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "15")]
-    pub websocket_connect_timeout_ms: ::core::option::Option<u64>,
-    #[prost(bool, tag = "16")]
-    pub requires_openai_auth: bool,
-    #[prost(bool, tag = "17")]
-    pub supports_websockets: bool,
-    #[prost(bool, tag = "18")]
-    pub supports_standalone_web_search: bool,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StringMap {
-    #[prost(map = "string, string", tag = "1")]
-    pub values:
-        ::std::collections::HashMap<::prost::alloc::string::String, ::prost::alloc::string::String>,
-}
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ModelProviderAuthInfo {
-    #[prost(string, tag = "1")]
-    pub command: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag = "2")]
-    pub args: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(uint64, tag = "3")]
-    pub timeout_ms: u64,
-    #[prost(uint64, tag = "4")]
-    pub refresh_interval_ms: u64,
-    #[prost(string, tag = "5")]
-    pub cwd: ::prost::alloc::string::String,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum WireApi {
-    Unspecified = 0,
-    Responses = 1,
-}
-impl WireApi {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "WIRE_API_UNSPECIFIED",
-            Self::Responses => "WIRE_API_RESPONSES",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "WIRE_API_UNSPECIFIED" => Some(Self::Unspecified),
-            "WIRE_API_RESPONSES" => Some(Self::Responses),
-            _ => None,
-        }
-    }
-}
 /// Generated client implementations.
 pub mod thread_config_loader_client {
     #![allow(

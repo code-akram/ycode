@@ -248,7 +248,6 @@ pub struct Config {
     pub model_context_window: Option<i64>,
     pub model_auto_compact_token_limit: Option<i64>,
     pub model_auto_compact_token_limit_scope: Option<AutoCompactTokenLimitScope>,
-    pub model_provider: Option<String>,
     pub forced_chatgpt_workspace_id: Option<ForcedChatgptWorkspaceIds>,
     pub forced_login_method: Option<ForcedLoginMethod>,
     pub web_search: Option<WebSearchMode>,

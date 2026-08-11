@@ -14,9 +14,7 @@ use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_login::default_client::originator;
-use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::WireApi;
 use codex_model_provider_info::built_in_model_providers;
 use codex_models_manager::bundled_models_response;
 use codex_otel::SessionTelemetry;
@@ -24,7 +22,6 @@ use codex_otel::TelemetryAuthMode;
 use codex_protocol::ResponseItemId;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::AgentSettings;
-use codex_protocol::config_types::ModelProviderAuthInfo;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::Verbosity;
@@ -79,7 +76,6 @@ use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::io::Write;
-use std::num::NonZeroU64;
 use std::sync::Arc;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -246,7 +242,7 @@ async fn openai_stateless_responses_requests_preserve_item_turn_metadata_across_
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn non_openai_responses_requests_include_item_ids_without_passthrough_metadata() {
+async fn official_responses_requests_include_item_ids_without_passthrough_metadata() {
     let server = MockServer::start().await;
     let mut private_function_call = ev_function_call("private-call", "unsupported_tool", "{}");
     private_function_call["item"]["encrypted_function_args"] = json!(["message"]);
@@ -262,8 +258,7 @@ async fn non_openai_responses_requests_include_item_ids_without_passthrough_meta
         ],
     )
     .await;
-    let mut provider =
-        built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None)["openai"].clone();
+    let mut provider = built_in_model_providers()["openai"].clone();
     provider.name = "Test Responses".to_string();
     provider.base_url = Some(format!("{}/v1", server.uri()));
     provider.supports_websockets = false;
@@ -692,96 +687,6 @@ fn write_auth_json(
     .unwrap();
 
     fake_jwt
-}
-
-struct ProviderAuthCommandFixture {
-    tempdir: TempDir,
-    command: String,
-    args: Vec<String>,
-}
-
-impl ProviderAuthCommandFixture {
-    fn new(tokens: &[&str]) -> std::io::Result<Self> {
-        let tempdir = tempfile::tempdir()?;
-        let tokens_file = tempdir.path().join("tokens.txt");
-        let mut token_file_contents = String::new();
-        for token in tokens {
-            token_file_contents.push_str(token);
-            token_file_contents.push('\n');
-        }
-        std::fs::write(&tokens_file, token_file_contents)?;
-
-        #[cfg(unix)]
-        let (command, args) = {
-            let script_path = tempdir.path().join("print-token.sh");
-            std::fs::write(
-                &script_path,
-                r#"#!/bin/sh
-first_line=$(sed -n '1p' tokens.txt)
-printf '%s\n' "$first_line"
-tail -n +2 tokens.txt > tokens.next
-mv tokens.next tokens.txt
-"#,
-            )?;
-            let mut permissions = std::fs::metadata(&script_path)?.permissions();
-            {
-                use std::os::unix::fs::PermissionsExt;
-                permissions.set_mode(0o755);
-            }
-            std::fs::set_permissions(&script_path, permissions)?;
-            ("./print-token.sh".to_string(), Vec::new())
-        };
-
-        #[cfg(windows)]
-        let (command, args) = {
-            let script_path = tempdir.path().join("print-token.cmd");
-            std::fs::write(
-                &script_path,
-                r#"@echo off
-setlocal EnableExtensions DisableDelayedExpansion
-
-set "first_line="
-<tokens.txt set /p first_line=
-if not defined first_line exit /b 1
-
-echo(%first_line%
-more +1 tokens.txt > tokens.next
-move /y tokens.next tokens.txt >nul
-"#,
-            )?;
-            (
-                "cmd.exe".to_string(),
-                vec![
-                    "/D".to_string(),
-                    "/Q".to_string(),
-                    "/C".to_string(),
-                    ".\\print-token.cmd".to_string(),
-                ],
-            )
-        };
-
-        Ok(Self {
-            tempdir,
-            command,
-            args,
-        })
-    }
-
-    fn auth(&self) -> ModelProviderAuthInfo {
-        ModelProviderAuthInfo {
-            command: self.command.clone(),
-            args: self.args.clone(),
-            // Match the model-provider default to avoid brittle shell-startup timing in CI.
-            timeout_ms: non_zero_u64(/*value*/ 5_000),
-            refresh_interval_ms: 60_000,
-            cwd: codex_utils_absolute_path::AbsolutePathBuf::try_from(self.tempdir.path())
-                .expect("tempdir should be absolute"),
-        }
-    }
-}
-
-fn non_zero_u64(value: u64) -> NonZeroU64 {
-    NonZeroU64::new(value).expect("expected non-zero value")
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1354,202 +1259,6 @@ async fn includes_session_id_thread_id_and_model_headers_in_request() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn provider_auth_command_supplies_bearer_token() {
-    skip_if_no_network!();
-
-    let server = MockServer::start().await;
-    mount_sse_once_match(
-        &server,
-        header("authorization", "Bearer command-token"),
-        sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
-    )
-    .await;
-    let auth_fixture = ProviderAuthCommandFixture::new(&["command-token"]).unwrap();
-
-    send_provider_auth_request(&server, auth_fixture.auth()).await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn provider_auth_command_refreshes_after_401() {
-    skip_if_no_network!();
-
-    let server = MockServer::start().await;
-    let auth_fixture = ProviderAuthCommandFixture::new(&["first-token", "second-token"]).unwrap();
-
-    Mock::given(method("POST"))
-        .and(path("/v1/responses"))
-        .and(header_regex("Authorization", "Bearer first-token"))
-        .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/responses"))
-        .and(header_regex("Authorization", "Bearer second-token"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_raw(
-                    sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
-                    "text/event-stream",
-                ),
-        )
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    send_provider_auth_request(&server, auth_fixture.auth()).await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn amazon_bedrock_proxy_uses_command_auth_and_custom_headers() {
-    skip_if_no_network!();
-
-    let server = MockServer::start().await;
-    let response = mount_sse_once(
-        &server,
-        sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
-    )
-    .await;
-    let auth_fixture = ProviderAuthCommandFixture::new(&["command-token"]).unwrap();
-    let mut provider = built_in_model_providers(/*openai_base_url*/ None)
-        .remove(AMAZON_BEDROCK_PROVIDER_ID)
-        .expect("Amazon Bedrock provider should be built in");
-    provider.base_url = Some(format!("{}/v1", server.uri()));
-    provider.auth = Some(auth_fixture.auth());
-    provider.aws = None;
-    provider
-        .http_headers
-        .get_or_insert_default()
-        .insert("x-some-header".to_string(), "foo".to_string());
-
-    send_request_with_provider(provider).await;
-
-    let request = response.single_request();
-    assert_eq!(request.path(), "/v1/responses");
-    assert_eq!(
-        request.header("authorization"),
-        Some("Bearer command-token".to_string())
-    );
-    assert_eq!(request.header("x-amz-date"), None);
-    assert_eq!(request.header("x-some-header"), Some("foo".to_string()));
-    assert_eq!(
-        request.header("x-amzn-mantle-client-agent"),
-        Some("codex".to_string())
-    );
-    assert_eq!(request.body_json()["store"], false);
-}
-
-/// Issues one streamed Responses request through a provider configured with command-backed auth.
-///
-/// The caller owns the server-side assertions, so this helper only validates that the request
-/// reaches `Completed` without surfacing an auth or transport error to the client.
-async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuthInfo) {
-    let provider = ModelProviderInfo {
-        name: "corp".into(),
-        base_url: Some(format!("{}/v1", server.uri())),
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: Some(auth),
-        aws: None,
-        wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: Some(0),
-        stream_max_retries: Some(0),
-        stream_idle_timeout_ms: Some(5_000),
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-        supports_standalone_web_search: false,
-    };
-
-    send_request_with_provider(provider).await;
-}
-
-#[expect(clippy::unwrap_used)]
-async fn send_request_with_provider(provider: ModelProviderInfo) {
-    let codex_home = TempDir::new().unwrap();
-    let mut config = load_default_config_for_test(&codex_home).await;
-    config.model_provider_id = provider.name.clone();
-    config.model_provider = provider.clone();
-    let effort = config.model_reasoning_effort.clone();
-    let summary = config.model_reasoning_summary;
-    let model = codex_core::test_support::get_model_offline(config.model.as_deref());
-    config.model = Some(model.clone());
-    let config = Arc::new(config);
-    let model_info =
-        codex_core::test_support::construct_model_info_offline(model.as_str(), &config);
-    let thread_id = ThreadId::new();
-    let session_telemetry = SessionTelemetry::new(
-        thread_id,
-        model.as_str(),
-        model_info.slug.as_str(),
-        /*account_id*/ None,
-        Some("test@test.com".to_string()),
-        /*auth_mode*/ None,
-        "test_originator".to_string(),
-        /*log_user_prompts*/ false,
-        "test".to_string(),
-        SessionSource::Exec,
-    );
-    let client = ModelClient::new(
-        Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-            "unused-api-key",
-        ))),
-        AgentIdentityAuthPolicy::JwtOnly,
-        thread_id,
-        provider,
-        SessionSource::Exec,
-        "test_originator".to_string(),
-        config.model_verbosity,
-        /*enable_request_compression*/ false,
-        /*include_timing_metrics*/ false,
-        /*beta_features_header*/ None,
-        /*concurrent_reasoning_summaries_enabled*/
-        config
-            .features
-            .enabled(Feature::ConcurrentReasoningSummaries),
-        /*attestation_provider*/ None,
-        config.http_client_factory(),
-    );
-    let responses_metadata = test_turn_responses_metadata(&client, thread_id);
-    let mut client_session = client.new_session();
-    let mut prompt = Prompt::default();
-    prompt.input.push(ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::InputText {
-            text: "hello".to_string(),
-        }],
-        phase: None,
-        internal_chat_message_metadata_passthrough: None,
-    });
-
-    let mut stream = client_session
-        .stream(
-            &prompt,
-            &model_info,
-            &session_telemetry,
-            effort,
-            summary.unwrap_or(ReasoningSummary::Auto),
-            /*service_tier*/ None,
-            &responses_metadata,
-            &codex_rollout_trace::InferenceTraceContext::disabled(),
-        )
-        .await
-        .expect("responses stream to start");
-
-    while let Some(event) = stream.next().await {
-        if let Ok(ResponseEvent::Completed { .. }) = event {
-            break;
-        }
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn includes_base_instructions_override_in_request() {
     skip_if_no_network!();
     // Mock server
@@ -1611,12 +1320,11 @@ async fn chatgpt_auth_sends_correct_request() {
     )
     .await;
 
-    let mut model_provider =
-        built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None)["openai"].clone();
+    let mut model_provider = built_in_model_providers()["openai"].clone();
     model_provider.base_url = Some(format!("{}/api/codex", server.uri()));
     model_provider.supports_websockets = false;
     let mut builder = test_codex()
-        .with_auth(create_dummy_codex_auth())
+        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(move |config| {
             config.model_provider = model_provider;
         });
@@ -1707,7 +1415,7 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
     let model_provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
         supports_websockets: false,
-        ..built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None)["openai"].clone()
+        ..built_in_model_providers()["openai"].clone()
     };
 
     // Init session
@@ -2218,48 +1926,6 @@ async fn model_without_summary_parameter_support_omits_configured_summary() -> a
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn sequential_cutoff_is_omitted_for_non_openai_provider() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-    let server = MockServer::start().await;
-
-    let resp_mock = mount_sse_once(
-        &server,
-        sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
-    )
-    .await;
-    let TestCodex { codex, .. } = test_codex()
-        .with_config(|config| {
-            config.model_provider.name = "mock".to_string();
-            let _ = config
-                .features
-                .enable(Feature::ConcurrentReasoningSummaries);
-        })
-        .build(&server)
-        .await?;
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-
-    let request_body = resp_mock.single_request().body_json();
-    pretty_assertions::assert_eq!(request_body.get("stream_options"), None);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn responses_lite_sets_all_turns_context_and_disables_parallel_tool_calls()
 -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
@@ -2714,222 +2380,6 @@ async fn includes_developer_instructions_message_in_request() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn azure_responses_request_includes_store_and_prefixed_item_ids() {
-    skip_if_no_network!();
-
-    let server = MockServer::start().await;
-
-    let sse_body = concat!(
-        "data: {\"type\":\"response.created\",\"response\":{}}\n\n",
-        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\"}}\n\n",
-    );
-    let resp_mock = mount_sse_once(&server, sse_body.to_string()).await;
-
-    let provider = ModelProviderInfo {
-        name: "azure".into(),
-        base_url: Some(format!("{}/openai", server.uri())),
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        aws: None,
-        wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: Some(0),
-        stream_max_retries: Some(0),
-        stream_idle_timeout_ms: Some(5_000),
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-        supports_standalone_web_search: false,
-    };
-
-    let codex_home = TempDir::new().unwrap();
-    let mut config = load_default_config_for_test(&codex_home).await;
-    config.model_provider_id = provider.name.clone();
-    config.model_provider = provider.clone();
-    let effort = config.model_reasoning_effort.clone();
-    let summary = config.model_reasoning_summary;
-    let model = codex_core::test_support::get_model_offline(config.model.as_deref());
-    config.model = Some(model.clone());
-    let config = Arc::new(config);
-    let model_info =
-        codex_core::test_support::construct_model_info_offline(model.as_str(), &config);
-    let thread_id = ThreadId::new();
-    let auth_manager =
-        codex_core::test_support::auth_manager_from_auth(CodexAuth::from_api_key("Test API Key"));
-    let session_telemetry = SessionTelemetry::new(
-        thread_id,
-        model.as_str(),
-        model_info.slug.as_str(),
-        /*account_id*/ None,
-        Some("test@test.com".to_string()),
-        auth_manager.auth_mode().map(TelemetryAuthMode::from),
-        "test_originator".to_string(),
-        /*log_user_prompts*/ false,
-        "test".to_string(),
-        SessionSource::Exec,
-    );
-
-    let client = ModelClient::new(
-        /*auth_manager*/ None,
-        AgentIdentityAuthPolicy::JwtOnly,
-        thread_id,
-        provider.clone(),
-        SessionSource::Exec,
-        "test_originator".to_string(),
-        config.model_verbosity,
-        /*enable_request_compression*/ false,
-        /*include_timing_metrics*/ false,
-        /*beta_features_header*/ None,
-        /*concurrent_reasoning_summaries_enabled*/ false,
-        /*attestation_provider*/ None,
-        config.http_client_factory(),
-    );
-    let responses_metadata = test_turn_responses_metadata(&client, thread_id);
-    let mut client_session = client.new_session();
-
-    let mut prompt = Prompt::default();
-    prompt.input.push(ResponseItem::Reasoning {
-        id: Some(ResponseItemId::with_suffix("rs", "reasoning-id")),
-        summary: vec![ReasoningItemReasoningSummary::SummaryText {
-            text: "summary".into(),
-        }],
-        content: Some(vec![ReasoningItemContent::ReasoningText {
-            text: "content".into(),
-        }]),
-        encrypted_content: None,
-        internal_chat_message_metadata_passthrough: None,
-    });
-    prompt.input.push(ResponseItem::Message {
-        id: Some(ResponseItemId::with_suffix("msg", "message-id")),
-        role: "assistant".into(),
-        content: vec![ContentItem::OutputText {
-            text: "message".into(),
-        }],
-        phase: None,
-        internal_chat_message_metadata_passthrough: None,
-    });
-    prompt.input.push(ResponseItem::WebSearchCall {
-        id: Some(ResponseItemId::with_suffix("ws", "web-search-id")),
-        status: Some("completed".into()),
-        action: Some(WebSearchAction::Search {
-            query: Some("weather".into()),
-            queries: None,
-        }),
-        internal_chat_message_metadata_passthrough: None,
-    });
-    prompt.input.push(ResponseItem::FunctionCall {
-        id: Some(ResponseItemId::with_suffix("fc", "function-id")),
-        name: "do_thing".into(),
-        namespace: None,
-        arguments: "{}".into(),
-        call_id: "function-call-id".into(),
-        encrypted_function_args: None,
-        internal_chat_message_metadata_passthrough: None,
-    });
-    prompt.input.push(ResponseItem::FunctionCallOutput {
-        id: None,
-        call_id: "function-call-id".into(),
-        output: FunctionCallOutputPayload::from_text("ok".into()),
-        internal_chat_message_metadata_passthrough: None,
-    });
-    prompt.input.push(ResponseItem::LocalShellCall {
-        id: Some(ResponseItemId::with_suffix("lsh", "local-shell-id")),
-        call_id: Some("local-shell-call-id".into()),
-        status: LocalShellStatus::Completed,
-        action: LocalShellAction::Exec(LocalShellExecAction {
-            command: vec!["echo".into(), "hello".into()],
-            timeout_ms: None,
-            working_directory: None,
-            env: None,
-            user: None,
-        }),
-        internal_chat_message_metadata_passthrough: None,
-    });
-    prompt.input.push(ResponseItem::CustomToolCall {
-        id: Some(ResponseItemId::with_suffix("ctc", "custom-tool-id")),
-        status: Some("completed".into()),
-        call_id: "custom-tool-call-id".into(),
-        name: "custom_tool".into(),
-        namespace: None,
-        input: "{}".into(),
-        internal_chat_message_metadata_passthrough: None,
-    });
-    prompt.input.push(ResponseItem::CustomToolCallOutput {
-        id: None,
-        call_id: "custom-tool-call-id".into(),
-        name: None,
-        output: FunctionCallOutputPayload::from_text("ok".into()),
-        internal_chat_message_metadata_passthrough: None,
-    });
-    prompt.input.push(
-        serde_json::from_value(json!({
-            "type": "message",
-            "id": "018f9e15-7a6a-7000-8000-000000000001",
-            "role": "user",
-            "content": [{"type": "input_text", "text": "legacy message"}],
-        }))
-        .expect("legacy response item should deserialize"),
-    );
-    prompt.input.push(
-        serde_json::from_value(json!({
-            "type": "message",
-            "id": "",
-            "role": "user",
-            "content": [{"type": "input_text", "text": "empty-id message"}],
-        }))
-        .expect("response item with an empty id should deserialize"),
-    );
-
-    let mut stream = client_session
-        .stream(
-            &prompt,
-            &model_info,
-            &session_telemetry,
-            effort,
-            summary.unwrap_or(ReasoningSummary::Auto),
-            /*service_tier*/ None,
-            &responses_metadata,
-            &codex_rollout_trace::InferenceTraceContext::disabled(),
-        )
-        .await
-        .expect("responses stream to start");
-
-    while let Some(event) = stream.next().await {
-        if let Ok(ResponseEvent::Completed { .. }) = event {
-            break;
-        }
-    }
-
-    let request = resp_mock.single_request();
-    assert_eq!(request.path(), "/openai/responses");
-    let body = request.body_json();
-
-    assert_eq!(body["store"], serde_json::Value::Bool(true));
-    assert_eq!(body["stream"], serde_json::Value::Bool(true));
-    assert_eq!(body["input"].as_array().map(Vec::len), Some(10));
-    assert_eq!(body["input"][0]["id"].as_str(), Some("rs_reasoning-id"));
-    assert_eq!(body["input"][1]["id"].as_str(), Some("msg_message-id"));
-    assert_eq!(body["input"][2]["id"].as_str(), Some("ws_web-search-id"));
-    assert_eq!(body["input"][3]["id"].as_str(), Some("fc_function-id"));
-    assert_eq!(
-        body["input"][4]["call_id"].as_str(),
-        Some("function-call-id")
-    );
-    assert_eq!(body["input"][5]["id"].as_str(), Some("lsh_local-shell-id"));
-    assert_eq!(body["input"][6]["id"].as_str(), Some("ctc_custom-tool-id"));
-    assert_eq!(
-        body["input"][7]["call_id"].as_str(),
-        Some("custom-tool-call-id")
-    );
-    assert_eq!(body["input"][8].get("id"), None);
-    assert_eq!(body["input"][9].get("id"), None);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn token_count_includes_rate_limits_snapshot() {
     skip_if_no_network!();
     let server = MockServer::start().await;
@@ -2956,8 +2406,7 @@ async fn token_count_includes_rate_limits_snapshot() {
         .mount(&server)
         .await;
 
-    let mut provider =
-        built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None)["openai"].clone();
+    let mut provider = built_in_model_providers()["openai"].clone();
     provider.base_url = Some(format!("{}/v1", server.uri()));
     provider.supports_websockets = false;
 
@@ -3342,198 +2791,6 @@ async fn incomplete_response_emits_content_filter_error_message() -> anyhow::Res
 /// value on both Windows and Unix. Note that this test must also work when run
 /// under Bazel in CI, which uses a restricted environment, so PATH seems like
 /// the safest choice.
-const EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE: &str = "PATH";
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn azure_overrides_assign_properties_used_for_responses_url() {
-    skip_if_no_network!();
-
-    // Mock server
-    let server = MockServer::start().await;
-
-    // First request – must NOT include `previous_response_id`.
-    let first = ResponseTemplate::new(200)
-        .insert_header("content-type", "text/event-stream")
-        .set_body_raw(
-            sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
-            "text/event-stream",
-        );
-
-    // Expect POST to /openai/responses with api-version query param
-    Mock::given(method("POST"))
-        .and(path("/openai/responses"))
-        .and(query_param("api-version", "2025-04-01-preview"))
-        .and(header_regex("Custom-Header", "Value"))
-        .and(header(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE).unwrap()
-            )
-            .as_str(),
-        ))
-        .respond_with(first)
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let provider = ModelProviderInfo {
-        name: "custom".to_string(),
-        base_url: Some(format!("{}/openai", server.uri())),
-        // Reuse the existing environment variable to avoid using unsafe code
-        env_key: Some(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE.to_string()),
-        experimental_bearer_token: None,
-        auth: None,
-        aws: None,
-        query_params: Some(std::collections::HashMap::from([(
-            "api-version".to_string(),
-            "2025-04-01-preview".to_string(),
-        )])),
-        env_key_instructions: None,
-        wire_api: WireApi::Responses,
-        http_headers: Some(std::collections::HashMap::from([(
-            "Custom-Header".to_string(),
-            "Value".to_string(),
-        )])),
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-        supports_standalone_web_search: false,
-    };
-
-    // Init session
-    let mut builder = test_codex()
-        .with_auth(create_dummy_codex_auth())
-        .with_config(move |config| {
-            config.model_provider = provider;
-        });
-    let codex = builder
-        .build(&server)
-        .await
-        .expect("create new conversation")
-        .codex;
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn env_var_overrides_loaded_auth() {
-    skip_if_no_network!();
-
-    // Mock server
-    let server = MockServer::start().await;
-
-    // First request – must NOT include `previous_response_id`.
-    let first = ResponseTemplate::new(200)
-        .insert_header("content-type", "text/event-stream")
-        .set_body_raw(
-            sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
-            "text/event-stream",
-        );
-
-    // Expect POST to /openai/responses with api-version query param
-    Mock::given(method("POST"))
-        .and(path("/openai/responses"))
-        .and(query_param("api-version", "2025-04-01-preview"))
-        .and(header_regex("Custom-Header", "Value"))
-        .and(header(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE).unwrap()
-            )
-            .as_str(),
-        ))
-        .respond_with(first)
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let provider = ModelProviderInfo {
-        name: "custom".to_string(),
-        base_url: Some(format!("{}/openai", server.uri())),
-        // Reuse the existing environment variable to avoid using unsafe code
-        env_key: Some(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE.to_string()),
-        query_params: Some(std::collections::HashMap::from([(
-            "api-version".to_string(),
-            "2025-04-01-preview".to_string(),
-        )])),
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        aws: None,
-        wire_api: WireApi::Responses,
-        http_headers: Some(std::collections::HashMap::from([(
-            "Custom-Header".to_string(),
-            "Value".to_string(),
-        )])),
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-        supports_standalone_web_search: false,
-    };
-
-    // Init session
-    let mut builder = test_codex()
-        .with_auth(create_dummy_codex_auth())
-        .with_config(move |config| {
-            config.model_provider = provider;
-        });
-    let codex = builder
-        .build(&server)
-        .await
-        .expect("create new conversation")
-        .codex;
-
-    codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "hello".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
-        .await
-        .unwrap();
-
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-}
-
-fn create_dummy_codex_auth() -> CodexAuth {
-    CodexAuth::create_dummy_chatgpt_auth_for_testing()
-}
-
-/// Scenario:
-/// - Turn 1: user sends U1; model streams deltas then a final assistant message A.
-/// - Turn 2: user sends U2; model streams a delta then the same final assistant message A.
-/// - Turn 3: user sends U3; model responds (same SSE again, not important).
-///
-/// We assert that the `input` sent on each turn contains the expected conversation history
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn history_dedupes_streamed_and_final_messages_across_turns() {
     // Skip under Codex sandbox network restrictions (mirrors other tests).

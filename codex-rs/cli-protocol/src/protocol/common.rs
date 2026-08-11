@@ -43,11 +43,6 @@ pub enum AuthMode {
     #[ts(rename = "personalAccessToken")]
     #[strum(serialize = "personalAccessToken")]
     PersonalAccessToken,
-    /// Amazon Bedrock bearer token managed by Codex.
-    #[serde(rename = "bedrockApiKey")]
-    #[ts(rename = "bedrockApiKey")]
-    #[strum(serialize = "bedrockApiKey")]
-    BedrockApiKey,
 }
 
 impl AuthMode {
@@ -55,7 +50,7 @@ impl AuthMode {
     pub fn has_chatgpt_account(self) -> bool {
         match self {
             Self::Chatgpt | Self::ChatgptAuthTokens | Self::PersonalAccessToken => true,
-            Self::ApiKey | Self::Headers | Self::AgentIdentity | Self::BedrockApiKey => false,
+            Self::ApiKey | Self::Headers | Self::AgentIdentity => false,
         }
     }
 
@@ -67,7 +62,7 @@ impl AuthMode {
             | Self::Headers
             | Self::AgentIdentity
             | Self::PersonalAccessToken => true,
-            Self::ApiKey | Self::BedrockApiKey => false,
+            Self::ApiKey => false,
         }
     }
 }
@@ -756,11 +751,6 @@ client_request_definitions! {
         params: v2::ModelListParams,
         serialization: None,
         response: v2::ModelListResponse,
-    },
-    ModelProviderCapabilitiesRead => "modelProvider/capabilities/read" {
-        params: v2::ModelProviderCapabilitiesReadParams,
-        serialization: None,
-        response: v2::ModelProviderCapabilitiesReadResponse,
     },
     ExperimentalFeatureList => "experimentalFeature/list" {
         params: v2::ExperimentalFeatureListParams,
@@ -2377,34 +2367,6 @@ mod tests {
     }
 
     #[test]
-    fn serialize_account_login_amazon_bedrock() -> Result<()> {
-        let request = ClientRequest::LoginAccount {
-            request_id: RequestId::Integer(2),
-            params: v2::LoginAccountParams::AmazonBedrock {
-                api_key: "secret".to_string(),
-                region: "us-west-2".to_string(),
-            },
-        };
-        assert_eq!(
-            json!({
-                "method": "account/login/start",
-                "id": 2,
-                "params": {
-                    "type": "amazonBedrock",
-                    "apiKey": "secret",
-                    "region": "us-west-2"
-                }
-            }),
-            serde_json::to_value(&request)?,
-        );
-        assert_eq!(
-            json!({"type": "amazonBedrock"}),
-            serde_json::to_value(v2::LoginAccountResponse::AmazonBedrock {})?,
-        );
-        Ok(())
-    }
-
-    #[test]
     fn serialize_account_login_chatgpt() -> Result<()> {
         let request = ClientRequest::LoginAccount {
             request_id: RequestId::Integer(3),
@@ -2611,41 +2573,6 @@ mod tests {
             serde_json::to_value(&chatgpt_without_email)?,
         );
 
-        let codex_managed_bedrock = v2::Account::AmazonBedrock {
-            uses_codex_managed_credentials: true,
-        };
-        assert_eq!(
-            json!({
-                "type": "amazonBedrock",
-                "usesCodexManagedCredentials": true,
-            }),
-            serde_json::to_value(&codex_managed_bedrock)?,
-        );
-
-        let externally_managed_bedrock = v2::Account::AmazonBedrock {
-            uses_codex_managed_credentials: false,
-        };
-        assert_eq!(
-            json!({
-                "type": "amazonBedrock",
-                "usesCodexManagedCredentials": false,
-            }),
-            serde_json::to_value(&externally_managed_bedrock)?,
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn account_defaults_legacy_bedrock_managed_credentials_flag() -> Result<()> {
-        assert_eq!(
-            v2::Account::AmazonBedrock {
-                uses_codex_managed_credentials: false,
-            },
-            serde_json::from_value(json!({
-                "type": "amazonBedrock",
-            }))?,
-        );
         Ok(())
     }
 
@@ -2664,23 +2591,6 @@ mod tests {
                     "cursor": null,
                     "includeHidden": null
                 }
-            }),
-            serde_json::to_value(&request)?,
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn serialize_model_provider_capabilities_read() -> Result<()> {
-        let request = ClientRequest::ModelProviderCapabilitiesRead {
-            request_id: RequestId::Integer(7),
-            params: v2::ModelProviderCapabilitiesReadParams {},
-        };
-        assert_eq!(
-            json!({
-                "method": "modelProvider/capabilities/read",
-                "id": 7,
-                "params": {}
             }),
             serde_json::to_value(&request)?,
         );

@@ -324,18 +324,7 @@ impl AgentControl {
         if let Some(model) = stored_model {
             config.model = Some(model);
         }
-        if config.model_provider_id != stored_model_provider {
-            config.model_provider = config
-                .model_providers
-                .get(&stored_model_provider)
-                .cloned()
-                .ok_or_else(|| {
-                    CodexErr::InvalidRequest(format!(
-                        "Model provider `{stored_model_provider}` not found"
-                    ))
-                })?;
-            config.model_provider_id = stored_model_provider;
-        }
+        let _ = stored_model_provider;
         let residency_slot = self
             .reserve_v2_residency_slot(&state, &config, Some(thread_id))
             .await?;

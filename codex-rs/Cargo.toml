@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "aws-auth",
     "analytics",
     "agent-graph-store",
     "agent-identity",
@@ -55,20 +54,17 @@ members = [
     "keyring-store",
     "file-search",
     "file-watcher",
-    "lmstudio",
     "login",
     "memories/read",
     "memories/write",
     "model-provider-info",
     "models-manager",
     "network-proxy",
-    "ollama",
     "process-hardening",
     "protocol",
     "prompts",
     "rollout",
     "rollout-trace",
-    "responses-api-proxy",
     "response-debug-context",
     "otel",
     "tui",
@@ -91,7 +87,6 @@ members = [
     "utils/cli",
     "utils/elapsed",
     "utils/sleep-inhibitor",
-    "utils/oss",
     "utils/output-truncation",
     "utils/path-utils",
     "utils/fuzzy-match",
@@ -127,7 +122,6 @@ codex-agent-graph-store = { path = "agent-graph-store" }
 codex-agent-identity = { path = "agent-identity" }
 codex-ansi-escape = { path = "ansi-escape" }
 codex-api = { path = "codex-api" }
-codex-aws-auth = { path = "aws-auth" }
 codex-cli-runtime = { path = "cli-runtime" }
 codex-cli-runtime-client = { path = "cli-runtime-client" }
 codex-cli-protocol = { path = "cli-protocol" }
@@ -172,7 +166,6 @@ codex-file-search = { path = "file-search" }
 codex-file-watcher = { path = "file-watcher" }
 codex-git-utils = { path = "git-utils" }
 codex-keyring-store = { path = "keyring-store" }
-codex-lmstudio = { path = "lmstudio" }
 codex-login = { path = "login" }
 codex-message-history = { path = "message-history" }
 codex-memories-extension = { path = "ext/memories" }
@@ -182,13 +175,11 @@ codex-memories-write = { path = "memories/write" }
 codex-model-provider-info = { path = "model-provider-info" }
 codex-models-manager = { path = "models-manager" }
 codex-network-proxy = { path = "network-proxy" }
-codex-ollama = { path = "ollama" }
 codex-otel = { path = "otel" }
 codex-model-provider = { path = "model-provider" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
 codex-prompts = { path = "prompts" }
-codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-response-debug-context = { path = "response-debug-context" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
@@ -214,7 +205,6 @@ codex-utils-fuzzy-match = { path = "utils/fuzzy-match" }
 codex-utils-home-dir = { path = "utils/home-dir" }
 codex-utils-image = { path = "utils/image" }
 codex-utils-json-to-toml = { path = "utils/json-to-toml" }
-codex-utils-oss = { path = "utils/oss" }
 codex-utils-output-truncation = { path = "utils/output-truncation" }
 codex-utils-path = { path = "utils/path-utils" }
 codex-utils-path-uri = { path = "utils/path-uri" }
