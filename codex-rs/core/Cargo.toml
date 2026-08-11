@@ -59,7 +59,6 @@ codex-response-debug-context = { workspace = true }
 codex-prompts = { workspace = true }
 codex-rollout = { workspace = true }
 codex-rollout-trace = { workspace = true }
-codex-sandboxing = { workspace = true }
 codex-skills = { workspace = true }
 codex-skills-extension = { workspace = true }
 codex-state = { workspace = true }

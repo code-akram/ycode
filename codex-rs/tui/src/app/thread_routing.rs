@@ -202,127 +202,6 @@ impl App {
         store.session.as_ref().map(|session| session.cwd.clone())
     }
 
-    async fn thread_file_change_changes(
-        &self,
-        thread_id: ThreadId,
-        turn_id: &str,
-        item_id: &str,
-    ) -> Option<Vec<codex_cli_protocol::FileUpdateChange>> {
-        let channel = self.thread_event_channels.get(&thread_id)?;
-        let store = channel.store.lock().await;
-        store.file_change_changes(turn_id, item_id)
-    }
-
-    pub(super) async fn interactive_request_for_thread_request(
-        &self,
-        thread_id: ThreadId,
-        request: &ServerRequest,
-    ) -> std::io::Result<Option<ThreadInteractiveRequest>> {
-        let thread_label = Some(self.thread_label(thread_id));
-        Ok(match request {
-            ServerRequest::CommandExecutionRequestApproval { params, .. } => {
-                let network_approval_context = params.network_approval_context.clone();
-                let additional_permissions = params.additional_permissions.clone();
-                let proposed_execpolicy_amendment = params.proposed_execpolicy_amendment.clone();
-                let proposed_network_policy_amendments =
-                    params.proposed_network_policy_amendments.clone();
-                let approval = ExecApprovalRequest {
-                    thread_id,
-                    thread_label,
-                    id: params
-                        .approval_id
-                        .clone()
-                        .unwrap_or_else(|| params.item_id.clone()),
-                    environment_id: params.environment_id.clone(),
-                    command: params
-                        .command
-                        .as_deref()
-                        .map(split_command_string)
-                        .unwrap_or_default(),
-                    reason: params.reason.clone(),
-                    available_decisions: params.available_decisions.clone().unwrap_or_else(|| {
-                        default_exec_approval_decisions(
-                            network_approval_context.as_ref(),
-                            proposed_execpolicy_amendment.as_ref(),
-                            proposed_network_policy_amendments.as_deref(),
-                            additional_permissions.as_ref(),
-                        )
-                    }),
-                    network_approval_context,
-                    additional_permissions,
-                };
-                Some(ThreadInteractiveRequest::Approval(ApprovalRequest::Exec(
-                    approval,
-                )))
-            }
-            ServerRequest::FileChangeRequestApproval { params, .. } => {
-                Some(ThreadInteractiveRequest::Approval(
-                    ApprovalRequest::ApplyPatch(ApplyPatchApprovalRequest {
-                        thread_id,
-                        thread_label,
-                        id: params.item_id.clone(),
-                        reason: params.reason.clone(),
-                        cwd: self
-                            .thread_cwd(thread_id)
-                            .await
-                            .unwrap_or_else(|| self.config.cwd.clone()),
-                        changes: self
-                            .thread_file_change_changes(thread_id, &params.turn_id, &params.item_id)
-                            .await
-                            .map(
-                                crate::runtime_approval_conversions::file_update_changes_to_display,
-                            )
-                            .unwrap_or_default(),
-                    }),
-                ))
-            }
-            ServerRequest::PermissionsRequestApproval { params, .. } => {
-                // TODO(anp): Remove this native-path localization error path once core permission
-                // paths remain PathUri after crossing the cli-runtime boundary.
-                let permissions = params.permissions.clone().try_into().map_err(|err| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("failed to localize requested filesystem paths: {err}"),
-                    )
-                })?;
-                Some(ThreadInteractiveRequest::Approval(
-                    ApprovalRequest::Permissions(PermissionsApprovalRequest {
-                        thread_id,
-                        thread_label,
-                        call_id: params.item_id.clone(),
-                        environment_id: params.environment_id.clone(),
-                        reason: params.reason.clone(),
-                        permissions,
-                    }),
-                ))
-            }
-            _ => None,
-        })
-    }
-
-    pub(super) fn push_thread_interactive_request(&mut self, request: ThreadInteractiveRequest) {
-        match request {
-            ThreadInteractiveRequest::Approval(request) => {
-                self.render_inactive_patch_preview(&request);
-                self.chat_widget.push_approval_request(request);
-            }
-        }
-    }
-
-    fn render_inactive_patch_preview(&mut self, request: &ApprovalRequest) {
-        let ApprovalRequest::ApplyPatch(request) = request else {
-            return;
-        };
-        if request.thread_label.is_none() || request.changes.is_empty() {
-            return;
-        }
-        self.chat_widget
-            .add_to_history(history_cell::new_patch_event(
-                request.changes.clone(),
-                &request.cwd,
-            ));
-    }
-
     pub(super) async fn pending_inactive_thread_requests(&self) -> Vec<(ThreadId, ServerRequest)> {
         let channels: Vec<(ThreadId, Arc<Mutex<ThreadEventStore>>)> = self
             .thread_event_channels
@@ -357,15 +236,6 @@ impl App {
             return Ok(());
         }
 
-        let requests = self.pending_inactive_thread_requests().await;
-        for (thread_id, request) in requests {
-            if let Some(request) = self
-                .interactive_request_for_thread_request(thread_id, &request)
-                .await?
-            {
-                self.push_thread_interactive_request(request);
-            }
-        }
         Ok(())
     }
 
@@ -597,9 +467,6 @@ impl App {
             AppCommand::UserTurn {
                 items,
                 cwd,
-                approval_policy,
-                approvals_reviewer,
-                active_permission_profile,
                 model,
                 effort,
                 summary,
@@ -675,23 +542,11 @@ impl App {
                 }
                 if should_start_turn {
                     let config = self.chat_widget.config_ref();
-                    let approvals_reviewer =
-                        approvals_reviewer.unwrap_or(config.approvals_reviewer);
-                    let permissions_override = Self::turn_permissions_override_from_config(
-                        config,
-                        active_permission_profile.as_ref(),
-                        self.runtime_permission_profile_override
-                            .as_ref()
-                            .map(|profile| &profile.permission_profile),
-                    );
                     let response = cli_runtime
                         .turn_start(
                             thread_id,
                             items.to_vec(),
                             cwd.clone(),
-                            *approval_policy,
-                            approvals_reviewer,
-                            permissions_override,
                             config.permissions.user_visible_workspace_roots(),
                             model.to_string(),
                             effort.clone(),
@@ -763,42 +618,8 @@ impl App {
                     .await;
                 Ok(true)
             }
-            AppCommand::ApproveGuardianDeniedAction { event } => {
-                cli_runtime
-                    .thread_approve_guardian_denied_action(thread_id, event)
-                    .await?;
-                Ok(true)
-            }
             _ => Ok(false),
         }
-    }
-
-    fn turn_permissions_override_from_config(
-        config: &Config,
-        active_permission_profile: Option<&ActivePermissionProfile>,
-        runtime_permission_profile_override: Option<&PermissionProfile>,
-    ) -> TurnPermissionsOverride {
-        if let Some(active_permission_profile) = active_permission_profile {
-            return TurnPermissionsOverride::ActiveProfile(active_permission_profile.clone());
-        }
-
-        let effective_permission_profile = config.permissions.effective_permission_profile();
-        let runtime_permission_profile_override =
-            runtime_permission_profile_override.map(|profile| {
-                profile
-                    .clone()
-                    .materialize_project_roots_with_workspace_roots(
-                        &config.effective_workspace_roots(),
-                    )
-            });
-        if runtime_permission_profile_override
-            .as_ref()
-            .is_some_and(|profile| profile == &effective_permission_profile)
-        {
-            return TurnPermissionsOverride::LegacySandbox(effective_permission_profile);
-        }
-
-        TurnPermissionsOverride::Preserve
     }
 
     pub(super) fn handle_skills_list_result(
@@ -851,36 +672,7 @@ impl App {
         }
     }
 
-    pub(super) async fn refresh_pending_thread_approvals(&mut self) {
-        let side_parent_thread_id = self.active_side_parent_thread_id();
-        let channels: Vec<(ThreadId, Arc<Mutex<ThreadEventStore>>)> = self
-            .thread_event_channels
-            .iter()
-            .map(|(thread_id, channel)| (*thread_id, Arc::clone(&channel.store)))
-            .collect();
-
-        let mut pending_thread_ids = Vec::new();
-        for (thread_id, store) in channels {
-            if Some(thread_id) == self.active_thread_id || Some(thread_id) == side_parent_thread_id
-            {
-                continue;
-            }
-
-            let store = store.lock().await;
-            if store.has_pending_thread_approvals() {
-                pending_thread_ids.push(thread_id);
-            }
-        }
-
-        pending_thread_ids.sort_by_key(ThreadId::to_string);
-
-        let threads = pending_thread_ids
-            .into_iter()
-            .map(|thread_id| self.thread_label(thread_id))
-            .collect();
-
-        self.chat_widget.set_pending_thread_approvals(threads);
-    }
+    pub(super) async fn refresh_pending_thread_approvals(&mut self) {}
 
     pub(super) async fn refresh_side_parent_status_from_store(&mut self, thread_id: ThreadId) {
         let Some(channel) = self.thread_event_channels.get(&thread_id) else {
@@ -1066,12 +858,6 @@ impl App {
         thread_id: ThreadId,
         request: ServerRequest,
     ) -> Result<()> {
-        let inactive_interactive_request = if self.active_thread_id != Some(thread_id) {
-            self.interactive_request_for_thread_request(thread_id, &request)
-                .await?
-        } else {
-            None
-        };
         let (sender, store) = {
             let channel = self.ensure_thread_channel(thread_id);
             (channel.sender.clone(), Arc::clone(&channel.store))
@@ -1098,10 +884,6 @@ impl App {
                     tracing::warn!("thread {thread_id} event channel closed");
                 }
             }
-        } else if self.active_side_parent_thread_id().is_none()
-            && let Some(request) = inactive_interactive_request
-        {
-            self.push_thread_interactive_request(request);
         }
         if let Some(status) = pending_status.or(request_status) {
             self.set_side_parent_status(thread_id, Some(status));

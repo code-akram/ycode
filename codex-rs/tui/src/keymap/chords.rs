@@ -66,7 +66,6 @@ const fn context_bit(context: KeymapContext) -> u16 {
         KeymapContext::VimTextObject => 6,
         KeymapContext::Pager => 7,
         KeymapContext::List => 8,
-        KeymapContext::Approval => 9,
     }
 }
 
@@ -460,7 +459,6 @@ Choose a different chord and retry.",
         | KeymapContext::VimOperator
         | KeymapContext::VimTextObject => MAIN_RESERVED_BINDINGS,
         KeymapContext::List => LIST_RESERVED_BINDINGS,
-        KeymapContext::Approval => &LIST_RESERVED_BINDINGS[..1],
     };
     if let Some((reserved_action, _)) = reserved.iter().find(|(_, reserved)| {
         binding.chord.prefix.parts() == reserved.parts()

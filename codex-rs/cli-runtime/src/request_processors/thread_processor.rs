@@ -80,53 +80,6 @@ fn collect_resume_override_mismatches(
             ));
         }
     }
-    if let Some(requested_approval) = request.approval_policy.as_ref() {
-        let active_approval: AskForApproval = config_snapshot.approval_policy.into();
-        if requested_approval != &active_approval {
-            mismatch_details.push(format!(
-                "approval_policy requested={requested_approval:?} active={active_approval:?}"
-            ));
-        }
-    }
-    if let Some(requested_review_policy) = request.approvals_reviewer.as_ref() {
-        let active_review_policy: codex_cli_protocol::ApprovalsReviewer =
-            config_snapshot.approvals_reviewer.into();
-        if requested_review_policy != &active_review_policy {
-            mismatch_details.push(format!(
-                "approvals_reviewer requested={requested_review_policy:?} active={active_review_policy:?}"
-            ));
-        }
-    }
-    if let Some(requested_sandbox) = request.sandbox.as_ref() {
-        let active_sandbox = config_snapshot.sandbox_policy();
-        let sandbox_matches = matches!(
-            (requested_sandbox, &active_sandbox),
-            (
-                SandboxMode::ReadOnly,
-                codex_protocol::protocol::SandboxPolicy::ReadOnly { .. }
-            ) | (
-                SandboxMode::WorkspaceWrite,
-                codex_protocol::protocol::SandboxPolicy::WorkspaceWrite { .. }
-            ) | (
-                SandboxMode::DangerFullAccess,
-                codex_protocol::protocol::SandboxPolicy::DangerFullAccess
-            ) | (
-                SandboxMode::DangerFullAccess,
-                codex_protocol::protocol::SandboxPolicy::ExternalSandbox { .. }
-            )
-        );
-        if !sandbox_matches {
-            mismatch_details.push(format!(
-                "sandbox requested={requested_sandbox:?} active={active_sandbox:?}"
-            ));
-        }
-    }
-    if request.permissions.is_some() {
-        mismatch_details.push(format!(
-            "permissions override was provided and ignored while running; active={:?}",
-            config_snapshot.active_permission_profile
-        ));
-    }
     if let Some(requested_personality) = request.personality.as_ref()
         && config_snapshot.personality.as_ref() != Some(requested_personality)
     {
@@ -170,26 +123,6 @@ fn merge_persisted_resume_metadata(
             serde_json::Value::String(reasoning_effort.to_string()),
         );
     }
-}
-
-fn merge_persisted_approvals_reviewer(
-    history: &[RolloutItem],
-    request_overrides: Option<&HashMap<String, serde_json::Value>>,
-    typesafe_overrides: &mut ConfigOverrides,
-) {
-    if typesafe_overrides.approvals_reviewer.is_some()
-        || request_overrides.is_some_and(|overrides| overrides.contains_key("approvals_reviewer"))
-    {
-        return;
-    }
-
-    typesafe_overrides.approvals_reviewer = history.iter().rev().find_map(|item| match item {
-        RolloutItem::TurnContext(turn_context) => turn_context.approvals_reviewer,
-        RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(event)) => {
-            Some(event.thread_settings.approvals_reviewer)
-        }
-        _ => None,
-    });
 }
 
 fn normalize_thread_list_cwd_filters(
@@ -793,16 +726,6 @@ impl ThreadRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
-    pub(crate) async fn thread_approve_guardian_denied_action(
-        &self,
-        request_id: &ConnectionRequestId,
-        params: ThreadApproveGuardianDeniedActionParams,
-    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        self.thread_approve_guardian_denied_action_inner(request_id, params)
-            .await
-            .map(|response| Some(response.into()))
-    }
-
     pub(crate) async fn conversation_summary(
         &self,
         params: GetConversationSummaryParams,
@@ -973,10 +896,6 @@ impl ThreadRequestProcessor {
             service_tier,
             cwd,
             runtime_workspace_roots,
-            approval_policy,
-            approvals_reviewer,
-            sandbox,
-            permissions,
             config,
             service_name,
             base_instructions,
@@ -1002,11 +921,6 @@ impl ThreadRequestProcessor {
                 "paginated threads require thread/turns/list and thread/items/list support",
             ));
         }
-        if sandbox.is_some() && permissions.is_some() {
-            return Err(invalid_request(
-                "`permissions` cannot be combined with `sandbox`",
-            ));
-        }
         let runtime_workspace_roots = runtime_workspace_roots.map(resolve_runtime_workspace_roots);
         let environments =
             resolve_turn_environment_selections(self.thread_manager.as_ref(), environments)?;
@@ -1016,10 +930,6 @@ impl ThreadRequestProcessor {
             service_tier,
             cwd,
             runtime_workspace_roots,
-            approval_policy,
-            approvals_reviewer,
-            sandbox,
-            permissions,
             base_instructions,
             developer_instructions,
             personality,
@@ -1209,21 +1119,6 @@ impl ThreadRequestProcessor {
                 .map_err(|err| config_load_error(&err))?;
         }
 
-        if let Ok(Some(err)) =
-            codex_core::check_execpolicy_for_warnings(&config.config_layer_stack).await
-        {
-            let notification = crate::exec_policy_config_warning(&err);
-            if !initial_config_warnings.contains(&notification) {
-                listener_task_context
-                    .outgoing
-                    .send_server_notification_to_connections(
-                        &[request_id.connection_id],
-                        ServerNotification::ConfigWarning(notification),
-                    )
-                    .await;
-            }
-        }
-
         let environments = environment_selections.unwrap_or_else(|| {
             listener_task_context
                 .thread_manager
@@ -1353,10 +1248,7 @@ impl ThreadRequestProcessor {
             /*has_in_progress_turn*/ false,
         );
 
-        let sandbox = config_snapshot.sandbox_policy().into();
         let cwd = config_snapshot.cwd().clone();
-        let active_permission_profile =
-            thread_response_active_permission_profile(config_snapshot.active_permission_profile);
         let thread_originator = config_snapshot.originator.clone();
 
         let response = ThreadStartResponse {
@@ -1367,10 +1259,6 @@ impl ThreadRequestProcessor {
             cwd,
             runtime_workspace_roots: config_snapshot.workspace_roots,
             instruction_sources,
-            approval_policy: config_snapshot.approval_policy.into(),
-            approvals_reviewer: config_snapshot.approvals_reviewer.into(),
-            sandbox,
-            active_permission_profile,
             reasoning_effort: config_snapshot.reasoning_effort,
             multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
         };
@@ -1408,10 +1296,6 @@ impl ThreadRequestProcessor {
         service_tier: Option<Option<String>>,
         cwd: Option<String>,
         runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
-        approval_policy: Option<codex_cli_protocol::AskForApproval>,
-        approvals_reviewer: Option<codex_cli_protocol::ApprovalsReviewer>,
-        sandbox: Option<SandboxMode>,
-        permissions: Option<String>,
         base_instructions: Option<String>,
         developer_instructions: Option<String>,
         personality: Option<Personality>,
@@ -1422,11 +1306,6 @@ impl ThreadRequestProcessor {
             service_tier,
             cwd: cwd.map(PathBuf::from),
             workspace_roots: runtime_workspace_roots,
-            default_permissions: permissions,
-            approval_policy: approval_policy.map(codex_cli_protocol::AskForApproval::to_core),
-            approvals_reviewer: approvals_reviewer
-                .map(codex_cli_protocol::ApprovalsReviewer::to_core),
-            sandbox_mode: sandbox.map(SandboxMode::to_core),
             main_execve_wrapper_exe: self.arg0_paths.main_execve_wrapper_exe.clone(),
             base_instructions,
             developer_instructions,
@@ -1954,26 +1833,6 @@ impl ThreadRequestProcessor {
         .await
         .map_err(|err| internal_error(format!("failed to start shell command: {err}")))?;
         Ok(ThreadShellCommandResponse {})
-    }
-
-    async fn thread_approve_guardian_denied_action_inner(
-        &self,
-        request_id: &ConnectionRequestId,
-        params: ThreadApproveGuardianDeniedActionParams,
-    ) -> Result<ThreadApproveGuardianDeniedActionResponse, JSONRPCErrorError> {
-        let ThreadApproveGuardianDeniedActionParams { thread_id, event } = params;
-        let event = serde_json::from_value(event)
-            .map_err(|err| invalid_request(format!("invalid Guardian denial event: {err}")))?;
-        let (_, thread) = self.load_thread(&thread_id).await?;
-
-        self.submit_core_op(
-            request_id,
-            thread.as_ref(),
-            Op::ApproveGuardianDeniedAction { event },
-        )
-        .await
-        .map_err(|err| internal_error(format!("failed to approve Guardian denial: {err}")))?;
-        Ok(ThreadApproveGuardianDeniedActionResponse {})
     }
 
     async fn thread_list_response_inner(
@@ -3051,15 +2910,6 @@ impl ThreadRequestProcessor {
             return Ok(());
         }
 
-        if params.sandbox.is_some() && params.permissions.is_some() {
-            self.outgoing
-                .send_error(
-                    request_id,
-                    invalid_request("`permissions` cannot be combined with `sandbox`"),
-                )
-                .await;
-            return Ok(());
-        }
         let _thread_list_state_permit = match self.acquire_thread_list_state_permit().await {
             Ok(permit) => permit,
             Err(error) => {
@@ -3093,10 +2943,6 @@ impl ThreadRequestProcessor {
             service_tier,
             cwd,
             runtime_workspace_roots,
-            approval_policy,
-            approvals_reviewer,
-            sandbox,
-            permissions,
             config: mut request_overrides,
             base_instructions,
             developer_instructions,
@@ -3150,10 +2996,6 @@ impl ThreadRequestProcessor {
             service_tier,
             cwd,
             runtime_workspace_roots,
-            approval_policy,
-            approvals_reviewer,
-            sandbox,
-            permissions,
             base_instructions,
             developer_instructions,
             personality,
@@ -3320,10 +3162,6 @@ impl ThreadRequestProcessor {
                     } else {
                         (None, None)
                     };
-                let sandbox = config_snapshot.sandbox_policy().into();
-                let active_permission_profile = thread_response_active_permission_profile(
-                    config_snapshot.active_permission_profile,
-                );
                 let initial_turns_page = if let Some(params) = initial_turns_page.as_ref() {
                     let initial_turns_page_result = if paginated_resume {
                         self.paginated_resume_initial_turns_page(thread_id, params)
@@ -3368,10 +3206,6 @@ impl ThreadRequestProcessor {
                     cwd: session_configured.cwd,
                     runtime_workspace_roots: config_snapshot.workspace_roots,
                     instruction_sources,
-                    approval_policy: session_configured.approval_policy.into(),
-                    approvals_reviewer: session_configured.approvals_reviewer.into(),
-                    sandbox,
-                    active_permission_profile,
                     reasoning_effort: session_configured.reasoning_effort,
                     multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
                     initial_turns_page,
@@ -3422,11 +3256,6 @@ impl ThreadRequestProcessor {
         let InitialHistory::Resumed(resumed_history) = thread_history else {
             return None;
         };
-        merge_persisted_approvals_reviewer(
-            &resumed_history.history,
-            request_overrides.as_ref(),
-            typesafe_overrides,
-        );
         let state_db_ctx = self.state_db.clone()?;
         let persisted_metadata = state_db_ctx
             .get_thread(resumed_history.conversation_id)
@@ -3982,10 +3811,6 @@ impl ThreadRequestProcessor {
             service_tier,
             cwd,
             runtime_workspace_roots,
-            approval_policy,
-            approvals_reviewer,
-            sandbox,
-            permissions,
             config: cli_overrides,
             base_instructions,
             developer_instructions,
@@ -3995,11 +3820,6 @@ impl ThreadRequestProcessor {
             defer_goal_continuation,
         } = params;
         let include_turns = !exclude_turns;
-        if sandbox.is_some() && permissions.is_some() {
-            return Err(invalid_request(
-                "`permissions` cannot be combined with `sandbox`",
-            ));
-        }
         let source_thread = self
             .read_stored_thread_for_resume(
                 &thread_id,
@@ -4097,49 +3917,11 @@ impl ThreadRequestProcessor {
             service_tier,
             cwd,
             runtime_workspace_roots,
-            approval_policy,
-            approvals_reviewer,
-            sandbox,
-            permissions,
             base_instructions,
             developer_instructions,
             /*personality*/ None,
         );
         typesafe_overrides.ephemeral = ephemeral.then_some(true);
-        let latest_context = if paginated_source
-            && typesafe_overrides.approvals_reviewer.is_none()
-            && !request_overrides
-                .as_ref()
-                .is_some_and(|overrides| overrides.contains_key("approvals_reviewer"))
-        {
-            if let Ok(parent) = self.thread_manager.get_thread(source_thread_id).await {
-                typesafe_overrides.approvals_reviewer =
-                    Some(parent.config_snapshot().await.approvals_reviewer);
-                None
-            } else if last_turn_id.is_some() || before_turn_id.is_some() {
-                Some(
-                    self.thread_store
-                        .load_latest_model_context(StoreLoadThreadHistoryParams {
-                            thread_id: source_thread_id,
-                            include_archived: true,
-                        })
-                        .await
-                        .map_err(thread_store_resume_read_error)?
-                        .items,
-                )
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        merge_persisted_approvals_reviewer(
-            latest_context
-                .as_deref()
-                .unwrap_or_else(|| source_history_items.as_ref()),
-            request_overrides.as_ref(),
-            &mut typesafe_overrides,
-        );
         // Derive a Config using the same logic as new conversation, honoring overrides if provided.
         let config = self
             .config_manager
@@ -4358,9 +4140,6 @@ impl ThreadRequestProcessor {
                 .await,
             /*has_in_progress_turn*/ false,
         );
-        let sandbox = config_snapshot.sandbox_policy().into();
-        let active_permission_profile =
-            thread_response_active_permission_profile(config_snapshot.active_permission_profile);
         let thread_originator = config_snapshot.originator.clone();
 
         let response = ThreadForkResponse {
@@ -4371,10 +4150,6 @@ impl ThreadRequestProcessor {
             cwd: session_configured.cwd,
             runtime_workspace_roots: config_snapshot.workspace_roots,
             instruction_sources,
-            approval_policy: session_configured.approval_policy.into(),
-            approvals_reviewer: session_configured.approvals_reviewer.into(),
-            sandbox,
-            active_permission_profile,
             reasoning_effort: session_configured.reasoning_effort,
             multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
         };

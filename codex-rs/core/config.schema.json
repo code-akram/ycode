@@ -253,45 +253,6 @@
       },
       "type": "object"
     },
-    "AskForApproval": {
-      "description": "Determines the conditions under which the user is consulted to approve running the command proposed by Codex.",
-      "oneOf": [
-        {
-          "description": "Under this policy, only \"known safe\" commands—as determined by `is_safe_command()`—that **only read files** are auto‑approved. Everything else will ask the user to approve.",
-          "enum": [
-            "untrusted"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "The model decides when to ask the user for approval.",
-          "enum": [
-            "on-request"
-          ],
-          "type": "string"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Fine-grained controls for individual approval flows.\n\nWhen a field is `true`, commands in that category are allowed. When it is `false`, those requests are automatically rejected instead of shown to the user.",
-          "properties": {
-            "granular": {
-              "$ref": "#/definitions/GranularApprovalConfig"
-            }
-          },
-          "required": [
-            "granular"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Never ask the user to approve commands. Failures are immediately returned to the model, and never escalated to the user for approval.",
-          "enum": [
-            "never"
-          ],
-          "type": "string"
-        }
-      ]
-    },
     "AuthCredentialsStoreMode": {
       "description": "Determine where Codex should store CLI auth credentials.",
       "oneOf": [
@@ -343,15 +304,6 @@
           "type": "string"
         }
       ]
-    },
-    "AutoReviewToml": {
-      "properties": {
-        "policy": {
-          "description": "Additional policy instructions inserted into the guardian prompt.",
-          "type": "string"
-        }
-      },
-      "type": "object"
     },
     "BundledSkillsConfig": {
       "additionalProperties": false,
@@ -405,12 +357,6 @@
       "properties": {
         "analytics": {
           "$ref": "#/definitions/AnalyticsConfigToml"
-        },
-        "approval_policy": {
-          "$ref": "#/definitions/AskForApproval"
-        },
-        "approvals_reviewer": {
-          "$ref": "#/definitions/ApprovalsReviewer"
         },
         "chatgpt_base_url": {
           "type": "string"
@@ -738,9 +684,6 @@
         "include_environment_context": {
           "type": "boolean"
         },
-        "include_permissions_instructions": {
-          "type": "boolean"
-        },
         "model": {
           "type": "string"
         },
@@ -781,9 +724,6 @@
         },
         "plan_mode_reasoning_effort": {
           "$ref": "#/definitions/ReasoningEffort"
-        },
-        "sandbox_mode": {
-          "$ref": "#/definitions/SandboxMode"
         },
         "service_tier": {
           "description": "Optional explicit service tier request id for new turns (for example `default`, `priority`, or `flex`; legacy `fast` also works).",
@@ -1027,49 +967,6 @@
       },
       "type": "object"
     },
-    "FileSystemAccessMode": {
-      "description": "Access mode for a filesystem entry.\n\nWhen two equally specific entries target the same path, we compare these by conflict precedence rather than by capability breadth: `deny` beats `write`, and `write` beats `read`.",
-      "oneOf": [
-        {
-          "enum": [
-            "read",
-            "write"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "`none` is a legacy input alias retained temporarily for compatibility.",
-          "enum": [
-            "deny"
-          ],
-          "type": "string"
-        }
-      ]
-    },
-    "FilesystemPermissionToml": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/FileSystemAccessMode"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/definitions/FileSystemAccessMode"
-          },
-          "type": "object"
-        }
-      ]
-    },
-    "FilesystemPermissionsToml": {
-      "properties": {
-        "glob_scan_max_depth": {
-          "description": "Optional maximum depth for expanding unreadable glob patterns on platforms that snapshot glob matches before sandbox startup.",
-          "format": "uint",
-          "minimum": 1.0,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
     "ForcedChatgptWorkspaceIds": {
       "anyOf": [
         {
@@ -1109,33 +1006,6 @@
           "type": "integer"
         }
       },
-      "type": "object"
-    },
-    "GranularApprovalConfig": {
-      "properties": {
-        "request_permissions": {
-          "default": false,
-          "description": "Whether to allow prompts triggered by the `request_permissions` tool.",
-          "type": "boolean"
-        },
-        "rules": {
-          "description": "Whether to allow prompts triggered by execpolicy `prompt` rules.",
-          "type": "boolean"
-        },
-        "sandbox_approval": {
-          "description": "Whether to allow shell command approval requests, including inline `with_additional_permissions` and `require_escalated` requests.",
-          "type": "boolean"
-        },
-        "skill_approval": {
-          "default": false,
-          "description": "Whether to allow approval prompts triggered by skill script execution.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "rules",
-        "sandbox_approval"
-      ],
       "type": "object"
     },
     "History": {
@@ -1751,135 +1621,6 @@
       },
       "type": "object"
     },
-    "NetworkDomainPermissionToml": {
-      "enum": [
-        "allow",
-        "deny"
-      ],
-      "type": "string"
-    },
-    "NetworkDomainPermissionsToml": {
-      "type": "object"
-    },
-    "NetworkMitmActionToml": {
-      "properties": {
-        "inject_request_headers": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/NetworkMitmInjectedHeaderToml"
-          },
-          "type": "array"
-        },
-        "strip_request_headers": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "NetworkMitmHookToml": {
-      "additionalProperties": false,
-      "properties": {
-        "action": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "body": true,
-        "headers": {
-          "additionalProperties": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "default": {},
-          "type": "object"
-        },
-        "host": {
-          "type": "string"
-        },
-        "methods": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "path_prefixes": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "query": {
-          "additionalProperties": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "default": {},
-          "type": "object"
-        }
-      },
-      "required": [
-        "action",
-        "host",
-        "methods",
-        "path_prefixes"
-      ],
-      "type": "object"
-    },
-    "NetworkMitmInjectedHeaderToml": {
-      "properties": {
-        "name": {
-          "default": "",
-          "type": "string"
-        },
-        "prefix": {
-          "default": null,
-          "type": "string"
-        },
-        "secret_env_var": {
-          "default": null,
-          "type": "string"
-        },
-        "secret_file": {
-          "default": null,
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "NetworkMitmToml": {
-      "additionalProperties": false,
-      "properties": {
-        "actions": {
-          "additionalProperties": {
-            "$ref": "#/definitions/NetworkMitmActionToml"
-          },
-          "type": "object"
-        },
-        "hooks": {
-          "additionalProperties": {
-            "$ref": "#/definitions/NetworkMitmHookToml"
-          },
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
-    "NetworkModeSchema": {
-      "enum": [
-        "limited",
-        "full"
-      ],
-      "type": "string"
-    },
     "NetworkProxyConfigToml": {
       "additionalProperties": false,
       "properties": {
@@ -1948,61 +1689,6 @@
         "deny"
       ],
       "type": "string"
-    },
-    "NetworkToml": {
-      "additionalProperties": false,
-      "properties": {
-        "allow_local_binding": {
-          "type": "boolean"
-        },
-        "allow_upstream_proxy": {
-          "type": "boolean"
-        },
-        "dangerously_allow_all_unix_sockets": {
-          "type": "boolean"
-        },
-        "dangerously_allow_non_loopback_proxy": {
-          "type": "boolean"
-        },
-        "domains": {
-          "$ref": "#/definitions/NetworkDomainPermissionsToml"
-        },
-        "enable_socks5": {
-          "type": "boolean"
-        },
-        "enable_socks5_udp": {
-          "type": "boolean"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "mitm": {
-          "$ref": "#/definitions/NetworkMitmToml"
-        },
-        "mode": {
-          "$ref": "#/definitions/NetworkModeSchema"
-        },
-        "proxy_url": {
-          "type": "string"
-        },
-        "socks_url": {
-          "type": "string"
-        },
-        "unix_sockets": {
-          "$ref": "#/definitions/NetworkUnixSocketPermissionsToml"
-        }
-      },
-      "type": "object"
-    },
-    "NetworkUnixSocketPermissionToml": {
-      "enum": [
-        "allow",
-        "deny"
-      ],
-      "type": "string"
-    },
-    "NetworkUnixSocketPermissionsToml": {
-      "type": "object"
     },
     "Notice": {
       "additionalProperties": false,
@@ -2292,30 +1978,6 @@
       },
       "type": "object"
     },
-    "PermissionProfileToml": {
-      "additionalProperties": false,
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "extends": {
-          "type": "string"
-        },
-        "filesystem": {
-          "$ref": "#/definitions/FilesystemPermissionsToml"
-        },
-        "network": {
-          "$ref": "#/definitions/NetworkToml"
-        },
-        "workspace_roots": {
-          "$ref": "#/definitions/WorkspaceRootsToml"
-        }
-      },
-      "type": "object"
-    },
-    "PermissionsToml": {
-      "type": "object"
-    },
     "Personality": {
       "enum": [
         "none",
@@ -2507,39 +2169,6 @@
           "format": "double",
           "minimum": 0.0,
           "type": "number"
-        }
-      },
-      "type": "object"
-    },
-    "SandboxMode": {
-      "enum": [
-        "read-only",
-        "workspace-write",
-        "danger-full-access"
-      ],
-      "type": "string"
-    },
-    "SandboxWorkspaceWrite": {
-      "additionalProperties": false,
-      "properties": {
-        "exclude_slash_tmp": {
-          "default": false,
-          "type": "boolean"
-        },
-        "exclude_tmpdir_env_var": {
-          "default": false,
-          "type": "boolean"
-        },
-        "network_access": {
-          "default": false,
-          "type": "boolean"
-        },
-        "writable_roots": {
-          "default": [],
-          "items": {
-            "$ref": "#/definitions/AbsolutePathBuf"
-          },
-          "type": "array"
         }
       },
       "type": "object"
@@ -2882,16 +2511,6 @@
             }
           ],
           "default": {
-            "approval": {
-              "approve": null,
-              "approve_for_prefix": null,
-              "approve_for_session": null,
-              "cancel": null,
-              "decline": null,
-              "deny": null,
-              "open_fullscreen": null,
-              "open_thread": null
-            },
             "chat": {
               "decrease_reasoning_effort": null,
               "edit_queued_message": null,
@@ -3133,77 +2752,6 @@
           "default": false,
           "description": "Start the composer in Vim mode (`Normal`) by default. Defaults to `false`.",
           "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
-    "TuiApprovalKeymap": {
-      "additionalProperties": false,
-      "description": "Approval overlay keybindings.",
-      "properties": {
-        "approve": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/KeybindingsSpec"
-            }
-          ],
-          "description": "Approve the primary option."
-        },
-        "approve_for_prefix": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/KeybindingsSpec"
-            }
-          ],
-          "description": "Approve with exec-policy prefix when that option exists."
-        },
-        "approve_for_session": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/KeybindingsSpec"
-            }
-          ],
-          "description": "Approve for session when that option exists."
-        },
-        "cancel": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/KeybindingsSpec"
-            }
-          ],
-          "description": "Cancel an elicitation request."
-        },
-        "decline": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/KeybindingsSpec"
-            }
-          ],
-          "description": "Decline and provide corrective guidance."
-        },
-        "deny": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/KeybindingsSpec"
-            }
-          ],
-          "description": "Deny without providing follow-up guidance."
-        },
-        "open_fullscreen": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/KeybindingsSpec"
-            }
-          ],
-          "description": "Open the full-screen approval details view."
-        },
-        "open_thread": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/KeybindingsSpec"
-            }
-          ],
-          "description": "Open the thread that requested approval when shown from another thread."
         }
       },
       "type": "object"
@@ -3536,23 +3084,6 @@
       "additionalProperties": false,
       "description": "Raw keymap configuration from `[tui.keymap]`.\n\nEach context contains action-level overrides. Missing actions inherit from built-in defaults, and selected chat/composer actions can fall back through `global` during runtime resolution.\n\nThis type is intentionally a persistence shape, not the structure used by input handlers. Runtime consumers should resolve it into `RuntimeKeymap` first so precedence, empty-list unbinding, and duplicate-key validation are applied consistently.",
       "properties": {
-        "approval": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/TuiApprovalKeymap"
-            }
-          ],
-          "default": {
-            "approve": null,
-            "approve_for_prefix": null,
-            "approve_for_session": null,
-            "cancel": null,
-            "decline": null,
-            "deny": null,
-            "open_fullscreen": null,
-            "open_thread": null
-          }
-        },
         "chat": {
           "allOf": [
             {
@@ -4462,9 +3993,6 @@
           "type": "string"
         }
       ]
-    },
-    "WorkspaceRootsToml": {
-      "type": "object"
     }
   },
   "description": "Base config deserialized from ~/.codex/config.toml.",
@@ -4489,22 +4017,6 @@
       ],
       "description": "When `false`, disables analytics across Codex product surfaces in this machine. Defaults to `true`."
     },
-    "approval_policy": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/AskForApproval"
-        }
-      ],
-      "description": "Default approval policy for executing commands."
-    },
-    "approvals_reviewer": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/ApprovalsReviewer"
-        }
-      ],
-      "description": "Configures who approval requests are routed to for review once they have been escalated. This does not disable separate safety checks such as ARC."
-    },
     "apps": {
       "allOf": [
         {
@@ -4522,15 +4034,6 @@
       ],
       "default": null,
       "description": "Machine-local realtime audio device preferences used by realtime voice."
-    },
-    "auto_review": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/AutoReviewToml"
-        }
-      ],
-      "default": null,
-      "description": "Optional policy instructions for the guardian auto-reviewer."
     },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",
@@ -4566,10 +4069,6 @@
         }
       ],
       "description": "Debugging and reproducibility settings."
-    },
-    "default_permissions": {
-      "description": "Default permissions profile to apply. Names starting with `:` refer to built-in profiles; other names are resolved from the `[permissions]` table.",
-      "type": "string"
     },
     "desktop": {
       "additionalProperties": true,
@@ -5016,10 +4515,6 @@
       "description": "Whether to inject the `<environment_context>` user block.",
       "type": "boolean"
     },
-    "include_permissions_instructions": {
-      "description": "Whether to inject the `<permissions instructions>` developer block.",
-      "type": "boolean"
-    },
     "instructions": {
       "description": "System instructions.",
       "type": "string"
@@ -5152,15 +4647,6 @@
       ],
       "description": "OTEL configuration."
     },
-    "permissions": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/PermissionsToml"
-        }
-      ],
-      "default": null,
-      "description": "Named permissions profiles."
-    },
     "personality": {
       "allOf": [
         {
@@ -5233,22 +4719,6 @@
     "review_model": {
       "description": "Review model override used by the `/review` feature.",
       "type": "string"
-    },
-    "sandbox_mode": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/SandboxMode"
-        }
-      ],
-      "description": "Sandbox mode to use."
-    },
-    "sandbox_workspace_write": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/SandboxWorkspaceWrite"
-        }
-      ],
-      "description": "Sandbox configuration to apply if `sandbox` is `WorkspaceWrite`."
     },
     "service_tier": {
       "description": "Optional explicit service tier request id for new turns (for example `default`, `priority`, or `flex`; legacy `fast` also works).",

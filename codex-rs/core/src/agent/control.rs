@@ -631,6 +631,7 @@ impl AgentControl {
         )
     }
 
+    #[cfg(any())]
     async fn inherited_exec_policy_for_source(
         &self,
         state: &Arc<ThreadManagerState>,

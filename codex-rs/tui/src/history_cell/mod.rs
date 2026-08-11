@@ -49,19 +49,13 @@ use crate::version::CODEX_CLI_VERSION;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use crate::wrapping::adaptive_wrap_lines;
-use codex_cli_protocol::AskForApproval;
 use codex_cli_protocol::ToolRequestUserInputAnswer;
 use codex_cli_protocol::ToolRequestUserInputQuestion;
 use codex_cli_protocol::WebSearchAction;
 use codex_otel::RuntimeMetricsSummary;
 use codex_protocol::account::PlanType;
-use codex_protocol::approvals::ExecPolicyAmendment;
-use codex_protocol::approvals::NetworkPolicyAmendment;
-use codex_protocol::models::ManagedFileSystemPermissions;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::plan_tool::PlanItemArg;
 use codex_protocol::plan_tool::StepStatus;
 use codex_protocol::plan_tool::UpdatePlanArgs;
@@ -86,7 +80,6 @@ use url::Url;
 
 const RAW_DIFF_SUMMARY_WIDTH: usize = 10_000;
 
-mod approvals;
 mod base;
 mod exec;
 mod hook_cell;
@@ -100,7 +93,6 @@ mod search;
 mod separators;
 mod session;
 
-pub(crate) use approvals::*;
 pub(crate) use base::*;
 pub(crate) use exec::*;
 pub(crate) use hook_cell::HookCell;
@@ -122,6 +114,13 @@ mod tests;
 pub(crate) enum HistoryRenderMode {
     Rich,
     Raw,
+}
+
+/// Cyan history cell line showing the current review status.
+pub(crate) fn new_review_status_line(message: String) -> PlainHistoryCell {
+    PlainHistoryCell {
+        lines: vec![Line::from(message.cyan())],
+    }
 }
 
 pub(crate) fn raw_lines_from_source(source: &str) -> Vec<Line<'static>> {

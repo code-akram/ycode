@@ -7,13 +7,8 @@ use crate::tools::context::ExecCommandToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
-use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::handlers::apply_patch::intercept_apply_patch;
-use crate::tools::handlers::implicit_granted_permissions;
-use crate::tools::handlers::normalize_and_validate_additional_permissions;
 use crate::tools::handlers::parse_arguments;
-use crate::tools::handlers::parse_arguments_with_base_path;
-use crate::tools::handlers::resolve_sandbox_permissions;
 use crate::tools::handlers::resolve_tool_environment;
 use crate::tools::handlers::rewrite_function_string_argument;
 use crate::tools::handlers::updated_hook_command;
@@ -26,18 +21,11 @@ use crate::unified_exec::ExecCommandRequest;
 use crate::unified_exec::UnifiedExecContext;
 use crate::unified_exec::UnifiedExecError;
 use crate::unified_exec::UnifiedExecProcessManager;
-use crate::unified_exec::generate_chunk_id;
-use codex_features::Feature;
 use codex_otel::SessionTelemetry;
 use codex_otel::TOOL_CALL_UNIFIED_EXEC_METRIC;
-use codex_sandboxing::SandboxManager;
-use codex_sandboxing::SandboxType;
-use codex_sandboxing::SandboxablePreference;
 use codex_shell_command::shell_detect::detect_shell_type;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
-use codex_utils_output_truncation::approx_token_count;
-use codex_utils_path_uri::PathConvention;
 
 use super::super::shell_spec::CommandToolOptions;
 use super::super::shell_spec::create_exec_command_tool_with_environment_id;
@@ -50,7 +38,6 @@ use super::shell_mode_for_environment;
 #[derive(Clone, Copy)]
 pub(crate) struct ExecCommandHandlerOptions {
     pub(crate) allow_login_shell: bool,
-    pub(crate) exec_permission_approvals_enabled: bool,
     pub(crate) include_environment_id: bool,
     pub(crate) include_shell_parameter: bool,
 }
@@ -64,7 +51,6 @@ impl Default for ExecCommandHandler {
         Self {
             options: ExecCommandHandlerOptions {
                 allow_login_shell: false,
-                exec_permission_approvals_enabled: false,
                 include_environment_id: false,
                 include_shell_parameter: true,
             },
@@ -87,7 +73,6 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
         create_exec_command_tool_with_environment_id(
             CommandToolOptions {
                 allow_login_shell: self.options.allow_login_shell,
-                exec_permission_approvals_enabled: self.options.exec_permission_approvals_enabled,
             },
             self.options.include_environment_id,
             self.options.include_shell_parameter,
@@ -152,45 +137,8 @@ impl ExecCommandHandler {
         let environment = Arc::clone(&turn_environment.environment);
         let fs = environment.get_filesystem();
 
-        // A foreign cwd cannot seed the AbsolutePathBufGuard used to resolve relative paths in the
-        // permissions config below. Consult the configured platform-sandbox requirement before
-        // deciding whether parsing may continue without that base path.
-        let sandbox = SandboxManager::new().select_initial(
-            turn_environment.permission_profile(),
-            SandboxablePreference::Auto,
-            turn.windows_sandbox_level,
-            turn.network.is_some(),
-        );
-        // `to_abs_path()` alone cannot identify foreign drive paths: `file:///C:/repo` is
-        // representable as `/C:/repo` on POSIX. Require the inferred convention to match too.
-        let cwd_uses_native_convention =
-            cwd.infer_path_convention() == Some(PathConvention::native());
-        // TODO(anp): Remove this parsing split once sandboxing supports foreign paths.
-        let native_cwd = match cwd.to_abs_path() {
-            Ok(cwd) if cwd_uses_native_convention => Some(cwd),
-            _ if sandbox == SandboxType::None => None,
-            Err(err) => return Err(FunctionCallError::RespondToModel(err.to_string())),
-            Ok(_) => {
-                return Err(FunctionCallError::RespondToModel(format!(
-                    "path URI `{cwd}` does not use the host's native {} path convention",
-                    PathConvention::native()
-                )));
-            }
-        };
-        let mut args: ExecCommandArgs = match native_cwd.as_ref() {
-            Some(native_cwd) => {
-                // The base path only resolves paths nested in the permissions config types.
-                parse_arguments_with_base_path(&arguments, native_cwd)?
-            }
-            None => {
-                // Parsing without a base only skips relative-path resolution inside the
-                // permissions config. That is safe only for a truly unsandboxed attempt;
-                // sandboxed attempts fall through and return the conversion error below.
-                parse_arguments(&arguments)?
-            }
-        };
-        let sandbox_permissions =
-            resolve_sandbox_permissions(args.sandbox_permissions, args.justification.as_deref())?;
+        let native_cwd = cwd.to_abs_path().ok();
+        let mut args: ExecCommandArgs = parse_arguments(&arguments)?;
         let hook_command = args.cmd.clone();
         // TODO(anp) wire PathUri through implicit skills instead of skipping on foreign paths
         if let Some(native_cwd) = native_cwd.as_ref() {
@@ -245,72 +193,8 @@ impl ExecCommandHandler {
             tty,
             yield_time_ms,
             max_output_tokens,
-            sandbox_permissions: _,
-            additional_permissions,
-            justification,
-            prefix_rule,
             ..
         } = args;
-
-        let exec_permission_approvals_enabled =
-            session.features().enabled(Feature::ExecPermissionApprovals);
-        let requested_additional_permissions = additional_permissions.clone();
-        // TODO(anp): Make permission matching operate on PathUri for remote environments.
-        let permission_cwd = native_cwd.as_ref().unwrap_or(&turn.config.cwd);
-        let effective_additional_permissions = apply_granted_turn_permissions(
-            context.session.as_ref(),
-            &turn_environment.environment_id,
-            permission_cwd.as_path(),
-            sandbox_permissions,
-            additional_permissions,
-        )
-        .await;
-        let additional_permissions_allowed = exec_permission_approvals_enabled
-            || (session.features().enabled(Feature::RequestPermissionsTool)
-                && effective_additional_permissions.permissions_preapproved);
-
-        // Sticky turn permissions have already been approved, so they should
-        // continue through the normal exec approval flow for the command.
-        if effective_additional_permissions
-            .sandbox_permissions
-            .requests_sandbox_override()
-            && !effective_additional_permissions.permissions_preapproved
-            && !matches!(
-                context.turn.approval_policy(),
-                codex_protocol::protocol::AskForApproval::OnRequest
-            )
-        {
-            let approval_policy = context.turn.approval_policy();
-            manager.release_process_id(process_id).await;
-            return Err(FunctionCallError::RespondToModel(format!(
-                "approval policy is {approval_policy:?}; reject command — you cannot ask for escalated permissions if the approval policy is {approval_policy:?}"
-            )));
-        }
-
-        let normalized_additional_permissions = match implicit_granted_permissions(
-            sandbox_permissions,
-            requested_additional_permissions.as_ref(),
-            &effective_additional_permissions,
-        )
-        .map_or_else(
-            || {
-                normalize_and_validate_additional_permissions(
-                    additional_permissions_allowed,
-                    context.turn.approval_policy(),
-                    effective_additional_permissions.sandbox_permissions,
-                    effective_additional_permissions.additional_permissions,
-                    effective_additional_permissions.permissions_preapproved,
-                    permission_cwd,
-                )
-            },
-            |permissions| Ok(Some(permissions)),
-        ) {
-            Ok(normalized) => normalized,
-            Err(err) => {
-                manager.release_process_id(process_id).await;
-                return Err(FunctionCallError::RespondToModel(err));
-            }
-        };
 
         if let Some(output) = intercept_apply_patch(
             &command,
@@ -346,53 +230,19 @@ impl ExecCommandHandler {
             .exec_command(
                 ExecCommandRequest {
                     command,
-                    hook_command: hook_command.clone(),
                     process_id,
                     yield_time_ms,
                     max_output_tokens,
                     cwd,
-                    sandbox_cwd: native_environment_cwd,
+                    hook_command,
                     turn_environment: turn_environment.clone(),
-                    shell_mode,
-                    network: context.turn.network.clone(),
                     tty,
-                    sandbox_permissions: effective_additional_permissions.sandbox_permissions,
-                    additional_permissions: normalized_additional_permissions,
-                    additional_permissions_preapproved: effective_additional_permissions
-                        .permissions_preapproved,
-                    justification,
-                    prefix_rule,
                 },
                 &context,
             )
             .await
         {
             Ok(response) => Ok(boxed_tool_output(response)),
-            Err(UnifiedExecError::SandboxDenied {
-                output,
-                original_token_count,
-                output_omitted_bytes,
-                ..
-            }) => {
-                let output_text = output.aggregated_output.text;
-                let original_token_count =
-                    original_token_count.unwrap_or_else(|| approx_token_count(&output_text));
-                Ok(boxed_tool_output(ExecCommandToolOutput {
-                    event_call_id: context.call_id.clone(),
-                    chunk_id: generate_chunk_id(),
-                    wall_time: output.duration,
-                    raw_output: output_text.into_bytes(),
-                    truncation_policy: turn.model_info.truncation_policy.into(),
-                    max_output_tokens,
-                    // Sandbox denial is terminal, so there is no live
-                    // process for write_stdin to resume.
-                    process_id: None,
-                    exit_code: Some(output.exit_code),
-                    original_token_count: Some(original_token_count),
-                    output_omitted_bytes,
-                    hook_command: Some(hook_command),
-                }))
-            }
             Err(err) => Err(FunctionCallError::RespondToModel(format!(
                 "exec_command failed for `{command_for_display}`: {err:?}"
             ))),

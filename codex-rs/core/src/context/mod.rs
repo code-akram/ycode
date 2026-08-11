@@ -1,12 +1,10 @@
 //! Context fragments injected into model input.
 
-mod approved_command_prefix_saved;
 mod available_plugins_instructions;
 mod contextual_user_message;
 mod current_time_reminder;
 mod environment_context;
 mod environments_instructions;
-mod guardian_followup_review_reminder;
 mod hook_additional_context;
 mod image_resize_notice;
 mod inter_agent_completion_message;
@@ -18,8 +16,6 @@ mod legacy_unified_exec_process_limit_warning;
 mod model_switch_instructions;
 mod multi_agent_mode_instructions;
 mod multi_agent_usage_hint;
-mod network_rule_saved;
-mod permissions_instructions;
 mod personality_spec_instructions;
 mod plugin_instructions;
 mod realtime_delegation;
@@ -35,8 +31,6 @@ mod user_instructions;
 mod user_shell_command;
 pub(crate) mod world_state;
 
-pub(crate) use approved_command_prefix_saved::APPROVED_COMMAND_PREFIX_SAVED_MESSAGE_PREFIX;
-pub(crate) use approved_command_prefix_saved::ApprovedCommandPrefixSaved;
 pub(crate) use available_plugins_instructions::AvailablePluginsInstructions;
 pub(crate) use codex_context_fragments::AdditionalContextDeveloperFragment;
 pub(crate) use codex_context_fragments::AdditionalContextUserFragment;
@@ -46,7 +40,6 @@ pub(crate) use contextual_user_message::is_contextual_user_fragment;
 pub(crate) use contextual_user_message::parse_visible_hook_prompt_message;
 pub(crate) use current_time_reminder::CurrentTimeReminder;
 pub(crate) use environments_instructions::EnvironmentsInstructions;
-pub(crate) use guardian_followup_review_reminder::GuardianFollowupReviewReminder;
 pub(crate) use hook_additional_context::HookAdditionalContext;
 pub(crate) use image_resize_notice::ImageResizeNotice;
 pub(crate) use image_resize_notice::ImageResizeNoticeSource;
@@ -62,9 +55,6 @@ pub(crate) use legacy_model_mismatch_warning::LegacyModelMismatchWarning;
 pub(crate) use legacy_unified_exec_process_limit_warning::LegacyUnifiedExecProcessLimitWarning;
 pub(crate) use model_switch_instructions::ModelSwitchInstructions;
 pub(crate) use multi_agent_usage_hint::MultiAgentUsageHint;
-pub(crate) use network_rule_saved::NetworkRuleSaved;
-pub use permissions_instructions::ApprovalPromptContext;
-pub use permissions_instructions::PermissionsInstructions;
 pub(crate) use personality_spec_instructions::PersonalitySpecInstructions;
 pub(crate) use plugin_instructions::PluginInstructions;
 pub(crate) use realtime_delegation::RealtimeDelegation;

@@ -3,18 +3,12 @@
 use super::App;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
-use crate::chatwidget::cyber_model_approval_reviewer;
 use crate::runtime_session::CliRuntimeSession;
 use crate::session_state::ThreadSessionState;
-use codex_cli_protocol::ApprovalsReviewer as CliRuntimeApprovalsReviewer;
-use codex_cli_protocol::AskForApproval as CliRuntimeAskForApproval;
 use codex_cli_protocol::ThreadSettings;
 use codex_cli_protocol::ThreadSettingsUpdateParams;
-use codex_config::types::ApprovalsReviewer;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ModeKind;
-use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
-use codex_protocol::models::PermissionProfile;
 
 impl App {
     pub(super) async fn sync_active_thread_model_setting(
@@ -27,20 +21,7 @@ impl App {
             return;
         };
         params.effort = effort;
-        let defaulted_to_auto_review = params.approvals_reviewer
-            == Some(CliRuntimeApprovalsReviewer::AutoReview)
-            && (self.chat_widget.config_ref().approvals_reviewer != ApprovalsReviewer::AutoReview
-                || CliRuntimeAskForApproval::from(
-                    self.chat_widget
-                        .config_ref()
-                        .permissions
-                        .approval_policy
-                        .value(),
-                ) != CliRuntimeAskForApproval::OnRequest);
-        let settings_updated = self.send_thread_settings_update(cli_runtime, params).await;
-        if defaulted_to_auto_review && settings_updated {
-            self.app_event_tx.send(AppEvent::CyberModelAutoReviewNotice);
-        }
+        self.send_thread_settings_update(cli_runtime, params).await;
     }
 
     pub(super) fn active_thread_model_setting_update_params(
@@ -48,38 +29,12 @@ impl App {
         model: String,
     ) -> Option<ThreadSettingsUpdateParams> {
         let thread_id = self.active_thread_id?;
-        let is_cyber_model = self.model_catalog.try_list_models().is_ok_and(|models| {
-            models.iter().any(|preset| {
-                preset.model == model && preset.model_specialty.as_deref() == Some("cyber")
-            })
-        });
-
-        let mut params = ThreadSettingsUpdateParams {
+        let params = ThreadSettingsUpdateParams {
             thread_id: thread_id.to_string(),
             model: Some(model),
             collaboration_mode: Some(self.chat_widget.effective_collaboration_mode()),
             ..ThreadSettingsUpdateParams::default()
         };
-
-        if is_cyber_model {
-            let workspace_profile = PermissionProfile::workspace_write();
-            let workspace_allowed = self
-                .config
-                .permissions
-                .can_set_permission_profile(&workspace_profile)
-                .is_ok()
-                && self.config.is_permission_profile_allowed(
-                    BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
-                    &workspace_profile,
-                );
-
-            if workspace_allowed && let Some(reviewer) = cyber_model_approval_reviewer(&self.config)
-            {
-                params.permissions = Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string());
-                params.approval_policy = Some(CliRuntimeAskForApproval::OnRequest);
-                params.approvals_reviewer = Some(reviewer.into());
-            }
-        }
 
         Some(params)
     }
@@ -147,17 +102,13 @@ impl App {
     ) {
         let AppCommand::OverrideTurnContext {
             cwd,
-            approval_policy,
-            approvals_reviewer,
-            permission_profile: _,
-            active_permission_profile,
-            windows_sandbox_level: _,
             model,
             effort,
             summary,
             service_tier,
             collaboration_mode,
             personality,
+            ..
         } = op
         else {
             return;
@@ -166,11 +117,6 @@ impl App {
         let params = ThreadSettingsUpdateParams {
             thread_id: thread_id.to_string(),
             cwd: cwd.clone(),
-            approval_policy: *approval_policy,
-            approvals_reviewer: approvals_reviewer.map(CliRuntimeApprovalsReviewer::from),
-            permissions: active_permission_profile
-                .as_ref()
-                .map(|profile| profile.id.clone()),
             model: model.clone(),
             effort: effort.clone().unwrap_or_default(),
             summary: *summary,
@@ -228,13 +174,6 @@ fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: 
     }
     session.model_provider_id = settings.model_provider.clone();
     session.service_tier = settings.service_tier.clone();
-    session.approval_policy = settings.approval_policy;
-    session.approvals_reviewer = settings.approvals_reviewer.to_core();
-    session.permission_profile = PermissionProfile::from_legacy_sandbox_policy_for_cwd(
-        &settings.sandbox_policy.to_core(),
-        settings.cwd.as_path(),
-    );
-    session.active_permission_profile = settings.active_permission_profile.clone().map(Into::into);
     session.set_cwd_retargeting_implicit_runtime_workspace_root(settings.cwd.clone());
     session.personality = settings.personality;
     let mut collaboration_mode = settings.collaboration_mode.clone();
@@ -248,10 +187,6 @@ fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: 
 
 fn thread_settings_update_has_changes(params: &ThreadSettingsUpdateParams) -> bool {
     params.cwd.is_some()
-        || params.approval_policy.is_some()
-        || params.approvals_reviewer.is_some()
-        || params.sandbox_policy.is_some()
-        || params.permissions.is_some()
         || params.model.is_some()
         || params.service_tier.is_some()
         || params.effort.is_some()

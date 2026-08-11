@@ -249,14 +249,6 @@ pub struct Config {
     pub model_auto_compact_token_limit: Option<i64>,
     pub model_auto_compact_token_limit_scope: Option<AutoCompactTokenLimitScope>,
     pub model_provider: Option<String>,
-    #[experimental(nested)]
-    pub approval_policy: Option<AskForApproval>,
-    /// [UNSTABLE] Optional default for where approval requests are routed for
-    /// review.
-    #[experimental("config/read.approvalsReviewer")]
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    pub sandbox_mode: Option<SandboxMode>,
-    pub sandbox_workspace_write: Option<SandboxWorkspaceWrite>,
     pub forced_chatgpt_workspace_id: Option<ForcedChatgptWorkspaceIds>,
     pub forced_login_method: Option<ForcedLoginMethod>,
     pub web_search: Option<WebSearchMode>,

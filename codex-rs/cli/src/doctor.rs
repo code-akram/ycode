@@ -353,7 +353,6 @@ async fn build_report(
                 updates_check,
                 network_check,
                 websocket_check,
-                sandbox_check,
                 terminal_check,
                 git_check,
                 terminal_title_check,
@@ -370,11 +369,6 @@ async fn build_report(
                     progress.clone(),
                     websocket_reachability_check(config, Some(auth_manager)),
                 ),
-                async {
-                    run_sync_check("sandbox", progress.clone(), || {
-                        sandbox_check(config, arg0_paths)
-                    })
-                },
                 async {
                     run_sync_check("terminal", progress.clone(), || {
                         terminal_check(command.no_color)
@@ -404,7 +398,6 @@ async fn build_report(
                 updates_check,
                 network_check,
                 websocket_check,
-                sandbox_check,
                 terminal_check,
                 git_check,
                 terminal_title_check,
@@ -508,20 +501,8 @@ fn config_overrides_from_interactive(
     interactive: &TuiCli,
     arg0_paths: &Arg0DispatchPaths,
 ) -> ConfigOverrides {
-    let approval_policy = if interactive.dangerously_bypass_approvals_and_sandbox {
-        Some(AskForApproval::Never)
-    } else {
-        interactive.approval_policy.map(Into::into)
-    };
-    let sandbox_mode = if interactive.dangerously_bypass_approvals_and_sandbox {
-        Some(codex_protocol::config_types::SandboxMode::DangerFullAccess)
-    } else {
-        interactive.sandbox_mode.map(Into::into)
-    };
     ConfigOverrides {
         model: interactive.model.clone(),
-        approval_policy,
-        sandbox_mode,
         cwd: interactive.cwd.clone(),
         model_provider: interactive
             .oss
@@ -530,7 +511,6 @@ fn config_overrides_from_interactive(
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         show_raw_agent_reasoning: interactive.oss.then_some(true),
-        additional_writable_roots: interactive.add_dir.clone(),
         ..Default::default()
     }
 }
@@ -1477,33 +1457,6 @@ fn read_probe_file(path: &Path) -> std::io::Result<()> {
     let mut buffer = [0_u8; 1];
     let _ = file.read(&mut buffer)?;
     Ok(())
-}
-
-fn sandbox_check(config: &Config, arg0_paths: &Arg0DispatchPaths) -> DoctorCheck {
-    let mut details = Vec::new();
-    details.push(format!(
-        "approval policy: {:?}",
-        config.permissions.approval_policy.value()
-    ));
-    let file_system_sandbox = config.permissions.file_system_sandbox_policy();
-    details.push(format!("filesystem sandbox: {}", file_system_sandbox.kind));
-    details.push(format!(
-        "network sandbox: {}",
-        config.permissions.network_sandbox_policy()
-    ));
-    push_path_detail(
-        &mut details,
-        "execve wrapper helper",
-        arg0_paths.main_execve_wrapper_exe.as_deref(),
-    );
-
-    DoctorCheck::new(
-        "sandbox.helpers",
-        "sandbox",
-        CheckStatus::Ok,
-        "sandbox configuration is readable",
-    )
-    .details(details)
 }
 
 #[derive(Clone, Debug)]

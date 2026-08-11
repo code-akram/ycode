@@ -8,7 +8,6 @@ const AGENT_NAMES: &str = include_str!("../agent_names.txt");
 
 struct SpawnAgentThreadInheritance {
     environments: Option<TurnEnvironmentSnapshot>,
-    exec_policy: Option<Arc<crate::exec_policy::ExecPolicyManager>>,
 }
 
 /// Initial input delivered after a spawned agent acquires execution capacity.
@@ -347,10 +346,6 @@ impl AgentControl {
         let inherited_environments = self
             .inherited_environments_for_source(&state, Some(&session_source))
             .await;
-        let inherited_exec_policy = self
-            .inherited_exec_policy_for_source(&state, Some(&session_source), &config)
-            .await;
-
         match state
             .resume_thread_with_history_with_source(ResumeThreadWithHistoryOptions {
                 config,
@@ -359,7 +354,6 @@ impl AgentControl {
                 session_source,
                 parent_thread_id,
                 inherited_environments,
-                inherited_exec_policy,
             })
             .await
         {
@@ -422,9 +416,6 @@ impl AgentControl {
             environments: self
                 .inherited_environments_for_source(&state, session_source.as_ref())
                 .await,
-            exec_policy: self
-                .inherited_exec_policy_for_source(&state, session_source.as_ref(), &config)
-                .await,
         };
         let (session_source, mut agent_metadata) = match session_source {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
@@ -484,7 +475,6 @@ impl AgentControl {
                     /*thread_source*/ Some(ThreadSource::Subagent),
                     /*metrics_service_name*/ None,
                     inheritance.environments,
-                    inheritance.exec_policy,
                     options.environments.clone(),
                 ))
                 .await?
@@ -595,7 +585,6 @@ impl AgentControl {
     ) -> CodexResult<crate::thread_manager::NewThread> {
         let SpawnAgentThreadInheritance {
             environments: inherited_environments,
-            exec_policy: inherited_exec_policy,
         } = inheritance;
         if options.fork_parent_spawn_call_id.is_none() {
             return Err(CodexErr::Fatal(
@@ -837,7 +826,6 @@ impl AgentControl {
                 /*parent_thread_id*/ Some(parent_thread_id),
                 /*forked_from_thread_id*/ Some(parent_thread_id),
                 inherited_environments,
-                inherited_exec_policy,
                 options.environments.clone(),
                 thread_extension_init,
             )
@@ -984,10 +972,6 @@ impl AgentControl {
         let inherited_environments = self
             .inherited_environments_for_source(&state, Some(&session_source))
             .await;
-        let inherited_exec_policy = self
-            .inherited_exec_policy_for_source(&state, Some(&session_source), &config)
-            .await;
-
         let resumed_thread = state
             .resume_thread_with_history_with_source(ResumeThreadWithHistoryOptions {
                 config: config.clone(),
@@ -996,7 +980,6 @@ impl AgentControl {
                 session_source,
                 parent_thread_id,
                 inherited_environments,
-                inherited_exec_policy,
             })
             .await?;
         let mut agent_metadata = agent_metadata;

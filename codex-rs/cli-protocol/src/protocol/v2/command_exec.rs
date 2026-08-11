@@ -1,4 +1,3 @@
-use super::SandboxPolicy;
 use crate::JsonSchema;
 use crate::TS;
 use codex_experimental_api_macros::ExperimentalApi;
@@ -18,7 +17,7 @@ pub struct CommandExecTerminalSize {
     pub cols: u16,
 }
 
-/// Run a standalone command (argv vector) in the server sandbox without
+/// Run a standalone command (argv vector) without
 /// creating a thread or turn.
 ///
 /// The final `command/exec` response is deferred until the process exits and is
@@ -92,20 +91,6 @@ pub struct CommandExecParams {
     /// true.
     #[ts(optional = nullable)]
     pub size: Option<CommandExecTerminalSize>,
-    /// Optional sandbox policy for this command.
-    ///
-    /// Uses the same shape as thread/turn execution sandbox configuration and
-    /// defaults to the user's configured policy when omitted. Cannot be
-    /// combined with `permissionProfile`.
-    #[ts(optional = nullable)]
-    pub sandbox_policy: Option<SandboxPolicy>,
-    /// Optional active permissions profile id for this command.
-    ///
-    /// Defaults to the user's configured permissions when omitted. Cannot be
-    /// combined with `sandboxPolicy`.
-    #[experimental("command/exec.permissionProfile")]
-    #[ts(optional = nullable)]
-    pub permission_profile: Option<String>,
 }
 
 /// Final buffered result for `command/exec`.

@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use codex_async_utils::CancelErr;
 use codex_async_utils::OrCancelExt;
-use codex_network_proxy::PROXY_ACTIVE_ENV_KEY;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
@@ -24,7 +23,6 @@ use crate::tools::runtimes::RuntimePathPrepends;
 #[cfg(unix)]
 use crate::tools::runtimes::apply_package_path_prepend;
 use crate::tools::runtimes::maybe_wrap_shell_lc_with_snapshot;
-use crate::tools::runtimes::strip_managed_proxy_env;
 use crate::user_shell_command::user_shell_command_record_item;
 use codex_protocol::exec_output::ExecToolCallOutput;
 use codex_protocol::exec_output::StreamOutput;
@@ -35,13 +33,11 @@ use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecCommandSource;
 use codex_protocol::protocol::TurnStartedEvent;
-use codex_sandboxing::SandboxType;
 use codex_shell_command::parse_command::parse_command;
 
 use super::SessionTask;
 use super::SessionTaskResult;
 use crate::session::session::Session;
-use codex_protocol::models::PermissionProfile;
 
 const USER_SHELL_TIMEOUT_MS: u64 = 60 * 60 * 1000; // 1 hour
 
@@ -159,9 +155,6 @@ pub(crate) async fn execute_user_shell_command(
         &turn_context.config.permissions.shell_environment_policy,
         Some(session.thread_id),
     );
-    if exec_env_map.contains_key(PROXY_ACTIVE_ENV_KEY) {
-        strip_managed_proxy_env(&mut exec_env_map);
-    }
     let exec_command = prepare_user_shell_exec_command(
         &display_command,
         environment_shell,
@@ -202,34 +195,16 @@ pub(crate) async fn execute_user_shell_command(
         )
         .await;
 
-    let permission_profile = PermissionProfile::Disabled;
     let exec_env = ExecRequest {
         command: exec_command.clone(),
         cwd: cwd.clone().into(),
         env: exec_env_map,
         exec_server_env_config: None,
-        // `/shell` is the explicit full-access escape hatch, so it must not
-        // inherit a managed proxy from the surrounding session or turn.
-        network: None,
-        network_environment_id: None,
         // TODO(zhao-oai): Now that we have ExecExpiration::Cancellation, we
         // should use that instead of an "arbitrarily large" timeout here.
         expiration: USER_SHELL_TIMEOUT_MS.into(),
         capture_policy: ExecCapturePolicy::ShellTool,
-        sandbox: SandboxType::None,
-        windows_sandbox_policy_cwd: cwd.clone().into(),
-        windows_sandbox_workspace_roots: turn_context.config.effective_workspace_roots(),
-        windows_sandbox_level: turn_context.windows_sandbox_level,
-        windows_sandbox_private_desktop: turn_context
-            .config
-            .permissions
-            .windows_sandbox_private_desktop,
-        permission_profile,
         arg0: None,
-        exec_server_sandbox: None,
-        exec_server_enforce_managed_network: false,
-        exec_server_managed_network: None,
-        exec_server_network_proxy: None,
     };
 
     let stdout_stream = Some(StdoutStream {

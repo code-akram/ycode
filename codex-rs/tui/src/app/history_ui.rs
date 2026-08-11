@@ -106,7 +106,6 @@ impl App {
             self.config.cwd.to_path_buf(),
             version,
         )
-        .with_yolo_mode(history_cell::is_yolo_mode(&self.config))
         .display_lines(width)
     }
 

@@ -11,7 +11,6 @@ use crate::current_time::cli_runtime_time_provider;
 use crate::error_code::invalid_request;
 use crate::extensions::ThreadExtensionDependencies;
 use crate::extensions::cli_runtime_extension_event_sink;
-use crate::extensions::guardian_agent_spawner;
 use crate::extensions::thread_extensions;
 use crate::external_agent_migration::ExternalAgentConfigRequestProcessor;
 use crate::external_agent_migration::ExternalAgentConfigRequestProcessorArgs;
@@ -231,25 +230,22 @@ impl MessageProcessor {
                 codex_core::build_models_manager(config.as_ref(), auth_manager.clone()),
                 session_source,
                 environment_manager,
-                thread_extensions(
-                    guardian_agent_spawner(thread_manager.clone()),
-                    ThreadExtensionDependencies {
-                        event_sink: cli_runtime_extension_event_sink(
-                            outgoing.clone(),
-                            thread_state_manager.clone(),
-                        ),
-                        auth_manager: auth_manager.clone(),
-                        state_db: state_db.clone(),
-                        analytics_events_client: analytics_events_client.clone(),
-                        thread_manager: thread_manager.clone(),
-                        goal_service: Arc::clone(&goal_service),
-                        environment_manager: Arc::clone(&environment_manager_for_extensions),
-                        executor_skill_provider: Arc::clone(&executor_skill_provider),
-                        git_attribution_base_url: config.chatgpt_base_url.clone(),
-                        http_client_factory: config.http_client_factory(),
-                        thread_store: Arc::clone(&thread_store),
-                    },
-                ),
+                thread_extensions(ThreadExtensionDependencies {
+                    event_sink: cli_runtime_extension_event_sink(
+                        outgoing.clone(),
+                        thread_state_manager.clone(),
+                    ),
+                    auth_manager: auth_manager.clone(),
+                    state_db: state_db.clone(),
+                    analytics_events_client: analytics_events_client.clone(),
+                    thread_manager: thread_manager.clone(),
+                    goal_service: Arc::clone(&goal_service),
+                    environment_manager: Arc::clone(&environment_manager_for_extensions),
+                    executor_skill_provider: Arc::clone(&executor_skill_provider),
+                    git_attribution_base_url: config.chatgpt_base_url.clone(),
+                    http_client_factory: config.http_client_factory(),
+                    thread_store: Arc::clone(&thread_store),
+                }),
                 Arc::new(CodexHomeUserInstructionsProvider::new(
                     config.codex_home.clone(),
                 )),
@@ -759,11 +755,6 @@ impl MessageProcessor {
                     .experimental_feature_enablement_set(request_id.clone(), params)
                     .await
             }
-            ClientRequest::ConfigRequirementsRead { params: _, .. } => self
-                .config_processor
-                .config_requirements_read()
-                .await
-                .map(|response| Some(response.into())),
             ClientRequest::EnvironmentAdd { params, .. } => {
                 self.environment_processor.environment_add(params).await
             }
@@ -980,11 +971,6 @@ impl MessageProcessor {
             ClientRequest::ThreadShellCommand { params, .. } => {
                 self.thread_processor
                     .thread_shell_command(&request_id, params)
-                    .await
-            }
-            ClientRequest::ThreadApproveGuardianDeniedAction { params, .. } => {
-                self.thread_processor
-                    .thread_approve_guardian_denied_action(&request_id, params)
                     .await
             }
             ClientRequest::GetConversationSummary { params, .. } => {

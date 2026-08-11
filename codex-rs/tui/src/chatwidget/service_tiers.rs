@@ -108,11 +108,6 @@ impl ChatWidget {
         self.app_event_tx
             .send(AppEvent::CodexOp(AppCommand::override_turn_context(
                 /*cwd*/ None,
-                /*approval_policy*/ None,
-                /*approvals_reviewer*/ None,
-                /*permission_profile*/ None,
-                /*active_permission_profile*/ None,
-                /*windows_sandbox_level*/ None,
                 /*model*/ None,
                 /*effort*/ None,
                 /*summary*/ None,

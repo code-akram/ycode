@@ -163,16 +163,17 @@ pub struct ConfigToml {
     /// only to tokens after the carried prefix in the current compaction window.
     pub model_auto_compact_token_limit_scope: Option<AutoCompactTokenLimitScope>,
 
-    /// Default approval policy for executing commands.
+    #[serde(skip)]
+    #[schemars(skip)]
     pub approval_policy: Option<AskForApproval>,
 
-    /// Configures who approval requests are routed to for review once they have
-    /// been escalated. This does not disable separate safety checks such as
-    /// ARC.
+    #[serde(skip)]
+    #[schemars(skip)]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
 
     /// Optional policy instructions for the guardian auto-reviewer.
-    #[serde(default)]
+    #[serde(skip)]
+    #[schemars(skip)]
     pub auto_review: Option<AutoReviewToml>,
 
     #[serde(default)]
@@ -188,19 +189,20 @@ pub struct ConfigToml {
     /// shell.
     pub allow_login_shell: Option<bool>,
 
-    /// Sandbox mode to use.
+    #[serde(skip)]
+    #[schemars(skip)]
     pub sandbox_mode: Option<SandboxMode>,
 
-    /// Sandbox configuration to apply if `sandbox` is `WorkspaceWrite`.
+    #[serde(skip)]
+    #[schemars(skip)]
     pub sandbox_workspace_write: Option<SandboxWorkspaceWrite>,
 
-    /// Default permissions profile to apply. Names starting with `:` refer to
-    /// built-in profiles; other names are resolved from the `[permissions]`
-    /// table.
+    #[serde(skip)]
+    #[schemars(skip)]
     pub default_permissions: Option<String>,
 
-    /// Named permissions profiles.
-    #[serde(default)]
+    #[serde(skip)]
+    #[schemars(skip)]
     pub permissions: Option<PermissionsToml>,
 
     /// Optional external command to spawn for end-user notifications.
@@ -214,7 +216,8 @@ pub struct ConfigToml {
     #[serde(default)]
     pub developer_instructions: Option<String>,
 
-    /// Whether to inject the `<permissions instructions>` developer block.
+    #[serde(skip)]
+    #[schemars(skip)]
     pub include_permissions_instructions: Option<bool>,
 
     /// Whether to inject the `<apps_instructions>` developer block.

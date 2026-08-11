@@ -5,9 +5,6 @@ use std::time::Duration;
 use codex_analytics::CompactionTrigger;
 use codex_analytics::HookRunFact;
 use codex_analytics::build_track_events_context;
-use codex_hooks::PermissionRequestDecision;
-use codex_hooks::PermissionRequestOutcome;
-use codex_hooks::PermissionRequestRequest;
 use codex_hooks::PostToolUseOutcome;
 use codex_hooks::PostToolUseRequest;
 use codex_hooks::PreToolUseOutcome;
@@ -24,7 +21,6 @@ use codex_otel::HOOK_RUN_METRIC;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::HookCompletedEvent;
@@ -46,7 +42,6 @@ use crate::session::TurnInput;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::hook_names::HookToolName;
-use crate::tools::sandboxing::PermissionRequestPayload;
 
 pub(crate) struct HookRuntimeOutcome {
     pub should_stop: bool,
@@ -133,7 +128,7 @@ pub(crate) async fn run_pending_session_start_hooks(
             cwd: turn_context.cwd.clone(),
             transcript_path: sess.hook_transcript_path().await,
             model: turn_context.model_info.slug.clone(),
-            permission_mode: hook_permission_mode(turn_context),
+            permission_mode: hook_permission_mode(),
             target,
         };
         let hooks = sess.hooks();
@@ -175,7 +170,7 @@ pub(crate) async fn run_pre_tool_use_hooks(
         cwd: turn_context.cwd.clone(),
         transcript_path: sess.hook_transcript_path().await,
         model: turn_context.model_info.slug.clone(),
-        permission_mode: hook_permission_mode(turn_context),
+        permission_mode: hook_permission_mode(),
         tool_name: tool_name.name().to_string(),
         matcher_aliases: tool_name.matcher_aliases().to_vec(),
         tool_use_id,
@@ -222,6 +217,7 @@ pub(crate) async fn run_pre_tool_use_hooks(
 // PermissionRequest hooks share the same preview/start/completed event flow as
 // other hook types, but they return an optional decision instead of mutating
 // tool input or post-run state.
+#[cfg(any())]
 pub(crate) async fn run_permission_request_hooks(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
@@ -236,7 +232,7 @@ pub(crate) async fn run_permission_request_hooks(
         cwd: turn_context.cwd.to_path_buf(),
         transcript_path: sess.hook_transcript_path().await,
         model: turn_context.model_info.slug.clone(),
-        permission_mode: hook_permission_mode(turn_context),
+        permission_mode: hook_permission_mode(),
         tool_name: payload.tool_name.name().to_string(),
         matcher_aliases: payload.tool_name.matcher_aliases().to_vec(),
         run_id_suffix: run_id_suffix.to_string(),
@@ -278,7 +274,7 @@ pub(crate) async fn run_post_tool_use_hooks(
         cwd: turn_context.cwd.clone(),
         transcript_path: sess.hook_transcript_path().await,
         model: turn_context.model_info.slug.clone(),
-        permission_mode: hook_permission_mode(turn_context),
+        permission_mode: hook_permission_mode(),
         tool_name,
         matcher_aliases,
         tool_use_id,
@@ -352,7 +348,7 @@ pub(crate) async fn run_turn_stop_hooks(
         cwd: turn_context.cwd.clone(),
         transcript_path,
         model: turn_context.model_info.slug.clone(),
-        permission_mode: hook_permission_mode(turn_context),
+        permission_mode: hook_permission_mode(),
         stop_hook_active,
         last_assistant_message,
         target,
@@ -544,7 +540,7 @@ pub(crate) async fn inspect_pending_input(
                 cwd: turn_context.cwd.clone(),
                 transcript_path: sess.hook_transcript_path().await,
                 model: turn_context.model_info.slug.clone(),
-                permission_mode: hook_permission_mode(turn_context),
+                permission_mode: hook_permission_mode(),
                 prompt: UserMessageItem::new(content).message(),
             };
             let hooks = sess.hooks();
@@ -769,14 +765,8 @@ fn hook_run_metric_tags(run: &HookRunSummary) -> [(&'static str, &'static str); 
     ]
 }
 
-fn hook_permission_mode(turn_context: &TurnContext) -> String {
-    match turn_context.approval_policy() {
-        AskForApproval::Never => "bypassPermissions",
-        AskForApproval::UnlessTrusted | AskForApproval::OnRequest | AskForApproval::Granular(_) => {
-            "default"
-        }
-    }
-    .to_string()
+fn hook_permission_mode() -> String {
+    "bypassPermissions".to_string()
 }
 
 fn thread_spawn_subagent_hook_context(

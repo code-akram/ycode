@@ -21,7 +21,6 @@ pub(crate) enum KeymapContext {
     VimTextObject,
     Pager,
     List,
-    Approval,
 }
 
 impl KeymapContext {
@@ -36,7 +35,6 @@ impl KeymapContext {
             Self::VimTextObject => "vim_text_object",
             Self::Pager => "pager",
             Self::List => "list",
-            Self::Approval => "approval",
         }
     }
 
@@ -54,10 +52,7 @@ impl KeymapContext {
 
         matches!(
             (self, other),
-            (Self::List, Self::Approval)
-                | (Self::Approval, Self::List)
-                | (Self::Chat, Self::List)
-                | (Self::List, Self::Chat)
+            (Self::Chat, Self::List) | (Self::List, Self::Chat)
         ) || self.is_shared_main() && other.is_main_editor()
             || other.is_shared_main() && self.is_main_editor()
             || self.is_shared_main() && other.is_shared_main()
@@ -328,16 +323,6 @@ define_runtime_action_bindings! {
         jump_top,
         jump_bottom,
         accept,
-        cancel,
-    ],
-    "approval" => Approval, approval, approval [
-        open_fullscreen,
-        open_thread,
-        approve,
-        approve_for_session,
-        approve_for_prefix,
-        deny,
-        decline,
         cancel,
     ],
 }

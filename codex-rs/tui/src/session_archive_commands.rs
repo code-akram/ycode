@@ -22,7 +22,6 @@ use crate::named_session_lookup::SessionNameLookupMode;
 use crate::runtime_session::CliRuntimeSession;
 use codex_arg0::Arg0DispatchPaths;
 use codex_cli_protocol::Thread as CliRuntimeThread;
-use codex_cloud_config::cloud_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadOptions;
 use codex_config::LoaderOverrides;
@@ -302,14 +301,7 @@ async fn start_cli_runtime_for_archive_command(
     .await
     .wrap_err("failed to load config.toml")?;
     let config_toml = &bootstrap_config.config_toml;
-    let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        cli_runtime_target.auth_config_for_cloud_loader(bootstrap_auth_config(
-            codex_home.as_path(),
-            &bootstrap_config,
-        )?),
-        /*enable_codex_api_key_env*/ false,
-    )
-    .await;
+    let cloud_config_bundle = CloudConfigBundleLoader::default();
 
     let model_provider = if cli.oss {
         resolve_oss_provider(cli.oss_provider.as_deref(), config_toml)

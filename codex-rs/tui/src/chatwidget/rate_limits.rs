@@ -373,11 +373,6 @@ impl ChatWidget {
         let switch_actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
             tx.send(AppEvent::CodexOp(AppCommand::override_turn_context(
                 /*cwd*/ None,
-                /*approval_policy*/ None,
-                /*approvals_reviewer*/ None,
-                /*permission_profile*/ None,
-                /*active_permission_profile*/ None,
-                /*windows_sandbox_level*/ None,
                 Some(switch_model_for_events.clone()),
                 Some(Some(default_effort.clone())),
                 /*summary*/ None,

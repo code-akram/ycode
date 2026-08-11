@@ -1,5 +1,4 @@
 use codex_arg0::Arg0DispatchPaths;
-use codex_cloud_config::cloud_config_bundle_loader;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLayerStack;
 use codex_config::LoaderOverrides;
@@ -96,18 +95,12 @@ impl ConfigManager {
 
     pub(crate) fn replace_cloud_config_bundle_loader(
         &self,
-        auth_manager: Arc<AuthManager>,
-        chatgpt_base_url: String,
-        http_client_factory: codex_http_client::HttpClientFactory,
+        _auth_manager: Arc<AuthManager>,
+        _chatgpt_base_url: String,
+        _http_client_factory: codex_http_client::HttpClientFactory,
     ) {
-        let loader = cloud_config_bundle_loader(
-            auth_manager,
-            chatgpt_base_url,
-            self.codex_home.clone(),
-            http_client_factory,
-        );
         if let Ok(mut guard) = self.cloud_config_bundle.write() {
-            *guard = loader;
+            *guard = CloudConfigBundleLoader::default();
         } else {
             warn!("failed to update cloud config bundle loader");
         }

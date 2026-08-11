@@ -24,7 +24,6 @@ pub struct CliConfigOverrides {
     ///
     /// Examples:
     ///   - `-c model="o3"`
-    ///   - `-c 'sandbox_permissions=["disk-full-read-access"]'`
     ///   - `-c shell_environment_policy.inherit=all`
     #[arg(
         short = 'c',

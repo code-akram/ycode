@@ -3,7 +3,6 @@ use crate::ToolName;
 use crate::ToolPayload;
 use codex_extension_items::ExtensionItem;
 use codex_file_system::ExecutorFileSystem;
-use codex_file_system::FileSystemSandboxContext;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -68,8 +67,6 @@ pub struct ToolEnvironment {
     pub cwd: AbsolutePathBuf,
     /// Filesystem implementation for this environment.
     pub file_system: Arc<dyn ExecutorFileSystem>,
-    /// Sandbox context to use for filesystem operations.
-    pub file_system_sandbox_context: FileSystemSandboxContext,
 }
 
 /// Turn-item emitter used when a caller does not expose visible item emission.

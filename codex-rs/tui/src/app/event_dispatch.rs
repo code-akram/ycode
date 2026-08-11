@@ -557,10 +557,6 @@ impl App {
                 self.lookup_message_history_batch(thread_id, cursor, log_id)
                     .await?;
             }
-            AppEvent::ApproveRecentAutoReviewDenial { thread_id, id } => {
-                self.chat_widget
-                    .approve_recent_auto_review_denial(thread_id, id);
-            }
             AppEvent::SubmitThreadOp { thread_id, op } => {
                 self.submit_thread_op(cli_runtime, thread_id, op).await?;
             }
@@ -1187,17 +1183,6 @@ impl App {
             AppEvent::OpenAllModelsPopup { models } => {
                 self.chat_widget.open_all_models_popup(models);
             }
-            AppEvent::OpenFullAccessConfirmation {
-                preset,
-                return_to_permissions,
-                profile_selection,
-            } => {
-                self.chat_widget.open_full_access_confirmation(
-                    preset,
-                    return_to_permissions,
-                    profile_selection,
-                );
-            }
             AppEvent::OpenFeedbackNote {
                 category,
                 include_logs,
@@ -1262,11 +1247,6 @@ impl App {
                             .add_error_message(format!("Failed to save default model: {error}"));
                     }
                 }
-            }
-            AppEvent::CyberModelAutoReviewNotice => {
-                self.chat_widget.add_warning_message(
-                    "Cyber models default to \"Approve for me\" for safety reasons.".to_string(),
-                );
             }
             AppEvent::PluginUninstallLoaded {
                 cwd,
@@ -1351,86 +1331,6 @@ impl App {
                     }
                 }
             }
-            AppEvent::UpdateAskForApprovalPolicy(policy) => {
-                let mut config = self.config.clone();
-                if !self.try_set_approval_policy_on_config(
-                    &mut config,
-                    policy,
-                    "Failed to set approval policy",
-                    "failed to set approval policy on app config",
-                ) {
-                    return Ok(AppRunControl::Continue);
-                }
-                self.config = config;
-                let approval_policy =
-                    AskForApproval::from(self.config.permissions.approval_policy.value());
-                self.runtime_approval_policy_override = Some(approval_policy);
-                self.chat_widget.set_approval_policy(approval_policy);
-                self.sync_active_thread_permission_settings_to_cached_session()
-                    .await;
-            }
-            AppEvent::UpdateActivePermissionProfile(active_permission_profile) => {
-                let mut config = self.config.clone();
-                let Some(permission_profile) = self
-                    .try_set_builtin_active_permission_profile_on_config(
-                        &mut config,
-                        active_permission_profile.clone(),
-                        "Failed to set permission profile",
-                        "failed to set active permission profile on app config",
-                    )
-                else {
-                    return Ok(AppRunControl::Continue);
-                };
-                let permission_profile_for_chat = permission_profile.clone();
-
-                self.config = config;
-                if let Err(err) = self
-                    .chat_widget
-                    .set_permission_profile_from_session_snapshot(
-                        PermissionProfileSnapshot::active(
-                            permission_profile_for_chat,
-                            active_permission_profile,
-                        ),
-                    )
-                {
-                    tracing::warn!(%err, "failed to set permission profile on chat config");
-                    self.chat_widget
-                        .add_error_message(format!("Failed to set permission profile: {err}"));
-                    return Ok(AppRunControl::Continue);
-                }
-                self.runtime_permission_profile_override =
-                    Some(RuntimePermissionProfileOverride::from_config(&self.config));
-                self.sync_active_thread_permission_settings_to_cached_session()
-                    .await;
-                self.chat_widget.submit_initial_user_message_if_pending();
-            }
-            AppEvent::SelectPermissionProfile(selection) => {
-                if self.apply_permission_profile_selection(selection).await {
-                    self.chat_widget.submit_initial_user_message_if_pending();
-                }
-            }
-            AppEvent::UpdateApprovalsReviewer(policy) => {
-                self.config.approvals_reviewer = policy;
-                self.chat_widget.set_approvals_reviewer(policy);
-                self.sync_active_thread_permission_settings_to_cached_session()
-                    .await;
-                if let Err(err) = crate::config_update::write_config_batch(
-                    cli_runtime.request_handle(),
-                    vec![crate::config_update::replace_config_value(
-                        "approvals_reviewer",
-                        serde_json::json!(policy.to_string()),
-                    )],
-                )
-                .await
-                {
-                    tracing::error!(
-                        error = %err,
-                        "failed to persist approvals reviewer update"
-                    );
-                    self.chat_widget
-                        .add_error_message(format!("Failed to save approvals reviewer: {err}"));
-                }
-            }
             AppEvent::UpdateFeatureFlags { updates } => {
                 self.update_feature_flags(cli_runtime, updates).await;
             }
@@ -1513,9 +1413,6 @@ impl App {
                         "Failed to save model migration prompt preference: {err}"
                     ));
                 }
-            }
-            AppEvent::OpenApprovalsPopup => {
-                self.chat_widget.open_approvals_popup();
             }
             AppEvent::OpenAgentPicker => {
                 self.open_agent_picker(cli_runtime).await;
@@ -1602,9 +1499,6 @@ impl App {
                     self.chat_widget.add_error_message(err);
                 }
             }
-            AppEvent::OpenPermissionsPopup => {
-                self.chat_widget.open_permissions_popup();
-            }
             AppEvent::OpenReviewBranchPicker(cwd) => {
                 self.chat_widget.show_review_branch_picker(&cwd).await;
             }
@@ -1624,55 +1518,6 @@ impl App {
             AppEvent::ManageSkillsClosed => {
                 self.chat_widget.handle_manage_skills_closed();
             }
-            AppEvent::FullScreenApprovalRequest(request) => match request {
-                ApprovalRequest::ApplyPatch(request) => {
-                    let _ = tui.enter_alt_screen();
-                    let diff_summary = DiffSummary::new(request.changes, request.cwd);
-                    self.overlay = Some(Overlay::new_static_with_renderables(
-                        vec![diff_summary.into()],
-                        "P A T C H".to_string(),
-                        self.keymap.pager.clone(),
-                    ));
-                }
-                ApprovalRequest::Exec(request) => {
-                    let _ = tui.enter_alt_screen();
-                    let full_cmd = strip_bash_lc_and_escape(&request.command);
-                    let full_cmd_lines = highlight_bash_to_lines(&full_cmd);
-                    self.overlay = Some(Overlay::new_static_with_lines(
-                        full_cmd_lines,
-                        "E X E C".to_string(),
-                        self.keymap.pager.clone(),
-                    ));
-                }
-                ApprovalRequest::Permissions(request) => {
-                    let _ = tui.enter_alt_screen();
-                    let mut lines = Vec::new();
-                    if let Some(environment_id) = request.environment_id {
-                        lines.push(Line::from(vec![
-                            "Environment: ".into(),
-                            environment_id.bold(),
-                        ]));
-                        lines.push(Line::from(""));
-                    }
-                    if let Some(reason) = request.reason {
-                        lines.push(Line::from(vec!["Reason: ".into(), reason.italic()]));
-                        lines.push(Line::from(""));
-                    }
-                    if let Some(rule_line) =
-                        crate::bottom_pane::format_requested_permissions_rule(&request.permissions)
-                    {
-                        lines.push(Line::from(vec![
-                            "Permission rule: ".into(),
-                            rule_line.cyan(),
-                        ]));
-                    }
-                    self.overlay = Some(Overlay::new_static_with_renderables(
-                        vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],
-                        "P E R M I S S I O N S".to_string(),
-                        self.keymap.pager.clone(),
-                    ));
-                }
-            },
             AppEvent::StatusLineSetup {
                 items,
                 use_theme_colors,

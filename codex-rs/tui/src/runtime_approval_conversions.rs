@@ -1,29 +1,10 @@
-//! Narrow conversion helpers for approval-related cli-runtime payloads.
-//!
-//! The TUI mostly keeps cli-runtime approval types intact. These helpers cover
-//! the remaining cases where the UI consumes a private file-change display
-//! model or needs to translate a granted permission response for outbound
-//! submission.
+//! Conversion helpers for cli-runtime file-change payloads.
 
 use crate::diff_model::FileChange;
-use codex_cli_protocol::AdditionalNetworkPermissions;
 use codex_cli_protocol::FileUpdateChange;
-use codex_cli_protocol::GrantedPermissionProfile;
 use codex_cli_protocol::PatchChangeKind;
-use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
 use std::collections::HashMap;
 use std::path::PathBuf;
-
-pub(crate) fn granted_permission_profile_from_request(
-    value: CoreRequestPermissionProfile,
-) -> GrantedPermissionProfile {
-    GrantedPermissionProfile {
-        network: value.network.map(|network| AdditionalNetworkPermissions {
-            enabled: network.enabled,
-        }),
-        file_system: value.file_system.map(Into::into),
-    }
-}
 
 pub(crate) fn file_update_changes_to_display(
     changes: Vec<FileUpdateChange>,

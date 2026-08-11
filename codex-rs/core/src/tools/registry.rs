@@ -11,8 +11,6 @@ use crate::hook_runtime::run_post_tool_use_hooks;
 use crate::hook_runtime::run_pre_tool_use_hooks;
 use crate::memory_usage::emit_metric_for_tool_read;
 use crate::memory_usage::shell_script_for_invocation;
-use crate::sandbox_tags::permission_profile_policy_tag;
-use crate::sandbox_tags::permission_profile_sandbox_tag;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
@@ -462,25 +460,7 @@ impl ToolRegistry {
         let tool_name_flat = flat_tool_name(&tool_name);
         let call_id_owned = invocation.call_id.clone();
         let otel = invocation.turn.session_telemetry.clone();
-        let permission_profile = invocation.turn.permission_profile();
-        let base_tool_result_tags = [
-            (
-                "sandbox",
-                permission_profile_sandbox_tag(
-                    &permission_profile,
-                    invocation.turn.windows_sandbox_level,
-                    invocation.turn.network.is_some(),
-                ),
-            ),
-            (
-                "sandbox_policy",
-                permission_profile_policy_tag(
-                    &permission_profile,
-                    #[allow(deprecated)]
-                    invocation.turn.cwd.as_path(),
-                ),
-            ),
-        ];
+        let base_tool_result_tags = [];
 
         {
             let mut active = invocation.session.active_turn.lock().await;

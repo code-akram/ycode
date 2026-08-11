@@ -1,9 +1,7 @@
 use crate::protocol::item_builders::build_command_execution_begin_item;
 use crate::protocol::item_builders::build_command_execution_end_item;
-use crate::protocol::item_builders::build_file_change_approval_request_item;
 use crate::protocol::item_builders::build_file_change_begin_item;
 use crate::protocol::item_builders::build_file_change_end_item;
-use crate::protocol::item_builders::build_item_from_guardian_event;
 use crate::protocol::item_builders::review_output_text;
 use crate::protocol::v2::CollabAgentState;
 use crate::protocol::v2::CollabAgentTool;
@@ -338,10 +336,7 @@ impl ThreadHistoryBuilder {
             EventMsg::WebSearchEnd(payload) => self.handle_web_search_end(payload),
             EventMsg::ExecCommandBegin(payload) => self.handle_exec_command_begin(payload),
             EventMsg::ExecCommandEnd(payload) => self.handle_exec_command_end(payload),
-            EventMsg::GuardianAssessment(payload) => self.handle_guardian_assessment(payload),
-            EventMsg::ApplyPatchApprovalRequest(payload) => {
-                self.handle_apply_patch_approval_request(payload)
-            }
+            EventMsg::GuardianAssessment(_) | EventMsg::ApplyPatchApprovalRequest(_) => {}
             EventMsg::PatchApplyBegin(payload) => self.handle_patch_apply_begin(payload),
             EventMsg::PatchApplyEnd(payload) => self.handle_patch_apply_end(payload),
             EventMsg::DynamicToolCallRequest(payload) => {
@@ -662,34 +657,6 @@ impl ThreadHistoryBuilder {
         // newer user turn may already have started. Route by event turn_id so
         // replay preserves the original turn association.
         self.upsert_item_in_turn_id(&payload.turn_id, item);
-    }
-
-    fn handle_guardian_assessment(&mut self, payload: &GuardianAssessmentEvent) {
-        let status = match payload.status {
-            GuardianAssessmentStatus::InProgress => CommandExecutionStatus::InProgress,
-            GuardianAssessmentStatus::Denied | GuardianAssessmentStatus::Aborted => {
-                CommandExecutionStatus::Declined
-            }
-            GuardianAssessmentStatus::TimedOut => CommandExecutionStatus::Failed,
-            GuardianAssessmentStatus::Approved => return,
-        };
-        let Some(item) = build_item_from_guardian_event(payload, status) else {
-            return;
-        };
-        if payload.turn_id.is_empty() {
-            self.upsert_item_in_current_turn(item);
-        } else {
-            self.upsert_item_in_turn_id(&payload.turn_id, item);
-        }
-    }
-
-    fn handle_apply_patch_approval_request(&mut self, payload: &ApplyPatchApprovalRequestEvent) {
-        let item = build_file_change_approval_request_item(payload);
-        if payload.turn_id.is_empty() {
-            self.upsert_item_in_current_turn(item);
-        } else {
-            self.upsert_item_in_turn_id(&payload.turn_id, item);
-        }
     }
 
     fn handle_patch_apply_begin(&mut self, payload: &PatchApplyBeginEvent) {

@@ -11,19 +11,10 @@ use crate::version::CODEX_CLI_VERSION;
 use crate::width::display_width;
 use chrono::DateTime;
 use chrono::Local;
-use codex_cli_protocol::AskForApproval;
 use codex_model_provider_info::WireApi;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
-use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::models::ActivePermissionProfile;
-use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
-use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
-use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort;
-use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_sandbox_summary::summarize_permission_profile;
 use ratatui::prelude::*;
 use ratatui::style::Stylize;
 use std::collections::BTreeSet;
@@ -107,7 +98,6 @@ struct StatusHistoryCell {
     model_name: String,
     model_details: Vec<String>,
     directory: PathBuf,
-    permissions: String,
     agents_summary: Arc<RwLock<String>>,
     collaboration_mode: Option<String>,
     model_provider: Option<String>,
@@ -265,25 +255,10 @@ impl StatusHistoryCell {
         agents_summary: String,
         refreshing_rate_limits: bool,
     ) -> (Self, StatusHistoryHandle) {
-        let approval_policy = AskForApproval::from(config.permissions.approval_policy.value());
-        let permission_profile = config.permissions.effective_permission_profile();
-        let workspace_roots = config.effective_workspace_roots();
         let mut config_entries = vec![
             ("workdir", config.cwd.display().to_string()),
             ("model", model_name.to_string()),
             ("provider", config.model_provider_id.clone()),
-            (
-                "approval",
-                config.permissions.approval_policy.value().to_string(),
-            ),
-            (
-                "sandbox",
-                summarize_permission_profile(
-                    &permission_profile,
-                    &config.cwd,
-                    workspace_roots.as_slice(),
-                ),
-            ),
         ];
         if config.model_provider.wire_api == WireApi::Responses {
             let effort_value = reasoning_effort_override
@@ -300,24 +275,6 @@ impl StatusHistoryCell {
             ));
         }
         let (model_name, model_details) = compose_model_display(model_name, &config_entries);
-        let approval = config_entries
-            .iter()
-            .find(|(k, _)| *k == "approval")
-            .map(|(_, v)| v.clone())
-            .unwrap_or_else(|| "<unknown>".to_string());
-        let active_permission_profile = config.permissions.active_permission_profile();
-        let sandbox =
-            status_permission_summary(&permission_profile, &config.cwd, workspace_roots.as_slice());
-        let workspace_root_suffix = workspace_root_suffix(workspace_roots.as_slice(), &config.cwd);
-        let approval = status_approval_label(approval_policy, config.approvals_reviewer, &approval);
-        let permissions = status_permissions_label(
-            active_permission_profile.as_ref(),
-            &permission_profile,
-            approval_policy,
-            &sandbox,
-            &approval,
-            workspace_root_suffix.as_deref(),
-        );
         let model_provider = format_model_provider(config, runtime_model_provider_base_url);
         let show_chatgpt_usage_link = config.model_provider.requires_openai_auth;
         let account = compose_account_display(account_display);
@@ -356,7 +313,6 @@ impl StatusHistoryCell {
                 model_name,
                 model_details,
                 directory: config.cwd.to_path_buf(),
-                permissions,
                 collaboration_mode: collaboration_mode.map(ToString::to_string),
                 model_provider,
                 remote_connection: remote_connection.cloned(),
@@ -574,135 +530,6 @@ impl StatusHistoryCell {
     }
 }
 
-fn status_permission_summary(
-    permission_profile: &PermissionProfile,
-    cwd: &AbsolutePathBuf,
-    workspace_roots: &[AbsolutePathBuf],
-) -> String {
-    let summary = summarize_permission_profile(permission_profile, cwd, workspace_roots);
-    if let Some(details) = summary.strip_prefix("read-only") {
-        if details.contains("(network access enabled)") {
-            return "read-only with network access".to_string();
-        }
-        return "read-only".to_string();
-    }
-    if let Some(details) = summary.strip_prefix("workspace-write") {
-        if details.contains("(network access enabled)") {
-            return "workspace with network access".to_string();
-        }
-        return "workspace".to_string();
-    }
-    if summary == "custom permissions (network access enabled)" {
-        return "custom permissions with network access".to_string();
-    }
-    summary
-}
-
-fn workspace_root_suffix(
-    workspace_roots: &[AbsolutePathBuf],
-    cwd: &AbsolutePathBuf,
-) -> Option<String> {
-    let extra_roots = workspace_roots
-        .iter()
-        .filter(|root| *root != cwd)
-        .map(|root| root.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-    if extra_roots.is_empty() {
-        None
-    } else {
-        Some(format!(" [{}]", extra_roots.join(", ")))
-    }
-}
-
-fn status_permissions_label(
-    active_permission_profile: Option<&ActivePermissionProfile>,
-    permission_profile: &PermissionProfile,
-    approval_policy: AskForApproval,
-    sandbox: &str,
-    approval: &str,
-    workspace_root_suffix: Option<&str>,
-) -> String {
-    let active_id = active_permission_profile.map(|active| active.id.as_str());
-    match active_id {
-        Some(BUILT_IN_PERMISSION_PROFILE_READ_ONLY) => {
-            let label = if sandbox == "read-only with network access" {
-                "Read Only with network access"
-            } else {
-                "Read Only"
-            };
-            return format!("{label} ({approval})");
-        }
-        Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE) => match sandbox {
-            "workspace" => {
-                return format!(
-                    "Workspace{} ({approval})",
-                    workspace_root_suffix.unwrap_or("")
-                );
-            }
-            "workspace with network access" => {
-                return format!(
-                    "Workspace with network access{} ({approval})",
-                    workspace_root_suffix.unwrap_or("")
-                );
-            }
-            _ => {}
-        },
-        Some(BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS)
-            if permission_profile == &PermissionProfile::Disabled =>
-        {
-            return if approval_policy == AskForApproval::Never {
-                "Full Access".to_string()
-            } else {
-                format!("No Sandbox ({approval})")
-            };
-        }
-        Some(id) => {
-            let sandbox = decorate_workspace_sandbox_label(sandbox, workspace_root_suffix);
-            return format!("Profile {id} ({sandbox}, {approval})");
-        }
-        None => {}
-    }
-
-    if sandbox == "read-only" {
-        return format!("Read Only ({approval})");
-    }
-    if approval_policy == AskForApproval::OnRequest && sandbox == "workspace" {
-        return format!(
-            "Workspace{} ({approval})",
-            workspace_root_suffix.unwrap_or("")
-        );
-    }
-    if approval_policy == AskForApproval::Never
-        && permission_profile == &PermissionProfile::Disabled
-    {
-        return "Full Access".to_string();
-    }
-    let sandbox = decorate_workspace_sandbox_label(sandbox, workspace_root_suffix);
-    format!("Custom ({sandbox}, {approval})")
-}
-
-fn decorate_workspace_sandbox_label(sandbox: &str, workspace_root_suffix: Option<&str>) -> String {
-    match workspace_root_suffix {
-        Some(suffix) if sandbox.starts_with("workspace") => format!("{sandbox}{suffix}"),
-        _ => sandbox.to_string(),
-    }
-}
-
-fn status_approval_label(
-    approval_policy: AskForApproval,
-    approvals_reviewer: ApprovalsReviewer,
-    approval: &str,
-) -> String {
-    if approval_policy == AskForApproval::OnRequest {
-        return match approvals_reviewer {
-            ApprovalsReviewer::AutoReview => "Approve for me".to_string(),
-            ApprovalsReviewer::User => "Ask for approval".to_string(),
-        };
-    }
-
-    approval.to_string()
-}
-
 impl HistoryCell for StatusHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = Vec::new();
@@ -827,7 +654,6 @@ impl HistoryCell for StatusHistoryCell {
             lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
         }
         lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));
-        lines.push(formatter.line("Permissions", vec![Span::from(self.permissions.clone())]));
         lines.push(formatter.line("Agents.md", vec![Span::from(agents_summary)]));
 
         if let Some(account_value) = account_value {

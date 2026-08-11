@@ -309,10 +309,6 @@ impl ChatWidget {
             SlashCommand::Agent | SlashCommand::MultiAgents => {
                 self.app_event_tx.send(AppEvent::OpenAgentPicker);
             }
-            SlashCommand::Permissions => {
-                self.open_permissions_popup();
-                self.defer_input_until_settings_applied();
-            }
             SlashCommand::Vim => {
                 self.toggle_vim_mode_and_notify();
             }
@@ -321,9 +317,6 @@ impl ChatWidget {
             }
             SlashCommand::Experimental => {
                 self.open_experimental_popup();
-            }
-            SlashCommand::AutoReview => {
-                self.open_auto_review_denials_popup();
             }
             SlashCommand::Memories => {
                 self.open_memories_popup();
@@ -403,9 +396,6 @@ impl ChatWidget {
             SlashCommand::Ide => {
                 self.handle_ide_command();
             }
-            SlashCommand::DebugConfig => {
-                self.add_debug_config_output();
-            }
             SlashCommand::Title => {
                 self.open_terminal_title_setup();
             }
@@ -445,37 +435,6 @@ impl ChatWidget {
                         /*hint*/ None,
                     );
                 }
-            }
-            SlashCommand::TestApproval => {
-                use std::collections::HashMap;
-
-                use crate::approval_events::ApplyPatchApprovalRequestEvent;
-                use crate::diff_model::FileChange;
-
-                self.on_apply_patch_approval_request(
-                    "1".to_string(),
-                    ApplyPatchApprovalRequestEvent {
-                        call_id: "1".to_string(),
-                        turn_id: "turn-1".to_string(),
-                        changes: HashMap::from([
-                            (
-                                PathBuf::from("/tmp/test.txt"),
-                                FileChange::Add {
-                                    content: "test".to_string(),
-                                },
-                            ),
-                            (
-                                PathBuf::from("/tmp/test2.txt"),
-                                FileChange::Update {
-                                    unified_diff: "+test\n-test2".to_string(),
-                                    move_path: None,
-                                },
-                            ),
-                        ]),
-                        reason: None,
-                        grant_root: Some(PathBuf::from("/tmp")),
-                    },
-                );
             }
         }
     }
@@ -987,7 +946,6 @@ impl ChatWidget {
             SlashCommand::Ide
             | SlashCommand::Status
             | SlashCommand::Usage
-            | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::MemoryDrop
@@ -999,8 +957,7 @@ impl ChatWidget {
             | SlashCommand::Vim
             | SlashCommand::Diff
             | SlashCommand::App
-            | SlashCommand::Rename
-            | SlashCommand::TestApproval => QueueDrain::Continue,
+            | SlashCommand::Rename => QueueDrain::Continue,
             SlashCommand::Feedback
             | SlashCommand::New
             | SlashCommand::Archive
@@ -1020,9 +977,7 @@ impl ChatWidget {
             | SlashCommand::Keymap
             | SlashCommand::Agent
             | SlashCommand::MultiAgents
-            | SlashCommand::Permissions
             | SlashCommand::Experimental
-            | SlashCommand::AutoReview
             | SlashCommand::Memories
             | SlashCommand::Quit
             | SlashCommand::Exit

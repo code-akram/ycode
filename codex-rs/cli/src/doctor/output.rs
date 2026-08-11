@@ -32,7 +32,7 @@ const GROUPS: &[OutputGroup] = &[
     },
     OutputGroup {
         title: "Configuration",
-        keys: &["config", "auth", "sandbox"],
+        keys: &["config", "auth"],
     },
     OutputGroup {
         title: "Updates",
@@ -501,11 +501,6 @@ fn notes_for_report(report: &DoctorReport) -> Vec<DoctorNote> {
             .into_iter()
             .for_each(|note| notes.push(note));
     }
-    if let Some(check) = find_check(report, "sandbox") {
-        sandbox_note(check)
-            .into_iter()
-            .for_each(|note| notes.push(note));
-    }
     non_ok_notes(report)
         .into_iter()
         .for_each(|note| notes.push(note));
@@ -561,19 +556,6 @@ fn rollout_note(check: &DoctorCheck) -> Option<DoctorNote> {
     })
 }
 
-fn sandbox_note(check: &DoctorCheck) -> Option<DoctorNote> {
-    let filesystem = detail::detail_value(check, "filesystem sandbox")?;
-    let network = detail::detail_value(check, "network sandbox")?;
-    if filesystem == "restricted" && network == "restricted" {
-        return None;
-    }
-    Some(DoctorNote {
-        status: DisplayStatus::Warning,
-        name: "sandbox".to_string(),
-        summary: format!("filesystem {filesystem} · network {network}"),
-    })
-}
-
 fn non_ok_notes(report: &DoctorReport) -> Vec<DoctorNote> {
     report
         .checks
@@ -625,7 +607,6 @@ fn display_summary(check: &DoctorCheck, options: HumanOutputOptions) -> String {
         "title" => title_summary(check, options),
         "state" => state_summary(check),
         "config" if check.status == CheckStatus::Ok => "loaded".to_string(),
-        "sandbox" => sandbox_summary(check),
         "network" => network_summary(check),
         "websocket" => websocket_summary(check),
         "cli-runtime" => cli_runtime_summary(check),
@@ -709,18 +690,6 @@ fn state_summary(check: &DoctorCheck) -> String {
         "databases healthy".to_string()
     } else {
         check.summary.clone()
-    }
-}
-
-fn sandbox_summary(check: &DoctorCheck) -> String {
-    let approval = detail::detail_value(check, "approval policy");
-    let filesystem = detail::detail_value(check, "filesystem sandbox");
-    let network = detail::detail_value(check, "network sandbox");
-    match (approval, filesystem, network) {
-        (Some(approval), Some(filesystem), Some(network)) => {
-            format!("{filesystem} fs + {network} network · approval {approval}")
-        }
-        _ => check.summary.clone(),
     }
 }
 

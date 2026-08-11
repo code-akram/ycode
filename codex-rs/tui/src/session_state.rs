@@ -5,20 +5,11 @@
 
 use std::path::PathBuf;
 
-use codex_cli_protocol::AskForApproval;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
-use codex_protocol::models::ActivePermissionProfile;
-use codex_protocol::models::PermissionProfile;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SessionNetworkProxyRuntime {
-    pub(crate) http_addr: String,
-    pub(crate) socks_addr: String,
-}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct MessageHistoryMetadata {
@@ -35,17 +26,6 @@ pub(crate) struct ThreadSessionState {
     pub(crate) model: String,
     pub(crate) model_provider_id: String,
     pub(crate) service_tier: Option<String>,
-    pub(crate) approval_policy: AskForApproval,
-    pub(crate) approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer,
-    /// Permission snapshot used by TUI display surfaces. Legacy cli-runtime
-    /// responses are converted to a profile at ingestion time using the
-    /// response cwd so cached sessions do not reinterpret cwd-bound grants.
-    /// Turn requests must not treat this snapshot as a local permission
-    /// override unless the user explicitly changed permissions in the TUI.
-    pub(crate) permission_profile: PermissionProfile,
-    /// Named or implicit built-in profile that produced `permission_profile`,
-    /// when the server knows it.
-    pub(crate) active_permission_profile: Option<ActivePermissionProfile>,
     pub(crate) cwd: AbsolutePathBuf,
     pub(crate) runtime_workspace_roots: Vec<AbsolutePathBuf>,
     pub(crate) instruction_source_paths: Vec<PathUri>,
@@ -53,7 +33,6 @@ pub(crate) struct ThreadSessionState {
     pub(crate) collaboration_mode: Option<Box<CollaborationMode>>,
     pub(crate) personality: Option<Personality>,
     pub(crate) message_history: Option<MessageHistoryMetadata>,
-    pub(crate) network_proxy: Option<SessionNetworkProxyRuntime>,
     pub(crate) rollout_path: Option<PathBuf>,
 }
 

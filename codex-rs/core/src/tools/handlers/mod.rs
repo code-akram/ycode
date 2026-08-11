@@ -13,7 +13,6 @@ mod new_context_window;
 pub(crate) mod new_context_window_spec;
 mod plan;
 pub(crate) mod plan_spec;
-mod request_permissions;
 mod request_user_input;
 pub(crate) mod request_user_input_spec;
 mod shell;
@@ -28,32 +27,23 @@ mod view_image;
 pub(crate) mod view_image_spec;
 mod wait_for_environment;
 
-use codex_sandboxing::policy_transforms::intersect_permission_profiles;
-use codex_sandboxing::policy_transforms::merge_permission_profiles;
-use codex_sandboxing::policy_transforms::normalize_additional_permissions;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use serde::Deserialize;
 use serde_json::Map;
 use serde_json::Value;
-use std::path::Path;
 
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::function_tool::FunctionCallError;
-use crate::sandboxing::SandboxPermissions;
-use crate::session::session::Session;
 use crate::session::turn_context::TurnEnvironment;
 pub(crate) use crate::tools::code_mode::CodeModeExecuteHandler;
 pub(crate) use crate::tools::code_mode::CodeModeWaitHandler;
 pub use apply_patch::ApplyPatchHandler;
-use codex_protocol::models::AdditionalPermissionProfile;
-use codex_protocol::protocol::AskForApproval;
 pub use current_time::CurrentTimeHandler;
 pub use dynamic::DynamicToolHandler;
 pub use get_context_remaining::GetContextRemainingHandler;
 pub use new_context_window::NewContextWindowHandler;
 pub use plan::PlanHandler;
-pub use request_permissions::RequestPermissionsHandler;
 pub use request_user_input::RequestUserInputHandler;
 pub use shell::ShellCommandHandler;
 pub(crate) use shell::ShellCommandHandlerOptions;
@@ -76,6 +66,7 @@ where
     })
 }
 
+#[cfg(any())]
 fn resolve_sandbox_permissions(
     sandbox_permissions: Option<SandboxPermissions>,
     justification: Option<&str>,
@@ -175,6 +166,7 @@ fn resolve_tool_environment<'a>(
 
 /// Validates feature/policy constraints for `with_additional_permissions` and
 /// normalizes any path-based permissions. Errors if the request is invalid.
+#[cfg(any())]
 pub(crate) fn normalize_and_validate_additional_permissions(
     additional_permissions_allowed: bool,
     approval_policy: AskForApproval,
@@ -230,12 +222,14 @@ pub(crate) fn normalize_and_validate_additional_permissions(
     }
 }
 
+#[cfg(any())]
 pub(super) struct EffectiveAdditionalPermissions {
     pub sandbox_permissions: SandboxPermissions,
     pub additional_permissions: Option<AdditionalPermissionProfile>,
     pub permissions_preapproved: bool,
 }
 
+#[cfg(any())]
 pub(super) fn implicit_granted_permissions(
     sandbox_permissions: SandboxPermissions,
     additional_permissions: Option<&AdditionalPermissionProfile>,
@@ -253,6 +247,7 @@ pub(super) fn implicit_granted_permissions(
     }
 }
 
+#[cfg(any())]
 pub(super) async fn apply_granted_turn_permissions(
     session: &Session,
     environment_id: &str,
@@ -299,6 +294,7 @@ pub(super) async fn apply_granted_turn_permissions(
     }
 }
 
+#[cfg(any())]
 fn permissions_are_preapproved(
     effective_permissions: &AdditionalPermissionProfile,
     granted_permissions: AdditionalPermissionProfile,
@@ -313,7 +309,7 @@ fn permissions_are_preapproved(
         == materialized_effective_permissions
 }
 
-#[cfg(test)]
+#[cfg(any())]
 mod tests {
     use super::EffectiveAdditionalPermissions;
     use super::implicit_granted_permissions;

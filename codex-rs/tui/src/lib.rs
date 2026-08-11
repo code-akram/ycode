@@ -18,12 +18,10 @@ use crate::session_resume::ResumeCwdContext;
 use crate::session_resume::effective_resume_cwd_mode;
 use crate::session_resume::resolve_cwd_for_resume_or_fork;
 pub use crate::startup_error::LocalStateDbStartupError;
-use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
 use codex_cli_protocol::Account as CliRuntimeAccount;
-use codex_cli_protocol::AskForApproval;
 use codex_cli_protocol::ConfigWarningNotification;
 use codex_cli_protocol::Thread as CliRuntimeThread;
 use codex_cli_protocol::ThreadListCwdFilter;
@@ -34,7 +32,6 @@ use codex_cli_runtime_client::CliRuntimeClient;
 use codex_cli_runtime_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
 use codex_cli_runtime_client::InProcessCliRuntimeClient;
 use codex_cli_runtime_client::InProcessClientStartArgs;
-use codex_cloud_config::cloud_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadError;
 use codex_config::LoaderOverrides;
@@ -49,7 +46,6 @@ use codex_login::enforce_login_restrictions;
 use codex_protocol::ThreadId;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::config_types::AltScreenMode;
-use codex_protocol::config_types::SandboxMode;
 use codex_rollout::StateDbHandle;
 use codex_rollout::state_db;
 use codex_state::log_db;
@@ -82,13 +78,11 @@ use uuid::Uuid;
 
 pub(crate) use codex_cli_runtime_client::legacy_core;
 
-mod additional_dirs;
 mod app;
 mod app_backtrack;
 mod app_command;
 mod app_event;
 mod app_event_sender;
-mod approval_events;
 mod ascii_animation;
 mod bottom_pane;
 mod branch_summary;
@@ -104,9 +98,7 @@ mod pets;
 mod runtime_approval_conversions;
 mod runtime_session;
 pub use custom_terminal::Terminal;
-mod auto_review_denials;
 mod cwd_prompt;
-mod debug_config;
 mod diff_model;
 mod diff_render;
 mod exec_cell;
@@ -132,7 +124,6 @@ mod line_truncation;
 pub(crate) mod live_wrap;
 pub use live_wrap::RowBuilder;
 mod local_chatgpt_auth;
-mod managed_new_thread_defaults;
 mod markdown;
 mod markdown_render;
 mod markdown_stream;
@@ -149,7 +140,6 @@ mod npm_registry;
 pub(crate) mod onboarding;
 mod oss_selection;
 mod pager_overlay;
-mod permission_compat;
 pub(crate) mod public_widgets;
 mod render;
 mod resize_reflow_cap;
@@ -676,20 +666,6 @@ pub async fn run_main(
     loader_overrides: LoaderOverrides,
 ) -> std::io::Result<AppExitInfo> {
     let strict_config = cli.strict_config;
-    let (sandbox_mode, approval_policy) = if cli.dangerously_bypass_approvals_and_sandbox {
-        (
-            Some(SandboxMode::DangerFullAccess),
-            Some(AskForApproval::Never.to_core()),
-        )
-    } else {
-        (
-            cli.sandbox_mode.map(Into::<SandboxMode>::into),
-            cli.approval_policy.map(Into::into),
-        )
-    };
-
-    cli.shared
-        .take_auto_review_config_overrides(&mut cli.config_overrides);
 
     // Map the legacy --search flag to the canonical web_search mode.
     if cli.web_search {
@@ -759,12 +735,7 @@ pub async fn run_main(
     )
     .await;
     let bootstrap_config_toml = &bootstrap_config.config_toml;
-    let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        cli_runtime_target
-            .auth_config_for_cloud_loader(bootstrap_auth_config(&codex_home, &bootstrap_config)?),
-        /*enable_codex_api_key_env*/ false,
-    )
-    .await;
+    let cloud_config_bundle = CloudConfigBundleLoader::default();
 
     let cwd_override = if cli_runtime_target.uses_remote_workspace() {
         None
@@ -828,12 +799,8 @@ pub async fn run_main(
         None // No model specified, will use the default.
     };
 
-    let additional_dirs = cli.add_dir.clone();
-
     let overrides = ConfigOverrides {
         model,
-        approval_policy,
-        sandbox_mode,
         cwd: cwd_override,
         model_provider: model_provider_override.clone(),
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
@@ -841,7 +808,6 @@ pub async fn run_main(
         show_raw_agent_reasoning: cli.oss.then_some(true),
         bypass_hook_trust: cli.bypass_hook_trust.then_some(true),
         psp: Some(cli.psp),
-        additional_writable_roots: additional_dirs,
         ..Default::default()
     };
 
@@ -854,11 +820,7 @@ pub async fn run_main(
     )
     .await;
 
-    let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        cli_runtime_target.auth_config_for_cloud_loader(config.auth_config()),
-        /*enable_codex_api_key_env*/ false,
-    )
-    .await;
+    let cloud_config_bundle = CloudConfigBundleLoader::default();
     let environment_manager = Arc::new(
         prepared_environment_manager
             .build(Some(local_runtime_paths), config.http_client_factory())
@@ -911,18 +873,6 @@ pub async fn run_main(
             .is_some();
 
     set_default_client_residency_requirement(config.enforce_residency.value());
-
-    if let Some(warning) = add_dir_warning_message(
-        &cli.add_dir,
-        &config.permissions.effective_permission_profile(),
-        config.cwd.as_path(),
-    ) {
-        #[allow(clippy::print_stderr)]
-        {
-            eprintln!("Error adding directories: {warning}");
-            std::process::exit(1);
-        }
-    }
 
     if !cli_runtime_target.uses_remote_workspace() {
         #[allow(clippy::print_stderr)]
@@ -1190,11 +1140,7 @@ async fn run_ratatui_app(
         // and rebuild config. This avoids missing newly available cloud-managed policy due to login
         // status detection edge cases.
         if show_login_screen && !uses_remote_workspace {
-            cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-                initial_config.auth_config(),
-                /*enable_codex_api_key_env*/ false,
-            )
-            .await;
+            cloud_config_bundle = CloudConfigBundleLoader::default();
         }
 
         // If the user made an explicit trust decision, or we showed the login flow, reload config

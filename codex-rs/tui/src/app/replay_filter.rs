@@ -13,10 +13,7 @@ pub(super) fn snapshot_has_pending_interactive_request(snapshot: &ThreadEventSna
             ThreadBufferedEvent::Request(request)
                 if matches!(
                     request.as_ref(),
-                    ServerRequest::CommandExecutionRequestApproval { .. }
-                        | ServerRequest::FileChangeRequestApproval { .. }
-                        | ServerRequest::PermissionsRequestApproval { .. }
-                        | ServerRequest::ToolRequestUserInput { .. }
+                    ServerRequest::ToolRequestUserInput { .. }
                 )
         )
     })
@@ -28,9 +25,7 @@ pub(super) fn event_is_notice(event: &ThreadBufferedEvent) -> bool {
         ThreadBufferedEvent::Notification(notification)
             if matches!(
                 notification.as_ref(),
-                ServerNotification::Warning(_)
-                    | ServerNotification::GuardianWarning(_)
-                    | ServerNotification::ConfigWarning(_)
+                ServerNotification::Warning(_) | ServerNotification::ConfigWarning(_)
             )
     )
 }

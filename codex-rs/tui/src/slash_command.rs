@@ -14,12 +14,9 @@ pub enum SlashCommand {
     // more frequently used commands should be listed first.
     Model,
     Ide,
-    Permissions,
     Keymap,
     Vim,
     Experimental,
-    #[strum(to_string = "approve")]
-    AutoReview,
     Memories,
     Skills,
     Import,
@@ -45,7 +42,6 @@ pub enum SlashCommand {
     Mention,
     Status,
     Usage,
-    DebugConfig,
     Title,
     Statusline,
     Theme,
@@ -62,7 +58,6 @@ pub enum SlashCommand {
     Stop,
     Clear,
     Personality,
-    TestApproval,
     #[strum(serialize = "subagents")]
     MultiAgents,
     // Debugging commands.
@@ -98,7 +93,6 @@ impl SlashCommand {
             SlashCommand::Hooks => "view and manage lifecycle hooks",
             SlashCommand::Status => "show current session configuration and token usage",
             SlashCommand::Usage => "view account usage or use a usage limit reset",
-            SlashCommand::DebugConfig => "show config layers and requirement sources for debugging",
             SlashCommand::Title => "configure which items appear in the terminal title",
             SlashCommand::Statusline => "configure which items appear in the status line",
             SlashCommand::Theme => "choose a syntax highlighting theme",
@@ -118,16 +112,13 @@ impl SlashCommand {
             SlashCommand::Side | SlashCommand::Btw => {
                 "start a side conversation in an ephemeral fork"
             }
-            SlashCommand::Permissions => "choose what Codex is allowed to do",
             SlashCommand::Keymap => "remap TUI shortcuts",
             SlashCommand::Vim => "toggle Vim mode for the composer",
             SlashCommand::Experimental => "toggle experimental features",
-            SlashCommand::AutoReview => "approve one retry of a recent auto-review denial",
             SlashCommand::Memories => "configure memory use and generation",
             SlashCommand::Plugins => "browse plugins",
             SlashCommand::Logout => "log out of Codex",
             SlashCommand::Rollout => "print the rollout file path",
-            SlashCommand::TestApproval => "test approval request",
         }
     }
 
@@ -197,7 +188,6 @@ impl SlashCommand {
             | SlashCommand::Resume
             | SlashCommand::Model
             | SlashCommand::Personality
-            | SlashCommand::Permissions
             | SlashCommand::Copy
             | SlashCommand::Raw
             | SlashCommand::Rename
@@ -206,7 +196,6 @@ impl SlashCommand {
             | SlashCommand::Hooks
             | SlashCommand::Status
             | SlashCommand::Usage
-            | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop
             | SlashCommand::App
@@ -214,7 +203,6 @@ impl SlashCommand {
             | SlashCommand::Plugins
             | SlashCommand::Title
             | SlashCommand::Statusline
-            | SlashCommand::AutoReview
             | SlashCommand::Feedback
             | SlashCommand::Ide
             | SlashCommand::Quit
@@ -222,7 +210,6 @@ impl SlashCommand {
             | SlashCommand::Side
             | SlashCommand::Btw => true,
             SlashCommand::Rollout => true,
-            SlashCommand::TestApproval => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
             SlashCommand::Theme | SlashCommand::Pets => false,
         }
@@ -232,7 +219,7 @@ impl SlashCommand {
         match self {
             SlashCommand::Copy => !cfg!(target_os = "android"),
             SlashCommand::App => cfg!(target_os = "macos"),
-            SlashCommand::Rollout | SlashCommand::TestApproval => cfg!(debug_assertions),
+            SlashCommand::Rollout => cfg!(debug_assertions),
             _ => true,
         }
     }

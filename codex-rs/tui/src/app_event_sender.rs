@@ -6,12 +6,8 @@
 use std::path::PathBuf;
 
 use crate::app_command::AppCommand;
-use codex_cli_protocol::CommandExecutionApprovalDecision;
-use codex_cli_protocol::FileChangeApprovalDecision;
 use codex_cli_protocol::ReviewTarget;
 use codex_cli_protocol::ToolRequestUserInputResponse;
-use codex_protocol::ThreadId;
-use codex_protocol::request_permissions::RequestPermissionsResponse;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::app_event::AppEvent;
@@ -67,41 +63,5 @@ impl AppEventSender {
         self.send(AppEvent::CodexOp(AppCommand::user_input_answer(
             id, response,
         )));
-    }
-
-    pub(crate) fn exec_approval(
-        &self,
-        thread_id: ThreadId,
-        id: String,
-        decision: CommandExecutionApprovalDecision,
-    ) {
-        self.send(AppEvent::SubmitThreadOp {
-            thread_id,
-            op: AppCommand::exec_approval(id, /*turn_id*/ None, decision),
-        });
-    }
-
-    pub(crate) fn request_permissions_response(
-        &self,
-        thread_id: ThreadId,
-        id: String,
-        response: RequestPermissionsResponse,
-    ) {
-        self.send(AppEvent::SubmitThreadOp {
-            thread_id,
-            op: AppCommand::request_permissions_response(id, response),
-        });
-    }
-
-    pub(crate) fn patch_approval(
-        &self,
-        thread_id: ThreadId,
-        id: String,
-        decision: FileChangeApprovalDecision,
-    ) {
-        self.send(AppEvent::SubmitThreadOp {
-            thread_id,
-            op: AppCommand::patch_approval(id, decision),
-        });
     }
 }

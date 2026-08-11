@@ -121,14 +121,7 @@ impl CommandExecRequestProcessor {
             cwd,
             env: env_overrides,
             size,
-            sandbox_policy,
-            permission_profile,
         } = params;
-        if sandbox_policy.is_some() && permission_profile.is_some() {
-            return Err(invalid_request(
-                "`permissionProfile` cannot be combined with `sandboxPolicy`",
-            ));
-        }
 
         if size.is_some() && !tty {
             return Err(invalid_params("command/exec size requires tty: true"));
@@ -174,7 +167,6 @@ impl CommandExecRequestProcessor {
             },
             None => None,
         };
-        let windows_sandbox_level = WindowsSandboxLevel::Disabled;
         let output_bytes_cap = if disable_output_cap {
             None
         } else {
@@ -193,144 +185,31 @@ impl CommandExecRequestProcessor {
         } else {
             ExecCapturePolicy::ShellTool
         };
-        let sandbox_cwd = if permission_profile.is_some() {
-            cwd.clone()
-        } else {
-            self.config.cwd.clone()
-        };
-        let (
-            effective_permission_profile,
-            network_proxy_spec,
-            network_proxy_permission_profile,
-            managed_network_requirements_enabled,
-            windows_sandbox_workspace_roots,
-        ) = if let Some(permission_profile) = permission_profile {
-            let overrides = ConfigOverrides {
-                cwd: Some(cwd.to_path_buf()),
-                default_permissions: Some(permission_profile),
-                ..Default::default()
-            };
-            let config = self
-                .config_manager
-                .load_for_cwd(
-                    /*request_overrides*/ None,
-                    overrides,
-                    Some(self.config.cwd.to_path_buf()),
-                )
-                .await
-                .map_err(|err| invalid_request(format!("invalid permission profile: {err}")))?;
-            if let Some(warning) = config.startup_warnings.iter().find(|warning| {
-                warning.contains("Configured value for `permission_profile` is disallowed")
-            }) {
-                return Err(invalid_request(format!(
-                    "invalid permission profile: {warning}"
-                )));
-            }
-            (
-                config.permissions.effective_permission_profile(),
-                config.permissions.network.clone(),
-                config.permissions.permission_profile().clone(),
-                config.managed_network_requirements_enabled(),
-                config.effective_workspace_roots(),
-            )
-        } else if let Some(policy) = sandbox_policy.map(|policy| policy.to_core()) {
-            self.config
-                .permissions
-                .can_set_legacy_sandbox_policy(&policy, &sandbox_cwd)
-                .map_err(|err| invalid_request(format!("invalid sandbox policy: {err}")))?;
-            let file_system_sandbox_policy =
-                codex_protocol::permissions::FileSystemSandboxPolicy::from_legacy_sandbox_policy_for_cwd(&policy, &sandbox_cwd);
-            let network_sandbox_policy =
-                codex_protocol::permissions::NetworkSandboxPolicy::from(&policy);
-            let permission_profile =
-                codex_protocol::models::PermissionProfile::from_runtime_permissions_with_enforcement(
-                    codex_protocol::models::SandboxEnforcement::from_legacy_sandbox_policy(&policy),
-                    &file_system_sandbox_policy,
-                    network_sandbox_policy,
-                );
-            self.config
-                .permissions
-                .can_set_permission_profile(&permission_profile)
-                .map_err(|err| invalid_request(format!("invalid sandbox policy: {err}")))?;
-            (
-                permission_profile,
-                self.config.permissions.network.clone(),
-                self.config.permissions.permission_profile().clone(),
-                self.config.managed_network_requirements_enabled(),
-                self.config.effective_workspace_roots(),
-            )
-        } else {
-            (
-                self.config.permissions.effective_permission_profile(),
-                self.config.permissions.network.clone(),
-                self.config.permissions.permission_profile().clone(),
-                self.config.managed_network_requirements_enabled(),
-                self.config.effective_workspace_roots(),
-            )
-        };
-        let started_network_proxy = match network_proxy_spec.as_ref() {
-            Some(spec) => match spec
-                .start_proxy(
-                    &network_proxy_permission_profile,
-                    /*policy_decider*/ None,
-                    /*blocked_request_observer*/ None,
-                    managed_network_requirements_enabled,
-                    NetworkProxyAuditMetadata::default(),
-                )
-                .await
-            {
-                Ok(started) => Some(started),
-                Err(err) => {
-                    return Err(internal_error(format!(
-                        "failed to start managed network proxy: {err}"
-                    )));
-                }
-            },
-            None => None,
-        };
         let exec_params = ExecParams {
             command,
             cwd: cwd.clone(),
             expiration,
             capture_policy,
             env,
-            network: started_network_proxy
-                .as_ref()
-                .map(codex_core::config::StartedNetworkProxy::proxy),
-            network_environment_id: None,
-            sandbox_permissions: SandboxPermissions::UseDefault,
-            windows_sandbox_level,
-            windows_sandbox_private_desktop: self
-                .config
-                .permissions
-                .windows_sandbox_private_desktop,
-            justification: None,
             arg0: None,
         };
 
         let outgoing = self.outgoing.clone();
         let request_for_task = request.clone();
-        let started_network_proxy_for_task = started_network_proxy;
         let size = match size.map(crate::command_exec::terminal_size_from_protocol) {
             Some(Ok(size)) => Some(size),
             Some(Err(error)) => return Err(error),
             None => None,
         };
 
-        let exec_request = codex_core::exec::build_exec_request(
-            exec_params,
-            &effective_permission_profile,
-            &sandbox_cwd,
-            windows_sandbox_workspace_roots.as_slice(),
-        )
-        .map_err(|err| internal_error(format!("exec failed: {err}")))?;
+        let exec_request = codex_core::exec::build_exec_request(exec_params)
+            .map_err(|err| internal_error(format!("exec failed: {err}")))?;
         self.command_exec_manager
             .start(StartCommandExecParams {
                 outgoing,
                 request_id: request_for_task,
                 process_id,
                 exec_request,
-                started_network_proxy: started_network_proxy_for_task,
                 tty,
                 stream_stdin,
                 stream_stdout_stderr,

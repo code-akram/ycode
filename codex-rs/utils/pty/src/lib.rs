@@ -2,6 +2,7 @@ pub mod pipe;
 mod process;
 pub mod process_group;
 pub mod pty;
+mod spawn;
 #[cfg(test)]
 mod tests;
 
@@ -25,6 +26,8 @@ pub use process::TerminalSize;
 pub use process::combine_output_receivers;
 /// Adapt an externally-driven process into the standard spawned-process handle.
 pub use process::spawn_from_driver;
+pub use spawn::SpawnRequest;
+pub use spawn::spawn_process;
 /// Backwards-compatible alias for ProcessHandle.
 pub type ExecCommandSession = ProcessHandle;
 /// Backwards-compatible alias for SpawnedProcess.

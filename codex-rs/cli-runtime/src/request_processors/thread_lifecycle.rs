@@ -673,23 +673,17 @@ pub(super) async fn handle_pending_thread_resume_request(
     };
 
     let config_snapshot = pending.config_snapshot;
-    let sandbox = config_snapshot.sandbox_policy().into();
     let cwd = config_snapshot.cwd().clone();
     let ThreadConfigSnapshot {
         model,
         model_provider_id,
         service_tier,
-        approval_policy,
-        approvals_reviewer,
-        active_permission_profile,
         workspace_roots,
         reasoning_effort,
         originator,
         ..
     } = config_snapshot;
     let instruction_sources = pending.instruction_sources;
-    let active_permission_profile =
-        thread_response_active_permission_profile(active_permission_profile);
     let session_id = conversation.session_configured().session_id.to_string();
     thread.session_id = session_id;
 
@@ -701,10 +695,6 @@ pub(super) async fn handle_pending_thread_resume_request(
         cwd,
         runtime_workspace_roots: workspace_roots,
         instruction_sources,
-        approval_policy: approval_policy.into(),
-        approvals_reviewer: approvals_reviewer.into(),
-        sandbox,
-        active_permission_profile,
         reasoning_effort,
         multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
         initial_turns_page,

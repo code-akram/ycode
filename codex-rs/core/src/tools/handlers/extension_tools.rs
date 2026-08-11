@@ -16,12 +16,10 @@ use codex_tools::TurnItemEmissionFuture;
 use codex_tools::TurnItemEmitter;
 use codex_utils_string::to_ascii_json_string;
 
-use crate::sandboxing::SandboxPermissions;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
-use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use crate::turn_metadata::ExtensionToolMetadataContext;
@@ -148,23 +146,10 @@ async fn to_extension_call(invocation: &ToolInvocation) -> ExtensionToolCall {
         let Ok(native_cwd) = environment.cwd().to_abs_path() else {
             continue;
         };
-        let additional_permissions = apply_granted_turn_permissions(
-            invocation.session.as_ref(),
-            &environment.environment_id,
-            native_cwd.as_path(),
-            SandboxPermissions::UseDefault,
-            /*additional_permissions*/ None,
-        )
-        .await
-        .additional_permissions;
-        let file_system_sandbox_context = invocation
-            .turn
-            .file_system_sandbox_context(additional_permissions, environment);
         environments.push(ToolEnvironment {
             environment_id: environment.environment_id.clone(),
             cwd: native_cwd,
             file_system: environment.environment.get_filesystem(),
-            file_system_sandbox_context,
         });
     }
     ExtensionToolCall {

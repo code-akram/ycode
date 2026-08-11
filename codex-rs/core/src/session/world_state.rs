@@ -2,17 +2,14 @@ use std::sync::Arc;
 
 use super::session::Session;
 use super::step_context::StepContext;
-use crate::context::ApprovalPromptContext;
 use crate::context::world_state::AgentsMdState;
 use crate::context::world_state::CollaborationModeState;
-use crate::context::world_state::CompactPermissionsState;
 use crate::context::world_state::ContextWindowGuidanceState;
 use crate::context::world_state::EnvironmentsInstructionsState;
 use crate::context::world_state::EnvironmentsState;
 use crate::context::world_state::ModelInstructionsState;
 use crate::context::world_state::MultiAgentModeState;
 use crate::context::world_state::MultiAgentUsageHintState;
-use crate::context::world_state::PermissionsState;
 use crate::context::world_state::PersonalityState;
 use crate::context::world_state::PluginsInstructionsState;
 use crate::context::world_state::RealtimeState;
@@ -111,50 +108,6 @@ impl Session {
                 .and_then(|instructions| instructions.end.as_deref()),
         ));
         world_state.add_section(AgentsMdState::new(step_context.loaded_agents_md.as_deref()));
-        if turn_context.config.include_permissions_instructions {
-            let environment = step_context.environments.primary();
-            let permission_profile = environment
-                .map(|environment| {
-                    let workspace_roots = environment
-                        .workspace_roots()
-                        .iter()
-                        .filter_map(|workspace_root| workspace_root.to_abs_path().ok())
-                        .collect::<Vec<_>>();
-                    environment
-                        .permission_profile()
-                        .clone()
-                        .materialize_project_roots_with_workspace_roots(&workspace_roots)
-                })
-                .unwrap_or_else(|| turn_context.permission_profile());
-            #[allow(deprecated)]
-            let cwd = environment
-                .and_then(|environment| environment.cwd().to_abs_path().ok())
-                .unwrap_or_else(|| turn_context.cwd.clone());
-            let model_messages = turn_context.model_info.model_messages.as_ref();
-            let exec_policy = self.services.exec_policy.current();
-            world_state.add_section(PermissionsState::new(
-                &permission_profile,
-                turn_context.approval_policy(),
-                ApprovalPromptContext::new(
-                    turn_context.config.approvals_reviewer,
-                    model_messages.and_then(|messages| messages.approvals.as_ref()),
-                    model_messages.and_then(|messages| messages.permissions.as_ref()),
-                ),
-                exec_policy.as_ref(),
-                &cwd,
-                turn_context
-                    .config
-                    .features
-                    .enabled(Feature::ExecPermissionApprovals),
-                turn_context
-                    .config
-                    .features
-                    .enabled(Feature::RequestPermissionsTool),
-            ));
-        } else {
-            let exec_policy = self.services.exec_policy.current();
-            world_state.add_section(CompactPermissionsState::new(exec_policy.as_ref()));
-        }
         if turn_context.config.include_collaboration_mode_instructions {
             world_state.add_section(CollaborationModeState::from_collaboration_mode(
                 &turn_context.collaboration_mode(),

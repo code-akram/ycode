@@ -109,19 +109,6 @@ impl ConfigRequestProcessor {
         Ok(response)
     }
 
-    pub(crate) async fn config_requirements_read(
-        &self,
-    ) -> Result<ConfigRequirementsReadResponse, JSONRPCErrorError> {
-        let requirements = self
-            .config_manager
-            .read_requirements()
-            .await
-            .map_err(map_error)?
-            .map(map_requirements_toml_to_api);
-
-        Ok(ConfigRequirementsReadResponse { requirements })
-    }
-
     pub(crate) async fn value_write(
         &self,
         params: ConfigValueWriteParams,

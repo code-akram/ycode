@@ -17,7 +17,6 @@ use crate::tools::handlers::ExecCommandHandlerOptions;
 use crate::tools::handlers::GetContextRemainingHandler;
 use crate::tools::handlers::NewContextWindowHandler;
 use crate::tools::handlers::PlanHandler;
-use crate::tools::handlers::RequestPermissionsHandler;
 use crate::tools::handlers::RequestUserInputHandler;
 use crate::tools::handlers::ShellCommandHandler;
 use crate::tools::handlers::ShellCommandHandlerOptions;
@@ -123,18 +122,13 @@ pub(crate) fn build_tool_router(
     let mut registry = ToolRegistry::default();
     add_core_tool_sources(&context, &mut registry);
 
-    let hosted_specs = if crate::guardian::is_guardian_reviewer_source(&turn_context.session_source)
-    {
-        Vec::new()
-    } else {
-        let standalone_web_search_tool = append_extension_tool_executors(
-            turn_context,
-            extension_tool_executors(session, step_store),
-            &mut registry,
-        );
-        append_dynamic_tool_runtimes(&turn_context.dynamic_tools, &mut registry);
-        hosted_model_tool_specs(turn_context, standalone_web_search_tool.as_slice())
-    };
+    let standalone_web_search_tool = append_extension_tool_executors(
+        turn_context,
+        extension_tool_executors(session, step_store),
+        &mut registry,
+    );
+    append_dynamic_tool_runtimes(&turn_context.dynamic_tools, &mut registry);
+    let hosted_specs = hosted_model_tool_specs(turn_context, standalone_web_search_tool.as_slice());
 
     finalize_tool_router(
         turn_context,
@@ -173,10 +167,6 @@ pub(crate) fn append_source_tools(
     extension_tool_executors: impl IntoIterator<Item = Arc<dyn ToolExecutor<ExtensionToolCall>>>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> Vec<ToolSpec> {
-    if crate::guardian::is_guardian_reviewer_source(&turn_context.session_source) {
-        return Vec::new();
-    }
-
     let standalone_web_search_tool =
         append_extension_tool_executors(turn_context, extension_tool_executors, registry);
     append_dynamic_tool_runtimes(dynamic_tools, registry);
@@ -375,9 +365,7 @@ fn hosted_model_tool_specs(
     registered_extension_tool_names: &[ToolName],
 ) -> Vec<ToolSpec> {
     // Responses Lite accepts schemas for client-executed tools, not hosted Responses tools.
-    if turn_context.model_info.use_responses_lite
-        || crate::guardian::is_guardian_reviewer_source(&turn_context.session_source)
-    {
+    if turn_context.model_info.use_responses_lite {
         return Vec::new();
     }
 
@@ -700,35 +688,6 @@ fn code_mode_namespace_descriptions(
 
 #[instrument(level = "trace", skip_all)]
 fn add_core_tool_sources(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistry) {
-    // Guardian reviewers receive only `exec_command`, `write_stdin`, and `view_image`
-    // when an environment is available; all general tool sources stay excluded.
-    if crate::guardian::is_guardian_reviewer_source(&context.turn_context.session_source) {
-        let turn_context = context.turn_context;
-        let environment_mode = tool_environment_mode(context.environments);
-        if environment_mode.has_environment() {
-            let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
-            registry.add(ExecCommandHandler::new(ExecCommandHandlerOptions {
-                allow_login_shell: any_environment_allows_login_shell(context.environments),
-                exec_permission_approvals_enabled: false,
-                include_environment_id,
-                include_shell_parameter: unified_exec_should_include_shell_parameter(
-                    turn_context,
-                    context.environments,
-                ),
-            }));
-            registry.add(WriteStdinHandler);
-            if turn_context.config.features.enabled(Feature::ViewImage) {
-                registry.add(ViewImageHandler::new(ViewImageToolOptions {
-                    can_request_original_image_detail: can_request_original_image_detail(
-                        &turn_context.model_info,
-                    ),
-                    include_environment_id,
-                }));
-            }
-        }
-        return;
-    }
-
     add_shell_tools(context, registry);
     add_core_utility_tools(context, registry);
     add_collaboration_tools(context, registry);
@@ -765,20 +724,17 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistr
     }
 
     let allow_login_shell = any_environment_allows_login_shell(context.environments);
-    let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
     let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
     let supports_shell_command = context.environments.single_local_environment().is_some();
     let shell_command_options = ShellCommandHandlerOptions {
         backend_config: shell_command_backend_for_features(features),
         allow_login_shell,
-        exec_permission_approvals_enabled,
     };
 
     match shell_type_for_model_and_features(&turn_context.model_info, features) {
         ConfigShellToolType::UnifiedExec => {
             registry.add(ExecCommandHandler::new(ExecCommandHandlerOptions {
                 allow_login_shell,
-                exec_permission_approvals_enabled,
                 include_environment_id,
                 include_shell_parameter: unified_exec_should_include_shell_parameter(
                     turn_context,
@@ -848,10 +804,6 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
             },
             ToolExposure::DirectModelOnly,
         );
-    }
-
-    if environment_mode.has_environment() && features.enabled(Feature::RequestPermissionsTool) {
-        registry.add(RequestPermissionsHandler);
     }
 
     if features.enabled(Feature::TokenBudget) {

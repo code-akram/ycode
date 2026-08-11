@@ -58,7 +58,6 @@ Do not modify files, source, git state, permissions, configuration, or any other
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SideParentStatus {
     NeedsInput,
-    NeedsApproval,
     Failed,
     Interrupted,
     Closed,
@@ -70,8 +69,6 @@ impl SideParentStatus {
         match (self, parent_is_main) {
             (SideParentStatus::NeedsInput, true) => "main needs input",
             (SideParentStatus::NeedsInput, false) => "parent needs input",
-            (SideParentStatus::NeedsApproval, true) => "main needs approval",
-            (SideParentStatus::NeedsApproval, false) => "parent needs approval",
             (SideParentStatus::Failed, true) => "main failed",
             (SideParentStatus::Failed, false) => "parent failed",
             (SideParentStatus::Interrupted, true) => "main interrupted",
@@ -84,20 +81,12 @@ impl SideParentStatus {
     }
 
     fn is_actionable(self) -> bool {
-        matches!(
-            self,
-            SideParentStatus::NeedsInput | SideParentStatus::NeedsApproval
-        )
+        matches!(self, SideParentStatus::NeedsInput)
     }
 
     pub(super) fn for_request(request: &ServerRequest) -> Option<Self> {
         match request {
             ServerRequest::ToolRequestUserInput { .. } => Some(SideParentStatus::NeedsInput),
-            ServerRequest::CommandExecutionRequestApproval { .. }
-            | ServerRequest::FileChangeRequestApproval { .. }
-            | ServerRequest::PermissionsRequestApproval { .. }
-            | ServerRequest::ApplyPatchApproval { .. }
-            | ServerRequest::ExecCommandApproval { .. } => Some(SideParentStatus::NeedsApproval),
             ServerRequest::DynamicToolCall { .. }
             | ServerRequest::AttestationGenerate { .. }
             | ServerRequest::CurrentTimeRead { .. }

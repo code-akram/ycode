@@ -2070,7 +2070,6 @@ dependencies = [
  "codex-chatgpt",
  "codex-cli-protocol",
  "codex-cli-runtime",
- "codex-cloud-config",
  "codex-cloud-tasks",
  "codex-config",
  "codex-core",
@@ -2093,7 +2092,6 @@ dependencies = [
  "codex-responses-api-proxy",
  "codex-rollout",
  "codex-rollout-trace",
- "codex-sandboxing",
  "codex-skills-extension",
  "codex-state",
  "codex-terminal-detection",
@@ -2181,7 +2179,6 @@ dependencies = [
  "codex-backend-client",
  "codex-chatgpt",
  "codex-cli-protocol",
- "codex-cloud-config",
  "codex-code-mode",
  "codex-config",
  "codex-core",
@@ -2196,7 +2193,6 @@ dependencies = [
  "codex-git-attribution",
  "codex-git-utils",
  "codex-goal-extension",
- "codex-guardian",
  "codex-home",
  "codex-hooks",
  "codex-http-client",
@@ -2211,7 +2207,6 @@ dependencies = [
  "codex-plugin",
  "codex-protocol",
  "codex-rollout",
- "codex-sandboxing",
  "codex-shell-command",
  "codex-skills",
  "codex-skills-extension",
@@ -2285,31 +2280,6 @@ dependencies = [
  "http 1.4.0",
  "rand 0.9.3",
  "tokio",
-]
-
-[[package]]
-name = "codex-cloud-config"
-version = "0.147.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "codex-agent-identity",
- "codex-backend-client",
- "codex-config",
- "codex-core",
- "codex-http-client",
- "codex-login",
- "codex-otel",
- "codex-protocol",
- "hmac 0.12.1",
- "pretty_assertions",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2547,7 +2517,6 @@ dependencies = [
  "codex-response-debug-context",
  "codex-rollout",
  "codex-rollout-trace",
- "codex-sandboxing",
  "codex-shell-command",
  "codex-shell-escalation",
  "codex-skills",
@@ -2735,7 +2704,6 @@ dependencies = [
  "codex-arg0",
  "codex-cli-protocol",
  "codex-cli-runtime-client",
- "codex-cloud-config",
  "codex-config",
  "codex-core",
  "codex-feedback",
@@ -2748,7 +2716,6 @@ dependencies = [
  "codex-utils-cargo-bin",
  "codex-utils-cli",
  "codex-utils-oss",
- "codex-utils-sandbox-summary",
  "core_test_support",
  "libc",
  "opentelemetry",
@@ -2788,7 +2755,6 @@ dependencies = [
  "codex-network-proxy",
  "codex-otel",
  "codex-protocol",
- "codex-sandboxing",
  "codex-test-binary-support",
  "codex-utils-absolute-path",
  "codex-utils-path-uri",
@@ -3055,15 +3021,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "codex-guardian"
-version = "0.147.0"
-dependencies = [
- "codex-core",
- "codex-extension-api",
- "codex-protocol",
 ]
 
 [[package]]
@@ -3485,7 +3442,6 @@ version = "0.147.0"
 dependencies = [
  "anyhow",
  "codex-context-fragments",
- "codex-execpolicy",
  "codex-git-utils",
  "codex-protocol",
  "codex-utils-absolute-path",
@@ -3601,28 +3557,6 @@ dependencies = [
  "tempfile",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "codex-sandboxing"
-version = "0.147.0"
-dependencies = [
- "anyhow",
- "codex-network-proxy",
- "codex-protocol",
- "codex-utils-absolute-path",
- "codex-utils-path-uri",
- "codex-utils-pty",
- "dunce",
- "libc",
- "pretty_assertions",
- "regex-lite",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "url",
- "which 8.0.0",
 ]
 
 [[package]]
@@ -3858,7 +3792,6 @@ dependencies = [
  "codex-cli",
  "codex-cli-protocol",
  "codex-cli-runtime-client",
- "codex-cloud-config",
  "codex-config",
  "codex-core-plugins",
  "codex-exec-server",
@@ -3877,12 +3810,10 @@ dependencies = [
  "codex-plugin",
  "codex-protocol",
  "codex-rollout",
- "codex-sandboxing",
  "codex-shell-command",
  "codex-state",
  "codex-terminal-detection",
  "codex-utils-absolute-path",
- "codex-utils-approval-presets",
  "codex-utils-cargo-bin",
  "codex-utils-cli",
  "codex-utils-elapsed",
@@ -3892,7 +3823,6 @@ dependencies = [
  "codex-utils-path",
  "codex-utils-path-uri",
  "codex-utils-plugins",
- "codex-utils-sandbox-summary",
  "codex-utils-sleep-inhibitor",
  "codex-utils-string",
  "color-eyre",
@@ -3967,13 +3897,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "ts-rs",
-]
-
-[[package]]
-name = "codex-utils-approval-presets"
-version = "0.147.0"
-dependencies = [
- "codex-protocol",
 ]
 
 [[package]]
@@ -4145,15 +4068,6 @@ name = "codex-utils-rustls-provider"
 version = "0.147.0"
 dependencies = [
  "rustls",
-]
-
-[[package]]
-name = "codex-utils-sandbox-summary"
-version = "0.147.0"
-dependencies = [
- "codex-protocol",
- "codex-utils-absolute-path",
- "pretty_assertions",
 ]
 
 [[package]]

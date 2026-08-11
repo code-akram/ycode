@@ -124,12 +124,7 @@ fn map_additional_context(
 }
 
 struct ThreadSettingsBuildParams {
-    method: &'static str,
     environments: Option<TurnEnvironmentSelections>,
-    approval_policy: Option<codex_cli_protocol::AskForApproval>,
-    approvals_reviewer: Option<codex_cli_protocol::ApprovalsReviewer>,
-    sandbox_policy: Option<codex_cli_protocol::SandboxPolicy>,
-    permissions: Option<String>,
     model: Option<String>,
     service_tier: Option<Option<String>>,
     effort: Option<ReasoningEffort>,
@@ -531,12 +526,7 @@ impl TurnRequestProcessor {
             .build_thread_settings_overrides(
                 thread.as_ref(),
                 ThreadSettingsBuildParams {
-                    method: "turn/start",
                     environments,
-                    approval_policy: params.approval_policy,
-                    approvals_reviewer: params.approvals_reviewer,
-                    sandbox_policy: params.sandbox_policy,
-                    permissions: params.permissions,
                     model: params.model,
                     service_tier: params.service_tier,
                     effort: params.effort,
@@ -546,14 +536,6 @@ impl TurnRequestProcessor {
                 },
             )
             .await?;
-        let parent_permission_profile_override =
-            thread_settings.permission_profile.clone().or_else(|| {
-                thread_settings
-                    .sandbox_policy
-                    .as_ref()
-                    .map(PermissionProfile::from_legacy_sandbox_policy)
-            });
-
         // Start the turn by submitting the user input. Return its submission id as turn_id.
         let turn_op = Op::UserInput {
             items: mapped_items,
@@ -577,15 +559,13 @@ impl TurnRequestProcessor {
 
         if turn_has_input {
             let config_snapshot = thread.config_snapshot().await;
-            let parent_permission_profile =
-                parent_permission_profile_override.unwrap_or(config_snapshot.permission_profile);
             codex_memories_write::start_memories_startup_task(
                 Arc::clone(&self.thread_manager),
                 Arc::clone(&self.auth_manager),
                 thread_id,
                 Arc::clone(&thread),
                 thread.config().await,
-                parent_permission_profile,
+                config_snapshot.permission_profile,
                 &config_snapshot.session_source,
             );
         }
@@ -676,12 +656,7 @@ impl TurnRequestProcessor {
         params: ThreadSettingsBuildParams,
     ) -> Result<codex_protocol::protocol::ThreadSettingsOverrides, JSONRPCErrorError> {
         let ThreadSettingsBuildParams {
-            method,
             environments,
-            approval_policy,
-            approvals_reviewer,
-            sandbox_policy,
-            permissions,
             model,
             service_tier,
             effort,
@@ -690,29 +665,10 @@ impl TurnRequestProcessor {
             personality,
         } = params;
 
-        if sandbox_policy.is_some() && permissions.is_some() {
-            return Err(invalid_request(
-                "`permissions` cannot be combined with `sandboxPolicy`",
-            ));
-        }
-
         let collaboration_mode =
             collaboration_mode.map(|mode| self.normalize_collaboration_mode(mode));
         let has_environment_override = environments.is_some();
-        // `thread/settings/update` only acknowledges that the update was queued.
-        // Clients that send dependent partial updates should wait for
-        // `thread/settings/updated` or combine the fields in one request.
-        let snapshot = if permissions.is_some() {
-            Some(thread.config_snapshot().await)
-        } else {
-            None
-        };
-
         let has_any_overrides = has_environment_override
-            || approval_policy.is_some()
-            || approvals_reviewer.is_some()
-            || sandbox_policy.is_some()
-            || permissions.is_some()
             || model.is_some()
             || service_tier.is_some()
             || effort.is_some()
@@ -720,64 +676,18 @@ impl TurnRequestProcessor {
             || collaboration_mode.is_some()
             || personality.is_some();
 
-        let approval_policy = approval_policy.map(codex_cli_protocol::AskForApproval::to_core);
-        let approvals_reviewer =
-            approvals_reviewer.map(codex_cli_protocol::ApprovalsReviewer::to_core);
-        let sandbox_policy = sandbox_policy.map(|policy| policy.to_core());
-        let (permission_profile, active_permission_profile, profile_workspace_roots) =
-            if let Some(permissions) = permissions {
-                let Some(snapshot) = snapshot.as_ref() else {
-                    return Err(internal_error(format!(
-                        "{method} permission selection missing thread snapshot"
-                    )));
-                };
-                let overrides = ConfigOverrides {
-                    cwd: environments
-                        .as_ref()
-                        .map(|environments| environments.legacy_fallback_cwd.to_path_buf()),
-                    default_permissions: Some(permissions),
-                    main_execve_wrapper_exe: self.arg0_paths.main_execve_wrapper_exe.clone(),
-                    ..Default::default()
-                };
-                let config = self
-                    .config_manager
-                    .load_for_cwd(
-                        /*request_overrides*/ None,
-                        overrides,
-                        Some(snapshot.cwd().to_path_buf()),
-                    )
-                    .await
-                    .map_err(|err| config_load_error(&err))?;
-                // Startup config is allowed to fall back when requirements
-                // disallow a configured profile. An explicit settings update
-                // is different: reject it before accepting the request.
-                if let Some(warning) = config.startup_warnings.iter().find(|warning| {
-                    warning.contains("Configured value for `permission_profile` is disallowed")
-                }) {
-                    return Err(invalid_request(format!(
-                        "invalid thread settings override: {warning}"
-                    )));
-                }
-                (
-                    Some(config.permissions.permission_profile().clone()),
-                    config.permissions.active_permission_profile(),
-                    Some(config.permissions.profile_workspace_roots().to_vec()),
-                )
-            } else {
-                (None, None, None)
-            };
         let effort = effort.map(Some);
 
         if has_any_overrides {
             thread
                 .preview_thread_settings_overrides(CodexThreadSettingsOverrides {
                     environments: environments.clone(),
-                    approval_policy,
-                    approvals_reviewer,
-                    sandbox_policy: sandbox_policy.clone(),
-                    permission_profile: permission_profile.clone(),
-                    active_permission_profile: active_permission_profile.clone(),
-                    profile_workspace_roots: profile_workspace_roots.clone(),
+                    profile_workspace_roots: None,
+                    approval_policy: None,
+                    approvals_reviewer: None,
+                    sandbox_policy: None,
+                    permission_profile: None,
+                    active_permission_profile: None,
                     windows_sandbox_level: None,
                     model: model.clone(),
                     effort: effort.clone(),
@@ -794,12 +704,12 @@ impl TurnRequestProcessor {
 
         Ok(codex_protocol::protocol::ThreadSettingsOverrides {
             environments,
-            profile_workspace_roots,
-            approval_policy,
-            approvals_reviewer,
-            sandbox_policy,
-            permission_profile,
-            active_permission_profile,
+            profile_workspace_roots: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
+            permission_profile: None,
+            active_permission_profile: None,
             windows_sandbox_level: None,
             model,
             effort,
@@ -829,12 +739,7 @@ impl TurnRequestProcessor {
             .build_thread_settings_overrides(
                 thread.as_ref(),
                 ThreadSettingsBuildParams {
-                    method: "thread/settings/update",
                     environments,
-                    approval_policy: params.approval_policy,
-                    approvals_reviewer: params.approvals_reviewer,
-                    sandbox_policy: params.sandbox_policy,
-                    permissions: params.permissions,
                     model: params.model,
                     service_tier: params.service_tier,
                     effort: params.effort,

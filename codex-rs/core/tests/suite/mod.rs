@@ -35,7 +35,6 @@ mod agent_websocket;
 mod agents_md;
 mod apply_patch_cli;
 #[cfg(not(target_os = "windows"))]
-mod approvals;
 mod audio_truncation;
 mod auto_review;
 mod catalog_permission_messages;
@@ -52,15 +51,12 @@ mod compact_remote_parity;
 mod compact_resume_fork;
 mod current_time_reminder;
 mod deprecation_notice;
-mod exec;
 mod exec_policy;
 #[cfg(not(target_os = "windows"))]
-mod extension_sandbox;
 mod external_auth;
 mod fork_thread;
 mod git_enrichment;
 #[cfg(not(target_os = "windows"))]
-mod guardian_review;
 #[cfg(not(target_os = "windows"))]
 mod hooks;
 mod image_rollout;
@@ -77,8 +73,6 @@ mod models_etag_responses;
 mod multi_agent_mode;
 mod multi_agent_resume;
 #[cfg(unix)]
-mod multi_exec_server_sandbox;
-mod network_approval;
 mod otel;
 mod override_updates;
 mod pending_input;
@@ -112,7 +106,6 @@ mod search_tool;
 mod shell_command;
 mod shell_serialization;
 mod shell_snapshot;
-mod skill_approval;
 mod skills;
 mod skills_extension;
 mod spawn_agent_description;
@@ -129,7 +122,6 @@ mod turn_state;
 mod unified_exec;
 mod unified_exec_process_events;
 #[cfg(unix)]
-mod unified_exec_zsh_fork_approvals;
 mod unstable_features_warning;
 mod user_message_admission;
 mod user_notification;

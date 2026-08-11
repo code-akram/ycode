@@ -11,7 +11,6 @@ use codex_core::config::Config;
 use codex_model_provider_info::WireApi;
 use codex_protocol::num_format::format_with_separators;
 use codex_protocol::protocol::SessionConfiguredEvent;
-use codex_utils_sandbox_summary::summarize_permission_profile;
 use owo_colors::OwoColorize;
 use owo_colors::Style;
 
@@ -389,25 +388,12 @@ fn config_summary_entries(
     config: &Config,
     session_configured_event: &SessionConfiguredEvent,
 ) -> Vec<(&'static str, String)> {
-    let permission_profile = config.permissions.effective_permission_profile();
     let mut entries = vec![
         ("workdir", config.cwd.display().to_string()),
         ("model", session_configured_event.model.clone()),
         (
             "provider",
             session_configured_event.model_provider_id.clone(),
-        ),
-        (
-            "approval",
-            config.permissions.approval_policy.value().to_string(),
-        ),
-        (
-            "sandbox",
-            summarize_permission_profile(
-                &permission_profile,
-                &config.cwd,
-                config.effective_workspace_roots().as_slice(),
-            ),
         ),
     ];
     if config.model_provider.wire_api == WireApi::Responses {

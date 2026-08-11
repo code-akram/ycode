@@ -41,8 +41,6 @@ use std::time::Instant;
 use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
-use crate::approval_events::ApplyPatchApprovalRequestEvent;
-use crate::approval_events::ExecApprovalRequestEvent;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::StatusLineSetupView;
 use crate::bottom_pane::StatusSurfacePreviewData;
@@ -59,7 +57,6 @@ use crate::model_catalog::ModelCatalog;
 use crate::multi_agents;
 use crate::multi_agents::AgentMetadata;
 use crate::runtime_approval_conversions::file_update_changes_to_display;
-use crate::session_state::SessionNetworkProxyRuntime;
 use crate::session_state::ThreadSessionState;
 use crate::status::RateLimitWindowDisplay;
 use crate::status::StatusAccountDisplay;
@@ -252,20 +249,14 @@ fn normalize_thread_name(name: &str) -> Option<String> {
 
 use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
-use crate::app_event::PermissionProfileSelection;
 use crate::app_event::RateLimitRefreshOrigin;
 use crate::app_event_sender::AppEventSender;
-use crate::auto_review_denials;
-use crate::auto_review_denials::RecentAutoReviewDenials;
-use crate::bottom_pane::ApplyPatchApprovalRequest;
-use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::BottomPane;
 use crate::bottom_pane::BottomPaneParams;
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::CollaborationModeIndicator;
 use crate::bottom_pane::ColumnWidthMode;
 use crate::bottom_pane::DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED;
-use crate::bottom_pane::ExecApprovalRequest;
 use crate::bottom_pane::ExperimentalFeatureItem;
 use crate::bottom_pane::ExperimentalFeaturesView;
 use crate::bottom_pane::GoalStatusIndicator;
@@ -274,7 +265,6 @@ use crate::bottom_pane::InputResult;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::MemoriesSettingsView;
 use crate::bottom_pane::MentionBinding;
-use crate::bottom_pane::PermissionsApprovalRequest;
 use crate::bottom_pane::QUIT_SHORTCUT_TIMEOUT;
 use crate::bottom_pane::QueuedInputAction;
 use crate::bottom_pane::SelectionAction;
@@ -360,10 +350,6 @@ use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
 mod model_popups;
 mod notifications;
 use self::notifications::Notification;
-mod permission_popups;
-mod permissions_menu;
-pub(crate) use self::permissions_menu::auto_review_available;
-pub(crate) use self::permissions_menu::cyber_model_approval_reviewer;
 mod protocol;
 mod protocol_requests;
 mod rate_limits;
@@ -451,16 +437,11 @@ use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::plan_tool::StepStatus;
 use codex_protocol::plan_tool::UpdatePlanArgs;
-use codex_utils_approval_presets::ApprovalPreset;
-use codex_utils_approval_presets::builtin_approval_presets;
 use strum::IntoEnumIterator;
 use unicode_segmentation::UnicodeSegmentation;
 
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
-const ASK_FOR_APPROVAL_LABEL: &str = "Ask for approval";
-const APPROVE_FOR_ME_LABEL: &str = "Approve for me";
-const AUTO_REVIEW_DESCRIPTION: &str = "Only ask for actions detected as potentially unsafe.";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 2] = ["model-with-reasoning", "current-dir"];
 
@@ -670,7 +651,6 @@ pub(crate) struct ChatWidget {
     // Instruction source files loaded for the current session, supplied by cli-runtime.
     instruction_source_paths: Vec<PathUri>,
     // Runtime network proxy bind addresses from SessionConfigured.
-    session_network_proxy: Option<SessionNetworkProxyRuntime>,
     // Shared latch so we only warn once about invalid status-line item IDs.
     status_line_invalid_items_warned: Arc<AtomicBool>,
     // Shared latch so we only warn once about invalid terminal-title item IDs.
@@ -819,62 +799,6 @@ impl ThreadItemRenderSource {
             Self::Replay(replay_kind) => Some(replay_kind),
         }
     }
-}
-
-fn exec_approval_request_from_params(
-    params: CommandExecutionRequestApprovalParams,
-    fallback_cwd: &AbsolutePathBuf,
-) -> ExecApprovalRequestEvent {
-    // TODO(anp): Keep this as PathUri once `tui::approval_events::ExecApprovalRequestEvent` and
-    // approval rendering support foreign paths.
-    let cwd = params
-        .cwd
-        .and_then(|cwd| cwd.to_inferred_abs_path())
-        .unwrap_or_else(|| fallback_cwd.clone());
-    ExecApprovalRequestEvent {
-        call_id: params.item_id,
-        command: params
-            .command
-            .as_deref()
-            .map(split_command_string)
-            .unwrap_or_default(),
-        cwd,
-        reason: params.reason,
-        network_approval_context: params.network_approval_context,
-        additional_permissions: params.additional_permissions,
-        turn_id: params.turn_id,
-        approval_id: params.approval_id,
-        environment_id: params.environment_id,
-        proposed_execpolicy_amendment: params.proposed_execpolicy_amendment,
-        proposed_network_policy_amendments: params.proposed_network_policy_amendments,
-        available_decisions: params.available_decisions,
-    }
-}
-
-fn patch_approval_request_from_params(
-    params: FileChangeRequestApprovalParams,
-) -> ApplyPatchApprovalRequestEvent {
-    ApplyPatchApprovalRequestEvent {
-        call_id: params.item_id,
-        turn_id: params.turn_id,
-        changes: HashMap::new(),
-        reason: params.reason,
-        grant_root: params.grant_root,
-    }
-}
-
-fn request_permissions_from_params(
-    params: codex_cli_protocol::PermissionsRequestApprovalParams,
-) -> std::io::Result<RequestPermissionsEvent> {
-    Ok(RequestPermissionsEvent {
-        turn_id: params.turn_id,
-        call_id: params.item_id,
-        environment_id: params.environment_id,
-        started_at_ms: params.started_at_ms,
-        reason: params.reason,
-        permissions: params.permissions.try_into()?,
-        cwd: Some(params.cwd),
-    })
 }
 
 fn token_usage_info_from_cli_runtime(token_usage: ThreadTokenUsage) -> TokenUsageInfo {
@@ -1315,10 +1239,6 @@ impl ChatWidget {
         }
     }
 
-    pub(crate) fn set_pending_thread_approvals(&mut self, threads: Vec<String>) {
-        self.bottom_pane.set_pending_thread_approvals(threads);
-    }
-
     pub(crate) fn clear_thread_rename_block(&mut self) {
         self.thread_rename_block_message = None;
     }
@@ -1337,13 +1257,6 @@ impl ChatWidget {
 
     pub(crate) fn on_diff_complete(&mut self) {
         self.request_redraw();
-    }
-
-    pub(crate) fn add_debug_config_output(&mut self) {
-        self.add_to_history(crate::debug_config::new_debug_config_output(
-            &self.config,
-            self.session_network_proxy.as_ref(),
-        ));
     }
 
     pub(crate) fn add_ps_output(&mut self) {
@@ -1379,17 +1292,14 @@ impl ChatWidget {
     /// Build a placeholder header cell while the session is configuring.
     fn placeholder_session_header_cell(config: &Config) -> Box<dyn HistoryCell> {
         let placeholder_style = Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC);
-        Box::new(
-            history_cell::SessionHeaderHistoryCell::new_with_style(
-                DEFAULT_MODEL_DISPLAY_NAME.to_string(),
-                placeholder_style,
-                /*reasoning_effort*/ None,
-                /*show_fast_status*/ false,
-                config.cwd.to_path_buf(),
-                CODEX_CLI_VERSION,
-            )
-            .with_yolo_mode(history_cell::is_yolo_mode(config)),
-        )
+        Box::new(history_cell::SessionHeaderHistoryCell::new_with_style(
+            DEFAULT_MODEL_DISPLAY_NAME.to_string(),
+            placeholder_style,
+            /*reasoning_effort*/ None,
+            /*show_fast_status*/ false,
+            config.cwd.to_path_buf(),
+            CODEX_CLI_VERSION,
+        ))
     }
 
     /// Merge the real session info cell with any placeholder header to avoid double boxes.

@@ -18,7 +18,6 @@ use codex_cli_protocol::CommandExecWriteParams;
 use codex_cli_protocol::CommandExecWriteResponse;
 use codex_cli_protocol::JSONRPCErrorError;
 use codex_cli_protocol::ServerNotification;
-use codex_core::config::StartedNetworkProxy;
 use codex_core::exec::ExecExpiration;
 use codex_core::exec::ExecExpirationOutcome;
 use codex_core::exec::IO_DRAIN_TIMEOUT_MS;
@@ -88,7 +87,6 @@ pub(crate) struct StartCommandExecParams {
     pub(crate) request_id: ConnectionRequestId,
     pub(crate) process_id: Option<String>,
     pub(crate) exec_request: ExecRequest,
-    pub(crate) started_network_proxy: Option<StartedNetworkProxy>,
     pub(crate) tty: bool,
     pub(crate) stream_stdin: bool,
     pub(crate) stream_stdout_stderr: bool,
@@ -148,7 +146,6 @@ impl CommandExecManager {
             request_id,
             process_id,
             exec_request,
-            started_network_proxy,
             tty,
             stream_stdin,
             stream_stdout_stderr,
@@ -179,7 +176,6 @@ impl CommandExecManager {
             cwd,
             env,
             expiration,
-            sandbox: _sandbox,
             arg0,
             ..
         } = exec_request;
@@ -246,7 +242,6 @@ impl CommandExecManager {
             }
         };
         tokio::spawn(async move {
-            let _started_network_proxy = started_network_proxy;
             run_command(RunCommandParams {
                 outgoing,
                 request_id: request_id.clone(),

@@ -78,19 +78,6 @@ pub struct ThreadStartParams {
     #[experimental("thread/start.runtimeWorkspaceRoots")]
     #[ts(optional = nullable)]
     pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
-    #[experimental(nested)]
-    #[ts(optional = nullable)]
-    pub approval_policy: Option<AskForApproval>,
-    /// Override where approval requests are routed for review on this thread
-    /// and subsequent turns.
-    #[ts(optional = nullable)]
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    #[ts(optional = nullable)]
-    pub sandbox: Option<SandboxMode>,
-    /// Named profile id for this thread. Cannot be combined with `sandbox`.
-    #[experimental("thread/start.permissions")]
-    #[ts(optional = nullable)]
-    pub permissions: Option<String>,
     #[ts(optional = nullable)]
     pub config: Option<HashMap<String, JsonValue>>,
     #[ts(optional = nullable)]
@@ -182,18 +169,6 @@ pub struct ThreadStartResponse {
     /// Environment-native paths to instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<LegacyAppPathString>,
-    #[experimental(nested)]
-    pub approval_policy: AskForApproval,
-    /// Reviewer currently used for approval requests on this thread.
-    pub approvals_reviewer: ApprovalsReviewer,
-    /// Legacy sandbox policy retained for compatibility. Experimental clients
-    /// should prefer `activePermissionProfile` for profile provenance.
-    pub sandbox: SandboxPolicy,
-    /// Named or implicit built-in profile that produced the active
-    /// permissions, when known.
-    #[experimental("thread/start.activePermissionProfile")]
-    #[serde(default)]
-    pub active_permission_profile: Option<ActivePermissionProfile>,
     pub reasoning_effort: Option<ReasoningEffort>,
     /// @deprecated Always `explicitRequestOnly`. Use `reasoningEffort` for Ultra behavior.
     #[experimental("thread/start.multiAgentMode")]
@@ -218,21 +193,6 @@ pub struct ThreadSettingsUpdateParams {
     /// Override the working directory for subsequent turns.
     #[ts(optional = nullable)]
     pub cwd: Option<PathBuf>,
-    /// Override the approval policy for subsequent turns.
-    #[experimental(nested)]
-    #[ts(optional = nullable)]
-    pub approval_policy: Option<AskForApproval>,
-    /// Override where approval requests are routed for subsequent turns.
-    #[ts(optional = nullable)]
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    /// Override the sandbox policy for subsequent turns.
-    #[ts(optional = nullable)]
-    pub sandbox_policy: Option<SandboxPolicy>,
-    /// Select a named permissions profile id for subsequent turns. Cannot be
-    /// combined with `sandboxPolicy`.
-    #[experimental("thread/settings/update.permissions")]
-    #[ts(optional = nullable)]
-    pub permissions: Option<String>,
     /// Override the model for subsequent turns.
     #[ts(optional = nullable)]
     pub model: Option<String>,
@@ -278,10 +238,6 @@ pub struct ThreadSettingsUpdateResponse {}
 #[ts(export_to = "v2/")]
 pub struct ThreadSettings {
     pub cwd: AbsolutePathBuf,
-    pub approval_policy: AskForApproval,
-    pub approvals_reviewer: ApprovalsReviewer,
-    pub sandbox_policy: SandboxPolicy,
-    pub active_permission_profile: Option<ActivePermissionProfile>,
     pub model: String,
     pub model_provider: String,
     pub service_tier: Option<String>,
@@ -363,20 +319,6 @@ pub struct ThreadResumeParams {
     #[experimental("thread/resume.runtimeWorkspaceRoots")]
     #[ts(optional = nullable)]
     pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
-    #[experimental(nested)]
-    #[ts(optional = nullable)]
-    pub approval_policy: Option<AskForApproval>,
-    /// Override where approval requests are routed for review on this thread
-    /// and subsequent turns.
-    #[ts(optional = nullable)]
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    #[ts(optional = nullable)]
-    pub sandbox: Option<SandboxMode>,
-    /// Named profile id for the resumed thread. Cannot be combined with
-    /// `sandbox`.
-    #[experimental("thread/resume.permissions")]
-    #[ts(optional = nullable)]
-    pub permissions: Option<String>,
     #[ts(optional = nullable)]
     pub config: Option<HashMap<String, serde_json::Value>>,
     #[ts(optional = nullable)]
@@ -415,18 +357,6 @@ pub struct ThreadResumeResponse {
     /// Environment-native paths to instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<LegacyAppPathString>,
-    #[experimental(nested)]
-    pub approval_policy: AskForApproval,
-    /// Reviewer currently used for approval requests on this thread.
-    pub approvals_reviewer: ApprovalsReviewer,
-    /// Legacy sandbox policy retained for compatibility. Experimental clients
-    /// should prefer `activePermissionProfile` for profile provenance.
-    pub sandbox: SandboxPolicy,
-    /// Named or implicit built-in profile that produced the active
-    /// permissions, when known.
-    #[experimental("thread/resume.activePermissionProfile")]
-    #[serde(default)]
-    pub active_permission_profile: Option<ActivePermissionProfile>,
     pub reasoning_effort: Option<ReasoningEffort>,
     /// @deprecated Always `explicitRequestOnly`. Use `reasoningEffort` for Ultra behavior.
     #[experimental("thread/resume.multiAgentMode")]
@@ -551,20 +481,6 @@ pub struct ThreadForkParams {
     #[experimental("thread/fork.runtimeWorkspaceRoots")]
     #[ts(optional = nullable)]
     pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
-    #[experimental(nested)]
-    #[ts(optional = nullable)]
-    pub approval_policy: Option<AskForApproval>,
-    /// Override where approval requests are routed for review on this thread
-    /// and subsequent turns.
-    #[ts(optional = nullable)]
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    #[ts(optional = nullable)]
-    pub sandbox: Option<SandboxMode>,
-    /// Named profile id for the forked thread. Cannot be combined with
-    /// `sandbox`.
-    #[experimental("thread/fork.permissions")]
-    #[ts(optional = nullable)]
-    pub permissions: Option<String>,
     #[ts(optional = nullable)]
     pub config: Option<HashMap<String, serde_json::Value>>,
     #[ts(optional = nullable)]
@@ -607,18 +523,6 @@ pub struct ThreadForkResponse {
     /// Environment-native paths to instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<LegacyAppPathString>,
-    #[experimental(nested)]
-    pub approval_policy: AskForApproval,
-    /// Reviewer currently used for approval requests on this thread.
-    pub approvals_reviewer: ApprovalsReviewer,
-    /// Legacy sandbox policy retained for compatibility. Experimental clients
-    /// should prefer `activePermissionProfile` for profile provenance.
-    pub sandbox: SandboxPolicy,
-    /// Named or implicit built-in profile that produced the active
-    /// permissions, when known.
-    #[experimental("thread/fork.activePermissionProfile")]
-    #[serde(default)]
-    pub active_permission_profile: Option<ActivePermissionProfile>,
     pub reasoning_effort: Option<ReasoningEffort>,
     /// @deprecated Always `explicitRequestOnly`. Use `reasoningEffort` for Ultra behavior.
     #[experimental("thread/fork.multiAgentMode")]
@@ -1013,20 +917,6 @@ pub struct ThreadShellCommandParams {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadShellCommandResponse {}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadApproveGuardianDeniedActionParams {
-    pub thread_id: String,
-    /// Serialized `codex_protocol::protocol::GuardianAssessmentEvent`.
-    pub event: JsonValue,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct ThreadApproveGuardianDeniedActionResponse {}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

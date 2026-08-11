@@ -1,5 +1,4 @@
 use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
-use crate::bottom_pane::ApprovalRequest;
 use crate::keymap::KeymapContextSet;
 use crate::render::renderable::Renderable;
 use codex_cli_protocol::ToolRequestUserInputParams;
@@ -109,13 +108,6 @@ pub(crate) trait BottomPaneView: Renderable {
 
     /// Try to handle approval request; return the original value if not
     /// consumed.
-    fn try_consume_approval_request(
-        &mut self,
-        request: ApprovalRequest,
-    ) -> Option<ApprovalRequest> {
-        Some(request)
-    }
-
     /// Try to handle request_user_input; return the original value if not
     /// consumed.
     fn try_consume_user_input_request(

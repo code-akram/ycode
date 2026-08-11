@@ -176,8 +176,6 @@ use codex_cli_protocol::SkillsListParams;
 use codex_cli_protocol::SkillsListResponse;
 use codex_cli_protocol::SortDirection;
 use codex_cli_protocol::Thread;
-use codex_cli_protocol::ThreadApproveGuardianDeniedActionParams;
-use codex_cli_protocol::ThreadApproveGuardianDeniedActionResponse;
 use codex_cli_protocol::ThreadArchiveParams;
 use codex_cli_protocol::ThreadArchiveResponse;
 use codex_cli_protocol::ThreadArchivedNotification;
@@ -317,7 +315,6 @@ use codex_core::exec_env::create_env;
 use codex_core::path_utils;
 #[cfg(test)]
 use codex_core::read_head_for_summary;
-use codex_core::sandboxing::SandboxPermissions;
 use codex_core::truncate_rollout_after_turn_id;
 use codex_core::truncate_rollout_before_turn_id;
 use codex_core_plugins::PluginInstallError as CorePluginInstallError;

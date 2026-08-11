@@ -1,7 +1,6 @@
 //! App-server request and notification dispatch for `ChatWidget`.
 //!
-//! This module translates protocol requests into the focused chat-widget flows
-//! that render approvals, permissions, tool input, and guardian reviews.
+//! This module translates protocol requests into focused chat-widget flows.
 
 use super::*;
 
@@ -11,42 +10,14 @@ impl ChatWidget {
         request: ServerRequest,
         replay_kind: Option<ReplayKind>,
     ) {
-        let id = request.id().to_string();
         match request {
-            ServerRequest::CommandExecutionRequestApproval { params, .. } => {
-                let fallback_cwd = self.config.cwd.clone();
-                self.on_exec_approval_request(
-                    id,
-                    exec_approval_request_from_params(params, &fallback_cwd),
-                );
-            }
-            ServerRequest::FileChangeRequestApproval { params, .. } => {
-                self.on_apply_patch_approval_request(
-                    id,
-                    patch_approval_request_from_params(params),
-                );
-            }
-            ServerRequest::PermissionsRequestApproval { params, .. } => {
-                // TODO(anp): Remove this native-path localization error path once core permission
-                // paths remain PathUri after crossing the cli-runtime boundary.
-                match request_permissions_from_params(params) {
-                    Ok(event) => self.on_request_permissions(event),
-                    Err(err) => {
-                        self.add_error_message(format!(
-                            "failed to localize requested filesystem paths: {err}"
-                        ));
-                    }
-                }
-            }
             ServerRequest::ToolRequestUserInput { params, .. } => {
                 self.on_request_user_input(params);
             }
             ServerRequest::DynamicToolCall { .. }
             | ServerRequest::AttestationGenerate { .. }
             | ServerRequest::CurrentTimeRead { .. }
-            | ServerRequest::ChatgptAuthTokensRefresh { .. }
-            | ServerRequest::ApplyPatchApproval { .. }
-            | ServerRequest::ExecCommandApproval { .. } => {
+            | ServerRequest::ChatgptAuthTokensRefresh { .. } => {
                 if replay_kind.is_none() {
                     self.add_error_message(TUI_STUB_MESSAGE.to_string());
                 }
@@ -59,98 +30,6 @@ impl ChatWidget {
     }
 
     pub(super) fn on_patch_apply_output_delta(&mut self, _item_id: String, _delta: String) {}
-
-    pub(super) fn on_guardian_review_notification(
-        &mut self,
-        id: String,
-        turn_id: String,
-        started_at_ms: i64,
-        review: codex_cli_protocol::GuardianApprovalReview,
-        completion: Option<(i64, codex_cli_protocol::AutoReviewDecisionSource)>,
-        action: GuardianApprovalReviewAction,
-    ) {
-        // TODO(anp): Remove this native-path localization error path once core permission paths
-        // remain PathUri after crossing the cli-runtime boundary.
-        let action = match action.try_into() {
-            Ok(action) => action,
-            Err(err) => {
-                self.add_error_message(format!(
-                    "failed to localize guardian filesystem paths: {err}"
-                ));
-                return;
-            }
-        };
-        let (completed_at_ms, decision_source) = match completion {
-            Some((completed_at_ms, decision_source)) => {
-                (Some(completed_at_ms), Some(decision_source))
-            }
-            None => (None, None),
-        };
-
-        self.on_guardian_assessment(GuardianAssessmentEvent {
-            id,
-            target_item_id: None,
-            plugin_id: None,
-            script_path: None,
-            turn_id,
-            started_at_ms,
-            completed_at_ms,
-            status: match review.status {
-                codex_cli_protocol::GuardianApprovalReviewStatus::InProgress => {
-                    GuardianAssessmentStatus::InProgress
-                }
-                codex_cli_protocol::GuardianApprovalReviewStatus::Approved => {
-                    GuardianAssessmentStatus::Approved
-                }
-                codex_cli_protocol::GuardianApprovalReviewStatus::Denied => {
-                    GuardianAssessmentStatus::Denied
-                }
-                codex_cli_protocol::GuardianApprovalReviewStatus::TimedOut => {
-                    GuardianAssessmentStatus::TimedOut
-                }
-                codex_cli_protocol::GuardianApprovalReviewStatus::Aborted => {
-                    GuardianAssessmentStatus::Aborted
-                }
-            },
-            risk_level: review.risk_level.map(|risk_level| match risk_level {
-                codex_cli_protocol::GuardianRiskLevel::Low => {
-                    codex_protocol::approvals::GuardianRiskLevel::Low
-                }
-                codex_cli_protocol::GuardianRiskLevel::Medium => {
-                    codex_protocol::approvals::GuardianRiskLevel::Medium
-                }
-                codex_cli_protocol::GuardianRiskLevel::High => {
-                    codex_protocol::approvals::GuardianRiskLevel::High
-                }
-                codex_cli_protocol::GuardianRiskLevel::Critical => {
-                    codex_protocol::approvals::GuardianRiskLevel::Critical
-                }
-            }),
-            user_authorization: review.user_authorization.map(|user_authorization| {
-                match user_authorization {
-                    codex_cli_protocol::GuardianUserAuthorization::Unknown => {
-                        codex_protocol::approvals::GuardianUserAuthorization::Unknown
-                    }
-                    codex_cli_protocol::GuardianUserAuthorization::Low => {
-                        codex_protocol::approvals::GuardianUserAuthorization::Low
-                    }
-                    codex_cli_protocol::GuardianUserAuthorization::Medium => {
-                        codex_protocol::approvals::GuardianUserAuthorization::Medium
-                    }
-                    codex_cli_protocol::GuardianUserAuthorization::High => {
-                        codex_protocol::approvals::GuardianUserAuthorization::High
-                    }
-                }
-            }),
-            rationale: review.rationale,
-            decision_source: decision_source.map(|source| match source {
-                codex_cli_protocol::AutoReviewDecisionSource::Agent => {
-                    GuardianAssessmentDecisionSource::Agent
-                }
-            }),
-            action,
-        });
-    }
 
     pub(super) fn on_shutdown_complete(&mut self) {
         self.request_immediate_exit();

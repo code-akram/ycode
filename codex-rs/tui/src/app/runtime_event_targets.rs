@@ -6,16 +6,7 @@ use codex_protocol::ThreadId;
 
 pub(super) fn server_request_thread_id(request: &ServerRequest) -> Option<ThreadId> {
     match request {
-        ServerRequest::CommandExecutionRequestApproval { params, .. } => {
-            ThreadId::from_string(&params.thread_id).ok()
-        }
-        ServerRequest::FileChangeRequestApproval { params, .. } => {
-            ThreadId::from_string(&params.thread_id).ok()
-        }
         ServerRequest::ToolRequestUserInput { params, .. } => {
-            ThreadId::from_string(&params.thread_id).ok()
-        }
-        ServerRequest::PermissionsRequestApproval { params, .. } => {
             ThreadId::from_string(&params.thread_id).ok()
         }
         ServerRequest::DynamicToolCall { params, .. } => {
@@ -25,9 +16,7 @@ pub(super) fn server_request_thread_id(request: &ServerRequest) -> Option<Thread
             ThreadId::from_string(&params.thread_id).ok()
         }
         ServerRequest::ChatgptAuthTokensRefresh { .. }
-        | ServerRequest::AttestationGenerate { .. }
-        | ServerRequest::ApplyPatchApproval { .. }
-        | ServerRequest::ExecCommandApproval { .. } => None,
+        | ServerRequest::AttestationGenerate { .. } => None,
     }
 }
 
@@ -73,12 +62,6 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::TurnDiffUpdated(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::TurnPlanUpdated(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::ItemStarted(notification) => Some(notification.thread_id.as_str()),
-        ServerNotification::ItemGuardianApprovalReviewStarted(notification) => {
-            Some(notification.thread_id.as_str())
-        }
-        ServerNotification::ItemGuardianApprovalReviewCompleted(notification) => {
-            Some(notification.thread_id.as_str())
-        }
         ServerNotification::ItemCompleted(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::RawResponseItemCompleted(notification) => {
             Some(notification.thread_id.as_str())
@@ -150,7 +133,6 @@ pub(super) fn server_notification_thread_target(
             Some(notification.thread_id.as_str())
         }
         ServerNotification::Warning(notification) => notification.thread_id.as_deref(),
-        ServerNotification::GuardianWarning(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::SkillsChanged(_)
         | ServerNotification::AccountUpdated(_)
         | ServerNotification::AccountRateLimitsUpdated(_)

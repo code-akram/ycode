@@ -17,14 +17,9 @@ impl ChatWidget {
             history_metadata.entry_count,
         );
         self.set_skills(/*skills*/ None);
-        self.session_network_proxy = session.network_proxy.clone();
-        let previous_thread_id = self.thread_id;
         self.thread_id = Some(session.thread_id);
         self.bottom_pane
             .set_queue_submissions(/*queue_submissions*/ false);
-        if previous_thread_id != self.thread_id {
-            self.review.recent_auto_review_denials = RecentAutoReviewDenials::default();
-        }
         self.refresh_plan_mode_nudge();
         self.turn_lifecycle.reset_thread();
         self.clear_safety_buffering();
@@ -42,38 +37,6 @@ impl ChatWidget {
             .permissions
             .set_workspace_roots(runtime_workspace_roots);
         self.effective_service_tier = session.service_tier.clone();
-        if let Err(err) = self
-            .config
-            .permissions
-            .approval_policy
-            .set(session.approval_policy.to_core())
-        {
-            tracing::warn!(%err, "failed to sync approval_policy from SessionConfigured");
-            self.config.permissions.approval_policy =
-                Constrained::allow_only(session.approval_policy.to_core());
-        }
-        let permission_snapshot = PermissionProfileSnapshot::from_session_snapshot(
-            session.permission_profile.clone(),
-            session.active_permission_profile.clone(),
-        );
-        let permission_sync = self
-            .config
-            .permissions
-            .set_permission_profile_from_session_snapshot(permission_snapshot.clone());
-        if let Err(err) = permission_sync {
-            tracing::warn!(%err, "failed to sync permissions from SessionConfigured");
-            if let Err(replace_err) = self
-                .config
-                .permissions
-                .replace_permission_profile_from_session_snapshot(permission_snapshot)
-            {
-                tracing::error!(
-                    %replace_err,
-                    "failed to replace permissions from SessionConfigured after constraint fallback"
-                );
-            }
-        }
-        self.config.approvals_reviewer = session.approvals_reviewer;
         self.config.personality = session.personality;
         self.status_line_project_root_name_cache = None;
         let forked_from_id = session.forked_from_id;

@@ -3,17 +3,14 @@ use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::shell_snapshot::ShellSnapshotFile;
 use codex_core_plugins::PluginCommandAttribution;
 use codex_core_plugins::TrustedPluginRoots;
-use codex_file_system::FileSystemSandboxContext;
 use codex_model_provider::SharedModelProvider;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
-use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::TurnEnvironmentSelection;
-use codex_sandboxing::policy_transforms::effective_permission_profile;
 use codex_skills_extension::HostSkillsSnapshot;
 use codex_utils_path_uri::PathUri;
 use futures::FutureExt;
@@ -154,7 +151,6 @@ pub struct TurnContext {
     pub(crate) collaboration_mode_developer_instructions: Option<String>,
     pub(crate) multi_agent_version: MultiAgentVersion,
     pub(crate) personality: Option<Personality>,
-    pub(crate) network: Option<NetworkProxy>,
     pub(crate) windows_sandbox_level: WindowsSandboxLevel,
     pub(crate) available_models: Vec<ModelPreset>,
     pub(crate) unified_exec_shell_mode: UnifiedExecShellMode,
@@ -316,7 +312,6 @@ impl TurnContext {
                 .clone(),
             multi_agent_version: self.multi_agent_version,
             personality: self.personality,
-            network: self.network.clone(),
             windows_sandbox_level: self.windows_sandbox_level,
             available_models,
             unified_exec_shell_mode: self.unified_exec_shell_mode.clone(),
@@ -332,28 +327,6 @@ impl TurnContext {
             model_verification_emitted: AtomicBool::new(
                 self.model_verification_emitted.load(Ordering::Relaxed),
             ),
-        }
-    }
-
-    pub(crate) fn file_system_sandbox_context(
-        &self,
-        additional_permissions: Option<AdditionalPermissionProfile>,
-        environment: &TurnEnvironment,
-    ) -> FileSystemSandboxContext {
-        let permissions = effective_permission_profile(
-            environment.permission_profile(),
-            additional_permissions.as_ref(),
-        );
-        FileSystemSandboxContext {
-            permissions: permissions.into(),
-            cwd: Some(environment.cwd().clone()),
-            workspace_roots: environment.workspace_roots().to_vec(),
-            windows_sandbox_level: self.windows_sandbox_level,
-            windows_sandbox_private_desktop: self
-                .config
-                .permissions
-                .windows_sandbox_private_desktop,
-            windows_sandbox_proxy_settings_mode: None,
         }
     }
 
@@ -503,7 +476,6 @@ impl Session {
         per_turn_config: Config,
         model_info: ModelInfo,
         models_manager: &SharedModelsManager,
-        network: Option<NetworkProxy>,
         environments: TurnEnvironmentSnapshot,
         cwd: AbsolutePathBuf,
         sub_id: String,
@@ -535,7 +507,6 @@ impl Session {
             per_turn_config.features.enabled(Feature::FastMode),
             &model_info,
         );
-        let permission_profile = per_turn_config.permissions.effective_permission_profile();
         let per_turn_config = Arc::new(per_turn_config);
         let turn_metadata_state = Arc::new(TurnMetadataState::new(
             session_id.to_string(),
@@ -546,9 +517,6 @@ impl Session {
             session_configuration.thread_source.clone(),
             sub_id.clone(),
             cwd.clone(),
-            &permission_profile,
-            session_configuration.windows_sandbox_level,
-            network.is_some(),
         ));
         let (current_date, timezone) = local_time_context();
         let extension_data = Arc::new(codex_extension_api::ExtensionData::new(sub_id.clone()));
@@ -583,7 +551,6 @@ impl Session {
                 .clone(),
             multi_agent_version,
             personality: session_configuration.personality,
-            network,
             windows_sandbox_level: session_configuration.windows_sandbox_level,
             available_models,
             unified_exec_shell_mode,
@@ -659,10 +626,6 @@ impl Session {
             };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
 
-        if permission_profile_changed {
-            self.refresh_managed_network_proxy_for_current_permission_profile()
-                .await;
-        }
         Ok(self
             .new_turn_from_configuration(
                 sub_id,
@@ -780,16 +743,6 @@ impl Session {
             per_turn_config,
             model_info,
             &self.services.models_manager,
-            self.services
-                .network_proxy
-                .load_full()
-                .as_ref()
-                .and_then(|started_proxy| {
-                    Self::managed_network_proxy_active_for_permission_profile(
-                        &session_configuration.permission_profile(),
-                    )
-                    .then(|| started_proxy.proxy())
-                }),
             turn_environments,
             cwd,
             sub_id,

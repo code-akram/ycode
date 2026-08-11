@@ -69,7 +69,6 @@ pub(crate) struct RuntimeKeymap {
     pub(crate) vim_text_object: VimTextObjectKeymap,
     pub(crate) pager: PagerKeymap,
     pub(crate) list: ListKeymap,
-    pub(crate) approval: ApprovalKeymap,
 }
 
 #[derive(Clone, Debug)]
@@ -352,54 +351,6 @@ impl ListKeymap {
     }
 }
 
-/// Approval modal keybindings.
-///
-/// This covers both selection actions and the "open details fullscreen" escape
-/// hatch for large approval payloads.
-#[derive(Clone, Debug)]
-pub(crate) struct ApprovalKeymap {
-    pub(crate) open_fullscreen: Vec<KeyBinding>,
-    pub(crate) open_thread: Vec<KeyBinding>,
-    pub(crate) approve: Vec<KeyBinding>,
-    pub(crate) approve_for_session: Vec<KeyBinding>,
-    pub(crate) approve_for_prefix: Vec<KeyBinding>,
-    pub(crate) deny: Vec<KeyBinding>,
-    pub(crate) decline: Vec<KeyBinding>,
-    pub(crate) cancel: Vec<KeyBinding>,
-    chord_hints: Arc<RuntimeChordKeymap>,
-}
-
-impl ApprovalKeymap {
-    pub(crate) fn primary_hint(
-        &self,
-        action: &'static str,
-        bindings: &[KeyBinding],
-    ) -> Option<ShortcutHint> {
-        let action = keymap_action_id(KeymapContext::Approval.config_name(), action)?;
-        self.chord_hints.primary_hint(action, bindings)
-    }
-
-    pub(crate) fn hint_for_bindings(&self, bindings: &[KeyBinding]) -> Option<ShortcutHint> {
-        [
-            ("open_fullscreen", self.open_fullscreen.as_slice()),
-            ("open_thread", self.open_thread.as_slice()),
-            ("approve", self.approve.as_slice()),
-            ("approve_for_session", self.approve_for_session.as_slice()),
-            ("approve_for_prefix", self.approve_for_prefix.as_slice()),
-            ("deny", self.deny.as_slice()),
-            ("decline", self.decline.as_slice()),
-            ("cancel", self.cancel.as_slice()),
-        ]
-        .into_iter()
-        .find_map(|(action, configured)| {
-            (!bindings.is_empty() && bindings.iter().all(|binding| configured.contains(binding)))
-                .then(|| self.primary_hint(action, configured))
-                .flatten()
-        })
-        .or_else(|| primary_binding(bindings).map(ShortcutHint::from))
-    }
-}
-
 /// Returns the first binding, used as the primary UI hint for an action.
 ///
 /// Rendering code should prefer this for concise hints while preserving all
@@ -539,7 +490,6 @@ impl RuntimeKeymap {
             && ["ctrl-/", "ctrl-7"].into_iter().any(|alias| {
                 configured_main_surface_alias_is_used(keymap, alias)
                     || configured_context_alias_is_used(&keymap.list, alias)
-                    || configured_context_alias_is_used(&keymap.approval, alias)
             });
 
         let app = AppKeymap {
@@ -934,18 +884,6 @@ impl RuntimeKeymap {
             chord_hints: Arc::clone(&chords),
         };
 
-        let approval = ApprovalKeymap {
-            open_fullscreen: resolve_local!(keymap, defaults, approval, open_fullscreen),
-            open_thread: resolve_local!(keymap, defaults, approval, open_thread),
-            approve: resolve_local!(keymap, defaults, approval, approve),
-            approve_for_session: resolve_local!(keymap, defaults, approval, approve_for_session),
-            approve_for_prefix: resolve_local!(keymap, defaults, approval, approve_for_prefix),
-            deny: resolve_local!(keymap, defaults, approval, deny),
-            decline: resolve_local!(keymap, defaults, approval, decline),
-            cancel: resolve_local!(keymap, defaults, approval, cancel),
-            chord_hints: Arc::clone(&chords),
-        };
-
         let list_move_up = resolve_local!(keymap, defaults, list, move_up);
         let list_move_down = resolve_local!(keymap, defaults, list, move_down);
         let list_accept = resolve_local!(keymap, defaults, list, accept);
@@ -984,32 +922,6 @@ impl RuntimeKeymap {
             (keymap.list.move_down.as_ref(), list_move_down.as_slice()),
             (keymap.list.accept.as_ref(), list_accept.as_slice()),
             (keymap.list.cancel.as_ref(), list_cancel.as_slice()),
-            (
-                keymap.approval.open_fullscreen.as_ref(),
-                approval.open_fullscreen.as_slice(),
-            ),
-            (
-                keymap.approval.open_thread.as_ref(),
-                approval.open_thread.as_slice(),
-            ),
-            (
-                keymap.approval.approve.as_ref(),
-                approval.approve.as_slice(),
-            ),
-            (
-                keymap.approval.approve_for_session.as_ref(),
-                approval.approve_for_session.as_slice(),
-            ),
-            (
-                keymap.approval.approve_for_prefix.as_ref(),
-                approval.approve_for_prefix.as_slice(),
-            ),
-            (keymap.approval.deny.as_ref(), approval.deny.as_slice()),
-            (
-                keymap.approval.decline.as_ref(),
-                approval.decline.as_slice(),
-            ),
-            (keymap.approval.cancel.as_ref(), approval.cancel.as_slice()),
         ]);
 
         let list = ListKeymap {
@@ -1067,7 +979,6 @@ impl RuntimeKeymap {
             vim_text_object,
             pager,
             list,
-            approval,
         };
 
         resolved.validate_conflicts()?;
@@ -1323,23 +1234,6 @@ impl RuntimeKeymap {
                 cancel: default_bindings![plain(KeyCode::Esc)],
                 chord_hints: Arc::default(),
             },
-            approval: ApprovalKeymap {
-                open_fullscreen: default_bindings![
-                    ctrl(KeyCode::Char('a')),
-                    raw(KeyBinding::new(
-                        KeyCode::Char('a'),
-                        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-                    ))
-                ],
-                open_thread: default_bindings![plain(KeyCode::Char('o'))],
-                approve: default_bindings![plain(KeyCode::Char('y'))],
-                approve_for_session: default_bindings![plain(KeyCode::Char('a'))],
-                approve_for_prefix: default_bindings![plain(KeyCode::Char('p'))],
-                deny: default_bindings![plain(KeyCode::Char('d'))],
-                decline: default_bindings![plain(KeyCode::Esc), plain(KeyCode::Char('n'))],
-                cancel: default_bindings![plain(KeyCode::Char('c'))],
-                chord_hints: Arc::default(),
-            },
         }
     }
 
@@ -1482,23 +1376,6 @@ impl RuntimeKeymap {
                 ("list.jump_bottom", self.list.jump_bottom.as_slice()),
                 ("list.accept", self.list.accept.as_slice()),
                 ("list.cancel", self.list.cancel.as_slice()),
-                (
-                    "approval.open_fullscreen",
-                    self.approval.open_fullscreen.as_slice(),
-                ),
-                ("approval.open_thread", self.approval.open_thread.as_slice()),
-                ("approval.approve", self.approval.approve.as_slice()),
-                (
-                    "approval.approve_for_session",
-                    self.approval.approve_for_session.as_slice(),
-                ),
-                (
-                    "approval.approve_for_prefix",
-                    self.approval.approve_for_prefix.as_slice(),
-                ),
-                ("approval.deny", self.approval.deny.as_slice()),
-                ("approval.decline", self.approval.decline.as_slice()),
-                ("approval.cancel", self.approval.cancel.as_slice()),
             ],
             [(
                 "clear_terminal",
@@ -1817,26 +1694,6 @@ impl RuntimeKeymap {
             ],
         )?;
 
-        validate_unique(
-            "approval",
-            [
-                ("open_fullscreen", self.approval.open_fullscreen.as_slice()),
-                ("open_thread", self.approval.open_thread.as_slice()),
-                ("approve", self.approval.approve.as_slice()),
-                (
-                    "approve_for_session",
-                    self.approval.approve_for_session.as_slice(),
-                ),
-                (
-                    "approve_for_prefix",
-                    self.approval.approve_for_prefix.as_slice(),
-                ),
-                ("deny", self.approval.deny.as_slice()),
-                ("decline", self.approval.decline.as_slice()),
-                ("cancel", self.approval.cancel.as_slice()),
-            ],
-        )?;
-
         let mut seen: HashMap<(KeyCode, KeyModifiers), &'static str> = HashMap::new();
         for (action, bindings) in [
             ("list.move_up", self.list.move_up.as_slice()),
@@ -1849,23 +1706,6 @@ impl RuntimeKeymap {
             ("list.jump_bottom", self.list.jump_bottom.as_slice()),
             ("list.accept", self.list.accept.as_slice()),
             ("list.cancel", self.list.cancel.as_slice()),
-            (
-                "approval.open_fullscreen",
-                self.approval.open_fullscreen.as_slice(),
-            ),
-            ("approval.open_thread", self.approval.open_thread.as_slice()),
-            ("approval.approve", self.approval.approve.as_slice()),
-            (
-                "approval.approve_for_session",
-                self.approval.approve_for_session.as_slice(),
-            ),
-            (
-                "approval.approve_for_prefix",
-                self.approval.approve_for_prefix.as_slice(),
-            ),
-            ("approval.deny", self.approval.deny.as_slice()),
-            ("approval.decline", self.approval.decline.as_slice()),
-            ("approval.cancel", self.approval.cancel.as_slice()),
         ] {
             for binding in bindings {
                 let key = binding.parts();

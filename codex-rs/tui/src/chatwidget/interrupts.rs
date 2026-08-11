@@ -3,19 +3,13 @@
 use std::collections::VecDeque;
 
 use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
-use crate::approval_events::ApplyPatchApprovalRequestEvent;
-use crate::approval_events::ExecApprovalRequestEvent;
 use codex_cli_protocol::ThreadItem;
 use codex_cli_protocol::ToolRequestUserInputParams;
-use codex_protocol::request_permissions::RequestPermissionsEvent;
 
 use super::ChatWidget;
 
 #[derive(Debug)]
 pub(crate) enum QueuedInterrupt {
-    ExecApproval(ExecApprovalRequestEvent),
-    ApplyPatchApproval(ApplyPatchApprovalRequestEvent),
-    RequestPermissions(RequestPermissionsEvent),
     RequestUserInput(ToolRequestUserInputParams),
     ItemStarted(ThreadItem),
     ItemCompleted(ThreadItem),
@@ -36,20 +30,6 @@ impl InterruptManager {
     #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.queue.is_empty()
-    }
-
-    pub(crate) fn push_exec_approval(&mut self, ev: ExecApprovalRequestEvent) {
-        self.queue.push_back(QueuedInterrupt::ExecApproval(ev));
-    }
-
-    pub(crate) fn push_apply_patch_approval(&mut self, ev: ApplyPatchApprovalRequestEvent) {
-        self.queue
-            .push_back(QueuedInterrupt::ApplyPatchApproval(ev));
-    }
-
-    pub(crate) fn push_request_permissions(&mut self, ev: RequestPermissionsEvent) {
-        self.queue
-            .push_back(QueuedInterrupt::RequestPermissions(ev));
     }
 
     pub(crate) fn push_user_input(&mut self, ev: ToolRequestUserInputParams) {
@@ -74,9 +54,6 @@ impl InterruptManager {
     pub(crate) fn flush_all(&mut self, chat: &mut ChatWidget) {
         while let Some(q) = self.queue.pop_front() {
             match q {
-                QueuedInterrupt::ExecApproval(ev) => chat.handle_exec_approval_now(ev),
-                QueuedInterrupt::ApplyPatchApproval(ev) => chat.handle_apply_patch_approval_now(ev),
-                QueuedInterrupt::RequestPermissions(ev) => chat.handle_request_permissions_now(ev),
                 QueuedInterrupt::RequestUserInput(ev) => chat.handle_request_user_input_now(ev),
                 QueuedInterrupt::ItemStarted(item) => chat.handle_queued_item_started_now(item),
                 QueuedInterrupt::ItemCompleted(item) => {
@@ -90,18 +67,6 @@ impl InterruptManager {
 impl QueuedInterrupt {
     fn matches_resolved_prompt(&self, request: &ResolvedCliRuntimeRequest) -> bool {
         match self {
-            QueuedInterrupt::ExecApproval(ev) => {
-                matches!(request, ResolvedCliRuntimeRequest::ExecApproval { id }
-                    if ev.effective_approval_id() == id.as_str())
-            }
-            QueuedInterrupt::ApplyPatchApproval(ev) => {
-                matches!(request, ResolvedCliRuntimeRequest::FileChangeApproval { id }
-                    if ev.call_id == id.as_str())
-            }
-            QueuedInterrupt::RequestPermissions(ev) => {
-                matches!(request, ResolvedCliRuntimeRequest::PermissionsApproval { id }
-                    if ev.call_id == id.as_str())
-            }
             QueuedInterrupt::RequestUserInput(ev) => {
                 matches!(request, ResolvedCliRuntimeRequest::UserInput { call_id }
                     if ev.item_id == call_id.as_str())

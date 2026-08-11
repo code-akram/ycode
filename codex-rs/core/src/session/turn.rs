@@ -574,10 +574,6 @@ async fn build_skill_injections_for_turn(
     cancellation_token: &CancellationToken,
 ) -> Option<Vec<ResponseItem>> {
     let turn_context = step_context.turn.as_ref();
-    if crate::guardian::is_guardian_reviewer_source(&turn_context.session_source) {
-        return Some(Vec::new());
-    }
-
     let extension_injection_items =
         build_extension_turn_input_items(sess, step_context, user_input, cancellation_token)
             .await?;
@@ -1010,9 +1006,7 @@ pub(crate) fn build_prompt(
         parallel_tool_calls: turn_context.model_info.supports_parallel_tool_calls,
         base_instructions,
         output_schema: turn_context.final_output_json_schema.clone(),
-        output_schema_strict: !crate::guardian::is_guardian_reviewer_source(
-            &turn_context.session_source,
-        ),
+        output_schema_strict: true,
     }
 }
 

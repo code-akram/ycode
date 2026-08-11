@@ -13,7 +13,6 @@
 //!
 //! Some UI is time-based rather than input-based, such as the transient "press again to quit"
 //! hint. The pane schedules redraws so those hints can expire even when the UI is otherwise idle.
-use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
@@ -21,7 +20,6 @@ use crate::app_event::AppEvent;
 use crate::app_event::HistoryLookupResponse;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
-use crate::bottom_pane::pending_thread_approvals::PendingThreadApprovals;
 use crate::bottom_pane::unified_exec_footer::UnifiedExecFooter;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
@@ -54,7 +52,6 @@ use std::time::Duration;
 use std::time::Instant;
 
 mod action_required_title;
-mod approval_overlay;
 mod multi_select_picker;
 mod request_user_input;
 mod status_line_setup;
@@ -63,12 +60,6 @@ mod status_surface_preview;
 mod title_setup;
 pub(crate) use action_required_title::ACTION_REQUIRED_PREVIEW_PREFIX;
 pub(crate) use action_required_title::build_action_required_title_text;
-pub(crate) use approval_overlay::ApplyPatchApprovalRequest;
-pub(crate) use approval_overlay::ApprovalOverlay;
-pub(crate) use approval_overlay::ApprovalRequest;
-pub(crate) use approval_overlay::ExecApprovalRequest;
-pub(crate) use approval_overlay::PermissionsApprovalRequest;
-pub(crate) use approval_overlay::format_requested_permissions_rule;
 pub(crate) use request_user_input::RequestUserInputOverlay;
 pub(crate) use status_line_style::status_line_from_segments;
 mod bottom_pane_view;
@@ -140,7 +131,6 @@ pub(crate) use title_setup::TerminalTitleSetupView;
 pub(crate) use title_setup::preview_line_for_title_items;
 mod paste_burst;
 mod pending_input_preview;
-mod pending_thread_approvals;
 pub(crate) mod popup_consts;
 mod scroll_state;
 mod selection_popup_common;
@@ -160,8 +150,6 @@ pub(crate) use selection_tabs::SelectionTab;
 ///
 /// Keeping a single value ensures Ctrl+C and Ctrl+D behave identically.
 pub(crate) const QUIT_SHORTCUT_TIMEOUT: Duration = Duration::from_secs(1);
-
-const APPROVAL_PROMPT_TYPING_IDLE_DELAY: Duration = Duration::from_secs(1);
 
 /// Whether Ctrl+C/Ctrl+D require a second press to quit.
 ///
@@ -197,11 +185,6 @@ pub(crate) use list_selection_view::SELECTION_TOGGLE_UNAVAILABLE_PREFIX;
 pub(crate) use list_selection_view::SelectionAction;
 pub(crate) use list_selection_view::SelectionItem;
 
-struct DelayedApprovalRequest {
-    request: ApprovalRequest,
-    features: Features,
-}
-
 /// Pane displayed in the lower half of the chat UI.
 ///
 /// This is the owning container for the prompt input (`ChatComposer`) and the view stack
@@ -214,8 +197,6 @@ pub(crate) struct BottomPane {
 
     /// Stack of views displayed instead of the composer (e.g. popups/modals).
     view_stack: Vec<Box<dyn BottomPaneView>>,
-    delayed_approval_requests: VecDeque<DelayedApprovalRequest>,
-    last_composer_activity_at: Option<Instant>,
 
     app_event_tx: AppEventSender,
     frame_requester: FrameRequester,
@@ -237,8 +218,6 @@ pub(crate) struct BottomPane {
     unified_exec_footer: UnifiedExecFooter,
     /// Preview of pending steers and queued drafts shown above the composer.
     pending_input_preview: PendingInputPreview,
-    /// Inactive threads with pending approval requests.
-    pending_thread_approvals: PendingThreadApprovals,
     context_window_percent: Option<i64>,
     context_window_used_tokens: Option<i64>,
     keymap: RuntimeKeymap,
@@ -281,8 +260,6 @@ impl BottomPane {
         Self {
             composer,
             view_stack: Vec::new(),
-            delayed_approval_requests: VecDeque::new(),
-            last_composer_activity_at: None,
             app_event_tx,
             frame_requester,
             thread_id: None,
@@ -293,7 +270,6 @@ impl BottomPane {
             status: None,
             unified_exec_footer: UnifiedExecFooter::new(),
             pending_input_preview: PendingInputPreview::new(),
-            pending_thread_approvals: PendingThreadApprovals::new(),
             esc_backtrack_hint: false,
             animations_enabled,
             context_window_percent: None,
@@ -541,53 +517,6 @@ impl BottomPane {
         }
     }
 
-    fn approval_prompt_delay_remaining(&self, now: Instant) -> Option<Duration> {
-        self.last_composer_activity_at.and_then(|last_activity_at| {
-            last_activity_at
-                .checked_add(APPROVAL_PROMPT_TYPING_IDLE_DELAY)
-                .and_then(|show_at| show_at.checked_duration_since(now))
-                .filter(|delay| !delay.is_zero())
-        })
-    }
-
-    fn record_composer_activity_at(&mut self, now: Instant) {
-        self.last_composer_activity_at = Some(now);
-        if !self.delayed_approval_requests.is_empty()
-            && let Some(delay) = self.approval_prompt_delay_remaining(now)
-        {
-            self.request_redraw_in(delay);
-        }
-    }
-
-    fn maybe_show_delayed_approval_requests_at(&mut self, now: Instant) {
-        if self.delayed_approval_requests.is_empty() || !self.view_stack.is_empty() {
-            return;
-        }
-        if let Some(delay) = self.approval_prompt_delay_remaining(now) {
-            self.request_redraw_in(delay);
-            return;
-        }
-
-        // Promote the oldest delayed approval once typing has been idle long enough.
-        // `ApprovalOverlay` advances its internal queue with `pop()`, so drain the
-        // remaining delayed approvals from the back to preserve FIFO display order.
-        let Some(first) = self.delayed_approval_requests.pop_front() else {
-            return;
-        };
-        let mut modal = ApprovalOverlay::new(
-            first.request,
-            self.app_event_tx.clone(),
-            first.features,
-            self.keymap.approval.clone(),
-            self.keymap.list.clone(),
-        );
-        while let Some(delayed) = self.delayed_approval_requests.pop_back() {
-            modal.enqueue_request(delayed.request);
-        }
-        self.pause_status_timer_for_modal();
-        self.push_view(Box::new(modal));
-    }
-
     /// Forward a key event to the active view or the composer.
     pub fn handle_key_event(&mut self, key_event: KeyEvent) -> InputResult {
         // If a modal/view is active, handle it here; otherwise forward to composer.
@@ -647,21 +576,7 @@ impl BottomPane {
                 self.request_redraw();
                 return InputResult::None;
             }
-            let records_composer_activity =
-                matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-                    && !key_hint::has_ctrl_or_alt(key_event.modifiers)
-                    && matches!(
-                        key_event.code,
-                        KeyCode::Char(_)
-                            | KeyCode::Backspace
-                            | KeyCode::Delete
-                            | KeyCode::Enter
-                            | KeyCode::Tab
-                    );
             let (input_result, needs_redraw) = self.composer.handle_key_event(key_event);
-            if records_composer_activity {
-                self.record_composer_activity_at(Instant::now());
-            }
             if needs_redraw {
                 self.request_redraw();
             }
@@ -731,9 +646,6 @@ impl BottomPane {
             }
         } else {
             let needs_redraw = self.composer.handle_paste(pasted);
-            if has_pasted_text {
-                self.record_composer_activity_at(Instant::now());
-            }
             if needs_redraw {
                 self.request_redraw();
             }
@@ -751,7 +663,6 @@ impl BottomPane {
 
     fn pre_draw_tick_at(&mut self, now: Instant) {
         self.composer.sync_popups();
-        self.maybe_show_delayed_approval_requests_at(now);
         self.tick_active_view(now);
         self.schedule_active_view_frame();
     }
@@ -1295,18 +1206,6 @@ impl BottomPane {
         self.request_redraw();
     }
 
-    /// Update the inactive-thread approval list shown above the composer.
-    pub(crate) fn set_pending_thread_approvals(&mut self, threads: Vec<String>) {
-        if self.pending_thread_approvals.set_threads(threads) {
-            self.request_redraw();
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn pending_thread_approvals(&self) -> &[String] {
-        self.pending_thread_approvals.threads()
-    }
-
     /// Update the unified-exec process set and refresh whichever summary surface is active.
     ///
     /// The summary may be displayed inline in the status row or as a dedicated
@@ -1407,44 +1306,6 @@ impl BottomPane {
         self.push_view(view);
     }
 
-    /// Called when the agent requests user approval.
-    pub fn push_approval_request(&mut self, request: ApprovalRequest, features: &Features) {
-        let request = if let Some(view) = self.view_stack.last_mut() {
-            match view.try_consume_approval_request(request) {
-                Some(request) => request,
-                None => {
-                    self.request_redraw();
-                    return;
-                }
-            }
-        } else {
-            request
-        };
-
-        let now = Instant::now();
-        if !self.delayed_approval_requests.is_empty()
-            || self.approval_prompt_delay_remaining(now).is_some()
-        {
-            self.delayed_approval_requests
-                .push_back(DelayedApprovalRequest {
-                    request,
-                    features: features.clone(),
-                });
-            self.maybe_show_delayed_approval_requests_at(now);
-        } else {
-            // No recent composer activity, so show the approval modal immediately.
-            let modal = ApprovalOverlay::new(
-                request,
-                self.app_event_tx.clone(),
-                features.clone(),
-                self.keymap.approval.clone(),
-                self.keymap.list.clone(),
-            );
-            self.pause_status_timer_for_modal();
-            self.push_view(Box::new(modal));
-        }
-    }
-
     /// Called when the agent requests user input.
     pub fn push_user_input_request(&mut self, request: ToolRequestUserInputParams) {
         let request = if let Some(view) = self.view_stack.last_mut() {
@@ -1479,19 +1340,11 @@ impl BottomPane {
         &mut self,
         request: &ResolvedCliRuntimeRequest,
     ) -> bool {
-        let delayed_len = self.delayed_approval_requests.len();
-        self.delayed_approval_requests
-            .retain(|delayed| !delayed.request.matches_resolved_request(request));
-        let delayed_changed = self.delayed_approval_requests.len() != delayed_len;
-
         if self.view_stack.is_empty() {
-            if delayed_changed {
-                self.request_redraw();
-            }
-            return delayed_changed;
+            return false;
         }
 
-        let mut changed = delayed_changed;
+        let mut changed = false;
         let mut completed_indices = Vec::new();
         for index in (0..self.view_stack.len()).rev() {
             let view = &mut self.view_stack[index];
@@ -1659,21 +1512,13 @@ impl BottomPane {
                     RenderableItem::Borrowed(&self.unified_exec_footer),
                 );
             }
-            let has_pending_thread_approvals = !self.pending_thread_approvals.is_empty();
             let has_pending_input = !self.pending_input_preview.queued_messages.is_empty()
                 || !self.pending_input_preview.pending_steers.is_empty()
                 || !self.pending_input_preview.rejected_steers.is_empty();
             let has_status_or_footer =
                 self.status.is_some() || !self.unified_exec_footer.is_empty();
-            let has_inline_previews = has_pending_thread_approvals || has_pending_input;
+            let has_inline_previews = has_pending_input;
             if has_inline_previews && has_status_or_footer {
-                flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
-            }
-            flex.push(
-                /*flex*/ 1,
-                RenderableItem::Borrowed(&self.pending_thread_approvals),
-            );
-            if has_pending_thread_approvals && has_pending_input {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
             }
             flex.push(

@@ -4,8 +4,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
-use codex_network_proxy::NetworkPolicyDecider;
-use codex_sandboxing::SandboxType;
 use tokio::sync::broadcast;
 use tokio::sync::watch;
 
@@ -13,25 +11,12 @@ use crate::ExecServerError;
 use crate::ProcessId;
 use crate::protocol::ExecParams;
 use crate::protocol::ProcessOutputChunk;
-use crate::protocol::ProcessSandboxType;
 use crate::protocol::ProcessSignal;
 use crate::protocol::ReadResponse;
 use crate::protocol::WriteResponse;
 
 pub struct StartedExecProcess {
     pub process: Arc<dyn ExecProcess>,
-    /// `None` means the exec-server peer did not report its sandbox type.
-    pub sandbox_type: Option<SandboxType>,
-}
-
-pub(crate) fn sandbox_type_from_protocol(
-    sandbox_type: Option<ProcessSandboxType>,
-) -> Option<SandboxType> {
-    match sandbox_type {
-        None => None,
-        Some(ProcessSandboxType::None) => Some(SandboxType::None),
-        Some(ProcessSandboxType::MacosSeatbelt) => Some(SandboxType::MacosSeatbelt),
-    }
 }
 
 /// Pushed process events for consumers that want to follow process output as it
@@ -45,14 +30,8 @@ pub(crate) fn sandbox_type_from_protocol(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecProcessEvent {
     Output(ProcessOutputChunk),
-    Exited {
-        seq: u64,
-        exit_code: i32,
-        sandbox_denied: Option<bool>,
-    },
-    Closed {
-        seq: u64,
-    },
+    Exited { seq: u64, exit_code: i32 },
+    Closed { seq: u64 },
     Failed(String),
 }
 
@@ -217,19 +196,6 @@ pub type ExecProcessFuture<'a, T> =
 
 pub trait ExecBackend: Send + Sync {
     fn start(&self, params: ExecParams) -> ExecBackendFuture<'_>;
-
-    /// Starts a process with an authoritative controller-side policy decider.
-    fn start_with_network_policy_decider(
-        &self,
-        _params: ExecParams,
-        _decider: Arc<dyn NetworkPolicyDecider>,
-    ) -> ExecBackendFuture<'_> {
-        Box::pin(async {
-            Err(ExecServerError::Protocol(
-                "exec backend does not support remote network policy decisions".to_string(),
-            ))
-        })
-    }
 }
 
 pub type ExecBackendFuture<'a> =

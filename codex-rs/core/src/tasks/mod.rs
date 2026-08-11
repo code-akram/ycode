@@ -121,6 +121,7 @@ pub(crate) fn interrupted_turn_history_marker(
     }
 }
 
+#[cfg(any())]
 fn emit_turn_network_proxy_metric(
     session_telemetry: &SessionTelemetry,
     network_proxy_active: bool,
@@ -306,12 +307,6 @@ impl Session {
 
         let cancellation_token = CancellationToken::new();
         let done = Arc::new(Notify::new());
-
-        self.services
-            .guardian_rejection_circuit_breaker
-            .lock()
-            .await
-            .clear_turn(&turn_context.sub_id);
 
         let (pending_items, parent_turn_id) =
             self.input_queue.get_pending_input(&self.active_turn).await;
@@ -632,26 +627,6 @@ impl Session {
                     "false"
                 },
             );
-            let network_proxy = self.services.network_proxy.load_full();
-            let network_proxy_active = match network_proxy.as_ref() {
-                Some(started_network_proxy) => {
-                    match started_network_proxy.proxy().current_cfg().await {
-                        Ok(config) => config.enabled,
-                        Err(err) => {
-                            warn!(
-                                "failed to read managed network proxy state for turn metrics: {err:#}"
-                            );
-                            false
-                        }
-                    }
-                }
-                None => false,
-            };
-            emit_turn_network_proxy_metric(
-                &self.services.session_telemetry,
-                network_proxy_active,
-                tmp_mem,
-            );
             self.services.session_telemetry.histogram(
                 TURN_TOOL_CALL_METRIC,
                 i64::try_from(turn_tool_calls).unwrap_or(i64::MAX),
@@ -792,12 +767,6 @@ impl Session {
             })
         };
         self.send_event(turn_context.as_ref(), event).await;
-        self.services
-            .guardian_rejection_circuit_breaker
-            .lock()
-            .await
-            .clear_turn(&turn_context.sub_id);
-
         let cleared_active_turn = {
             let mut active = self.active_turn.lock().await;
             if let Some(active_turn) = active.as_ref()
@@ -917,11 +886,6 @@ impl Session {
             duration_ms,
         });
         self.send_event(task.turn_context.as_ref(), event).await;
-        self.services
-            .guardian_rejection_circuit_breaker
-            .lock()
-            .await
-            .clear_turn(&task.turn_context.sub_id);
         // Regular items were flushed before this terminal event was appended; buffering
         // thread writers may not flush it without another explicit barrier.
         if let Err(err) = self.flush_rollout().await {

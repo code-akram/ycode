@@ -16,7 +16,6 @@ use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::parse_arguments_with_base_path;
-use crate::tools::handlers::resolve_sandbox_permissions;
 use crate::tools::handlers::resolve_workdir_base_path;
 use crate::tools::handlers::rewrite_function_string_argument;
 use crate::tools::handlers::updated_hook_command;
@@ -25,7 +24,6 @@ use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
-use crate::tools::runtimes::shell::ShellRuntimeBackend;
 use codex_tools::ToolSpec;
 
 use super::super::shell_spec::CommandToolOptions;
@@ -35,37 +33,19 @@ use super::run_exec_like;
 use super::shell_command_payload_command;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ShellCommandBackend {
-    Classic,
-    ZshFork,
-}
-
 pub struct ShellCommandHandler {
-    backend: ShellCommandBackend,
     options: ShellCommandHandlerOptions,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ShellCommandHandlerOptions {
     pub(crate) backend_config: ShellCommandBackendConfig,
     pub(crate) allow_login_shell: bool,
-    pub(crate) exec_permission_approvals_enabled: bool,
 }
 
 impl ShellCommandHandler {
     pub(crate) fn new(options: ShellCommandHandlerOptions) -> Self {
-        let backend = match options.backend_config {
-            ShellCommandBackendConfig::Classic => ShellCommandBackend::Classic,
-            ShellCommandBackendConfig::ZshFork => ShellCommandBackend::ZshFork,
-        };
-        Self { backend, options }
-    }
-
-    fn shell_runtime_backend(&self) -> ShellRuntimeBackend {
-        match self.backend {
-            ShellCommandBackend::Classic => ShellRuntimeBackend::ShellCommandClassic,
-            ShellCommandBackend::ZshFork => ShellRuntimeBackend::ShellCommandZshFork,
-        }
+        Self { options }
     }
 
     pub(super) fn resolve_use_login_shell(
@@ -107,26 +87,12 @@ impl ShellCommandHandler {
         );
         let active_permission_profile = turn_environment.active_permission_profile();
         inject_permission_profile_env(&mut env, active_permission_profile.as_ref());
-        let sandbox_permissions = resolve_sandbox_permissions(
-            params.sandbox_permissions,
-            params.justification.as_deref(),
-        )?;
-
         Ok(ExecParams {
             command,
             cwd,
             expiration: params.timeout_ms.into(),
             capture_policy: ExecCapturePolicy::ShellTool,
             env,
-            network: turn_context.network.clone(),
-            network_environment_id: Some(turn_environment.environment_id.clone()),
-            sandbox_permissions,
-            windows_sandbox_level: turn_context.windows_sandbox_level,
-            windows_sandbox_private_desktop: turn_context
-                .config
-                .permissions
-                .windows_sandbox_private_desktop,
-            justification: params.justification.clone(),
             arg0: None,
         })
     }
@@ -137,7 +103,6 @@ impl From<ShellCommandBackendConfig> for ShellCommandHandler {
         Self::new(ShellCommandHandlerOptions {
             backend_config,
             allow_login_shell: false,
-            exec_permission_approvals_enabled: false,
         })
     }
 }
@@ -150,7 +115,6 @@ impl ToolExecutor<ToolInvocation> for ShellCommandHandler {
     fn spec(&self) -> ToolSpec {
         create_shell_command_tool(CommandToolOptions {
             allow_login_shell: self.options.allow_login_shell,
-            exec_permission_approvals_enabled: self.options.exec_permission_approvals_enabled,
         })
     }
 
@@ -207,7 +171,6 @@ impl ShellCommandHandler {
             &cwd,
         )
         .await;
-        let prefix_rule = params.prefix_rule.clone();
         let exec_params = Self::to_exec_params(
             &params,
             session.as_ref(),
@@ -220,14 +183,11 @@ impl ShellCommandHandler {
             exec_params,
             cancellation_token,
             hook_command: params.command,
-            additional_permissions: params.additional_permissions.clone(),
-            prefix_rule,
             session,
             turn,
             turn_environment,
             tracker,
             call_id,
-            shell_runtime_backend: self.shell_runtime_backend(),
         })
         .await
         .map(boxed_tool_output)

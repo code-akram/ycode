@@ -22,13 +22,9 @@ use crate::config::ManagedFeatures;
 use crate::config::resolve_tool_suggest_config_from_layer_stack;
 use crate::context::ContextualUserFragment;
 use crate::context::ModelSwitchInstructions;
-use crate::context::NetworkRuleSaved;
 use crate::context::world_state::WorldState;
 use crate::current_time::TimeProvider;
 use crate::environment_selection::TurnEnvironmentSnapshot;
-use crate::exec_policy::BANNED_PREFIX_SUGGESTIONS;
-use crate::exec_policy::ExecPolicyManager;
-use crate::exec_policy::default_policy_path;
 use crate::image_preparation::ImageResizeNoticeMode;
 use crate::image_preparation::prepare_response_items as prepare_image_response_items;
 use crate::parse_turn_item;
@@ -51,7 +47,6 @@ use codex_analytics::TurnCodexErrorFact;
 use codex_async_utils::OrCancelExt;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
-use codex_execpolicy::prefix_rule_migration;
 use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::LoadedUserInstructions;
 use codex_extension_api::PromptFragment;
@@ -67,9 +62,6 @@ use codex_login::CodexAuth;
 use codex_login::auth_env_telemetry::collect_auth_env_telemetry;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_models_manager::manager::SharedModelsManager;
-use codex_network_proxy::NetworkProxy;
-use codex_network_proxy::NetworkProxyAuditMetadata;
-use codex_network_proxy::normalize_host;
 use codex_otel::current_span_trace_id;
 use codex_otel::current_span_w3c_trace_context;
 use codex_otel::set_parent_from_w3c_trace_context;
@@ -131,7 +123,6 @@ use codex_rollout::state_db;
 use codex_rollout_trace::AgentResultTracePayload;
 use codex_rollout_trace::ThreadStartedTraceMetadata;
 use codex_rollout_trace::ThreadTraceContext;
-use codex_sandboxing::policy_transforms::intersect_permission_profiles;
 use codex_shell_command::parse_command::parse_command;
 use codex_terminal_detection::user_agent;
 use codex_thread_store::CreateThreadParams;
@@ -283,16 +274,11 @@ pub(crate) struct PreviousTurnSettings {
 }
 
 use crate::HostSkillsService;
-use crate::exec_policy::ExecPolicyUpdateError;
-use crate::guardian::GuardianReviewOptions;
-use crate::guardian::GuardianReviewSessionManager;
-use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::rollout::map_session_init_error;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use crate::shell;
 use crate::state::AutoCompactWindowIds;
 use crate::state::AutoCompactWindowSnapshot;
-use crate::state::PendingRequestPermissions;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 #[cfg(test)]
@@ -300,12 +286,8 @@ use crate::stream_events_utils::HandleOutputCtx;
 #[cfg(test)]
 use crate::stream_events_utils::handle_output_item_done;
 use crate::tasks::ReviewTask;
-use crate::tools::network_approval::NetworkApprovalService;
-use crate::tools::network_approval::build_blocked_request_observer;
-use crate::tools::network_approval::build_network_policy_decider;
 #[cfg(test)]
 use crate::tools::parallel::ToolCallRuntime;
-use crate::tools::sandboxing::ApprovalStore;
 use crate::turn_timing::TurnTimingState;
 use crate::turn_timing::record_turn_ttfm_metric;
 use crate::unified_exec::UnifiedExecProcessManager;
@@ -346,7 +328,6 @@ use codex_protocol::protocol::RequestUserInputEvent;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionConfiguredEvent;
-use codex_protocol::protocol::SessionNetworkProxyRuntime;
 use codex_protocol::protocol::StreamErrorEvent;
 use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::ThreadMemoryMode;
@@ -416,7 +397,6 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) agent_control: AgentControl,
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
     pub(crate) metrics_service_name: Option<String>,
-    pub(crate) inherited_exec_policy: Option<Arc<ExecPolicyManager>>,
     pub(crate) inherited_environments: Option<TurnEnvironmentSnapshot>,
     /// Parent rollout trace used only to derive fresh spawned child traces.
     ///
@@ -509,7 +489,6 @@ impl Session {
             dynamic_tools,
             metrics_service_name,
             user_shell_override,
-            inherited_exec_policy,
             inherited_environments,
             parent_rollout_thread_trace,
             parent_trace: _,
@@ -533,37 +512,6 @@ impl Session {
         config
             .startup_warnings
             .extend(user_instruction_provider_warnings);
-        let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
-            // Guardian review should rely on the built-in shell safety checks,
-            // not on caller-provided exec-policy rules that could shape the
-            // reviewer or silently auto-approve commands.
-            Arc::new(ExecPolicyManager::default())
-        } else if let Some(exec_policy) = &inherited_exec_policy {
-            Arc::clone(exec_policy)
-        } else {
-            if !config
-                .config_layer_stack
-                .ignore_user_and_project_exec_policy_rules()
-            {
-                let codex_home = config.codex_home.clone();
-                let policy_path = default_policy_path(codex_home.as_path());
-                if let Err(err) = prefix_rule_migration(
-                    codex_home.as_path(),
-                    policy_path.as_path(),
-                    BANNED_PREFIX_SUGGESTIONS,
-                )
-                .await
-                {
-                    tracing::warn!(error = %err, "failed to run prefix rule migration");
-                }
-            }
-            Arc::new(
-                ExecPolicyManager::load(&config.config_layer_stack)
-                    .await
-                    .map_err(|err| CodexErr::Fatal(format!("failed to load rules: {err}")))?,
-            )
-        };
-
         let mut config = Arc::new(config);
         let refresh_strategy = if session_source.is_non_root_agent() {
             codex_models_manager::manager::RefreshStrategy::Offline
@@ -696,7 +644,6 @@ impl Session {
             installation_id,
             auth_manager.clone(),
             models_manager.clone(),
-            exec_policy,
             tx_event.clone(),
             agent_status_tx.clone(),
             conversation_history,
@@ -952,12 +899,6 @@ impl Session {
         }
     }
 
-    fn managed_network_proxy_active_for_permission_profile(
-        permission_profile: &PermissionProfile,
-    ) -> bool {
-        !matches!(permission_profile, PermissionProfile::Disabled)
-    }
-
     /// Builds the `x-codex-beta-features` header value for this session.
     ///
     /// `ModelClient` is session-scoped and intentionally does not depend on the full `Config`, so
@@ -983,114 +924,6 @@ impl Session {
             None
         } else {
             Some(beta_features_header)
-        }
-    }
-
-    async fn start_managed_network_proxy(
-        spec: &crate::config::NetworkProxySpec,
-        exec_policy: &codex_execpolicy::Policy,
-        permission_profile: &PermissionProfile,
-        network_policy_decider: Option<Arc<dyn codex_network_proxy::NetworkPolicyDecider>>,
-        blocked_request_observer: Option<Arc<dyn codex_network_proxy::BlockedRequestObserver>>,
-        managed_network_requirements_enabled: bool,
-        audit_metadata: NetworkProxyAuditMetadata,
-    ) -> anyhow::Result<(StartedNetworkProxy, SessionNetworkProxyRuntime)> {
-        let spec = spec
-            .with_exec_policy_network_rules(exec_policy)
-            .map_err(|err| {
-                tracing::warn!(
-                    "failed to apply execpolicy network rules to managed proxy; continuing with configured network policy: {err}"
-                );
-                err
-            })
-            .unwrap_or_else(|_| spec.clone());
-        let network_proxy = spec
-            .start_proxy(
-                permission_profile,
-                network_policy_decider,
-                blocked_request_observer,
-                managed_network_requirements_enabled,
-                audit_metadata,
-            )
-            .await
-            .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?;
-        let session_network_proxy = {
-            let proxy = network_proxy.proxy();
-            SessionNetworkProxyRuntime {
-                http_addr: proxy.http_addr().to_string(),
-                socks_addr: proxy.socks_addr().to_string(),
-            }
-        };
-        Ok((network_proxy, session_network_proxy))
-    }
-
-    async fn refresh_managed_network_proxy_for_current_permission_profile(&self) {
-        let Ok(_refresh_guard) = self.managed_network_proxy_refresh_lock.acquire().await else {
-            error!("managed network proxy refresh semaphore closed");
-            return;
-        };
-        let session_configuration = {
-            let state = self.state.lock().await;
-            state.session_configuration.clone()
-        };
-        let Some(spec) = session_configuration
-            .original_config_do_not_use
-            .permissions
-            .network
-            .as_ref()
-            .cloned()
-        else {
-            self.services.network_proxy.store(None);
-            return;
-        };
-
-        let spec = match spec
-            .recompute_for_permission_profile(&session_configuration.permission_profile())
-        {
-            Ok(spec) => spec,
-            Err(err) => {
-                warn!("failed to rebuild managed network proxy policy for sandbox change: {err}");
-                return;
-            }
-        };
-        let current_exec_policy = self.services.exec_policy.current();
-        let spec = match spec.with_exec_policy_network_rules(current_exec_policy.as_ref()) {
-            Ok(spec) => spec,
-            Err(err) => {
-                warn!(
-                    "failed to apply execpolicy network rules while refreshing managed network proxy: {err}"
-                );
-                spec
-            }
-        };
-        if let Some(started_proxy) = self.services.network_proxy.load_full() {
-            if let Err(err) = spec.apply_to_started_proxy(started_proxy.as_ref()).await {
-                warn!("failed to refresh managed network proxy for sandbox change: {err}");
-            }
-            return;
-        }
-
-        match Self::start_managed_network_proxy(
-            &spec,
-            current_exec_policy.as_ref(),
-            &session_configuration.permission_profile(),
-            /*network_policy_decider*/ None,
-            Some(build_blocked_request_observer(Arc::clone(
-                &self.services.network_approval,
-            ))),
-            self.services.managed_network_requirements_configured,
-            self.services.network_proxy_audit_metadata.clone(),
-        )
-        .await
-        {
-            Ok((started_proxy, _session_network_proxy)) => {
-                self.services
-                    .network_proxy
-                    .store(Some(Arc::new(started_proxy)));
-            }
-            Err(err) => {
-                warn!("failed to start managed network proxy for sandbox change: {err}");
-            }
         }
     }
 
@@ -1487,10 +1320,6 @@ impl Session {
             (previous_config, new_config, permission_profile_changed)
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
-        if permission_profile_changed {
-            self.refresh_managed_network_proxy_for_current_permission_profile()
-                .await;
-        }
         Ok(())
     }
 
@@ -2030,6 +1859,7 @@ impl Session {
 
     /// Adds an execpolicy amendment to both the in-memory and on-disk policies so future
     /// commands can use the newly approved prefix.
+    #[cfg(any())]
     pub(crate) async fn persist_execpolicy_amendment(
         &self,
         amendment: &ExecPolicyAmendment,
@@ -2070,6 +1900,7 @@ impl Session {
         ))
     }
 
+    #[cfg(any())]
     pub(crate) async fn persist_network_policy_amendment(
         &self,
         amendment: &NetworkPolicyAmendment,
@@ -2135,6 +1966,7 @@ impl Session {
         Ok(())
     }
 
+    #[cfg(any())]
     fn validated_network_policy_amendment_host(
         amendment: &NetworkPolicyAmendment,
         network_approval_context: &NetworkApprovalContext,
@@ -2151,6 +1983,7 @@ impl Session {
         Ok(approved_host)
     }
 
+    #[cfg(any())]
     pub(crate) async fn record_network_policy_amendment_message(
         &self,
         sub_id: &str,
@@ -2177,6 +2010,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn checks and turn state updates must remain atomic"
     )]
+    #[cfg(any())]
     pub async fn request_command_approval(
         &self,
         turn_context: &TurnContext,
@@ -2265,6 +2099,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn checks and turn state updates must remain atomic"
     )]
+    #[cfg(any())]
     pub async fn request_patch_approval(
         &self,
         turn_context: &TurnContext,
@@ -2307,6 +2142,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn checks and turn state updates must remain atomic"
     )]
+    #[cfg(any())]
     pub(crate) async fn request_permissions_for_environment(
         self: &Arc<Self>,
         turn_context: &Arc<TurnContext>,
@@ -2481,6 +2317,7 @@ impl Session {
         }
     }
 
+    #[cfg(any())]
     pub(crate) async fn request_permissions_for_cwd(
         self: &Arc<Self>,
         turn_context: &Arc<TurnContext>,
@@ -2590,6 +2427,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn checks and turn state updates must remain atomic"
     )]
+    #[cfg(any())]
     pub async fn notify_request_permissions_response(
         &self,
         call_id: &str,
@@ -2643,6 +2481,7 @@ impl Session {
         }
     }
 
+    #[cfg(any())]
     fn normalize_request_permissions_response(
         requested_permissions: RequestPermissionProfile,
         response: RequestPermissionsResponse,
@@ -2672,6 +2511,7 @@ impl Session {
         }
     }
 
+    #[cfg(any())]
     async fn record_granted_request_permissions_for_turn(
         &self,
         response: &RequestPermissionsResponse,
@@ -2707,6 +2547,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn reads must stay consistent with the matching turn state"
     )]
+    #[cfg(any())]
     pub(crate) async fn granted_turn_permissions(
         &self,
         environment_id: &str,
@@ -2721,6 +2562,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn reads must stay consistent with the matching turn state"
     )]
+    #[cfg(any())]
     pub(crate) async fn strict_auto_review_enabled_for_turn(&self) -> bool {
         let active = self.active_turn.lock().await;
         let Some(active) = active.as_ref() else {
@@ -2730,6 +2572,7 @@ impl Session {
         ts.strict_auto_review_enabled()
     }
 
+    #[cfg(any())]
     pub(crate) async fn granted_session_permissions(
         &self,
         environment_id: &str,
@@ -2767,6 +2610,7 @@ impl Session {
         clippy::await_holding_invalid_type,
         reason = "active turn checks and turn state updates must remain atomic"
     )]
+    #[cfg(any())]
     pub async fn notify_approval(&self, approval_id: &str, decision: ReviewDecision) {
         let entry = {
             let mut active = self.active_turn.lock().await;
@@ -2958,28 +2802,6 @@ impl Session {
         extension_data.insert(selected_capability_roots.clone());
         if let Some(discovery) = &executor_capability_discovery {
             extension_data.insert(discovery.as_ref().clone());
-            if !discovery.sandbox_contexts().is_empty() {
-                extension_data.insert(discovery.sandbox_contexts().clone());
-            }
-        } else if !turn_context
-            .config
-            .permissions
-            .file_system_sandbox_policy()
-            .has_full_disk_read_access()
-        {
-            let sandbox_contexts = environments
-                .turn_environments()
-                .map(|environment| {
-                    (
-                        environment.environment_id.clone(),
-                        turn_context.file_system_sandbox_context(
-                            /*additional_permissions*/ None,
-                            environment,
-                        ),
-                    )
-                })
-                .collect::<HashMap<_, _>>();
-            extension_data.insert(sandbox_contexts);
         }
         let tool_router = turn::built_tools(
             self.as_ref(),
@@ -3273,12 +3095,7 @@ impl Session {
                 state.auto_compact_window_ids(),
             )
         };
-        let separate_guardian_developer_message =
-            crate::guardian::is_guardian_reviewer_source(&session_source);
-        // Keep the guardian policy prompt out of the aggregated developer bundle so it
-        // stays isolated as its own top-level developer message for guardian subagents.
-        if !separate_guardian_developer_message
-            && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
+        if let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
             && !developer_instructions.is_empty()
         {
             developer_sections.push(developer_instructions.to_string());
@@ -3387,18 +3204,6 @@ impl Session {
             crate::context_manager::updates::build_contextual_user_message(contextual_user_sections)
         {
             items.push(contextual_user_message);
-        }
-        // Emit the guardian policy prompt as a separate developer item so the guardian
-        // subagent sees a distinct, easy-to-audit instruction block.
-        if separate_guardian_developer_message
-            && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
-            && !developer_instructions.is_empty()
-            && let Some(guardian_developer_message) =
-                crate::context_manager::updates::build_developer_update_item(vec![
-                    developer_instructions.to_string(),
-                ])
-        {
-            items.push(guardian_developer_message);
         }
         // New context windows and compaction install these items directly into replacement history.
         for item in &mut items {

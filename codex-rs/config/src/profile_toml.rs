@@ -29,8 +29,14 @@ pub struct ConfigProfile {
     /// The key in the `model_providers` map identifying the
     /// [`ModelProviderInfo`] to use.
     pub model_provider: Option<String>,
+    #[serde(skip)]
+    #[schemars(skip)]
     pub approval_policy: Option<AskForApproval>,
+    #[serde(skip)]
+    #[schemars(skip)]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
+    #[serde(skip)]
+    #[schemars(skip)]
     pub sandbox_mode: Option<SandboxMode>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
     pub plan_mode_reasoning_effort: Option<ReasoningEffort>,
@@ -49,6 +55,8 @@ pub struct ConfigProfile {
     #[schemars(skip)]
     pub js_repl_node_module_dirs: Option<Vec<AbsolutePathBuf>>,
     pub experimental_compact_prompt_file: Option<AbsolutePathBuf>,
+    #[serde(skip)]
+    #[schemars(skip)]
     pub include_permissions_instructions: Option<bool>,
     pub include_apps_instructions: Option<bool>,
     pub include_collaboration_mode_instructions: Option<bool>,

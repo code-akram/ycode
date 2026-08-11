@@ -18,7 +18,6 @@ base64 = { workspace = true }
 codex-analytics = { workspace = true }
 codex-agent-extension = { workspace = true }
 codex-arg0 = { workspace = true }
-codex-cloud-config = { workspace = true }
 codex-code-mode = { workspace = true }
 codex-config = { workspace = true }
 codex-core = { workspace = true }
@@ -30,7 +29,6 @@ codex-external-agent-migration = { workspace = true }
 codex-features = { workspace = true }
 codex-goal-extension = { workspace = true }
 codex-git-attribution = { workspace = true }
-codex-guardian = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-file-watcher = { workspace = true }
 codex-hooks = { workspace = true }
@@ -56,7 +54,6 @@ codex-protocol = { workspace = true }
 codex-cli-protocol = { workspace = true }
 codex-feedback = { workspace = true }
 codex-rollout = { workspace = true }
-codex-sandboxing = { workspace = true }
 codex-state = { workspace = true }
 codex-thread-store = { workspace = true }
 codex-tools = { workspace = true }

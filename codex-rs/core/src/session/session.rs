@@ -26,7 +26,6 @@ use codex_protocol::protocol::TurnEnvironmentSelections;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::OnceLock;
-use tokio::sync::Semaphore;
 
 /// Context for an initialized model agent
 ///
@@ -37,9 +36,6 @@ pub(crate) struct Session {
     pub(super) tx_event: Sender<Event>,
     pub(super) agent_status: watch::Sender<AgentStatus>,
     pub(super) state: Mutex<SessionState>,
-    /// Serializes rebuild/apply cycles for the running proxy; each cycle
-    /// rebuilds from the current SessionState while holding this lock.
-    pub(super) managed_network_proxy_refresh_lock: Semaphore,
     /// The set of enabled features should be invariant for the lifetime of the
     /// session.
     pub(super) features: ManagedFeatures,
@@ -49,7 +45,6 @@ pub(crate) struct Session {
     pub(crate) pending_user_message_admissions:
         crate::user_message_admission::PendingUserMessageAdmissions,
     pub(crate) input_queue: InputQueue,
-    pub(crate) guardian_review_session: GuardianReviewSessionManager,
     pub(crate) services: SessionServices,
     pub(super) git_enrichment_policy: GitEnrichmentPolicy,
     pub(super) fork_persistence: ForkPersistence,
@@ -191,11 +186,7 @@ impl SessionConfiguration {
     }
 
     pub(super) fn sandbox_policy(&self) -> SandboxPolicy {
-        let permission_profile = self.materialized_permission_profile();
-        codex_sandboxing::compatibility_sandbox_policy_for_permission_profile(
-            &permission_profile,
-            self.cwd(),
-        )
+        SandboxPolicy::DangerFullAccess
     }
 
     pub(super) fn file_system_sandbox_policy(&self) -> FileSystemSandboxPolicy {
@@ -499,7 +490,6 @@ impl Session {
         installation_id: String,
         auth_manager: Arc<AuthManager>,
         models_manager: SharedModelsManager,
-        exec_policy: Arc<ExecPolicyManager>,
         tx_event: Sender<Event>,
         agent_status: watch::Sender<AgentStatus>,
         mut initial_history: InitialHistory,
@@ -827,17 +817,6 @@ impl Session {
             if let Some(service_name) = session_configuration.metrics_service_name.as_deref() {
                 session_telemetry = session_telemetry.with_metrics_service_name(service_name);
             }
-            let network_proxy_audit_metadata = NetworkProxyAuditMetadata {
-                conversation_id: Some(thread_id.to_string()),
-                app_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-                user_account_id: account_id,
-                auth_mode: auth_mode.map(|mode| mode.to_string()),
-                originator: Some(originator),
-                user_email: account_email,
-                terminal_type: Some(terminal_type),
-                model: Some(session_model.clone()),
-                slug: Some(session_model),
-            };
             config.features.emit_metrics(&session_telemetry);
             session_telemetry.counter(
                 THREAD_STARTED_METRIC,
@@ -947,61 +926,6 @@ impl Session {
                 session_configuration.clone(),
                 initial_auto_compact_window_ids,
             );
-            let managed_network_requirements_configured = config
-                .config_layer_stack
-                .requirements_toml()
-                .network
-                .is_some();
-            let managed_network_requirements_enabled = config.managed_network_requirements_enabled();
-            let network_approval = Arc::new(NetworkApprovalService::default());
-            // The managed proxy can call back into core for allowlist-miss decisions.
-            let network_policy_decider_session = if managed_network_requirements_configured {
-                config
-                    .permissions
-                    .network
-                    .as_ref()
-                    .map(|_| Arc::new(RwLock::new(std::sync::Weak::<Session>::new())))
-            } else {
-                None
-            };
-            let blocked_request_observer = config
-                .permissions
-                .network
-                .as_ref()
-                .map(|_| build_blocked_request_observer(Arc::clone(&network_approval)));
-            let network_policy_decider =
-                network_policy_decider_session
-                    .as_ref()
-                    .map(|network_policy_decider_session| {
-                        build_network_policy_decider(
-                            Arc::clone(&network_approval),
-                            Arc::clone(network_policy_decider_session),
-                        )
-                    });
-            let (network_proxy, session_network_proxy) =
-                if let Some(spec) = config.permissions.network.as_ref() {
-                    let current_exec_policy = exec_policy.current();
-                    let (network_proxy, session_network_proxy) = Self::start_managed_network_proxy(
-                        spec,
-                        current_exec_policy.as_ref(),
-                        config.permissions.permission_profile(),
-                        network_policy_decider.as_ref().map(Arc::clone),
-                        blocked_request_observer.as_ref().map(Arc::clone),
-                        managed_network_requirements_configured,
-                        network_proxy_audit_metadata.clone(),
-                    )
-                    .instrument(info_span!(
-                        "session_init.network_proxy",
-                        otel.name = "session_init.network_proxy",
-                        session_init.managed_network_requirements_enabled =
-                            managed_network_requirements_enabled,
-                    ))
-                    .await?;
-                    (Some(network_proxy), Some(session_network_proxy))
-                } else {
-                    (None, None)
-                };
-
             let hooks = build_hooks_for_config(
                 &config,
                 plugins_manager.as_ref(),
@@ -1056,7 +980,6 @@ impl Session {
                 rollout_thread_trace,
                 user_shell: Arc::new(default_shell),
                 show_raw_agent_reasoning: config.show_raw_agent_reasoning,
-                exec_policy,
                 auth_manager: Arc::clone(&auth_manager),
                 openai_file_upload_client_pool: RouteAwareClientPool::new_without_request_logging(
                     config.http_client_factory(),
@@ -1065,8 +988,6 @@ impl Session {
                 .with_legacy_custom_ca_fallback(),
                 session_telemetry,
                 models_manager: Arc::clone(&models_manager),
-                tool_approvals: Mutex::new(ApprovalStore::default()),
-                guardian_rejection_circuit_breaker: Mutex::new(Default::default()),
                 runtime_handle: tokio::runtime::Handle::current(),
                 skills_service,
                 agents_md_manager,
@@ -1077,10 +998,6 @@ impl Session {
                 thread_extension_data,
                 selected_capability_roots,
                 agent_control,
-                network_proxy: arc_swap::ArcSwapOption::from(network_proxy.map(Arc::new)),
-                network_proxy_audit_metadata,
-                managed_network_requirements_configured,
-                network_approval: Arc::clone(&network_approval),
                 state_db: state_db_ctx.clone(),
                 live_thread: live_thread_init.as_ref().cloned(),
                 thread_store: Arc::clone(&thread_store),
@@ -1106,12 +1023,6 @@ impl Session {
                         .enabled(Feature::ConcurrentReasoningSummaries),
                     attestation_provider,
                     config.http_client_factory(),
-                )
-                .with_prompt_cache_key_override(
-                    crate::guardian::prompt_cache_key_override_for_review_session(
-                        &session_configuration.session_source,
-                        session_configuration.parent_thread_id,
-                    ),
                 ),
                 executed_tool_calls,
                 code_mode_service: crate::tools::code_mode::CodeModeService::new(
@@ -1127,23 +1038,17 @@ impl Session {
                 tx_event: tx_event.clone(),
                 agent_status,
                 state: Mutex::new(state),
-                managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
                 features: config.features.clone(),
                 multi_agent_version,
                 conversation: Arc::new(RealtimeConversationManager::new()),
                 active_turn: Mutex::new(None),
                 pending_user_message_admissions: Default::default(),
                 input_queue: InputQueue::new(),
-                guardian_review_session: GuardianReviewSessionManager::default(),
                 services,
                 git_enrichment_policy,
                 fork_persistence,
                 next_internal_sub_id: AtomicU64::new(0),
             });
-            if let Some(network_policy_decider_session) = network_policy_decider_session {
-                let mut guard = network_policy_decider_session.write().await;
-                *guard = Arc::downgrade(&sess);
-            }
             // Dispatch the SessionConfiguredEvent first and then report any errors.
             // If resuming, include converted initial messages in the payload so UIs can render them immediately.
             let initial_messages = initial_history.get_event_msgs();
@@ -1159,20 +1064,9 @@ impl Session {
                     model: session_configuration.collaboration_mode.model().to_string(),
                     model_provider_id: config.model_provider_id.clone(),
                     service_tier: session_configuration.service_tier.clone(),
-                    approval_policy: session_configuration.approval_policy.value(),
-                    approvals_reviewer: session_configuration.approvals_reviewer,
-                    permission_profile: session_configuration.materialized_permission_profile(),
-                    active_permission_profile: session_configuration.active_permission_profile(),
                     cwd: session_configuration.cwd().clone(),
                     reasoning_effort: session_configuration.collaboration_mode.reasoning_effort(),
                     initial_messages,
-                    network_proxy: session_network_proxy.filter(|_| {
-                        Self::managed_network_proxy_active_for_permission_profile(
-                            session_configuration
-                                .permission_profile_state()
-                                .permission_profile(),
-                        )
-                    }),
                     rollout_path,
                 }),
             })

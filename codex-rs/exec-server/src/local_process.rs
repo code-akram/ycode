@@ -8,14 +8,9 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use codex_exec_server_protocol::JSONRPCErrorError;
-use codex_network_proxy::NetworkProxyHandle;
 use codex_protocol::config_types::EnvironmentVariablePattern;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
-use codex_protocol::exec_output::ExecToolCallOutput;
-use codex_protocol::exec_output::StreamOutput;
 use codex_protocol::shell_environment;
-use codex_sandboxing::SandboxType;
-use codex_sandboxing::is_likely_sandbox_denied;
 use codex_utils_pty::ExecCommandSession;
 use codex_utils_pty::ProcessSignal as PtyProcessSignal;
 use tokio::sync::Mutex;
@@ -34,9 +29,7 @@ use crate::ExecServerError;
 use crate::ExecServerRuntimePaths;
 use crate::ProcessId;
 use crate::StartedExecProcess;
-use crate::network_policy_decisions::network_policy_decider;
 use crate::process::ExecProcessEventLog;
-use crate::process::sandbox_type_from_protocol;
 use crate::process_sandbox::prepare_exec_request;
 use crate::protocol::EXEC_CLOSED_METHOD;
 use crate::protocol::ExecClosedNotification;
@@ -46,9 +39,7 @@ use crate::protocol::ExecOutputDeltaNotification;
 use crate::protocol::ExecOutputStream;
 use crate::protocol::ExecParams;
 use crate::protocol::ExecResponse;
-use crate::protocol::MAX_NETWORK_POLICY_PROCESS_ID_BYTES;
 use crate::protocol::ProcessOutputChunk;
-use crate::protocol::ProcessSandboxType;
 use crate::protocol::ProcessSignal;
 use crate::protocol::ReadParams;
 use crate::protocol::ReadResponse;
@@ -104,10 +95,6 @@ struct RunningProcess {
     closed: bool,
     metrics: Option<ProcessMetricGuard>,
     termination_requested: bool,
-    sandbox: SandboxType,
-    sandbox_denied: bool,
-    network_proxy_handle: Option<NetworkProxyHandle>,
-    network_policy_shutdown: Option<CancellationToken>,
 }
 
 /// Bounded cache of stdin write ids that have already been accepted for one process.
@@ -227,9 +214,6 @@ impl LocalProcess {
                 .collect::<Vec<_>>()
         };
         for mut process in remaining {
-            if let Some(network_policy_shutdown) = process.network_policy_shutdown.take() {
-                network_policy_shutdown.cancel();
-            }
             if let Some(metrics) = process.metrics.take() {
                 metrics.finish("terminated");
             }
@@ -265,50 +249,11 @@ impl LocalProcess {
         params: ExecParams,
     ) -> Result<(ExecResponse, watch::Sender<u64>, ExecProcessEventLog), JSONRPCErrorError> {
         let process_id = params.process_id.clone();
-        let policy_decision_timeout_ms = params
-            .network_proxy
-            .as_ref()
-            .and_then(|launch| launch.policy_decision_timeout_ms);
-        if policy_decision_timeout_ms == Some(0) {
-            return Err(invalid_params(
-                "network policy decision callback timeout must be nonzero".to_string(),
-            ));
-        }
-        if policy_decision_timeout_ms.is_some()
-            && (process_id.is_empty() || process_id.len() > MAX_NETWORK_POLICY_PROCESS_ID_BYTES)
-        {
-            return Err(invalid_params(format!(
-                "callback-enabled process ID must be non-empty and at most {MAX_NETWORK_POLICY_PROCESS_ID_BYTES} bytes"
-            )));
-        }
-        let policy_decision_timeout = policy_decision_timeout_ms.map(Duration::from_millis);
-        let network_policy_shutdown = policy_decision_timeout.map(|_| CancellationToken::new());
-        let network_policy_decider = network_policy_shutdown
-            .as_ref()
-            .zip(policy_decision_timeout)
-            .map(|(process_shutdown, controller_timeout)| {
-                network_policy_decider(
-                    process_id.clone(),
-                    Arc::clone(&self.inner.requests),
-                    controller_timeout,
-                    process_shutdown.clone(),
-                )
-            });
-        let prepared = prepare_exec_request(
-            &params,
-            child_env(&params),
-            self.runtime_paths.as_ref(),
-            network_policy_decider,
-        )
-        .await?;
+        let prepared =
+            prepare_exec_request(&params, child_env(&params), self.runtime_paths.as_ref()).await?;
         if prepared.command.is_empty() {
             return Err(invalid_params("argv must not be empty".to_string()));
         }
-        let sandbox_type = match prepared.sandbox {
-            SandboxType::None => Some(ProcessSandboxType::None),
-            SandboxType::MacosSeatbelt => Some(ProcessSandboxType::MacosSeatbelt),
-        };
-
         let start = Arc::new(ProcessStart);
         {
             let mut process_map = self.inner.processes.lock().await;
@@ -323,12 +268,11 @@ impl LocalProcess {
             );
         }
 
-        let spawned_result = codex_sandboxing::spawn_process(codex_sandboxing::SpawnRequest {
+        let spawned_result = codex_utils_pty::spawn_process(codex_utils_pty::SpawnRequest {
             command: &prepared.command,
             cwd: prepared.cwd.as_path(),
             env: &prepared.env,
             arg0: &prepared.arg0,
-            sandbox: prepared.sandbox,
             tty: params.tty,
             stdin_open: params.tty || params.pipe_stdin,
             inherited_fds: &[],
@@ -386,10 +330,6 @@ impl LocalProcess {
                     closed: false,
                     metrics: Some(self.inner.telemetry.process_started()),
                     termination_requested: false,
-                    sandbox: prepared.sandbox,
-                    sandbox_denied: false,
-                    network_proxy_handle: prepared.network_proxy_handle,
-                    network_policy_shutdown,
                 })),
             );
         }
@@ -422,14 +362,7 @@ impl LocalProcess {
             output_notify,
         ));
 
-        Ok((
-            ExecResponse {
-                process_id,
-                sandbox_type,
-            },
-            wake_tx,
-            events,
-        ))
+        Ok((ExecResponse { process_id }, wake_tx, events))
     }
 
     pub(crate) async fn exec(&self, params: ExecParams) -> Result<ExecResponse, JSONRPCErrorError> {
@@ -490,7 +423,6 @@ impl LocalProcess {
                         exit_code: process.exit_code,
                         closed: process.closed,
                         failure: None,
-                        sandbox_denied: process.sandbox_denied,
                     },
                     Arc::clone(&process.output_notify),
                 )
@@ -613,9 +545,6 @@ impl LocalProcess {
             let mut process_map = self.inner.processes.lock().await;
             match process_map.get_mut(&params.process_id) {
                 Some(ProcessEntry::Running(process)) => {
-                    if let Some(network_policy_shutdown) = &process.network_policy_shutdown {
-                        network_policy_shutdown.cancel();
-                    }
                     if process.exit_code.is_some() {
                         return Ok(TerminateResponse { running: false });
                     }
@@ -674,7 +603,6 @@ impl LocalProcess {
             .start_process(params)
             .await
             .map_err(map_handler_error)?;
-        let sandbox_type = sandbox_type_from_protocol(response.sandbox_type);
         Ok(StartedExecProcess {
             process: Arc::new(LocalExecProcess {
                 process_id: response.process_id,
@@ -682,7 +610,6 @@ impl LocalProcess {
                 wake_tx,
                 events,
             }),
-            sandbox_type,
         })
     }
 }
@@ -892,27 +819,19 @@ async fn watch_exit(
     output_notify: Arc<Notify>,
 ) {
     let exit_code = exit_rx.await.unwrap_or(-1);
-    let sandboxed = {
+    {
         let mut processes = inner.processes.lock().await;
-        match processes.get_mut(&process_id) {
-            Some(ProcessEntry::Running(process)) => {
-                let sandboxed = process.sandbox != SandboxType::None;
-                if let Some(metrics) = process.metrics.take() {
-                    metrics.finish(if process.termination_requested {
-                        "terminated"
-                    } else if exit_code == 0 {
-                        "success"
-                    } else {
-                        "error"
-                    });
-                }
-                sandboxed
+        if let Some(ProcessEntry::Running(process)) = processes.get_mut(&process_id) {
+            if let Some(metrics) = process.metrics.take() {
+                metrics.finish(if process.termination_requested {
+                    "terminated"
+                } else if exit_code == 0 {
+                    "success"
+                } else {
+                    "error"
+                });
             }
-            Some(ProcessEntry::Starting(_)) | None => false,
         }
-    };
-    if sandboxed {
-        let _ = tokio::time::timeout(Duration::from_millis(20), output_notify.notified()).await;
     }
     let notification = {
         let mut processes = inner.processes.lock().await;
@@ -920,43 +839,14 @@ async fn watch_exit(
             let seq = process.next_seq;
             process.next_seq += 1;
             process.exit_code = Some(exit_code);
-            if process.sandbox != SandboxType::None {
-                let mut stdout = Vec::new();
-                let mut stderr = Vec::new();
-                let mut aggregated = Vec::new();
-                for chunk in &process.output {
-                    match chunk.stream {
-                        ExecOutputStream::Stdout | ExecOutputStream::Pty => {
-                            stdout.extend_from_slice(&chunk.chunk);
-                        }
-                        ExecOutputStream::Stderr => stderr.extend_from_slice(&chunk.chunk),
-                    }
-                    aggregated.extend_from_slice(&chunk.chunk);
-                }
-                let exec_output = ExecToolCallOutput {
-                    exit_code,
-                    stdout: StreamOutput::new(String::from_utf8_lossy(&stdout).into_owned()),
-                    stderr: StreamOutput::new(String::from_utf8_lossy(&stderr).into_owned()),
-                    aggregated_output: StreamOutput::new(
-                        String::from_utf8_lossy(&aggregated).into_owned(),
-                    ),
-                    ..Default::default()
-                };
-                // Transport the classification to the caller; recording there
-                // attaches audit context once and avoids duplicate events.
-                process.sandbox_denied = is_likely_sandbox_denied(process.sandbox, &exec_output);
-            }
             let _ = process.wake_tx.send(seq);
-            process.events.publish(ExecProcessEvent::Exited {
-                seq,
-                exit_code,
-                sandbox_denied: Some(process.sandbox_denied),
-            });
+            process
+                .events
+                .publish(ExecProcessEvent::Exited { seq, exit_code });
             Some(ExecExitedNotification {
                 process_id: process_id.clone(),
                 seq,
                 exit_code,
-                sandbox_denied: Some(process.sandbox_denied),
             })
         } else {
             None
@@ -990,7 +880,7 @@ async fn finish_output_stream(process_id: ProcessId, inner: Arc<Inner>) {
 }
 
 async fn maybe_emit_closed(process_id: ProcessId, inner: Arc<Inner>) {
-    let (notification, output_notify, network_proxy_handle) = {
+    let (notification, output_notify) = {
         let mut processes = inner.processes.lock().await;
         let Some(ProcessEntry::Running(process)) = processes.get_mut(&process_id) else {
             return;
@@ -1001,9 +891,6 @@ async fn maybe_emit_closed(process_id: ProcessId, inner: Arc<Inner>) {
         }
 
         process.closed = true;
-        if let Some(network_policy_shutdown) = process.network_policy_shutdown.take() {
-            network_policy_shutdown.cancel();
-        }
         let seq = process.next_seq;
         process.next_seq += 1;
         let _ = process.wake_tx.send(seq);
@@ -1014,15 +901,8 @@ async fn maybe_emit_closed(process_id: ProcessId, inner: Arc<Inner>) {
                 seq,
             },
             Arc::clone(&process.output_notify),
-            process.network_proxy_handle.take(),
         )
     };
-
-    if let Some(network_proxy_handle) = network_proxy_handle
-        && let Err(err) = network_proxy_handle.shutdown().await
-    {
-        tracing::warn!("failed to shut down executor network proxy: {err}");
-    }
 
     output_notify.notify_waiters();
     let cleanup_process_id = process_id.clone();

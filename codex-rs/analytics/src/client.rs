@@ -622,8 +622,6 @@ impl AnalyticsEventsClient {
                 | ServerNotification::TurnDiffUpdated(_)
                 | ServerNotification::ItemStarted(_)
                 | ServerNotification::ItemCompleted(_)
-                | ServerNotification::ItemGuardianApprovalReviewStarted(_)
-                | ServerNotification::ItemGuardianApprovalReviewCompleted(_)
         ) {
             return;
         }

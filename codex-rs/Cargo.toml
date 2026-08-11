@@ -23,7 +23,6 @@ members = [
     "code-mode-protocol",
     "code-mode-runtime",
     "codex-home",
-    "cloud-config",
     "cloud-tasks",
     "cloud-tasks-client",
     "cloud-tasks-mock-client",
@@ -51,7 +50,6 @@ members = [
     "ext/extension-api",
     "ext/goal",
     "ext/git-attribution",
-    "ext/guardian",
     "ext/image-generation",
     "ext/items",
     "ext/memories",
@@ -76,7 +74,6 @@ members = [
     "rollout-trace",
     "responses-api-proxy",
     "response-debug-context",
-    "sandboxing",
     "otel",
     "tui",
     "tools",
@@ -97,9 +94,7 @@ members = [
     "utils/string",
     "utils/cli",
     "utils/elapsed",
-    "utils/sandbox-summary",
     "utils/sleep-inhibitor",
-    "utils/approval-presets",
     "utils/oss",
     "utils/output-truncation",
     "utils/path-utils",
@@ -151,7 +146,6 @@ codex-chatgpt = { path = "chatgpt" }
 codex-cli = { path = "cli" }
 codex-client = { path = "codex-client" }
 codex-collaboration-mode-templates = { path = "collaboration-mode-templates" }
-codex-cloud-config = { path = "cloud-config" }
 codex-cloud-tasks-client = { path = "cloud-tasks-client" }
 codex-cloud-tasks-mock-client = { path = "cloud-tasks-mock-client" }
 codex-code-mode = { path = "code-mode" }
@@ -177,7 +171,6 @@ codex-extension-api = { path = "ext/extension-api" }
 codex-extension-items = { path = "ext/items" }
 codex-goal-extension = { path = "ext/goal" }
 codex-git-attribution = { path = "ext/git-attribution" }
-codex-guardian = { path = "ext/guardian" }
 codex-image-generation-extension = { path = "ext/image-generation" }
 codex-external-agent-migration = { path = "external-agent-migration" }
 codex-experimental-api-macros = { path = "codex-experimental-api-macros" }
@@ -210,7 +203,6 @@ codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-response-debug-context = { path = "response-debug-context" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
-codex-sandboxing = { path = "sandboxing" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
@@ -224,7 +216,6 @@ codex-tools = { path = "tools" }
 codex-tui = { path = "tui" }
 codex-uds = { path = "uds" }
 codex-utils-absolute-path = { path = "utils/absolute-path" }
-codex-utils-approval-presets = { path = "utils/approval-presets" }
 codex-utils-audio = { path = "utils/audio" }
 codex-utils-cache = { path = "utils/cache" }
 codex-utils-cargo-bin = { path = "utils/cargo-bin" }
@@ -241,7 +232,6 @@ codex-utils-path-uri = { path = "utils/path-uri" }
 codex-utils-plugins = { path = "utils/plugins" }
 codex-utils-pty = { path = "utils/pty" }
 codex-utils-rustls-provider = { path = "utils/rustls-provider" }
-codex-utils-sandbox-summary = { path = "utils/sandbox-summary" }
 codex-utils-sleep-inhibitor = { path = "utils/sleep-inhibitor" }
 codex-utils-stream-parser = { path = "utils/stream-parser" }
 codex-utils-string = { path = "utils/string" }

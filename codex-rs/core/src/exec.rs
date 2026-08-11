@@ -15,31 +15,18 @@ use tokio::io::BufReader;
 use tokio::process::Child;
 use tokio_util::sync::CancellationToken;
 
-use crate::sandboxing::ExecOptions;
 use crate::sandboxing::ExecRequest;
-use crate::sandboxing::SandboxPermissions;
 use crate::spawn::SpawnChildRequest;
 use crate::spawn::StdioPolicy;
 use crate::spawn::spawn_child_async;
-use codex_network_proxy::NetworkProxy;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result;
-use codex_protocol::error::SandboxErr;
 use codex_protocol::exec_output::ExecToolCallOutput;
 use codex_protocol::exec_output::StreamOutput;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
 use codex_protocol::protocol::ExecOutputStream;
-use codex_sandboxing::SandboxCommand;
-use codex_sandboxing::SandboxManager;
-use codex_sandboxing::SandboxTransformRequest;
-use codex_sandboxing::SandboxType;
-use codex_sandboxing::SandboxablePreference;
-pub(crate) use codex_sandboxing::is_likely_sandbox_denied;
-use codex_sandboxing::record_filesystem_sandbox_violation;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
@@ -85,12 +72,6 @@ pub struct ExecParams {
     pub expiration: ExecExpiration,
     pub capture_policy: ExecCapturePolicy,
     pub env: HashMap<String, String>,
-    pub network: Option<NetworkProxy>,
-    pub network_environment_id: Option<String>,
-    pub sandbox_permissions: SandboxPermissions,
-    pub windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel,
-    pub windows_sandbox_private_desktop: bool,
-    pub justification: Option<String>,
     pub arg0: Option<String>,
 }
 
@@ -102,29 +83,6 @@ pub enum ExecCapturePolicy {
     /// Trusted internal helpers can buffer the full child output in memory
     /// without the shell-oriented output cap or exec-expiration behavior.
     FullBuffer,
-}
-
-fn select_process_exec_tool_sandbox_type(
-    permission_profile: &PermissionProfile,
-    windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel,
-    enforce_managed_network: bool,
-) -> SandboxType {
-    SandboxManager::new().select_initial(
-        permission_profile,
-        SandboxablePreference::Auto,
-        windows_sandbox_level,
-        enforce_managed_network,
-    )
-}
-
-fn network_proxy_environment_error(
-    network_environment_id: Option<&str>,
-    err: impl std::fmt::Display,
-) -> CodexErr {
-    let environment_id = network_environment_id.unwrap_or("default");
-    CodexErr::Io(io::Error::other(format!(
-        "failed to prepare network proxy for environment `{environment_id}`: {err}"
-    )))
 }
 
 /// Mechanism to terminate an exec invocation before it finishes naturally.
@@ -281,114 +239,39 @@ pub struct StdoutStream {
     pub tx_event: Sender<Event>,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn process_exec_tool_call(
     params: ExecParams,
-    permission_profile: &PermissionProfile,
-    sandbox_cwd: &AbsolutePathBuf,
-    windows_sandbox_workspace_roots: &[AbsolutePathBuf],
     stdout_stream: Option<StdoutStream>,
 ) -> Result<ExecToolCallOutput> {
-    let exec_req = build_exec_request(
-        params,
-        permission_profile,
-        sandbox_cwd,
-        windows_sandbox_workspace_roots,
-    )?;
-
-    // Route through the sandboxing module for a single, unified execution path.
+    let exec_req = build_exec_request(params)?;
     crate::sandboxing::execute_env(exec_req, stdout_stream).await
 }
 
-/// Transform a portable exec request into the concrete argv/env that should be
-/// spawned under the requested sandbox policy.
-pub fn build_exec_request(
-    params: ExecParams,
-    permission_profile: &PermissionProfile,
-    sandbox_cwd: &AbsolutePathBuf,
-    windows_sandbox_workspace_roots: &[AbsolutePathBuf],
-) -> Result<ExecRequest> {
+/// Transform a portable exec request into the concrete request to spawn.
+pub fn build_exec_request(params: ExecParams) -> Result<ExecRequest> {
     let ExecParams {
         command,
         cwd,
-        mut env,
+        env,
         expiration,
         capture_policy,
-        network,
-        network_environment_id,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop,
-
-        // TODO: Should arg0 be set on the ExecRequest that is returned?
-        arg0: _,
-        // These fields are related to approvals, so can be ignored here.
-        justification: _,
-        sandbox_permissions: _,
+        arg0,
     } = params;
-
-    let enforce_managed_network = network.is_some();
-    let sandbox_type = select_process_exec_tool_sandbox_type(
-        permission_profile,
-        windows_sandbox_level,
-        enforce_managed_network,
-    );
-    tracing::debug!("Sandbox type: {sandbox_type:?}");
-
-    if let Some(network) = network.as_ref() {
-        network
-            .apply_to_env_for_optional_environment(&mut env, network_environment_id.as_deref())
-            .map_err(|err| {
-                network_proxy_environment_error(network_environment_id.as_deref(), err)
-            })?;
-    }
-    let (program, args) = command.split_first().ok_or_else(|| {
+    command.first().ok_or_else(|| {
         CodexErr::Io(io::Error::new(
             io::ErrorKind::InvalidInput,
             "command args are empty",
         ))
     })?;
     let cwd = PathUri::from_abs_path(&cwd);
-    let sandbox_policy_cwd_uri = PathUri::from_abs_path(sandbox_cwd);
-
-    let manager = SandboxManager::new();
-    let command = SandboxCommand {
-        program: program.clone().into(),
-        args: args.to_vec(),
+    Ok(ExecRequest::new(
+        command,
         cwd,
         env,
-        managed_network: None,
-        additional_permissions: None,
-    };
-    let options = ExecOptions {
         expiration,
         capture_policy,
-    };
-    let exec_req = manager
-        .transform(SandboxTransformRequest {
-            command,
-            permissions: permission_profile,
-            sandbox: sandbox_type,
-            enforce_managed_network,
-            environment_id: network_environment_id.as_deref(),
-            network: network.as_ref(),
-            sandbox_policy_cwd: &sandbox_policy_cwd_uri,
-            windows_sandbox_level,
-            windows_sandbox_private_desktop,
-        })
-        .map(|request| {
-            let windows_sandbox_workspace_roots = if windows_sandbox_workspace_roots.is_empty() {
-                vec![sandbox_cwd.clone()]
-            } else {
-                windows_sandbox_workspace_roots.to_vec()
-            };
-            ExecRequest::from_sandbox_exec_request(
-                request,
-                options,
-                windows_sandbox_workspace_roots,
-            )
-        })
-        .map_err(CodexErr::from)?;
-    Ok(exec_req)
+        arg0,
+    ))
 }
 
 pub(crate) async fn execute_exec_request(
@@ -401,23 +284,10 @@ pub(crate) async fn execute_exec_request(
         cwd,
         env,
         exec_server_env_config: _,
-        network,
         expiration,
         capture_policy,
-        sandbox,
-        windows_sandbox_policy_cwd: _,
-        windows_sandbox_workspace_roots: _,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop,
-        permission_profile,
-        network_environment_id,
         arg0,
-        exec_server_sandbox: _,
-        exec_server_enforce_managed_network: _,
-        exec_server_managed_network: _,
-        exec_server_network_proxy: _,
     } = exec_request;
-    let network_sandbox_policy = permission_profile.network_sandbox_policy();
 
     // TODO(anp): Keep PathUri through the local process launch boundary.
     let cwd = cwd
@@ -429,35 +299,25 @@ pub(crate) async fn execute_exec_request(
         expiration,
         capture_policy,
         env,
-        network: network.clone(),
-        network_environment_id,
-        sandbox_permissions: SandboxPermissions::UseDefault,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop,
-        justification: None,
         arg0,
     };
 
     let start = Instant::now();
-    let raw_output_result =
-        get_raw_output_result(params, network_sandbox_policy, stdout_stream, after_spawn).await;
+    let raw_output_result = get_raw_output_result(params, stdout_stream, after_spawn).await;
     let duration = start.elapsed();
-    finalize_exec_result(raw_output_result, sandbox, duration)
+    finalize_exec_result(raw_output_result, duration)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn get_raw_output_result(
     params: ExecParams,
-    network_sandbox_policy: NetworkSandboxPolicy,
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
 ) -> Result<RawExecToolCallOutput> {
-    exec(params, network_sandbox_policy, stdout_stream, after_spawn).await
+    exec(params, stdout_stream, after_spawn).await
 }
 
 fn finalize_exec_result(
     raw_output_result: std::result::Result<RawExecToolCallOutput, CodexErr>,
-    sandbox_type: SandboxType,
     duration: Duration,
 ) -> Result<ExecToolCallOutput> {
     match raw_output_result {
@@ -471,7 +331,9 @@ fn finalize_exec_result(
                     if signal == TIMEOUT_CODE {
                         timed_out = true;
                     } else {
-                        return Err(CodexErr::Sandbox(SandboxErr::Signal(signal)));
+                        return Err(CodexErr::Io(io::Error::other(format!(
+                            "process terminated by signal {signal}"
+                        ))));
                     }
                 }
             }
@@ -494,17 +356,7 @@ fn finalize_exec_result(
             };
 
             if timed_out {
-                return Err(CodexErr::Sandbox(SandboxErr::Timeout {
-                    output: Box::new(exec_output),
-                }));
-            }
-
-            if is_likely_sandbox_denied(sandbox_type, &exec_output) {
-                record_filesystem_sandbox_violation(sandbox_type, &exec_output);
-                return Err(CodexErr::Sandbox(SandboxErr::Denied {
-                    output: Box::new(exec_output),
-                    network_policy_decision: None,
-                }));
+                return Ok(exec_output);
             }
 
             Ok(exec_output)
@@ -584,44 +436,19 @@ fn aggregate_output(
 /// `after_spawn` is invoked once the child process has been spawned, before
 /// output consumption begins.
 ///
-/// `network_sandbox_policy` is used to determine whether
-/// CODEX_SANDBOX_NETWORK_DISABLED=1 is added to the environment of the spawned
-/// process.
-///
-/// Note this command does not apply any sandboxing logic. The caller is
-/// responsible for constructing [ExecParams::command] to include any sandboxing
-/// wrapper args, as appropriate.
 async fn exec(
     params: ExecParams,
-    network_sandbox_policy: NetworkSandboxPolicy,
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
 ) -> Result<RawExecToolCallOutput> {
     let ExecParams {
         command,
         cwd,
-        mut env,
-        network,
-        network_environment_id,
+        env,
         arg0,
         expiration,
         capture_policy,
-
-        // If applicable, these fields should have been honored upstream of
-        // this exec call.
-        windows_sandbox_level: _,
-        windows_sandbox_private_desktop: _,
-        // These fields are related to approvals, so can be ignored here.
-        sandbox_permissions: _,
-        justification: _,
     } = params;
-    if let Some(network) = network.as_ref() {
-        network
-            .apply_to_env_for_optional_environment(&mut env, network_environment_id.as_deref())
-            .map_err(|err| {
-                network_proxy_environment_error(network_environment_id.as_deref(), err)
-            })?;
-    }
 
     let (program, args) = command.split_first().ok_or_else(|| {
         CodexErr::Io(io::Error::new(
@@ -635,11 +462,6 @@ async fn exec(
         args: args.into(),
         arg0: arg0_ref,
         cwd,
-        network_sandbox_policy,
-        // The environment already has attempt-scoped proxy settings from
-        // apply_to_env_for_attempt above. Passing network here would reapply
-        // non-attempt proxy vars and drop attempt correlation metadata.
-        network: None,
         stdio_policy: StdioPolicy::RedirectForShellTool,
         env,
     })

@@ -36,23 +36,18 @@ use codex_message_history::HistoryBatchCursor;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelPreset;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_approval_presets::ApprovalPreset;
 use uuid::Uuid;
 
 use crate::app_command::AppCommand;
-use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::chatwidget::UserMessage;
 use crate::goal_files::GoalDraft;
 use crate::runtime_session::CliRuntimeStartedThread;
-use codex_cli_protocol::AskForApproval;
-use codex_config::types::ApprovalsReviewer;
 use codex_features::Feature;
 use codex_plugin::PluginCapabilitySummary;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::config_types::Personality;
-use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort;
 
 use crate::history_cell::HistoryCell;
@@ -323,10 +318,6 @@ pub(crate) enum AppEvent {
     CodexOp(AppCommand),
 
     /// Approve one retry of a recent auto-review denial selected in the TUI.
-    ApproveRecentAutoReviewDenial {
-        thread_id: ThreadId,
-        id: String,
-    },
 
     /// Kick off an asynchronous file search for the given query (text after
     /// the `@`). Previous searches may be cancelled by the app layer so there
@@ -742,7 +733,6 @@ pub(crate) enum AppEvent {
     },
 
     /// Show the cyber auto-review notice after the model selection confirmation.
-    CyberModelAutoReviewNotice,
 
     /// Persist the selected personality to the appropriate config.
     PersistPersonalitySelection {
@@ -781,25 +771,6 @@ pub(crate) enum AppEvent {
         models: Vec<ModelPreset>,
     },
 
-    /// Open the confirmation prompt before enabling full access mode.
-    OpenFullAccessConfirmation {
-        preset: ApprovalPreset,
-        return_to_permissions: bool,
-        profile_selection: Option<PermissionProfileSelection>,
-    },
-
-    /// Update the current approval policy in the running app and widget.
-    UpdateAskForApprovalPolicy(AskForApproval),
-
-    /// Update the current built-in active permission profile in the running app and widget.
-    UpdateActivePermissionProfile(ActivePermissionProfile),
-
-    /// Select a named permission profile, optionally applying built-in mode settings too.
-    SelectPermissionProfile(PermissionProfileSelection),
-
-    /// Update the current approvals reviewer in the running app and widget.
-    UpdateApprovalsReviewer(ApprovalsReviewer),
-
     /// Update feature flags and persist them to the top-level config.
     UpdateFeatureFlags {
         updates: Vec<(Feature, bool)>,
@@ -833,7 +804,6 @@ pub(crate) enum AppEvent {
     },
 
     /// Re-open the approval presets popup.
-    OpenApprovalsPopup,
 
     /// Open the skills list popup.
     OpenSkillsList,
@@ -879,9 +849,6 @@ pub(crate) enum AppEvent {
     /// Notify that the manage skills popup was closed.
     ManageSkillsClosed,
 
-    /// Re-open the permissions presets popup.
-    OpenPermissionsPopup,
-
     /// Open the branch picker option from the review popup.
     OpenReviewBranchPicker(PathBuf),
 
@@ -896,9 +863,6 @@ pub(crate) enum AppEvent {
         text: String,
         collaboration_mode: CollaborationModeMask,
     },
-
-    /// Open the approval popup.
-    FullScreenApprovalRequest(ApprovalRequest),
 
     /// Open the feedback note entry overlay after the user selects a category.
     OpenFeedbackNote {
@@ -1008,15 +972,6 @@ pub(crate) enum AppEvent {
         context: String,
         action: String,
     },
-}
-
-/// Named profile selection to apply after any required UI guardrails complete.
-#[derive(Debug, Clone)]
-pub(crate) struct PermissionProfileSelection {
-    pub profile_id: String,
-    pub approval_policy: Option<AskForApproval>,
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    pub display_label: String,
 }
 
 /// The exit strategy requested by the UI layer.

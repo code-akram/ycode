@@ -3,15 +3,10 @@ use std::collections::VecDeque;
 
 use super::App;
 use crate::app_command::AppCommand;
-use crate::runtime_approval_conversions::granted_permission_profile_from_request;
 use crate::runtime_session::CliRuntimeSession;
-use codex_cli_protocol::CommandExecutionRequestApprovalResponse;
-use codex_cli_protocol::FileChangeRequestApprovalResponse;
 use codex_cli_protocol::JSONRPCErrorError;
-use codex_cli_protocol::PermissionsRequestApprovalResponse;
 use codex_cli_protocol::RequestId as CliRuntimeRequestId;
 use codex_cli_protocol::ServerRequest;
-use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
 
 impl App {
     pub(super) async fn reject_cli_runtime_request(
@@ -48,25 +43,16 @@ pub(super) struct UnsupportedCliRuntimeRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ResolvedCliRuntimeRequest {
-    ExecApproval { id: String },
-    FileChangeApproval { id: String },
-    PermissionsApproval { id: String },
     UserInput { call_id: String },
 }
 
 #[derive(Debug, Default)]
 pub(super) struct PendingCliRuntimeRequests {
-    exec_approvals: HashMap<String, CliRuntimeRequestId>,
-    file_change_approvals: HashMap<String, CliRuntimeRequestId>,
-    permissions_approvals: HashMap<String, CliRuntimeRequestId>,
     user_inputs: HashMap<String, VecDeque<PendingUserInputRequest>>,
 }
 
 impl PendingCliRuntimeRequests {
     pub(super) fn clear(&mut self) {
-        self.exec_approvals.clear();
-        self.file_change_approvals.clear();
-        self.permissions_approvals.clear();
         self.user_inputs.clear();
     }
 
@@ -75,36 +61,6 @@ impl PendingCliRuntimeRequests {
         request: &ServerRequest,
     ) -> Option<UnsupportedCliRuntimeRequest> {
         match request {
-            ServerRequest::CommandExecutionRequestApproval { request_id, params } => {
-                let approval_id = params
-                    .approval_id
-                    .clone()
-                    .unwrap_or_else(|| params.item_id.clone());
-                self.exec_approvals.insert(approval_id, request_id.clone());
-                None
-            }
-            ServerRequest::FileChangeRequestApproval { request_id, params } => {
-                self.file_change_approvals
-                    .insert(params.item_id.clone(), request_id.clone());
-                None
-            }
-            ServerRequest::PermissionsRequestApproval { request_id, params } => {
-                // TODO(anp): Remove this duplicate validation once core permission paths remain
-                // PathUri after crossing the cli-runtime boundary. Native permission paths do not
-                // yet have an ingress validation step, so validate them here before recording the
-                // request as pending. Discovering an invalid path later in a UI delivery path
-                // would leave the cli-runtime RPC waiting without a clean rejection path.
-                if let Err(err) = CoreRequestPermissionProfile::try_from(params.permissions.clone())
-                {
-                    return Some(UnsupportedCliRuntimeRequest {
-                        request_id: request_id.clone(),
-                        message: format!("failed to localize requested filesystem paths: {err}"),
-                    });
-                }
-                self.permissions_approvals
-                    .insert(params.item_id.clone(), request_id.clone());
-                None
-            }
             ServerRequest::ToolRequestUserInput { request_id, params } => {
                 self.user_inputs
                     .entry(params.turn_id.clone())
@@ -134,20 +90,6 @@ impl PendingCliRuntimeRequests {
                     message: "External current time is not available in TUI.".to_string(),
                 })
             }
-            ServerRequest::ApplyPatchApproval { request_id, .. } => {
-                Some(UnsupportedCliRuntimeRequest {
-                    request_id: request_id.clone(),
-                    message: "Legacy patch approval requests are not available in TUI yet."
-                        .to_string(),
-                })
-            }
-            ServerRequest::ExecCommandApproval { request_id, .. } => {
-                Some(UnsupportedCliRuntimeRequest {
-                    request_id: request_id.clone(),
-                    message: "Legacy command approval requests are not available in TUI yet."
-                        .to_string(),
-                })
-            }
         }
     }
 
@@ -160,57 +102,6 @@ impl PendingCliRuntimeRequests {
     {
         let op: AppCommand = op.into();
         let resolution = match &op {
-            AppCommand::ExecApproval { id, decision, .. } => self
-                .exec_approvals
-                .remove(id)
-                .map(|request_id| {
-                    Ok::<CliRuntimeRequestResolution, String>(CliRuntimeRequestResolution {
-                        request_id,
-                        result: serde_json::to_value(CommandExecutionRequestApprovalResponse {
-                            decision: decision.clone(),
-                        })
-                        .map_err(|err| {
-                            format!(
-                                "failed to serialize command execution approval response: {err}"
-                            )
-                        })?,
-                    })
-                })
-                .transpose()?,
-            AppCommand::PatchApproval { id, decision } => self
-                .file_change_approvals
-                .remove(id)
-                .map(|request_id| {
-                    Ok::<CliRuntimeRequestResolution, String>(CliRuntimeRequestResolution {
-                        request_id,
-                        result: serde_json::to_value(FileChangeRequestApprovalResponse {
-                            decision: decision.clone(),
-                        })
-                        .map_err(|err| {
-                            format!("failed to serialize file change approval response: {err}")
-                        })?,
-                    })
-                })
-                .transpose()?,
-            AppCommand::RequestPermissionsResponse { id, response } => self
-                .permissions_approvals
-                .remove(id)
-                .map(|request_id| {
-                    Ok::<CliRuntimeRequestResolution, String>(CliRuntimeRequestResolution {
-                        request_id,
-                        result: serde_json::to_value(PermissionsRequestApprovalResponse {
-                            permissions: granted_permission_profile_from_request(
-                                response.permissions.clone(),
-                            ),
-                            scope: response.scope.into(),
-                            strict_auto_review: response.strict_auto_review.then_some(true),
-                        })
-                        .map_err(|err| {
-                            format!("failed to serialize permissions approval response: {err}")
-                        })?,
-                    })
-                })
-                .transpose()?,
             AppCommand::UserInputAnswer { id, response } => self
                 .pop_user_input_request_for_turn(id)
                 .map(|pending| {
@@ -231,33 +122,6 @@ impl PendingCliRuntimeRequests {
         &mut self,
         request_id: &CliRuntimeRequestId,
     ) -> Option<ResolvedCliRuntimeRequest> {
-        if let Some(id) = self
-            .exec_approvals
-            .iter()
-            .find_map(|(id, value)| (value == request_id).then(|| id.clone()))
-        {
-            self.exec_approvals.remove(&id);
-            return Some(ResolvedCliRuntimeRequest::ExecApproval { id });
-        }
-
-        if let Some(id) = self
-            .file_change_approvals
-            .iter()
-            .find_map(|(id, value)| (value == request_id).then(|| id.clone()))
-        {
-            self.file_change_approvals.remove(&id);
-            return Some(ResolvedCliRuntimeRequest::FileChangeApproval { id });
-        }
-
-        if let Some(id) = self
-            .permissions_approvals
-            .iter()
-            .find_map(|(id, value)| (value == request_id).then(|| id.clone()))
-        {
-            self.permissions_approvals.remove(&id);
-            return Some(ResolvedCliRuntimeRequest::PermissionsApproval { id });
-        }
-
         if let Some(pending) = self.remove_user_input_request(request_id) {
             return Some(ResolvedCliRuntimeRequest::UserInput {
                 call_id: pending.item_id,
@@ -269,18 +133,6 @@ impl PendingCliRuntimeRequests {
 
     pub(super) fn contains_server_request(&self, request: &ServerRequest) -> bool {
         match request {
-            ServerRequest::CommandExecutionRequestApproval { request_id, .. } => self
-                .exec_approvals
-                .values()
-                .any(|pending_request_id| pending_request_id == request_id),
-            ServerRequest::FileChangeRequestApproval { request_id, .. } => self
-                .file_change_approvals
-                .values()
-                .any(|pending_request_id| pending_request_id == request_id),
-            ServerRequest::PermissionsRequestApproval { request_id, .. } => self
-                .permissions_approvals
-                .values()
-                .any(|pending_request_id| pending_request_id == request_id),
             ServerRequest::ToolRequestUserInput { request_id, .. } => {
                 self.user_inputs.values().any(|queue| {
                     queue
@@ -291,9 +143,7 @@ impl PendingCliRuntimeRequests {
             ServerRequest::DynamicToolCall { .. }
             | ServerRequest::ChatgptAuthTokensRefresh { .. }
             | ServerRequest::AttestationGenerate { .. }
-            | ServerRequest::CurrentTimeRead { .. }
-            | ServerRequest::ApplyPatchApproval { .. }
-            | ServerRequest::ExecCommandApproval { .. } => true,
+            | ServerRequest::CurrentTimeRead { .. } => true,
         }
     }
 

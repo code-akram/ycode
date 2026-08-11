@@ -545,11 +545,6 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadShellCommandResponse,
     },
-    ThreadApproveGuardianDeniedAction => "thread/approveGuardianDeniedAction" {
-        params: v2::ThreadApproveGuardianDeniedActionParams,
-        serialization: thread_id(params.thread_id),
-        response: v2::ThreadApproveGuardianDeniedActionResponse,
-    },
     #[experimental("thread/backgroundTerminals/clean")]
     ThreadBackgroundTerminalsClean => "thread/backgroundTerminals/clean" {
         params: v2::ThreadBackgroundTerminalsCleanParams,
@@ -1052,12 +1047,6 @@ client_request_definitions! {
         response: v2::ConfigWriteResponse,
     },
 
-    ConfigRequirementsRead => "configRequirements/read" {
-        params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
-        serialization: global("config"),
-        response: v2::ConfigRequirementsReadResponse,
-    },
-
     GetAccount => "account/read" {
         params: v2::GetAccountParams,
         serialization: global("account-auth"),
@@ -1314,31 +1303,10 @@ impl TryFrom<JSONRPCRequest> for ServerRequest {
 }
 
 server_request_definitions! {
-    /// NEW APIs
-    /// Sent when approval is requested for a specific command execution.
-    /// This request is used for Turns started via turn/start.
-    CommandExecutionRequestApproval => "item/commandExecution/requestApproval" {
-        params: v2::CommandExecutionRequestApprovalParams,
-        response: v2::CommandExecutionRequestApprovalResponse,
-    },
-
-    /// Sent when approval is requested for a specific file change.
-    /// This request is used for Turns started via turn/start.
-    FileChangeRequestApproval => "item/fileChange/requestApproval" {
-        params: v2::FileChangeRequestApprovalParams,
-        response: v2::FileChangeRequestApprovalResponse,
-    },
-
     /// EXPERIMENTAL - Request input from the user for a tool call.
     ToolRequestUserInput => "item/tool/requestUserInput" {
         params: v2::ToolRequestUserInputParams,
         response: v2::ToolRequestUserInputResponse,
-    },
-
-    /// Request approval for additional permissions from the user.
-    PermissionsRequestApproval => "item/permissions/requestApproval" {
-        params: v2::PermissionsRequestApprovalParams,
-        response: v2::PermissionsRequestApprovalResponse,
     },
 
     /// Execute a dynamic tool call on the client.
@@ -1365,19 +1333,6 @@ server_request_definitions! {
         response: v2::CurrentTimeReadResponse,
     },
 
-    /// DEPRECATED APIs below
-    /// Request to approve a patch.
-    /// This request is used for Turns started via the legacy APIs (i.e. SendUserTurn, SendUserMessage).
-    ApplyPatchApproval {
-        params: v1::ApplyPatchApprovalParams,
-        response: v1::ApplyPatchApprovalResponse,
-    },
-    /// Request to exec a command.
-    /// This request is used for Turns started via the legacy APIs (i.e. SendUserTurn, SendUserMessage).
-    ExecCommandApproval {
-        params: v1::ExecCommandApprovalParams,
-        response: v1::ExecCommandApprovalResponse,
-    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1489,8 +1444,6 @@ server_notification_definitions! {
     TurnDiffUpdated => "turn/diff/updated" (v2::TurnDiffUpdatedNotification),
     TurnPlanUpdated => "turn/plan/updated" (v2::TurnPlanUpdatedNotification),
     ItemStarted => "item/started" (v2::ItemStartedNotification),
-    ItemGuardianApprovalReviewStarted => "item/autoApprovalReview/started" (v2::ItemGuardianApprovalReviewStartedNotification),
-    ItemGuardianApprovalReviewCompleted => "item/autoApprovalReview/completed" (v2::ItemGuardianApprovalReviewCompletedNotification),
     ItemCompleted => "item/completed" (v2::ItemCompletedNotification),
     /// This event is internal-only. Used by Codex Cloud.
     RawResponseItemCompleted => "rawResponseItem/completed" (v2::RawResponseItemCompletedNotification),
@@ -1529,7 +1482,6 @@ server_notification_definitions! {
     TurnModerationMetadata => "turn/moderationMetadata" (v2::TurnModerationMetadataNotification),
     ModelSafetyBufferingUpdated => "model/safetyBuffering/updated" (v2::ModelSafetyBufferingUpdatedNotification),
     Warning => "warning" (v2::WarningNotification),
-    GuardianWarning => "guardianWarning" (v2::GuardianWarningNotification),
     DeprecationNotice => "deprecationNotice" (v2::DeprecationNoticeNotification),
     ConfigWarning => "configWarning" (v2::ConfigWarningNotification),
     FuzzyFileSearchSessionUpdated => "fuzzyFileSearch/sessionUpdated" (FuzzyFileSearchSessionUpdatedNotification),

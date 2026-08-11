@@ -326,6 +326,7 @@ pub async fn run_user_shell_command(sess: &Arc<Session>, sub_id: String, command
 
 /// Propagate a user's exec approval decision to the session.
 /// Also optionally applies an execpolicy amendment.
+#[cfg(any())]
 pub async fn exec_approval(
     sess: &Arc<Session>,
     approval_id: String,
@@ -357,6 +358,7 @@ pub async fn exec_approval(
     }
 }
 
+#[cfg(any())]
 pub async fn patch_approval(sess: &Arc<Session>, id: String, decision: ReviewDecision) {
     match decision {
         ReviewDecision::Abort => {
@@ -374,6 +376,7 @@ pub async fn request_user_input_response(
     sess.notify_user_input_response(&id, response).await;
 }
 
+#[cfg(any())]
 pub async fn request_permissions_response(
     sess: &Arc<Session>,
     id: String,
@@ -547,7 +550,6 @@ async fn shutdown_session_runtime(sess: &Arc<Session>) {
     if let Err(err) = sess.services.code_mode_service.shutdown().await {
         warn!("failed to shutdown code mode session: {err}");
     }
-    sess.guardian_review_session.shutdown().await;
 
     crate::hook_runtime::run_session_end_hooks(sess).await;
 }
@@ -724,24 +726,8 @@ pub(super) async fn submission_loop(
                     .await;
                     false
                 }
-                Op::ExecApproval {
-                    id: approval_id,
-                    turn_id,
-                    decision,
-                } => {
-                    exec_approval(&sess, approval_id, turn_id, decision).await;
-                    false
-                }
-                Op::PatchApproval { id, decision } => {
-                    patch_approval(&sess, id, decision).await;
-                    false
-                }
                 Op::UserInputAnswer { id, response } => {
                     request_user_input_response(&sess, id, response).await;
-                    false
-                }
-                Op::RequestPermissionsResponse { id, response } => {
-                    request_permissions_response(&sess, id, response).await;
                     false
                 }
                 Op::DynamicToolResponse { id, response } => {
@@ -773,10 +759,6 @@ pub(super) async fn submission_loop(
                     review(&sess, &config, sub.id.clone(), review_request).await;
                     false
                 }
-                Op::ApproveGuardianDeniedAction { event } => {
-                    approve_guardian_denied_action(&sess, event).await;
-                    false
-                }
                 _ => false, // Ignore unknown ops; enum is non_exhaustive to allow extensions.
             }
         }
@@ -801,6 +783,7 @@ pub(super) async fn submission_loop(
     debug!("Agent loop exited");
 }
 
+#[cfg(any())]
 async fn approve_guardian_denied_action(sess: &Arc<Session>, event: GuardianAssessmentEvent) {
     if event.status != GuardianAssessmentStatus::Denied {
         warn!(

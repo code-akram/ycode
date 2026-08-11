@@ -1311,6 +1311,7 @@ impl AnalyticsReducer {
 
     fn ingest_server_request(&mut self, _connection_id: u64, request: ServerRequest) {
         match request {
+            #[cfg(any())]
             ServerRequest::CommandExecutionRequestApproval { request_id, params } => {
                 let is_network_access_review = params.network_approval_context.is_some();
                 let requested_network_access = is_network_access_review
@@ -1361,6 +1362,7 @@ impl AnalyticsReducer {
                     },
                 );
             }
+            #[cfg(any())]
             ServerRequest::FileChangeRequestApproval { request_id, params } => {
                 let requested_additional_permissions = params.grant_root.is_some();
                 let Some(started_at_ms) = option_i64_to_u64(Some(params.started_at_ms)) else {
@@ -1386,6 +1388,7 @@ impl AnalyticsReducer {
                     },
                 );
             }
+            #[cfg(any())]
             ServerRequest::PermissionsRequestApproval { request_id, params } => {
                 let requested_network_access = params
                     .permissions
@@ -1432,6 +1435,7 @@ impl AnalyticsReducer {
         out: &mut Vec<TrackEventRequest>,
     ) {
         match response {
+            #[cfg(any())]
             ServerResponse::CommandExecutionRequestApproval {
                 request_id,
                 response,
@@ -1449,6 +1453,7 @@ impl AnalyticsReducer {
                     out,
                 );
             }
+            #[cfg(any())]
             ServerResponse::FileChangeRequestApproval {
                 request_id,
                 response,
@@ -1654,9 +1659,11 @@ impl AnalyticsReducer {
                 }
                 self.item_review_summaries.remove(&key);
             }
+            #[cfg(any())]
             ServerNotification::ItemGuardianApprovalReviewStarted(notification) => {
                 let _ = notification;
             }
+            #[cfg(any())]
             ServerNotification::ItemGuardianApprovalReviewCompleted(notification) => {
                 self.ingest_guardian_review_completed(notification, out);
             }

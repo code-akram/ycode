@@ -19,7 +19,6 @@ use codex_cloud_tasks::Cli as CloudTasksCli;
 use codex_exec::Cli as ExecCli;
 use codex_exec::Command as ExecCommand;
 use codex_exec::ReviewArgs;
-use codex_execpolicy::ExecPolicyCheckCommand;
 use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
 use codex_rollout_trace::REDUCED_STATE_FILE_NAME;
 use codex_rollout_trace::replay_bundle;
@@ -135,15 +134,8 @@ enum Subcommand {
     /// Diagnose local Codex installation, config, auth, and runtime health.
     Doctor(DoctorCommand),
 
-    /// Run commands within a Codex-provided sandbox.
-    Sandbox(HostSandboxArgs),
-
     /// Debugging tools.
     Debug(DebugCommand),
-
-    /// Execpolicy tooling.
-    #[clap(hide = true)]
-    Execpolicy(ExecpolicyCommand),
 
     /// Apply the latest diff produced by Codex agent as a `git apply` to your local working tree.
     #[clap(visible_alias = "a")]
@@ -346,21 +338,6 @@ impl clap::FromArgMatches for SessionTuiCli {
     }
 }
 
-type HostSandboxArgs = codex_cli::SeatbeltCommand;
-
-#[derive(Debug, Parser)]
-struct ExecpolicyCommand {
-    #[command(subcommand)]
-    sub: ExecpolicySubcommand,
-}
-
-#[derive(Debug, clap::Subcommand)]
-enum ExecpolicySubcommand {
-    /// Check execpolicy files against a command.
-    #[clap(name = "check")]
-    Check(ExecPolicyCheckCommand),
-}
-
 #[derive(Debug, Parser)]
 struct LoginCommand {
     #[clap(skip)]
@@ -503,10 +480,6 @@ fn run_update_command() -> anyhow::Result<()> {
     }
 }
 
-fn run_execpolicycheck(cmd: ExecPolicyCheckCommand) -> anyhow::Result<()> {
-    cmd.run()
-}
-
 async fn run_session_archive_cli_command(
     action: codex_tui::SessionArchiveAction,
     cmd: SessionArchiveCommand,
@@ -630,9 +603,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let toggle_overrides = feature_toggles.to_overrides()?;
     root_config_overrides.raw_overrides.extend(toggle_overrides);
     let root_strict_config = interactive.strict_config;
-    interactive
-        .shared
-        .take_auto_review_config_overrides(&mut root_config_overrides);
     reject_root_strict_config_for_subcommand(root_strict_config, &subcommand)?;
     if let Some(subcommand) = subcommand.as_ref() {
         profile_v2_for_subcommand(&interactive, subcommand)?;
@@ -851,18 +821,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             );
             codex_cloud_tasks::run_main(cloud_cli).await?;
         }
-        Some(Subcommand::Sandbox(mut sandbox_cli)) => {
-            let config_profile = sandbox_cli
-                .config_profile
-                .as_ref()
-                .or(interactive.config_profile_v2.as_ref());
-            prepend_config_flags(
-                &mut sandbox_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
-            let loader_overrides = loader_overrides_for_profile(config_profile)?;
-            codex_cli::run_command_under_seatbelt(sandbox_cli, loader_overrides).await?;
-        }
         Some(Subcommand::Debug(DebugCommand { subcommand })) => match subcommand {
             DebugSubcommand::Models(cmd) => {
                 run_debug_models_command(cmd, root_config_overrides).await?;
@@ -882,9 +840,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             DebugSubcommand::ClearMemories => {
                 run_debug_clear_memories_command(&root_config_overrides).await?;
             }
-        },
-        Some(Subcommand::Execpolicy(ExecpolicyCommand { sub })) => match sub {
-            ExecpolicySubcommand::Check(cmd) => run_execpolicycheck(cmd)?,
         },
         Some(Subcommand::Apply(mut apply_cli)) => {
             prepend_config_flags(
@@ -960,12 +915,11 @@ fn profile_v2_for_subcommand<'a>(
         | Subcommand::Delete(_)
         | Subcommand::Unarchive(_)
         | Subcommand::Fork(_)
-        | Subcommand::Sandbox(_)
         | Subcommand::Debug(DebugCommand {
             subcommand: DebugSubcommand::PromptInput(_),
         }) => Ok(Some(profile_v2)),
         _ => anyhow::bail!(
-            "--profile only applies to runtime commands: `codex`, `codex exec`, `codex review`, `codex resume`, `codex archive`, `codex delete`, `codex unarchive`, `codex fork`, `codex sandbox`, and `codex debug prompt-input`."
+            "--profile only applies to runtime commands: `codex`, `codex exec`, `codex review`, `codex resume`, `codex archive`, `codex delete`, `codex unarchive`, `codex fork`, and `codex debug prompt-input`."
         ),
     }
 }
@@ -1068,27 +1022,14 @@ async fn run_debug_prompt_input_command(
         ));
     }
 
-    let approval_policy = if shared.dangerously_bypass_approvals_and_sandbox {
-        Some(AskForApproval::Never)
-    } else {
-        interactive.approval_policy.map(Into::into)
-    };
-    let sandbox_mode = if shared.dangerously_bypass_approvals_and_sandbox {
-        Some(codex_protocol::config_types::SandboxMode::DangerFullAccess)
-    } else {
-        shared.sandbox_mode.map(Into::into)
-    };
     let overrides = ConfigOverrides {
         model: shared.model,
-        approval_policy,
-        sandbox_mode,
         cwd: shared.cwd,
         codex_self_exe: arg0_paths.codex_self_exe,
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe,
         show_raw_agent_reasoning: shared.oss.then_some(true),
         ephemeral: Some(true),
         bypass_hook_trust: shared.bypass_hook_trust.then_some(true),
-        additional_writable_roots: shared.add_dir,
         ..Default::default()
     };
     let config = ConfigBuilder::default()
@@ -1266,9 +1207,7 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::Completion(_)) => Some("completion"),
         Some(Subcommand::Update) => Some("update"),
         Some(Subcommand::Cloud(_)) => Some("cloud"),
-        Some(Subcommand::Sandbox(_)) => Some("sandbox"),
         Some(Subcommand::Debug(_)) => Some("debug"),
-        Some(Subcommand::Execpolicy(_)) => Some("execpolicy"),
         Some(Subcommand::Apply(_)) => Some("apply"),
         Some(Subcommand::ResponsesApiProxy(_)) => Some("responses-api-proxy"),
         Some(Subcommand::Features(_)) => Some("features"),
@@ -1460,24 +1399,14 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     let TuiCli {
         shared,
         strict_config,
-        approval_policy,
         web_search,
         prompt,
         mut config_overrides,
         ..
     } = subcommand_cli;
-    let subcommand_auto_review = shared.auto_review;
     interactive
         .shared
         .apply_subcommand_overrides(shared.into_inner());
-    interactive
-        .shared
-        .take_auto_review_config_overrides(&mut config_overrides);
-    if subcommand_auto_review {
-        interactive.approval_policy = None;
-    } else if let Some(approval) = approval_policy {
-        interactive.approval_policy = Some(approval);
-    }
     if web_search {
         interactive.web_search = true;
     }

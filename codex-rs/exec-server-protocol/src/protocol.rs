@@ -183,21 +183,6 @@ pub struct ExecParams {
     pub pipe_stdin: bool,
     /// Optional process-visible argv0 override; this is a command name, not a [`PathUri`].
     pub arg0: Option<String>,
-    /// Portable sandbox intent. Concrete wrapper argv is resolved by the exec-server.
-    #[serde(default)]
-    pub sandbox: Option<FileSystemSandboxContext>,
-    /// Whether the eventual executor-side sandbox must enforce managed networking.
-    #[serde(default)]
-    pub enforce_managed_network: bool,
-    /// Optional details for enforcing managed networking without a live proxy object.
-    ///
-    /// When `enforce_managed_network` is true and these details are absent, the executor must
-    /// continue to fail closed. This preserves compatibility with older clients.
-    #[serde(default)]
-    pub managed_network: Option<ManagedNetworkSandboxContext>,
-    /// Optional instructions for starting an executor-local managed-network proxy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub network_proxy: Option<RemoteNetworkProxyLaunchConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -214,18 +199,6 @@ pub struct ExecEnvPolicy {
 #[serde(rename_all = "camelCase")]
 pub struct ExecResponse {
     pub process_id: ProcessId,
-    /// `None` means the peer did not report its sandbox type. Current peers
-    /// report [`ProcessSandboxType::None`] when the process was not sandboxed.
-    #[serde(default)]
-    pub sandbox_type: Option<ProcessSandboxType>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ProcessSandboxType {
-    /// The process was explicitly started without a platform sandbox.
-    None,
-    MacosSeatbelt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -254,9 +227,6 @@ pub struct ReadResponse {
     pub exit_code: Option<i32>,
     pub closed: bool,
     pub failure: Option<String>,
-    /// Whether the executor classified the process failure as a sandbox denial.
-    #[serde(default)]
-    pub sandbox_denied: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -713,8 +683,6 @@ pub struct ExecExitedNotification {
     pub process_id: ProcessId,
     pub seq: u64,
     pub exit_code: i32,
-    #[serde(default)]
-    pub sandbox_denied: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

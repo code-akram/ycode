@@ -22,11 +22,9 @@
 //! and environment variables that the test chose for itself. That matters here because the normal
 //! reqwest client-construction path is not hermetic enough for environment-sensitive tests:
 //!
-//! - on macOS seatbelt runs, `reqwest::Client::builder().build()` can panic inside
+//! - on macOS, `reqwest::Client::builder().build()` can panic inside
 //!   `system-configuration` while probing platform proxy settings, which means the process can die
-//!   before the custom-CA code reports success or a structured error. That matters in practice
-//!   because Codex itself commonly runs spawned test processes under seatbelt, so this is not just
-//!   a hypothetical CI edge case.
+//!   before the custom-CA code reports success or a structured error.
 //! - child processes inherit CA-related environment variables by default, which lets developer
 //!   shell state or CI configuration affect a test unless the test scrubs those variables first
 //!

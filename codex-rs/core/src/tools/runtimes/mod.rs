@@ -2,28 +2,13 @@
 Module: runtimes
 
 Concrete ToolRuntime implementations for specific tools. Each runtime stays
-small and focused and reuses the orchestrator for approvals + sandbox + retry.
+small and focused and reuses the orchestrator for execution.
 */
-use crate::exec_env::CODEX_PERMISSION_PROFILE_ENV_VAR;
 use crate::exec_env::CODEX_THREAD_ID_ENV_VAR;
-use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
-use crate::tools::sandboxing::ToolError;
 #[cfg(unix)]
 use codex_install_context::InstallContext;
-#[cfg(target_os = "macos")]
-use codex_network_proxy::CODEX_PROXY_GIT_SSH_COMMAND_MARKER;
-use codex_network_proxy::CUSTOM_CA_ENV_KEYS;
-use codex_network_proxy::PROXY_ACTIVE_ENV_KEY;
-use codex_network_proxy::PROXY_ENV_KEYS;
-#[cfg(target_os = "macos")]
-use codex_network_proxy::PROXY_GIT_SSH_COMMAND_ENV_KEY;
-pub(crate) use codex_network_proxy::is_managed_proxy_env_var;
-pub(crate) use codex_network_proxy::strip_managed_proxy_env;
-use codex_protocol::models::AdditionalPermissionProfile;
-use codex_sandboxing::SandboxCommand;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
 #[cfg(unix)]
 use std::path::Path;
@@ -31,41 +16,6 @@ use std::path::Path;
 pub(crate) mod apply_patch;
 pub(crate) mod shell;
 pub(crate) mod unified_exec;
-
-/// Shared helper to construct sandbox transform inputs from a tokenized command line and native
-/// working directory. Validates that at least a program is present.
-pub(crate) fn build_sandbox_command(
-    command: &[String],
-    cwd: &AbsolutePathBuf,
-    env: &HashMap<String, String>,
-    additional_permissions: Option<AdditionalPermissionProfile>,
-) -> Result<SandboxCommand, ToolError> {
-    let (program, args) = command
-        .split_first()
-        .ok_or_else(|| ToolError::Rejected("command args are empty".to_string()))?;
-    let cwd = PathUri::from_abs_path(cwd);
-    Ok(SandboxCommand {
-        program: program.clone().into(),
-        args: args.to_vec(),
-        cwd,
-        env: env.clone(),
-        managed_network: None,
-        additional_permissions,
-    })
-}
-
-pub(crate) fn exec_env_for_sandbox_permissions(
-    env: &HashMap<String, String>,
-    sandbox_permissions: SandboxPermissions,
-) -> HashMap<String, String> {
-    let mut env = env.clone();
-    if sandbox_permissions.requires_escalated_permissions()
-        && env.contains_key(PROXY_ACTIVE_ENV_KEY)
-    {
-        strip_managed_proxy_env(&mut env);
-    }
-    env
-}
 
 /// Prepends `path_entry` to `PATH`, removing duplicate and empty existing
 /// entries.
@@ -235,23 +185,15 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         .map(|arg| format!(" '{}'", shell_single_quote(arg)))
         .collect::<String>();
     let mut override_env = explicit_env_overrides.clone();
-    for key in [CODEX_THREAD_ID_ENV_VAR, CODEX_PERMISSION_PROFILE_ENV_VAR] {
+    for key in [CODEX_THREAD_ID_ENV_VAR] {
         if let Some(value) = env.get(key) {
             override_env.insert(key.to_string(), value.clone());
         }
     }
-    // Do not let a snapshot resurrect a stale profile when no named profile is active.
-    let (override_captures, override_exports) =
-        build_override_exports(&override_env, &[CODEX_PERMISSION_PROFILE_ENV_VAR]);
-    let (proxy_captures, proxy_exports) = build_proxy_env_exports();
+    let (override_captures, override_exports) = build_override_exports(&override_env, &[]);
     let runtime_path_prepend_exports =
         runtime_path_prepends.shell_exports_after_snapshot(explicit_env_overrides);
-    let override_captures = join_shell_blocks([override_captures, proxy_captures]);
-    let override_exports = join_shell_blocks([
-        override_exports,
-        proxy_exports,
-        runtime_path_prepend_exports,
-    ]);
+    let override_exports = join_shell_blocks([override_exports, runtime_path_prepend_exports]);
     let rewritten_script = if override_exports.is_empty() {
         format!(
             "if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
@@ -281,6 +223,7 @@ fn build_override_exports(
     build_override_exports_for_keys("__CODEX_SNAPSHOT_OVERRIDE", &keys)
 }
 
+#[cfg(any())]
 fn build_proxy_env_exports() -> (String, String) {
     let mut keys = PROXY_ENV_KEYS
         .iter()
@@ -307,7 +250,7 @@ fn build_proxy_env_exports() -> (String, String) {
     )
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any())]
 fn build_codex_proxy_git_ssh_command_exports() -> (String, String) {
     let key = PROXY_GIT_SSH_COMMAND_ENV_KEY;
     let marker_pattern = format!("{}\\ *", CODEX_PROXY_GIT_SSH_COMMAND_MARKER.trim_end());
@@ -321,7 +264,7 @@ fn build_codex_proxy_git_ssh_command_exports() -> (String, String) {
     )
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any())]
 fn build_codex_proxy_git_ssh_command_exports() -> (String, String) {
     (String::new(), String::new())
 }

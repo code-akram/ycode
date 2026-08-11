@@ -170,27 +170,10 @@ async fn send_message_to_connection(
 }
 
 fn filter_outgoing_message_for_connection(
-    connection_state: &OutboundConnectionState,
+    _connection_state: &OutboundConnectionState,
     message: OutgoingMessage,
 ) -> OutgoingMessage {
-    let experimental_api_enabled = connection_state
-        .experimental_api_enabled
-        .load(Ordering::Acquire);
-    match message {
-        OutgoingMessage::Request(ServerRequest::CommandExecutionRequestApproval {
-            request_id,
-            mut params,
-        }) => {
-            if !experimental_api_enabled {
-                params.strip_experimental_fields();
-            }
-            OutgoingMessage::Request(ServerRequest::CommandExecutionRequestApproval {
-                request_id,
-                params,
-            })
-        }
-        _ => message,
-    }
+    message
 }
 
 pub(crate) async fn route_outgoing_envelope(

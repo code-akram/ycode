@@ -208,8 +208,6 @@ impl StepContext {
     }
 }
 
-mod guardian_tests;
-
 struct InstructionsTestCase {
     slug: &'static str,
     expects_apply_patch_description: bool,

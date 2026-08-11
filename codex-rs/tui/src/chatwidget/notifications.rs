@@ -26,8 +26,6 @@ impl ChatWidget {
 #[derive(Debug)]
 pub(super) enum Notification {
     AgentTurnComplete { response: String },
-    ExecApprovalRequested { command: String },
-    EditApprovalRequested { cwd: PathBuf, changes: Vec<PathBuf> },
     PlanModePrompt { title: String },
 }
 
@@ -38,23 +36,6 @@ impl Notification {
                 Notification::agent_turn_preview(response)
                     .unwrap_or_else(|| "Agent turn complete".to_string())
             }
-            Notification::ExecApprovalRequested { command } => {
-                format!(
-                    "Approval requested: {}",
-                    truncate_text(command, /*max_graphemes*/ 30)
-                )
-            }
-            Notification::EditApprovalRequested { cwd, changes } => {
-                format!(
-                    "Codex wants to edit {}",
-                    if changes.len() == 1 {
-                        #[allow(clippy::unwrap_used)]
-                        display_path_for(changes.first().unwrap(), cwd)
-                    } else {
-                        format!("{} files", changes.len())
-                    }
-                )
-            }
             Notification::PlanModePrompt { title } => {
                 format!("Plan mode prompt: {title}")
             }
@@ -64,8 +45,6 @@ impl Notification {
     fn type_name(&self) -> &str {
         match self {
             Notification::AgentTurnComplete { .. } => "agent-turn-complete",
-            Notification::ExecApprovalRequested { .. }
-            | Notification::EditApprovalRequested { .. } => "approval-requested",
             Notification::PlanModePrompt { .. } => "plan-mode-prompt",
         }
     }
@@ -73,9 +52,7 @@ impl Notification {
     fn priority(&self) -> u8 {
         match self {
             Notification::AgentTurnComplete { .. } => 0,
-            Notification::ExecApprovalRequested { .. }
-            | Notification::EditApprovalRequested { .. }
-            | Notification::PlanModePrompt { .. } => 1,
+            Notification::PlanModePrompt { .. } => 1,
         }
     }
 

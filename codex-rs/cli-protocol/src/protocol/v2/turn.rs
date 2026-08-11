@@ -103,22 +103,6 @@ pub struct TurnStartParams {
     #[experimental("turn/start.runtimeWorkspaceRoots")]
     #[ts(optional = nullable)]
     pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
-    /// Override the approval policy for this turn and subsequent turns.
-    #[experimental(nested)]
-    #[ts(optional = nullable)]
-    pub approval_policy: Option<AskForApproval>,
-    /// Override where approval requests are routed for review on this turn and
-    /// subsequent turns.
-    #[ts(optional = nullable)]
-    pub approvals_reviewer: Option<ApprovalsReviewer>,
-    /// Override the sandbox policy for this turn and subsequent turns.
-    #[ts(optional = nullable)]
-    pub sandbox_policy: Option<SandboxPolicy>,
-    /// Select a named permissions profile id for this turn and subsequent
-    /// turns. Cannot be combined with `sandboxPolicy`.
-    #[experimental("turn/start.permissions")]
-    #[ts(optional = nullable)]
-    pub permissions: Option<String>,
     /// Override the model for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub model: Option<String>,

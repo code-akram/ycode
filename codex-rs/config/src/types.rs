@@ -22,7 +22,6 @@ use serde::Serialize;
 pub use crate::tui_keymap::KeybindingSpec;
 pub use crate::tui_keymap::KeybindingsSpec;
 pub use crate::tui_keymap::MAX_FUNCTION_KEY;
-pub use crate::tui_keymap::TuiApprovalKeymap;
 pub use crate::tui_keymap::TuiChatKeymap;
 pub use crate::tui_keymap::TuiComposerKeymap;
 pub use crate::tui_keymap::TuiEditorKeymap;

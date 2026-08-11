@@ -236,7 +236,6 @@ struct ThreadSpawnRequest {
     forked_from_thread_id: Option<ThreadId>,
     fork_persistence: ForkPersistence,
     inherited_environments: Option<TurnEnvironmentSnapshot>,
-    inherited_exec_policy: Option<Arc<crate::exec_policy::ExecPolicyManager>>,
     user_shell_override: Option<crate::shell::Shell>,
 }
 
@@ -254,7 +253,6 @@ impl ThreadSpawnRequest {
             forked_from_thread_id: None,
             fork_persistence: ForkPersistence::Copied,
             inherited_environments: None,
-            inherited_exec_policy: None,
             user_shell_override: None,
         }
     }
@@ -297,7 +295,6 @@ pub(crate) struct ResumeThreadWithHistoryOptions {
     pub(crate) session_source: SessionSource,
     pub(crate) parent_thread_id: Option<ThreadId>,
     pub(crate) inherited_environments: Option<TurnEnvironmentSnapshot>,
-    pub(crate) inherited_exec_policy: Option<Arc<crate::exec_policy::ExecPolicyManager>>,
 }
 
 /// Shared, `Arc`-owned state for [`ThreadManager`]. This `Arc` is required to have a single
@@ -1410,7 +1407,6 @@ impl ThreadManagerState {
             /*thread_source*/ None,
             /*metrics_service_name*/ None,
             /*inherited_environments*/ None,
-            /*inherited_exec_policy*/ None,
             /*environments*/ None,
         ))
         .await
@@ -1428,7 +1424,6 @@ impl ThreadManagerState {
         thread_source: Option<ThreadSource>,
         metrics_service_name: Option<String>,
         inherited_environments: Option<TurnEnvironmentSnapshot>,
-        inherited_exec_policy: Option<Arc<crate::exec_policy::ExecPolicyManager>>,
         environments: Option<Vec<TurnEnvironmentSelection>>,
     ) -> CodexResult<NewThread> {
         let options = StartThreadOptions {
@@ -1444,7 +1439,6 @@ impl ThreadManagerState {
         request.parent_thread_id = parent_thread_id;
         request.forked_from_thread_id = forked_from_thread_id;
         request.inherited_environments = inherited_environments;
-        request.inherited_exec_policy = inherited_exec_policy;
         Box::pin(self.spawn_thread(request)).await
     }
 
@@ -1459,7 +1453,6 @@ impl ThreadManagerState {
             session_source,
             parent_thread_id,
             inherited_environments,
-            inherited_exec_policy,
         } = options;
         let thread_source = initial_history.get_resumed_thread_source();
         let options = StartThreadOptions {
@@ -1472,7 +1465,6 @@ impl ThreadManagerState {
             ThreadSpawnRequest::new(options, Arc::clone(&self.auth_manager), agent_control);
         request.parent_thread_id = parent_thread_id;
         request.inherited_environments = inherited_environments;
-        request.inherited_exec_policy = inherited_exec_policy;
         Box::pin(self.spawn_thread(request)).await
     }
 
@@ -1488,7 +1480,6 @@ impl ThreadManagerState {
         parent_thread_id: Option<ThreadId>,
         forked_from_thread_id: Option<ThreadId>,
         inherited_environments: Option<TurnEnvironmentSnapshot>,
-        inherited_exec_policy: Option<Arc<crate::exec_policy::ExecPolicyManager>>,
         environments: Option<Vec<TurnEnvironmentSelection>>,
         thread_extension_init: ExtensionDataInit,
     ) -> CodexResult<NewThread> {
@@ -1506,7 +1497,6 @@ impl ThreadManagerState {
         request.parent_thread_id = parent_thread_id;
         request.forked_from_thread_id = forked_from_thread_id;
         request.inherited_environments = inherited_environments;
-        request.inherited_exec_policy = inherited_exec_policy;
         Box::pin(self.spawn_thread(request)).await
     }
 
@@ -1520,7 +1510,6 @@ impl ThreadManagerState {
             forked_from_thread_id,
             fork_persistence,
             inherited_environments,
-            inherited_exec_policy,
             user_shell_override,
         } = request;
         let StartThreadOptions {
@@ -1614,7 +1603,6 @@ impl ThreadManagerState {
             dynamic_tools,
             metrics_service_name,
             inherited_environments,
-            inherited_exec_policy,
             parent_rollout_thread_trace,
             user_shell_override,
             parent_trace,

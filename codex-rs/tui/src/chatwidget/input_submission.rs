@@ -289,12 +289,9 @@ impl ChatWidget {
             .filter(|_| self.config.features.enabled(Feature::Personality))
             .filter(|_| self.current_model_supports_personality());
         let service_tier = self.service_tier_update_for_core();
-        let active_permission_profile = self.config.permissions.active_permission_profile();
         let op = AppCommand::user_turn(
             items,
             self.config.cwd.to_path_buf(),
-            AskForApproval::from(self.config.permissions.approval_policy.value()),
-            active_permission_profile,
             effective_mode.model().to_string(),
             effective_mode.reasoning_effort(),
             /*summary*/ None,

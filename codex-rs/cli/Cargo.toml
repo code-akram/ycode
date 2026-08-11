@@ -32,7 +32,6 @@ codex-cli-protocol = { workspace = true }
 codex-arg0 = { workspace = true }
 codex-api = { workspace = true }
 codex-chatgpt = { workspace = true }
-codex-cloud-config = { workspace = true }
 codex-cloud-tasks = { path = "../cloud-tasks" }
 codex-utils-cli = { workspace = true }
 codex-config = { workspace = true }
@@ -56,7 +55,6 @@ codex-protocol = { workspace = true }
 codex-responses-api-proxy = { workspace = true }
 codex-rollout = { workspace = true }
 codex-rollout-trace = { workspace = true }
-codex-sandboxing = { workspace = true }
 codex-skills-extension = { workspace = true }
 codex-state = { workspace = true }
 codex-terminal-detection = { workspace = true }

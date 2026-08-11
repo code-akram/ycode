@@ -74,11 +74,6 @@ const KEYMAP_COMMON_ACTIONS: &[(&str, &str)] = &[
     ("pager", "close"),
     ("pager", "page_up"),
     ("pager", "page_down"),
-    ("approval", "open_fullscreen"),
-    ("approval", "approve"),
-    ("approval", "approve_for_session"),
-    ("approval", "decline"),
-    ("approval", "cancel"),
 ];
 
 const KEYMAP_CONTEXT_TABS: &[KeymapContextTab] = &[
@@ -111,12 +106,6 @@ const KEYMAP_CONTEXT_TABS: &[KeymapContextTab] = &[
         label: "Navigation",
         description: "Pager and selection-list navigation shortcuts.",
         contexts: &["pager", "list"],
-    },
-    KeymapContextTab {
-        id: "approval-shortcuts",
-        label: "Approval",
-        description: "Approval prompt shortcuts.",
-        contexts: &["approval"],
     },
 ];
 

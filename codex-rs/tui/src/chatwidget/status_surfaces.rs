@@ -10,12 +10,8 @@ use crate::chatwidget::limit_label_for_window;
 use crate::chatwidget::rate_limits::get_limits_duration;
 use crate::legacy_core::config::Config;
 use crate::status::format_tokens_compact;
-use codex_cli_protocol::AskForApproval;
 use codex_config::ConfigLayerSource;
-use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::ServiceTier;
-use codex_protocol::models::PermissionProfile;
-use codex_utils_sandbox_summary::summarize_permission_profile;
 
 use super::status_state::TerminalTitleStatusKind;
 
@@ -1088,44 +1084,13 @@ fn matches_window_label(window: &RateLimitWindowDisplay, label: &str) -> bool {
 }
 
 fn permissions_display(config: &Config) -> String {
-    let active_permission_profile = config.permissions.active_permission_profile();
-    if let Some(active_permission_profile) = active_permission_profile.as_ref()
-        && !active_permission_profile.id.starts_with(':')
-    {
-        return active_permission_profile.id.clone();
-    }
-
-    let permission_profile = config.permissions.effective_permission_profile();
-    let workspace_roots = config.effective_workspace_roots();
-    let summary =
-        summarize_permission_profile(&permission_profile, &config.cwd, workspace_roots.as_slice());
-    if let Some(details) = summary.strip_prefix("read-only")
-        && !details.contains("(network access enabled)")
-    {
-        return "Read Only".to_string();
-    }
-    if let Some(details) = summary.strip_prefix("workspace-write")
-        && !details.contains("(network access enabled)")
-    {
-        return "Workspace".to_string();
-    }
-    if permission_profile == PermissionProfile::Disabled {
-        return "Full Access".to_string();
-    }
-
-    "Custom permissions".to_string()
+    let _ = config;
+    "Full Access".to_string()
 }
 
 fn approval_mode_display(config: &Config) -> String {
-    let approval_policy = AskForApproval::from(config.permissions.approval_policy.value());
-    if approval_policy == AskForApproval::OnRequest {
-        return match config.approvals_reviewer {
-            ApprovalsReviewer::AutoReview => "Approve for me".to_string(),
-            ApprovalsReviewer::User => "Ask for approval".to_string(),
-        };
-    }
-
-    config.permissions.approval_policy.value().to_string()
+    let _ = config;
+    "Never".to_string()
 }
 
 fn parse_items_with_invalids<T>(ids: impl IntoIterator<Item = String>) -> (Vec<T>, Vec<String>)

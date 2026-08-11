@@ -7,13 +7,9 @@ use codex_cli_protocol::ServerNotification;
 use codex_cli_protocol::ThreadGoal;
 use codex_cli_protocol::ThreadGoalUpdatedNotification;
 use codex_cli_protocol::WarningNotification;
-use codex_core::NewThread;
-use codex_core::StartThreadOptions;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
 use codex_exec_server::EnvironmentManager;
-use codex_extension_api::AgentSpawnFuture;
-use codex_extension_api::AgentSpawner;
 use codex_extension_api::ExtensionEventSink;
 use codex_extension_api::ExtensionRegistry;
 use codex_extension_api::ExtensionRegistryBuilder;
@@ -22,7 +18,6 @@ use codex_goal_extension::GoalService;
 use codex_http_client::HttpClientFactory;
 use codex_login::AuthManager;
 use codex_protocol::ThreadId;
-use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_rollout::state_db::StateDbHandle;
@@ -48,13 +43,9 @@ pub(crate) struct ThreadExtensionDependencies {
     pub(crate) thread_store: Arc<dyn ThreadStore>,
 }
 
-pub(crate) fn thread_extensions<S>(
-    guardian_agent_spawner: S,
+pub(crate) fn thread_extensions(
     dependencies: ThreadExtensionDependencies,
-) -> Arc<ExtensionRegistry<Config>>
-where
-    S: AgentSpawner<StartThreadOptions, Spawned = NewThread, Error = CodexErr> + 'static,
-{
+) -> Arc<ExtensionRegistry<Config>> {
     let ThreadExtensionDependencies {
         event_sink,
         auth_manager,
@@ -86,7 +77,6 @@ where
         git_attribution_base_url,
         http_client_factory,
     );
-    codex_guardian::install(&mut builder, guardian_agent_spawner);
     codex_memories_extension::install(&mut builder, codex_otel::global());
     codex_web_search_extension::install(&mut builder, auth_manager.clone());
     codex_image_generation_extension::install(&mut builder, auth_manager, |config: &Config| {
@@ -246,24 +236,6 @@ impl ExtensionEventSink for CliRuntimeExtensionEventSink {
             }
             send_thread_warning(&outgoing, &thread_state_manager, thread_id, message).await;
         });
-    }
-}
-
-pub(crate) fn guardian_agent_spawner(
-    thread_manager: Weak<ThreadManager>,
-) -> impl AgentSpawner<StartThreadOptions, Spawned = NewThread, Error = CodexErr> {
-    move |forked_from_thread_id: ThreadId,
-          options: StartThreadOptions|
-          -> AgentSpawnFuture<'static, NewThread, CodexErr> {
-        let thread_manager = thread_manager.clone();
-        Box::pin(async move {
-            let thread_manager = thread_manager.upgrade().ok_or_else(|| {
-                CodexErr::UnsupportedOperation("thread manager dropped".to_string())
-            })?;
-            thread_manager
-                .spawn_subagent(forked_from_thread_id, options)
-                .await
-        })
     }
 }
 

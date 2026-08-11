@@ -3730,13 +3730,7 @@ pub struct SkillToolDependency {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS, PartialEq, Eq)]
-pub struct SessionNetworkProxyRuntime {
-    pub http_addr: String,
-    pub socks_addr: String,
-}
-
-#[derive(Debug, Clone, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct SessionConfiguredEvent {
     pub session_id: SessionId,
     pub thread_id: ThreadId,
@@ -3761,24 +3755,6 @@ pub struct SessionConfiguredEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
 
-    /// When to escalate for approval for execution
-    pub approval_policy: AskForApproval,
-
-    /// Configures who approval requests are routed to for review once they have
-    /// been escalated. This does not disable separate safety checks such as
-    /// ARC.
-    #[serde(default)]
-    pub approvals_reviewer: ApprovalsReviewer,
-
-    /// Canonical effective permissions for commands executed in the session.
-    pub permission_profile: PermissionProfile,
-
-    /// Named or implicit built-in profile that produced `permission_profile`,
-    /// when known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub active_permission_profile: Option<ActivePermissionProfile>,
-
     /// Working directory that should be treated as the *root* of the
     /// session.
     pub cwd: AbsolutePathBuf,
@@ -3792,85 +3768,9 @@ pub struct SessionConfiguredEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub initial_messages: Option<Vec<EventMsg>>,
 
-    /// Runtime proxy bind addresses, when the managed proxy was started for this session.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub network_proxy: Option<SessionNetworkProxyRuntime>,
-
     /// Path in which the rollout is stored. Can be `None` for ephemeral threads
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rollout_path: Option<PathBuf>,
-}
-
-impl<'de> Deserialize<'de> for SessionConfiguredEvent {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            session_id: SessionId,
-            #[serde(default)]
-            thread_id: Option<ThreadId>,
-            forked_from_id: Option<ThreadId>,
-            parent_thread_id: Option<ThreadId>,
-            #[serde(default)]
-            thread_source: Option<ThreadSource>,
-            #[serde(default)]
-            thread_name: Option<String>,
-            model: String,
-            model_provider_id: String,
-            service_tier: Option<String>,
-            approval_policy: AskForApproval,
-            #[serde(default)]
-            approvals_reviewer: ApprovalsReviewer,
-            // `SessionConfiguredEvent` is persisted into rollout history. Older
-            // rollouts only have `sandbox_policy`, so accept it on deserialize
-            // and immediately project it into the canonical `permission_profile`.
-            sandbox_policy: Option<SandboxPolicy>,
-            permission_profile: Option<PermissionProfile>,
-            #[serde(default)]
-            active_permission_profile: Option<ActivePermissionProfile>,
-            cwd: AbsolutePathBuf,
-            reasoning_effort: Option<ReasoningEffortConfig>,
-            initial_messages: Option<Vec<EventMsg>>,
-            network_proxy: Option<SessionNetworkProxyRuntime>,
-            rollout_path: Option<PathBuf>,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        let permission_profile = match (wire.permission_profile, wire.sandbox_policy) {
-            (Some(permission_profile), _) => permission_profile,
-            (None, Some(sandbox_policy)) => PermissionProfile::from_legacy_sandbox_policy_for_cwd(
-                &sandbox_policy,
-                wire.cwd.as_path(),
-            ),
-            (None, None) => {
-                return Err(serde::de::Error::missing_field("permission_profile"));
-            }
-        };
-
-        Ok(Self {
-            session_id: wire.session_id,
-            thread_id: wire.thread_id.unwrap_or_else(|| wire.session_id.into()),
-            forked_from_id: wire.forked_from_id,
-            parent_thread_id: wire.parent_thread_id,
-            thread_source: wire.thread_source,
-            thread_name: wire.thread_name,
-            model: wire.model,
-            model_provider_id: wire.model_provider_id,
-            service_tier: wire.service_tier,
-            approval_policy: wire.approval_policy,
-            approvals_reviewer: wire.approvals_reviewer,
-            permission_profile,
-            active_permission_profile: wire.active_permission_profile,
-            cwd: wire.cwd,
-            reasoning_effort: wire.reasoning_effort,
-            initial_messages: wire.initial_messages,
-            network_proxy: wire.network_proxy,
-            rollout_path: wire.rollout_path,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]

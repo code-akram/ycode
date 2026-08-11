@@ -25,20 +25,14 @@ pub(crate) struct ThreadWatchManager {
 pub(crate) struct ThreadWatchActiveGuard {
     manager: ThreadWatchManager,
     thread_id: String,
-    guard_type: ThreadWatchActiveGuardType,
     handle: tokio::runtime::Handle,
 }
 
 impl ThreadWatchActiveGuard {
-    fn new(
-        manager: ThreadWatchManager,
-        thread_id: String,
-        guard_type: ThreadWatchActiveGuardType,
-    ) -> Self {
+    fn new(manager: ThreadWatchManager, thread_id: String) -> Self {
         Self {
             manager,
             thread_id,
-            guard_type,
             handle: tokio::runtime::Handle::current(),
         }
     }
@@ -48,19 +42,10 @@ impl Drop for ThreadWatchActiveGuard {
     fn drop(&mut self) {
         let manager = self.manager.clone();
         let thread_id = self.thread_id.clone();
-        let guard_type = self.guard_type;
         self.handle.spawn(async move {
-            manager
-                .note_active_guard_released(thread_id, guard_type)
-                .await;
+            manager.note_active_guard_released(thread_id).await;
         });
     }
-}
-
-#[derive(Clone, Copy)]
-enum ThreadWatchActiveGuardType {
-    Permission,
-    UserInput,
 }
 
 impl Default for ThreadWatchManager {
@@ -164,7 +149,6 @@ impl ThreadWatchManager {
     pub(crate) async fn note_thread_shutdown(&self, thread_id: &str) {
         self.update_runtime_for_thread(thread_id, |runtime| {
             runtime.running = false;
-            runtime.pending_permission_requests = 0;
             runtime.pending_user_input_requests = 0;
             runtime.is_loaded = false;
         })
@@ -174,7 +158,6 @@ impl ThreadWatchManager {
     pub(crate) async fn note_system_error(&self, thread_id: &str) {
         self.update_runtime_for_thread(thread_id, |runtime| {
             runtime.running = false;
-            runtime.pending_permission_requests = 0;
             runtime.pending_user_input_requests = 0;
             runtime.has_system_error = true;
         })
@@ -184,40 +167,26 @@ impl ThreadWatchManager {
     async fn clear_active_state(&self, thread_id: &str) {
         self.update_runtime_for_thread(thread_id, move |runtime| {
             runtime.running = false;
-            runtime.pending_permission_requests = 0;
             runtime.pending_user_input_requests = 0;
         })
         .await;
-    }
-
-    pub(crate) async fn note_permission_requested(
-        &self,
-        thread_id: &str,
-    ) -> ThreadWatchActiveGuard {
-        self.note_pending_request(thread_id, ThreadWatchActiveGuardType::Permission)
-            .await
     }
 
     pub(crate) async fn note_user_input_requested(
         &self,
         thread_id: &str,
     ) -> ThreadWatchActiveGuard {
-        self.note_pending_request(thread_id, ThreadWatchActiveGuardType::UserInput)
-            .await
+        self.note_pending_request(thread_id).await
     }
 
-    async fn note_pending_request(
-        &self,
-        thread_id: &str,
-        guard_type: ThreadWatchActiveGuardType,
-    ) -> ThreadWatchActiveGuard {
+    async fn note_pending_request(&self, thread_id: &str) -> ThreadWatchActiveGuard {
         self.update_runtime_for_thread(thread_id, move |runtime| {
             runtime.is_loaded = true;
-            let counter = Self::pending_counter(runtime, guard_type);
-            *counter = counter.saturating_add(1);
+            runtime.pending_user_input_requests =
+                runtime.pending_user_input_requests.saturating_add(1);
         })
         .await;
-        ThreadWatchActiveGuard::new(self.clone(), thread_id.to_string(), guard_type)
+        ThreadWatchActiveGuard::new(self.clone(), thread_id.to_string())
     }
 
     async fn mutate_and_publish<F>(&self, mutate: F)
@@ -252,14 +221,10 @@ impl ThreadWatchManager {
         Some(self.state.lock().await.subscribe(thread_id.to_string()))
     }
 
-    async fn note_active_guard_released(
-        &self,
-        thread_id: String,
-        guard_type: ThreadWatchActiveGuardType,
-    ) {
+    async fn note_active_guard_released(&self, thread_id: String) {
         self.update_runtime_for_thread(&thread_id, move |runtime| {
-            let counter = Self::pending_counter(runtime, guard_type);
-            *counter = counter.saturating_sub(1);
+            runtime.pending_user_input_requests =
+                runtime.pending_user_input_requests.saturating_sub(1);
         })
         .await;
     }
@@ -271,16 +236,6 @@ impl ThreadWatchManager {
         let thread_id = thread_id.to_string();
         self.mutate_and_publish(move |state| state.update_runtime(&thread_id, update))
             .await;
-    }
-
-    fn pending_counter(
-        runtime: &mut RuntimeFacts,
-        guard_type: ThreadWatchActiveGuardType,
-    ) -> &mut u32 {
-        match guard_type {
-            ThreadWatchActiveGuardType::Permission => &mut runtime.pending_permission_requests,
-            ThreadWatchActiveGuardType::UserInput => &mut runtime.pending_user_input_requests,
-        }
     }
 }
 
@@ -423,7 +378,6 @@ impl ThreadWatchState {
 struct RuntimeFacts {
     is_loaded: bool,
     running: bool,
-    pending_permission_requests: u32,
     pending_user_input_requests: u32,
     has_system_error: bool,
 }
@@ -434,9 +388,6 @@ fn loaded_thread_status(runtime: &RuntimeFacts) -> ThreadStatus {
     }
 
     let mut active_flags = Vec::new();
-    if runtime.pending_permission_requests > 0 {
-        active_flags.push(ThreadActiveFlag::WaitingOnApproval);
-    }
     if runtime.pending_user_input_requests > 0 {
         active_flags.push(ThreadActiveFlag::WaitingOnUserInput);
     }

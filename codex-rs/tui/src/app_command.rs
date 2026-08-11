@@ -1,21 +1,12 @@
 use std::path::PathBuf;
 
-use codex_cli_protocol::AskForApproval;
-use codex_cli_protocol::CommandExecutionApprovalDecision;
-use codex_cli_protocol::FileChangeApprovalDecision;
 use codex_cli_protocol::ReviewTarget;
 use codex_cli_protocol::ToolRequestUserInputResponse;
 use codex_cli_protocol::UserInput;
-use codex_config::types::ApprovalsReviewer;
-use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
-use codex_protocol::config_types::WindowsSandboxLevel;
-use codex_protocol::models::ActivePermissionProfile;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
-use codex_protocol::request_permissions::RequestPermissionsResponse;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -30,9 +21,6 @@ pub(crate) enum AppCommand {
     UserTurn {
         items: Vec<UserInput>,
         cwd: PathBuf,
-        approval_policy: AskForApproval,
-        approvals_reviewer: Option<ApprovalsReviewer>,
-        active_permission_profile: Option<ActivePermissionProfile>,
         model: String,
         effort: Option<ReasoningEffortConfig>,
         summary: Option<ReasoningSummaryConfig>,
@@ -43,11 +31,6 @@ pub(crate) enum AppCommand {
     },
     OverrideTurnContext {
         cwd: Option<PathBuf>,
-        approval_policy: Option<AskForApproval>,
-        approvals_reviewer: Option<ApprovalsReviewer>,
-        permission_profile: Option<PermissionProfile>,
-        active_permission_profile: Option<ActivePermissionProfile>,
-        windows_sandbox_level: Option<WindowsSandboxLevel>,
         model: Option<String>,
         effort: Option<Option<ReasoningEffortConfig>>,
         summary: Option<ReasoningSummaryConfig>,
@@ -55,22 +38,9 @@ pub(crate) enum AppCommand {
         collaboration_mode: Option<CollaborationMode>,
         personality: Option<Personality>,
     },
-    ExecApproval {
-        id: String,
-        turn_id: Option<String>,
-        decision: CommandExecutionApprovalDecision,
-    },
-    PatchApproval {
-        id: String,
-        decision: FileChangeApprovalDecision,
-    },
     UserInputAnswer {
         id: String,
         response: ToolRequestUserInputResponse,
-    },
-    RequestPermissionsResponse {
-        id: String,
-        response: RequestPermissionsResponse,
     },
     ReloadUserConfig,
     ListSkills {
@@ -83,9 +53,6 @@ pub(crate) enum AppCommand {
     },
     Review {
         target: ReviewTarget,
-    },
-    ApproveGuardianDeniedAction {
-        event: GuardianAssessmentEvent,
     },
 }
 
@@ -106,8 +73,6 @@ impl AppCommand {
     pub(crate) fn user_turn(
         items: Vec<UserInput>,
         cwd: PathBuf,
-        approval_policy: AskForApproval,
-        active_permission_profile: Option<ActivePermissionProfile>,
         model: String,
         effort: Option<ReasoningEffortConfig>,
         summary: Option<ReasoningSummaryConfig>,
@@ -119,9 +84,6 @@ impl AppCommand {
         Self::UserTurn {
             items,
             cwd,
-            approval_policy,
-            approvals_reviewer: None,
-            active_permission_profile,
             model,
             effort,
             summary,
@@ -135,11 +97,6 @@ impl AppCommand {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn override_turn_context(
         cwd: Option<PathBuf>,
-        approval_policy: Option<AskForApproval>,
-        approvals_reviewer: Option<ApprovalsReviewer>,
-        permission_profile: Option<PermissionProfile>,
-        active_permission_profile: Option<ActivePermissionProfile>,
-        windows_sandbox_level: Option<WindowsSandboxLevel>,
         model: Option<String>,
         effort: Option<Option<ReasoningEffortConfig>>,
         summary: Option<ReasoningSummaryConfig>,
@@ -149,11 +106,6 @@ impl AppCommand {
     ) -> Self {
         Self::OverrideTurnContext {
             cwd,
-            approval_policy,
-            approvals_reviewer,
-            permission_profile,
-            active_permission_profile,
-            windows_sandbox_level,
             model,
             effort,
             summary,
@@ -163,31 +115,8 @@ impl AppCommand {
         }
     }
 
-    pub(crate) fn exec_approval(
-        id: String,
-        turn_id: Option<String>,
-        decision: CommandExecutionApprovalDecision,
-    ) -> Self {
-        Self::ExecApproval {
-            id,
-            turn_id,
-            decision,
-        }
-    }
-
-    pub(crate) fn patch_approval(id: String, decision: FileChangeApprovalDecision) -> Self {
-        Self::PatchApproval { id, decision }
-    }
-
     pub(crate) fn user_input_answer(id: String, response: ToolRequestUserInputResponse) -> Self {
         Self::UserInputAnswer { id, response }
-    }
-
-    pub(crate) fn request_permissions_response(
-        id: String,
-        response: RequestPermissionsResponse,
-    ) -> Self {
-        Self::RequestPermissionsResponse { id, response }
     }
 
     pub(crate) fn reload_user_config() -> Self {
@@ -208,10 +137,6 @@ impl AppCommand {
 
     pub(crate) fn review(target: ReviewTarget) -> Self {
         Self::Review { target }
-    }
-
-    pub(crate) fn approve_guardian_denied_action(event: GuardianAssessmentEvent) -> Self {
-        Self::ApproveGuardianDeniedAction { event }
     }
 
     pub(crate) fn is_review(&self) -> bool {

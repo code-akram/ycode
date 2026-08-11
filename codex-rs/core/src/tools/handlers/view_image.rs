@@ -147,12 +147,10 @@ impl ViewImageHandler {
             ))
         })?;
         let model_visible_path = path_uri.inferred_native_path_string();
-        let sandbox = turn
-            .file_system_sandbox_context(/*additional_permissions*/ None, turn_environment);
         let fs = turn_environment.environment.get_filesystem();
 
         let metadata = fs
-            .get_metadata(&path_uri, Some(&sandbox))
+            .get_metadata(&path_uri, /*sandbox*/ None)
             .await
             .map_err(|error| {
                 FunctionCallError::RespondToModel(format!(
@@ -166,7 +164,7 @@ impl ViewImageHandler {
             )));
         }
         let file_bytes = fs
-            .read_file(&path_uri, Some(&sandbox))
+            .read_file(&path_uri, /*sandbox*/ None)
             .await
             .map_err(|error| {
                 FunctionCallError::RespondToModel(format!(

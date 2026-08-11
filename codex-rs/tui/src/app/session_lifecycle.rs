@@ -596,7 +596,6 @@ impl App {
         self.pending_primary_events.clear();
         self.pending_runtime_requests.clear();
         self.pending_startup_thread_start = false;
-        self.chat_widget.set_pending_thread_approvals(Vec::new());
         self.sync_active_agent_label();
     }
 
@@ -655,12 +654,6 @@ impl App {
             .await;
         let model = self.chat_widget.current_model().to_string();
         let mut config = self.fresh_session_config();
-        apply_managed_new_thread_defaults(
-            &mut config,
-            cli_runtime.managed_new_thread_defaults(),
-            &self.cli_kv_overrides,
-            &self.harness_overrides,
-        );
         let summary = session_summary(
             self.chat_widget.token_usage(),
             self.chat_widget.thread_id(),
@@ -997,7 +990,6 @@ impl App {
                 return Ok(AppRunControl::Continue);
             }
         };
-        self.apply_runtime_policy_overrides(&mut resume_config);
 
         let summary = session_summary(
             self.chat_widget.token_usage(),

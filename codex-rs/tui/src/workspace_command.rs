@@ -198,8 +198,6 @@ impl WorkspaceCommandExecutor for CliRuntimeWorkspaceCommandRunner {
                         cwd: command.cwd,
                         env,
                         size: None,
-                        sandbox_policy: None,
-                        permission_profile: None,
                     },
                 })
                 .await

@@ -545,9 +545,6 @@ mod agent {
 }
 
 #[cfg(test)]
-#[path = "phase2_sandbox_tests.rs"]
-mod sandbox_tests;
-#[cfg(test)]
 #[path = "phase2_workspace_roots_tests.rs"]
 mod workspace_roots_tests;
 

@@ -49,14 +49,12 @@ use codex_cli_runtime_client::ExecServerRuntimePaths;
 use codex_cli_runtime_client::InProcessCliRuntimeClient;
 use codex_cli_runtime_client::InProcessClientStartArgs;
 use codex_cli_runtime_client::InProcessServerEvent;
-use codex_cloud_config::cloud_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadError;
 use codex_config::ConfigLoadOptions;
 use codex_config::LoaderOverrides;
 use codex_config::format_config_error_with_source;
 use codex_core::StateDbHandle;
-use codex_core::check_execpolicy_for_warnings;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
@@ -67,7 +65,6 @@ use codex_core::config::load_config_toml_with_layer_stack;
 use codex_core::config::resolve_oss_provider;
 use codex_core::config::resolve_profile_v2_config_path;
 use codex_core::find_thread_meta_by_name_str;
-use codex_core::format_exec_policy_error_with_source;
 use codex_core::path_utils;
 use codex_core::read_session_meta_line;
 use codex_feedback::CodexFeedback;
@@ -81,11 +78,6 @@ use codex_otel::set_parent_from_context;
 use codex_otel::traceparent_context_from_env;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::config_types::SandboxMode;
-use codex_protocol::models::ActivePermissionProfile;
-use codex_protocol::models::PermissionProfile;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ReviewTarget;
 use codex_protocol::protocol::RolloutItem;
@@ -199,8 +191,6 @@ struct ExecRunArgs {
     state_db: Option<StateDbHandle>,
     command: Option<ExecCommand>,
     config: Config,
-    resume_approvals_reviewer_override: Option<codex_cli_protocol::ApprovalsReviewer>,
-    dangerously_bypass_approvals_and_sandbox: bool,
     exec_span: tracing::Span,
     images: Vec<PathBuf>,
     json_mode: bool,
@@ -243,7 +233,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         skip_git_repo_check,
         ephemeral,
         ignore_user_config,
-        ignore_rules,
         color,
         last_message_file,
         json: json_mode,
@@ -251,20 +240,15 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         output_schema: output_schema_path,
         mut config_overrides,
     } = cli;
-    let mut shared = shared.into_inner();
-    shared.take_auto_review_config_overrides(&mut config_overrides);
+    let shared = shared.into_inner();
     let SharedCliOptions {
         images,
         model: model_cli_arg,
         oss,
         oss_provider,
         config_profile_v2,
-        sandbox_mode: sandbox_mode_cli_arg,
-        auto_review: _,
-        dangerously_bypass_approvals_and_sandbox,
         bypass_hook_trust,
         cwd,
-        add_dir,
     } = shared;
 
     let (_stdout_with_ansi, stderr_with_ansi) = match color {
@@ -279,12 +263,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         .with_ansi(stderr_with_ansi)
         .with_writer(std::io::stderr)
         .with_filter(exec_stderr_env_filter());
-
-    let sandbox_mode = if dangerously_bypass_approvals_and_sandbox {
-        Some(SandboxMode::DangerFullAccess)
-    } else {
-        sandbox_mode_cli_arg.map(Into::<SandboxMode>::into)
-    };
 
     // Parse `-c` overrides from the CLI.
     let cli_kv_overrides = match config_overrides.parse_overrides() {
@@ -320,7 +298,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         user_config_path,
         user_config_profile: config_profile_v2,
         ignore_user_config,
-        ignore_user_and_project_exec_policy_rules: ignore_rules,
         ..Default::default()
     };
 
@@ -334,11 +311,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     )
     .await;
     let bootstrap_config_toml = &bootstrap_config.config_toml;
-    let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        bootstrap_auth_config(&codex_home, &bootstrap_config)?,
-        /*enable_codex_api_key_env*/ false,
-    )
-    .await;
+    let cloud_config_bundle = CloudConfigBundleLoader::default();
     let run_cli_overrides = cli_kv_overrides.clone();
     let run_loader_overrides = loader_overrides.clone();
     let run_cloud_config_bundle = cloud_config_bundle.clone();
@@ -391,13 +364,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let overrides = ConfigOverrides {
         model,
         review_model: None,
-        // Default to never ask for approvals in headless mode. Rebuild below if
-        // the fully resolved reviewer is AutoReview.
-        approval_policy: Some(AskForApproval::Never),
-        approvals_reviewer: None,
-        sandbox_mode,
-        permission_profile: None,
-        default_permissions: None,
         cwd: resolved_cwd,
         workspace_roots: None,
         model_provider: model_provider.clone(),
@@ -414,7 +380,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         ephemeral: ephemeral.then_some(true),
         bypass_hook_trust: bypass_hook_trust.then_some(true),
         psp: Some(psp),
-        additional_writable_roots: add_dir,
+        ..Default::default()
     };
 
     let build_config = |overrides| {
@@ -427,29 +393,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
             .cloud_config_bundle(cloud_config_bundle.clone())
             .build()
     };
-    let config = build_exec_config(
-        overrides,
-        dangerously_bypass_approvals_and_sandbox,
-        build_config,
-    )
-    .await?;
-    let resume_approvals_reviewer_override = cli_kv_overrides
-        .iter()
-        .any(|(key, _)| key == "approvals_reviewer")
-        .then(|| config.approvals_reviewer.into());
-
-    #[allow(clippy::print_stderr)]
-    match check_execpolicy_for_warnings(&config.config_layer_stack).await {
-        Ok(None) => {}
-        Ok(Some(err)) | Err(err) => {
-            eprintln!(
-                "Error loading rules:\n{}",
-                format_exec_policy_error_with_source(&err)
-            );
-            std::process::exit(1);
-        }
-    }
-
+    let config = build_config(overrides).await?;
     set_default_client_residency_requirement(config.enforce_residency.value());
 
     if let Err(err) = enforce_login_restrictions(&config.auth_config()).await {
@@ -541,8 +485,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         state_db,
         command,
         config,
-        resume_approvals_reviewer_override,
-        dangerously_bypass_approvals_and_sandbox,
         exec_span: exec_span.clone(),
         images,
         json_mode,
@@ -556,41 +498,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     })
     .instrument(exec_span)
     .await
-}
-
-async fn build_exec_config<BuildConfig, BuildFuture>(
-    overrides: ConfigOverrides,
-    preserve_headless_approval_policy: bool,
-    build_config: BuildConfig,
-) -> std::io::Result<Config>
-where
-    BuildConfig: Fn(ConfigOverrides) -> BuildFuture,
-    BuildFuture: Future<Output = std::io::Result<Config>>,
-{
-    let build_without_headless_approval_policy = || {
-        build_config(ConfigOverrides {
-            approval_policy: None,
-            ..overrides.clone()
-        })
-    };
-    match build_config(overrides.clone()).await {
-        Ok(config)
-            if config.approvals_reviewer == ApprovalsReviewer::AutoReview
-                && !preserve_headless_approval_policy =>
-        {
-            build_without_headless_approval_policy().await
-        }
-        Ok(config) => Ok(config),
-        Err(headless_error) if !preserve_headless_approval_policy => {
-            match build_without_headless_approval_policy().await {
-                Ok(config) if config.approvals_reviewer == ApprovalsReviewer::AutoReview => {
-                    Ok(config)
-                }
-                Ok(_) | Err(_) => Err(headless_error),
-            }
-        }
-        Err(headless_error) => Err(headless_error),
-    }
 }
 
 #[allow(clippy::print_stderr)]
@@ -639,8 +546,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         state_db,
         command,
         config,
-        resume_approvals_reviewer_override,
-        dangerously_bypass_approvals_and_sandbox,
         exec_span,
         images,
         json_mode,
@@ -679,7 +584,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     }
 
     let default_cwd = config.cwd.to_path_buf();
-    let default_approval_policy = config.permissions.approval_policy.value();
     let default_effort = config.model_reasoning_effort.clone();
 
     let (initial_operation, prompt_summary) = match (command.as_ref(), prompt, images) {
@@ -742,12 +646,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         }
     };
 
-    // When --yolo (dangerously_bypass_approvals_and_sandbox) is set, also skip the git repo check
-    // since the user is explicitly running in an externally sandboxed environment.
-    if !skip_git_repo_check
-        && !dangerously_bypass_approvals_and_sandbox
-        && get_git_repo_root(&default_cwd).is_none()
-    {
+    if !skip_git_repo_check && get_git_repo_root(&default_cwd).is_none() {
         eprintln!("Not inside a trusted directory and --skip-git-repo-check was not specified.");
         std::process::exit(1);
     }
@@ -771,11 +670,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 &client,
                 ClientRequest::ThreadResume {
                     request_id: request_ids.next(),
-                    params: thread_resume_params_from_config(
-                        &config,
-                        thread_id,
-                        resume_approvals_reviewer_override,
-                    ),
+                    params: thread_resume_params_from_config(&config, thread_id),
                 },
                 "thread/resume",
             )
@@ -856,10 +751,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                         environments: None,
                         cwd: Some(default_cwd),
                         runtime_workspace_roots: None,
-                        approval_policy: Some(default_approval_policy.into()),
-                        approvals_reviewer: None,
-                        sandbox_policy: None,
-                        permissions: None,
                         model: None,
                         service_tier: None,
                         effort: default_effort,
@@ -1018,22 +909,11 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
 }
 
 fn thread_start_params_from_config(config: &Config) -> ThreadStartParams {
-    let permissions = permissions_selection_from_config(config);
-    let sandbox = permissions.is_none().then(|| {
-        sandbox_mode_from_permission_profile(
-            &config.permissions.effective_permission_profile(),
-            config.cwd.as_path(),
-        )
-    });
     ThreadStartParams {
         model: config.model.clone(),
         model_provider: Some(config.model_provider_id.clone()),
         cwd: Some(config.cwd.to_string_lossy().to_string()),
         runtime_workspace_roots: Some(config.workspace_roots.clone()),
-        approval_policy: Some(config.permissions.approval_policy.value().into()),
-        approvals_reviewer: Some(config.approvals_reviewer.into()),
-        sandbox: sandbox.flatten(),
-        permissions,
         config: thread_config_overrides_from_config(config),
         ephemeral: Some(config.ephemeral),
         thread_source: Some(ThreadSource::User),
@@ -1041,28 +921,13 @@ fn thread_start_params_from_config(config: &Config) -> ThreadStartParams {
     }
 }
 
-fn thread_resume_params_from_config(
-    config: &Config,
-    thread_id: String,
-    approvals_reviewer_override: Option<codex_cli_protocol::ApprovalsReviewer>,
-) -> ThreadResumeParams {
-    let permissions = permissions_selection_from_config(config);
-    let sandbox = permissions.is_none().then(|| {
-        sandbox_mode_from_permission_profile(
-            &config.permissions.effective_permission_profile(),
-            config.cwd.as_path(),
-        )
-    });
+fn thread_resume_params_from_config(config: &Config, thread_id: String) -> ThreadResumeParams {
     ThreadResumeParams {
         thread_id,
         model: config.model.clone(),
         model_provider: Some(config.model_provider_id.clone()),
         cwd: Some(config.cwd.to_string_lossy().to_string()),
         runtime_workspace_roots: Some(config.workspace_roots.clone()),
-        approval_policy: Some(config.permissions.approval_policy.value().into()),
-        approvals_reviewer: approvals_reviewer_override,
-        sandbox: sandbox.flatten(),
-        permissions,
         config: thread_config_overrides_from_config(config),
         exclude_turns: true,
         ..ThreadResumeParams::default()
@@ -1073,40 +938,6 @@ fn thread_config_overrides_from_config(config: &Config) -> Option<HashMap<String
     config
         .bypass_hook_trust
         .then(|| HashMap::from([("bypass_hook_trust".to_string(), Value::Bool(true))]))
-}
-
-fn permissions_selection_from_config(config: &Config) -> Option<String> {
-    config
-        .permissions
-        .active_permission_profile()
-        .map(permission_profile_id_from_active_profile)
-}
-
-fn permission_profile_id_from_active_profile(active: ActivePermissionProfile) -> String {
-    active.id
-}
-
-fn sandbox_mode_from_permission_profile(
-    permission_profile: &PermissionProfile,
-    cwd: &Path,
-) -> Option<codex_cli_protocol::SandboxMode> {
-    match permission_profile {
-        PermissionProfile::Disabled => Some(codex_cli_protocol::SandboxMode::DangerFullAccess),
-        PermissionProfile::External { .. } => None,
-        PermissionProfile::Managed { .. } => {
-            let file_system_policy = permission_profile.file_system_sandbox_policy();
-            if file_system_policy.has_full_disk_write_access() {
-                permission_profile
-                    .network_sandbox_policy()
-                    .is_enabled()
-                    .then_some(codex_cli_protocol::SandboxMode::DangerFullAccess)
-            } else if file_system_policy.can_write_path_with_cwd(cwd, cwd) {
-                Some(codex_cli_protocol::SandboxMode::WorkspaceWrite)
-            } else {
-                Some(codex_cli_protocol::SandboxMode::ReadOnly)
-            }
-        }
-    }
 }
 
 async fn send_request_with_response<T>(
@@ -1140,10 +971,6 @@ fn session_configured_from_thread_start_response(
         response.model.clone(),
         response.model_provider.clone(),
         response.service_tier.clone(),
-        response.approval_policy.to_core(),
-        response.approvals_reviewer.to_core(),
-        config.permissions.effective_permission_profile(),
-        response.active_permission_profile.clone().map(Into::into),
         response.cwd.clone(),
         response.reasoning_effort.clone(),
     )
@@ -1163,10 +990,6 @@ fn session_configured_from_thread_resume_response(
         response.model.clone(),
         response.model_provider.clone(),
         response.service_tier.clone(),
-        response.approval_policy.to_core(),
-        response.approvals_reviewer.to_core(),
-        config.permissions.effective_permission_profile(),
-        response.active_permission_profile.clone().map(Into::into),
         response.cwd.clone(),
         response.reasoning_effort.clone(),
     )
@@ -1195,10 +1018,6 @@ fn session_configured_from_thread_response(
     model: String,
     model_provider_id: String,
     service_tier: Option<String>,
-    approval_policy: AskForApproval,
-    approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer,
-    permission_profile: PermissionProfile,
-    active_permission_profile: Option<codex_protocol::models::ActivePermissionProfile>,
     cwd: AbsolutePathBuf,
     reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
 ) -> Result<SessionConfiguredEvent, String> {
@@ -1221,14 +1040,9 @@ fn session_configured_from_thread_response(
         model,
         model_provider_id,
         service_tier,
-        approval_policy,
-        approvals_reviewer,
-        permission_profile,
-        active_permission_profile,
         cwd,
         reasoning_effort,
         initial_messages: None,
-        network_proxy: None,
         rollout_path,
     })
 }
@@ -1622,30 +1436,6 @@ async fn handle_server_request(
 ) {
     let method = server_request_method_name(&request);
     let handle_result = match request {
-        ServerRequest::CommandExecutionRequestApproval { request_id, params } => {
-            reject_server_request(
-                client,
-                request_id,
-                &method,
-                format!(
-                    "command execution approval is not supported in exec mode for thread `{}`",
-                    params.thread_id
-                ),
-            )
-            .await
-        }
-        ServerRequest::FileChangeRequestApproval { request_id, params } => {
-            reject_server_request(
-                client,
-                request_id,
-                &method,
-                format!(
-                    "file change approval is not supported in exec mode for thread `{}`",
-                    params.thread_id
-                ),
-            )
-            .await
-        }
         ServerRequest::ToolRequestUserInput { request_id, params } => {
             reject_server_request(
                 client,
@@ -1694,42 +1484,6 @@ async fn handle_server_request(
                 request_id,
                 &method,
                 "external current time is not supported in exec mode".to_string(),
-            )
-            .await
-        }
-        ServerRequest::ApplyPatchApproval { request_id, params } => {
-            reject_server_request(
-                client,
-                request_id,
-                &method,
-                format!(
-                    "apply_patch approval is not supported in exec mode for thread `{}`",
-                    params.conversation_id
-                ),
-            )
-            .await
-        }
-        ServerRequest::ExecCommandApproval { request_id, params } => {
-            reject_server_request(
-                client,
-                request_id,
-                &method,
-                format!(
-                    "exec command approval is not supported in exec mode for thread `{}`",
-                    params.conversation_id
-                ),
-            )
-            .await
-        }
-        ServerRequest::PermissionsRequestApproval { request_id, params } => {
-            reject_server_request(
-                client,
-                request_id,
-                &method,
-                format!(
-                    "permissions approval is not supported in exec mode for thread `{}`",
-                    params.thread_id
-                ),
             )
             .await
         }

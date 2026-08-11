@@ -367,29 +367,6 @@ pub struct TuiListKeymap {
     pub cancel: Option<KeybindingsSpec>,
 }
 
-/// Approval overlay keybindings.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(deny_unknown_fields)]
-pub struct TuiApprovalKeymap {
-    /// Open the full-screen approval details view.
-    pub open_fullscreen: Option<KeybindingsSpec>,
-    /// Open the thread that requested approval when shown from another thread.
-    pub open_thread: Option<KeybindingsSpec>,
-    /// Approve the primary option.
-    pub approve: Option<KeybindingsSpec>,
-    /// Approve for session when that option exists.
-    pub approve_for_session: Option<KeybindingsSpec>,
-    /// Approve with exec-policy prefix when that option exists.
-    pub approve_for_prefix: Option<KeybindingsSpec>,
-    /// Deny without providing follow-up guidance.
-    pub deny: Option<KeybindingsSpec>,
-    /// Decline and provide corrective guidance.
-    pub decline: Option<KeybindingsSpec>,
-    /// Cancel an elicitation request.
-    pub cancel: Option<KeybindingsSpec>,
-}
-
 /// Raw keymap configuration from `[tui.keymap]`.
 ///
 /// Each context contains action-level overrides. Missing actions inherit from
@@ -422,8 +399,6 @@ pub struct TuiKeymap {
     pub pager: TuiPagerKeymap,
     #[serde(default)]
     pub list: TuiListKeymap,
-    #[serde(default)]
-    pub approval: TuiApprovalKeymap,
 }
 
 /// Normalize one user-entered key spec into canonical storage format.

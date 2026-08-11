@@ -276,22 +276,12 @@ impl ThreadEventStore {
         PendingInteractiveReplayState::op_can_change_state(op)
     }
 
-    pub(super) fn has_pending_thread_approvals(&self) -> bool {
-        self.pending_interactive_replay
-            .has_pending_thread_approvals()
-    }
-
     pub(super) fn side_parent_pending_status(&self) -> Option<SideParentStatus> {
         if self
             .pending_interactive_replay
             .has_pending_thread_user_input()
         {
             Some(SideParentStatus::NeedsInput)
-        } else if self
-            .pending_interactive_replay
-            .has_pending_thread_approvals()
-        {
-            Some(SideParentStatus::NeedsApproval)
         } else {
             None
         }

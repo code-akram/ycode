@@ -166,23 +166,11 @@ pub(super) fn with_thread_spawn_agent_metadata(
     }
 }
 
-pub(crate) fn thread_response_active_permission_profile(
-    active_permission_profile: Option<codex_protocol::models::ActivePermissionProfile>,
-) -> Option<codex_cli_protocol::ActivePermissionProfile> {
-    active_permission_profile.map(Into::into)
-}
-
 pub(crate) fn thread_settings_from_config_snapshot(
     config_snapshot: &ThreadConfigSnapshot,
 ) -> ThreadSettings {
     ThreadSettings {
         cwd: config_snapshot.cwd().clone(),
-        approval_policy: config_snapshot.approval_policy.into(),
-        approvals_reviewer: config_snapshot.approvals_reviewer.into(),
-        sandbox_policy: config_snapshot.sandbox_policy().into(),
-        active_permission_profile: thread_response_active_permission_profile(
-            config_snapshot.active_permission_profile.clone(),
-        ),
         model: config_snapshot.model.clone(),
         model_provider: config_snapshot.model_provider_id.clone(),
         service_tier: config_snapshot.service_tier.clone(),
@@ -201,29 +189,15 @@ pub(crate) fn thread_settings_from_core_snapshot(
         model,
         model_provider_id,
         service_tier,
-        approval_policy,
-        approvals_reviewer,
-        permission_profile,
-        active_permission_profile,
         cwd,
         reasoning_effort,
         reasoning_summary,
         personality,
         collaboration_mode,
+        ..
     } = snapshot;
-    let sandbox_policy = codex_sandboxing::compatibility_sandbox_policy_for_permission_profile(
-        &permission_profile,
-        cwd.as_path(),
-    )
-    .into();
     ThreadSettings {
-        sandbox_policy,
         cwd,
-        approval_policy: approval_policy.into(),
-        approvals_reviewer: approvals_reviewer.into(),
-        active_permission_profile: thread_response_active_permission_profile(
-            active_permission_profile,
-        ),
         model,
         model_provider: model_provider_id,
         service_tier,

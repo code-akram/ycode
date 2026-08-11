@@ -10,16 +10,11 @@ use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
 use crate::app_event::FeedbackCategory;
 use crate::app_event::HistoryLookupResponse;
-use crate::app_event::PermissionProfileSelection;
 use crate::app_event::PluginLocation;
 use crate::app_event::PluginRemoteSectionError;
 use crate::app_event::RateLimitRefreshOrigin;
 use crate::app_event_sender::AppEventSender;
-use crate::bottom_pane::ApplyPatchApprovalRequest;
-use crate::bottom_pane::ApprovalRequest;
-use crate::bottom_pane::ExecApprovalRequest;
 use crate::bottom_pane::FeedbackAudience;
-use crate::bottom_pane::PermissionsApprovalRequest;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
@@ -46,7 +41,6 @@ use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::PermissionProfileSnapshot;
 use crate::legacy_core::config::edit::ConfigEditsBuilder;
-use crate::managed_new_thread_defaults::apply_managed_new_thread_defaults;
 use crate::model_catalog::ModelCatalog;
 use crate::model_migration::ModelMigrationOutcome;
 use crate::model_migration::migration_copy_for_models;
@@ -64,7 +58,6 @@ use crate::resume_picker::SessionTarget;
 use crate::runtime_session::CliRuntimeBootstrap;
 use crate::runtime_session::CliRuntimeSession;
 use crate::runtime_session::CliRuntimeStartedThread;
-use crate::runtime_session::TurnPermissionsOverride;
 use crate::runtime_session::cli_runtime_rate_limit_snapshots;
 use crate::session_state::ThreadSessionState;
 #[cfg(test)]
@@ -148,7 +141,6 @@ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_rollout::StateDbHandle;
 use codex_terminal_detection::user_agent;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_approval_presets::builtin_permission_profile_for_active_permission_profile;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
@@ -229,10 +221,6 @@ use self::thread_events::*;
 const EXTERNAL_EDITOR_HINT: &str = "Save and close external editor to continue.";
 const THREAD_EVENT_CHANNEL_CAPACITY: usize = 32768;
 
-enum ThreadInteractiveRequest {
-    Approval(ApprovalRequest),
-}
-
 /// Extracts `receiver_thread_ids` from collab agent tool-call notifications.
 ///
 /// Only `ItemStarted` and `ItemCompleted` notifications with a `CollabAgentToolCall` item carry
@@ -288,83 +276,6 @@ fn collab_receiver_is_not_found(
             _ => false,
         },
         _ => false,
-    }
-}
-
-fn default_exec_approval_decisions(
-    network_approval_context: Option<&codex_cli_protocol::NetworkApprovalContext>,
-    proposed_execpolicy_amendment: Option<&codex_cli_protocol::ExecPolicyAmendment>,
-    proposed_network_policy_amendments: Option<&[codex_cli_protocol::NetworkPolicyAmendment]>,
-    additional_permissions: Option<&codex_cli_protocol::AdditionalPermissionProfile>,
-) -> Vec<codex_cli_protocol::CommandExecutionApprovalDecision> {
-    use codex_cli_protocol::CommandExecutionApprovalDecision;
-    use codex_cli_protocol::NetworkPolicyRuleAction;
-
-    if network_approval_context.is_some() {
-        let mut decisions = vec![
-            CommandExecutionApprovalDecision::Accept,
-            CommandExecutionApprovalDecision::AcceptForSession,
-        ];
-        if let Some(amendment) = proposed_network_policy_amendments.and_then(|amendments| {
-            amendments
-                .iter()
-                .find(|amendment| amendment.action == NetworkPolicyRuleAction::Allow)
-        }) {
-            decisions.push(
-                CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
-                    network_policy_amendment: amendment.clone(),
-                },
-            );
-        }
-        decisions.push(CommandExecutionApprovalDecision::Cancel);
-        return decisions;
-    }
-
-    if additional_permissions.is_some() {
-        return vec![
-            CommandExecutionApprovalDecision::Accept,
-            CommandExecutionApprovalDecision::Cancel,
-        ];
-    }
-
-    let mut decisions = vec![CommandExecutionApprovalDecision::Accept];
-    if let Some(execpolicy_amendment) = proposed_execpolicy_amendment {
-        decisions.push(
-            CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment {
-                execpolicy_amendment: execpolicy_amendment.clone(),
-            },
-        );
-    }
-    decisions.push(CommandExecutionApprovalDecision::Cancel);
-    decisions
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct AutoReviewMode {
-    approval_policy: AskForApproval,
-    approvals_reviewer: ApprovalsReviewer,
-    active_permission_profile: ActivePermissionProfile,
-}
-
-/// Enabling the Auto-review experiment in the TUI should also switch the
-/// current `/permissions` settings to the matching Auto-review mode. Users
-/// can still change `/permissions` afterward; this just assumes that opting into
-/// the experiment means they want Auto-review enabled immediately.
-fn auto_review_mode() -> AutoReviewMode {
-    AutoReviewMode {
-        approval_policy: AskForApproval::OnRequest,
-        approvals_reviewer: ApprovalsReviewer::AutoReview,
-        active_permission_profile: ActivePermissionProfile::new(
-            BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
-        ),
-    }
-}
-
-#[cfg(test)]
-impl AutoReviewMode {
-    fn permission_profile(&self) -> PermissionProfile {
-        builtin_permission_profile_for_active_permission_profile(&self.active_permission_profile)
-            .expect("auto-review mode should use a built-in permission profile")
     }
 }
 
@@ -494,8 +405,6 @@ pub(crate) struct App {
     harness_overrides: ConfigOverrides,
     loader_overrides: LoaderOverrides,
     cloud_config_bundle: CloudConfigBundleLoader,
-    runtime_approval_policy_override: Option<AskForApproval>,
-    runtime_permission_profile_override: Option<RuntimePermissionProfileOverride>,
 
     pub(crate) file_search: FileSearchManager,
 
@@ -568,23 +477,6 @@ pub(crate) struct App {
     // Serialize hook enablement writes per hook so stale completions cannot
     // persist an older toggle after a newer one.
     pending_hook_enabled_writes: HashMap<String, Option<bool>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct RuntimePermissionProfileOverride {
-    permission_profile: PermissionProfile,
-    active_permission_profile: Option<ActivePermissionProfile>,
-    network: Option<crate::legacy_core::config::NetworkProxySpec>,
-}
-
-impl RuntimePermissionProfileOverride {
-    fn from_config(config: &Config) -> Self {
-        Self {
-            permission_profile: config.permissions.permission_profile().clone(),
-            active_permission_profile: config.permissions.active_permission_profile(),
-            network: config.permissions.network.clone(),
-        }
-    }
 }
 
 fn active_turn_not_steerable_turn_error(error: &TypedRequestError) -> Option<CliRuntimeTurnError> {
@@ -778,17 +670,6 @@ impl App {
             None => cli_runtime.bootstrap(&config).await?,
         };
         let bootstrap_ms = bootstrap.duration.as_millis();
-        if matches!(
-            &session_selection,
-            SessionSelection::StartFresh | SessionSelection::Exit
-        ) {
-            apply_managed_new_thread_defaults(
-                &mut config,
-                cli_runtime.managed_new_thread_defaults(),
-                &cli_kv_overrides,
-                &harness_overrides,
-            );
-        }
         let mut model = config.model.clone().unwrap_or(bootstrap.default_model);
         let available_models = bootstrap.available_models;
         let remote_connection = crate::status::remote_connection::remote_connection_status_value(
@@ -1011,8 +892,6 @@ See the Codex keymap documentation for supported actions and examples."
             harness_overrides,
             loader_overrides,
             cloud_config_bundle,
-            runtime_approval_policy_override: None,
-            runtime_permission_profile_override: None,
             file_search,
             enhanced_keys_supported,
             keymap: runtime_keymap,

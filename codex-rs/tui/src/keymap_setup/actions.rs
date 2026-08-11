@@ -186,14 +186,6 @@ pub(super) const KEYMAP_ACTIONS: &[KeymapActionDescriptor] = &[
     action("list", "List", "jump_bottom", "Jump to the last list item."),
     action("list", "List", "accept", "Accept the current list selection."),
     action("list", "List", "cancel", "Cancel and close selection views."),
-    action("approval", "Approval", "open_fullscreen", "Open approval details fullscreen."),
-    action("approval", "Approval", "open_thread", "Open the approval source thread when available."),
-    action("approval", "Approval", "approve", "Approve the primary option."),
-    action("approval", "Approval", "approve_for_session", "Approve for the session when available."),
-    action("approval", "Approval", "approve_for_prefix", "Approve with an exec-policy prefix when available."),
-    action("approval", "Approval", "deny", "Choose the explicit deny option when available."),
-    action("approval", "Approval", "decline", "Decline and provide corrective guidance."),
-    action("approval", "Approval", "cancel", "Cancel an elicitation request."),
 ];
 
 /// Convert a stable action identifier into a display label.
@@ -330,14 +322,6 @@ pub(super) fn binding_slot<'a>(
         ("list", "jump_bottom") => Some(&mut keymap.list.jump_bottom),
         ("list", "accept") => Some(&mut keymap.list.accept),
         ("list", "cancel") => Some(&mut keymap.list.cancel),
-        ("approval", "open_fullscreen") => Some(&mut keymap.approval.open_fullscreen),
-        ("approval", "open_thread") => Some(&mut keymap.approval.open_thread),
-        ("approval", "approve") => Some(&mut keymap.approval.approve),
-        ("approval", "approve_for_session") => Some(&mut keymap.approval.approve_for_session),
-        ("approval", "approve_for_prefix") => Some(&mut keymap.approval.approve_for_prefix),
-        ("approval", "deny") => Some(&mut keymap.approval.deny),
-        ("approval", "decline") => Some(&mut keymap.approval.decline),
-        ("approval", "cancel") => Some(&mut keymap.approval.cancel),
         _ => None,
     }
 }

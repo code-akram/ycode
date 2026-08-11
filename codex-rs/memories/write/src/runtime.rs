@@ -273,7 +273,6 @@ impl MemoryStartupContext {
             window_id,
             &session_source,
             &config.cwd,
-            /*sandbox*/ None,
         )
         .await;
         let mut stream = client_session

@@ -3,42 +3,25 @@ use std::sync::Arc;
 
 use async_channel::Receiver;
 use async_channel::Sender;
-use codex_analytics::GuardianApprovalRequestSource;
 use codex_async_utils::OrCancelExt;
-use codex_core_plugins::PluginCommandAttribution;
 use codex_extension_api::LoadedUserInstructions;
-use codex_plugin::PluginId;
-use codex_protocol::items::is_safe_plugin_relative_path;
-use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::ExecApprovalRequestEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RequestUserInputEvent;
-use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::ThreadSource;
-use codex_protocol::request_permissions::PermissionGrantScope;
-use codex_protocol::request_permissions::RequestPermissionsArgs;
-use codex_protocol::request_permissions::RequestPermissionsEvent;
-use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_protocol::user_input::UserInput;
 use serde_json::Value;
 use std::time::Duration;
-use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::Config;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::GuardianReviewOptions;
-use crate::guardian::new_guardian_review_id;
-use crate::guardian::routes_approval_to_guardian;
-use crate::guardian::spawn_approval_request_review;
 use crate::session::ForkPersistence;
 use crate::session::GitEnrichmentPolicy;
 use crate::session::SUBMISSION_CHANNEL_CAPACITY;
@@ -58,8 +41,7 @@ use crate::session::completed_session_loop_termination;
 
 /// Start an interactive sub-Codex thread and return its runtime and IO channels.
 ///
-/// The returned IO yields non-approval events emitted by the sub-agent.
-/// Approval requests are handled via `parent_session` and are not surfaced.
+/// The returned IO yields events emitted by the sub-agent.
 /// Its submission channel accepts additional `Op`s for the sub-agent.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_codex_thread_interactive(
@@ -109,7 +91,6 @@ pub(crate) async fn run_codex_thread_interactive(
         metrics_service_name: None,
         user_shell_override: None,
         inherited_environments: Some(parent_ctx.environments.clone()),
-        inherited_exec_policy: Some(Arc::clone(&parent_session.services.exec_policy)),
         parent_rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
         parent_trace: None,
         environment_selections: parent_ctx.environments.to_selections(),
@@ -138,8 +119,7 @@ pub(crate) async fn run_codex_thread_interactive(
     let cancel_token_events = cancel_token.child_token();
     let cancel_token_ops = cancel_token.child_token();
 
-    // Forward events from the sub-agent to the consumer, filtering approvals and
-    // routing them to the parent session for decisions.
+    // Forward events from the sub-agent to the consumer.
     let parent_session_clone = Arc::clone(&parent_session);
     let parent_ctx_clone = Arc::clone(&parent_ctx);
     let io = Arc::new(io);
@@ -292,48 +272,6 @@ async fn forward_events(
                     } => {}
                     Event {
                         id,
-                        msg: EventMsg::ExecApprovalRequest(event),
-                    } => {
-                        // Initiate approval via parent session; do not surface to consumer.
-                        handle_exec_approval(
-                            &io,
-                            id,
-                            &parent_session,
-                            &parent_ctx,
-                            event,
-                            &cancel_token,
-                        )
-                        .await;
-                    }
-                    Event {
-                        id,
-                        msg: EventMsg::ApplyPatchApprovalRequest(event),
-                    } => {
-                        handle_patch_approval(
-                            &io,
-                            id,
-                            &parent_session,
-                            &parent_ctx,
-                            event,
-                            &cancel_token,
-                        )
-                        .await;
-                    }
-                    Event {
-                        msg: EventMsg::RequestPermissions(event),
-                        ..
-                    } => {
-                        handle_request_permissions(
-                            &io,
-                            &parent_session,
-                            &parent_ctx,
-                            event,
-                            &cancel_token,
-                        )
-                        .await;
-                    }
-                    Event {
-                        id,
                         msg: EventMsg::RequestUserInput(event),
                     } => {
                         handle_request_user_input(
@@ -407,6 +345,7 @@ async fn forward_ops(
 }
 
 /// Handle an ExecApprovalRequest by consulting the parent session and replying.
+#[cfg(any())]
 async fn handle_exec_approval(
     io: &SessionIo,
     turn_id: String,
@@ -507,6 +446,7 @@ async fn handle_exec_approval(
 }
 
 /// Handle an ApplyPatchApprovalRequest by consulting the parent session and replying.
+#[cfg(any())]
 async fn handle_patch_approval(
     io: &SessionIo,
     _id: String,
@@ -637,6 +577,7 @@ async fn handle_request_user_input(
     let _ = io.submit(Op::UserInputAnswer { id, response }).await;
 }
 
+#[cfg(any())]
 async fn handle_request_permissions(
     io: &SessionIo,
     parent_session: &Arc<Session>,
@@ -698,6 +639,7 @@ where
     }
 }
 
+#[cfg(any())]
 async fn await_request_permissions_with_cancel<F>(
     fut: F,
     parent_session: &Session,
@@ -728,6 +670,7 @@ where
     }
 }
 
+#[cfg(any())]
 async fn receive_approval_review(review_rx: oneshot::Receiver<ReviewDecision>) -> ReviewDecision {
     review_rx
         .await
@@ -735,6 +678,7 @@ async fn receive_approval_review(review_rx: oneshot::Receiver<ReviewDecision>) -
 }
 
 /// Await an approval decision, aborting on cancellation.
+#[cfg(any())]
 async fn await_approval_with_cancel<F>(
     fut: F,
     parent_session: &Session,

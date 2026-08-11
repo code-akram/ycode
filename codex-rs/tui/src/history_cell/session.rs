@@ -138,11 +138,7 @@ pub(crate) fn new_session_info(
         show_fast_status,
         config.cwd.to_path_buf(),
         CODEX_CLI_VERSION,
-    )
-    .with_yolo_mode(has_yolo_permissions(
-        session.approval_policy,
-        &session.permission_profile,
-    ));
+    );
     let mut parts: Vec<Box<dyn HistoryCell>> = vec![Box::new(header)];
 
     if is_first_event {
@@ -161,11 +157,6 @@ pub(crate) fn new_session_info(
                 "  ".into(),
                 "/status".into(),
                 " - show current session configuration".dim(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "/permissions".into(),
-                " - choose what Codex is allowed to do".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
@@ -201,27 +192,6 @@ pub(crate) fn new_session_info(
     SessionInfoCell(CompositeHistoryCell { parts })
 }
 
-pub(crate) fn is_yolo_mode(config: &Config) -> bool {
-    has_yolo_permissions(
-        AskForApproval::from(config.permissions.approval_policy.value()),
-        &config.permissions.effective_permission_profile(),
-    )
-}
-
-pub(crate) fn has_yolo_permissions(
-    approval_policy: AskForApproval,
-    permission_profile: &PermissionProfile,
-) -> bool {
-    approval_policy == AskForApproval::Never
-        && matches!(
-            permission_profile,
-            PermissionProfile::Disabled
-                | PermissionProfile::Managed {
-                    file_system: ManagedFileSystemPermissions::Unrestricted,
-                    network: NetworkSandboxPolicy::Enabled,
-                }
-        )
-}
 #[derive(Debug)]
 pub(crate) struct SessionHeaderHistoryCell {
     version: &'static str,
@@ -230,7 +200,6 @@ pub(crate) struct SessionHeaderHistoryCell {
     reasoning_effort: Option<ReasoningEffortConfig>,
     show_fast_status: bool,
     directory: PathBuf,
-    yolo_mode: bool,
 }
 
 impl SessionHeaderHistoryCell {
@@ -266,13 +235,7 @@ impl SessionHeaderHistoryCell {
             reasoning_effort,
             show_fast_status,
             directory,
-            yolo_mode: false,
         }
-    }
-
-    pub(crate) fn with_yolo_mode(mut self, yolo_mode: bool) -> Self {
-        self.yolo_mode = yolo_mode;
-        self
     }
 
     fn format_directory(&self, max_width: Option<usize>) -> String {
@@ -328,12 +291,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
         const CHANGE_MODEL_HINT_EXPLANATION: &str = " to change";
         const DIR_LABEL: &str = "directory:";
-        const PERMISSIONS_LABEL: &str = "permissions:";
-        let label_width = if self.yolo_mode {
-            DIR_LABEL.len().max(PERMISSIONS_LABEL.len())
-        } else {
-            DIR_LABEL.len()
-        };
+        let label_width = DIR_LABEL.len();
 
         let model_label = format!(
             "{model_label:<label_width$}",
@@ -367,20 +325,12 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let dir = self.format_directory(Some(dir_max_width));
         let dir_spans = vec![Span::from(dir_prefix).dim(), Span::from(dir)];
 
-        let mut lines = vec![
+        let lines = vec![
             make_row(title_spans),
             make_row(Vec::new()),
             make_row(model_spans),
             make_row(dir_spans),
         ];
-
-        if self.yolo_mode {
-            let permissions_label = format!("{PERMISSIONS_LABEL:<label_width$}");
-            lines.push(make_row(vec![
-                Span::from(format!("{permissions_label} ")).dim(),
-                "YOLO mode".magenta().bold(),
-            ]));
-        }
 
         let lines = lines
             .into_iter()
@@ -390,7 +340,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![
+        vec![
             Line::from(format!("OpenAI Codex (v{})", self.version)),
             Line::from(format!(
                 "model: {}{}",
@@ -403,10 +353,6 @@ impl HistoryCell for SessionHeaderHistoryCell {
                 "directory: {}",
                 self.format_directory(/*max_width*/ None)
             )),
-        ];
-        if self.yolo_mode {
-            lines.push(Line::from("permissions: YOLO mode"));
-        }
-        lines
+        ]
     }
 }

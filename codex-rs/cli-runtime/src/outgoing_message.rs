@@ -144,20 +144,6 @@ impl ThreadScopedOutgoingMessageSender {
             .await
     }
 
-    pub(crate) fn track_effective_permissions_approval_response(
-        &self,
-        request_id: RequestId,
-        response: RequestPermissionsResponse,
-    ) {
-        self.outgoing
-            .analytics_events_client
-            .track_effective_permissions_approval_response(
-                now_unix_timestamp_ms(),
-                request_id,
-                response,
-            );
-    }
-
     pub(crate) async fn send_server_notification(&self, notification: ServerNotification) {
         self.outgoing
             .analytics_events_client
@@ -377,9 +363,7 @@ impl OutgoingMessageSender {
         match entry {
             Some((id, entry)) => {
                 let completed_at_ms = now_unix_timestamp_ms();
-                if let Ok(response) = entry.request.response_from_result(result.clone())
-                    && !matches!(response, ServerResponse::PermissionsRequestApproval { .. })
-                {
+                if let Ok(response) = entry.request.response_from_result(result.clone()) {
                     self.analytics_events_client
                         .track_server_response(completed_at_ms, response);
                 }

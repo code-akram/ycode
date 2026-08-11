@@ -135,10 +135,7 @@ impl ThreadConfigSnapshot {
     }
 
     pub fn sandbox_policy(&self) -> SandboxPolicy {
-        codex_sandboxing::compatibility_sandbox_policy_for_permission_profile(
-            &self.permission_profile,
-            self.cwd().as_path(),
-        )
+        SandboxPolicy::DangerFullAccess
     }
 
     pub fn into_thread_settings_snapshot(self) -> ThreadSettingsSnapshot {
@@ -542,13 +539,6 @@ impl CodexThread {
 
     pub(crate) fn is_running(&self) -> bool {
         !self.io.tx_sub.is_closed()
-    }
-
-    pub async fn guardian_trunk_rollout_path(&self) -> Option<PathBuf> {
-        self.session
-            .guardian_review_session
-            .trunk_rollout_path()
-            .await
     }
 
     pub async fn load_history(

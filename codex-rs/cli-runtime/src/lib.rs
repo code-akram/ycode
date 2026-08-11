@@ -4,7 +4,6 @@
 use codex_cli_protocol::ConfigWarningNotification;
 use codex_cli_protocol::TextPosition as RuntimeTextPosition;
 use codex_cli_protocol::TextRange as RuntimeTextRange;
-use codex_core::ExecPolicyError;
 
 mod analytics_utils;
 mod attestation;
@@ -48,6 +47,7 @@ pub(crate) enum PluginStartupTasks {
     Start,
 }
 
+#[cfg(any())]
 fn exec_policy_warning_location(
     err: &ExecPolicyError,
 ) -> (Option<String>, Option<RuntimeTextRange>) {
@@ -72,6 +72,7 @@ fn exec_policy_warning_location(
     }
 }
 
+#[cfg(any())]
 fn exec_policy_config_warning(err: &ExecPolicyError) -> ConfigWarningNotification {
     let (path, range) = exec_policy_warning_location(err);
     ConfigWarningNotification {

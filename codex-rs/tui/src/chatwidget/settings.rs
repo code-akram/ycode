@@ -5,55 +5,6 @@ use crate::app_event::AppEvent;
 use crate::chatwidget::rate_limits::RATE_LIMIT_SWITCH_PROMPT_VIEW_ID;
 
 impl ChatWidget {
-    /// Set the approval policy in the widget's config copy.
-    pub(crate) fn set_approval_policy(&mut self, policy: AskForApproval) {
-        if let Err(err) = self
-            .config
-            .permissions
-            .approval_policy
-            .set(policy.to_core())
-        {
-            tracing::warn!(%err, "failed to set approval_policy on chat config");
-        } else {
-            self.refresh_status_surfaces();
-        }
-    }
-
-    pub(crate) fn set_permission_profile_from_session_snapshot(
-        &mut self,
-        snapshot: PermissionProfileSnapshot,
-    ) -> ConstraintResult<()> {
-        self.config
-            .permissions
-            .set_permission_profile_from_session_snapshot(snapshot)?;
-        self.refresh_status_surfaces();
-        Ok(())
-    }
-
-    pub(crate) fn set_permission_profile_with_active_profile(
-        &mut self,
-        profile: PermissionProfile,
-        active_permission_profile: Option<ActivePermissionProfile>,
-    ) -> ConstraintResult<()> {
-        self.config
-            .permissions
-            .set_permission_profile_from_session_snapshot(
-                PermissionProfileSnapshot::from_session_snapshot(
-                    profile,
-                    active_permission_profile,
-                ),
-            )?;
-        self.refresh_status_surfaces();
-        Ok(())
-    }
-
-    pub(crate) fn set_permission_network(
-        &mut self,
-        network: Option<crate::legacy_core::config::NetworkProxySpec>,
-    ) {
-        self.config.permissions.network = network;
-    }
-
     pub(crate) fn set_feature_enabled(&mut self, feature: Feature, enabled: bool) -> bool {
         if let Err(err) = self.config.features.set_enabled(feature, enabled) {
             tracing::warn!(
@@ -91,11 +42,6 @@ impl ChatWidget {
             self.turn_lifecycle.set_prevent_idle_sleep(enabled);
         }
         enabled
-    }
-
-    pub(crate) fn set_approvals_reviewer(&mut self, policy: ApprovalsReviewer) {
-        self.config.approvals_reviewer = policy;
-        self.refresh_status_surfaces();
     }
 
     /// Override the reasoning effort used when Plan mode is active.
@@ -455,35 +401,7 @@ impl ChatWidget {
         self.apply_thread_settings_cwd(settings.cwd.clone());
         self.config.model_provider_id = settings.model_provider.clone();
         self.set_service_tier(settings.service_tier.clone());
-        self.set_approval_policy(settings.approval_policy);
-        self.set_approvals_reviewer(settings.approvals_reviewer.to_core());
         self.config.personality = settings.personality;
-
-        let permission_profile = PermissionProfile::from_legacy_sandbox_policy_for_cwd(
-            &settings.sandbox_policy.to_core(),
-            settings.cwd.as_path(),
-        );
-        let permission_snapshot = PermissionProfileSnapshot::from_session_snapshot(
-            permission_profile,
-            settings.active_permission_profile.take().map(Into::into),
-        );
-        if let Err(err) = self
-            .config
-            .permissions
-            .set_permission_profile_from_session_snapshot(permission_snapshot.clone())
-        {
-            tracing::warn!(%err, "failed to sync permissions from ThreadSettingsUpdated");
-            if let Err(replace_err) = self
-                .config
-                .permissions
-                .replace_permission_profile_from_session_snapshot(permission_snapshot)
-            {
-                tracing::error!(
-                    %replace_err,
-                    "failed to replace permissions from ThreadSettingsUpdated after constraint fallback"
-                );
-            }
-        }
 
         settings.collaboration_mode.settings.model = settings.model;
         settings.collaboration_mode.settings.reasoning_effort = settings.effort;
@@ -698,11 +616,6 @@ impl ChatWidget {
             thread_id,
             op: AppCommand::override_turn_context(
                 /*cwd*/ None,
-                /*approval_policy*/ None,
-                /*approvals_reviewer*/ None,
-                /*permission_profile*/ None,
-                /*active_permission_profile*/ None,
-                /*windows_sandbox_level*/ None,
                 /*model*/ None,
                 /*effort*/ None,
                 /*summary*/ None,

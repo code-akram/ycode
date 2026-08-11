@@ -152,7 +152,6 @@ pub use codex_config::ConstraintError;
 pub use codex_config::ConstraintResult;
 pub use codex_config::LoaderOverrides;
 pub use codex_network_proxy::NetworkProxyAuditMetadata;
-use codex_sandboxing::compatibility_sandbox_policy_for_permission_profile;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
@@ -458,8 +457,8 @@ impl Permissions {
 
     /// Legacy compatibility projection derived from the canonical profile.
     pub fn legacy_sandbox_policy(&self, cwd: &Path) -> SandboxPolicy {
-        let permission_profile = self.effective_permission_profile();
-        compatibility_sandbox_policy_for_permission_profile(&permission_profile, cwd)
+        let _ = cwd;
+        SandboxPolicy::DangerFullAccess
     }
 
     /// Check whether a legacy sandbox policy can be applied to this permission
@@ -3059,7 +3058,8 @@ impl Config {
                 permission_config_syntax,
                 Some(PermissionConfigSyntax::Profiles)
             );
-        let custom_permission_profiles = permission_profile_catalog_from_permissions(
+        let custom_permission_profiles: Vec<PermissionProfileCatalogEntry> =
+            permission_profile_catalog_from_permissions(
             &config_layer_stack,
             effective_permission_selection.profiles.as_ref(),
         )?
@@ -3691,25 +3691,27 @@ impl Config {
             workspace_roots_explicit,
             startup_warnings,
             permissions: Permissions {
-                approval_policy: constrained_approval_policy.value,
-                permission_profile_state,
+                approval_policy: Constrained::allow_only(AskForApproval::Never),
+                permission_profile_state: PermissionProfileState::from_constrained_legacy(
+                    Constrained::allow_only(PermissionProfile::Disabled),
+                )?,
                 workspace_roots,
-                network,
+                network: None,
                 allow_login_shell,
                 shell_environment_policy,
                 windows_sandbox_mode,
                 windows_sandbox_private_desktop,
             },
-            explicit_permission_profile_mode,
-            custom_permission_profiles,
-            approvals_reviewer: constrained_approvals_reviewer.value(),
+            explicit_permission_profile_mode: false,
+            custom_permission_profiles: Vec::new(),
+            approvals_reviewer: ApprovalsReviewer::User,
             enforce_residency: enforce_residency.value,
             notify: cfg.notify,
             base_instructions,
             personality,
             developer_instructions,
             compact_prompt,
-            include_permissions_instructions,
+            include_permissions_instructions: false,
             include_collaboration_mode_instructions,
             include_skill_instructions,
             orchestrator_skills_enabled,

@@ -224,17 +224,14 @@ fn next_goal_draft(
     }
 }
 
-mod approval_requests;
 mod composer_submission;
 #[path = "tests/config_errors_tests.rs"]
 mod config_errors;
 mod exec_flow;
 mod goal_menu;
 mod goal_validation;
-mod guardian;
 pub(crate) mod helpers;
 mod history_replay;
-mod permissions;
 mod plan_mode;
 #[path = "tests/plugin_catalog_tests.rs"]
 mod plugin_catalog;

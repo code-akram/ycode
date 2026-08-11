@@ -39,10 +39,6 @@ pub struct Cli {
     #[arg(long = "ignore-user-config", global = true, default_value_t = false)]
     pub ignore_user_config: bool,
 
-    /// Do not load user or project execpolicy `.rules` files.
-    #[arg(long = "ignore-rules", global = true, default_value_t = false)]
-    pub ignore_rules: bool,
-
     /// Path to a JSON Schema file describing the model's final response shape.
     #[arg(long = "output-schema", value_name = "FILE", global = true)]
     pub output_schema: Option<PathBuf>,
@@ -138,9 +134,6 @@ impl FromArgMatches for ExecSharedCliOptions {
 
 fn mark_exec_global_args(cmd: clap::Command) -> clap::Command {
     cmd.mut_arg("model", |arg| arg.global(true))
-        .mut_arg("dangerously_bypass_approvals_and_sandbox", |arg| {
-            arg.global(true)
-        })
         .mut_arg("bypass_hook_trust", |arg| arg.global(true))
 }
 
