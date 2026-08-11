@@ -1,37 +1,86 @@
 # ycode repository instructions
 
-- ycode is a terminal-only product.
-- Limit the initial provider scope to OpenAI and ChatGPT. Remove alternate
-  providers such as AWS/Bedrock, Ollama, and LM Studio; they may return only
-  through deliberate future design.
-- Remove upstream telemetry, analytics, feedback uploads, and remote diagnostic
-  reporting. Retain ordinary local logs.
-- Retain local `AGENTS.md` instructions and filesystem skills. Remove the
+## Product boundaries
+
+- ycode is a terminal product for macOS and Linux. Preserve both the interactive
+  TUI and non-interactive exec mode, including machine-readable output for
+  scripts and CI. Do not add or maintain Windows support.
+- Preserve local conversation history, persistent terminal-agent sessions, and
+  resume behavior.
+- Preserve local `AGENTS.md` instructions, filesystem skills, and ordinary local
+  logs.
+- ycode is a multi-agent CLI. Preserve its built-in collaboration, delegation,
+  agent lifecycle, messaging, orchestration, and required shared protocol
+  surfaces. External orchestration may complement but does not replace them.
+- Preserve built-in OpenAI web search and local image inspection, including
+  their required protocol/tool plumbing and tests.
+- Support only official OpenAI and ChatGPT endpoints. Azure OpenAI,
+  third-party/OpenAI-compatible endpoints, arbitrary API base URLs, local-model
+  providers, alternate-provider authentication, and provider-selection
+  machinery are subtraction targets.
+- Standardize official model traffic on the OpenAI Responses API. Legacy Chat
+  Completions transport and protocol support are subtraction targets, but do
+  not remove shared response types merely by name.
+- Preserve official OpenAI model selection, reasoning-effort controls, model
+  discovery/metadata needed by first-party paths, and free-form official model
+  IDs through CLI/config. Free-form IDs must apply only to official OpenAI and
+  ChatGPT endpoints and must not reintroduce provider selection, custom base
+  URLs, or compatibility transports.
+- Make no compatibility promise for legacy Codex configuration fields,
+  deprecated CLI aliases, or migration code. Temporarily preserve the existing
+  authentication credential location and format. Preserve other configuration
+  until its dedicated cleanup.
+
+## Protected first-party authentication and backend boundary
+
+This boundary overrides every subtraction target. Do not change or delete the
+following without direct user approval for the specific change:
+
+- native ChatGPT OAuth/subscription login and browser authorization;
+- direct OpenAI API-key authentication through its existing environment/config
+  path;
+- authentication token acquisition, storage, and refresh;
+- ChatGPT account, session, entitlement, and model-access handling;
+- the existing ChatGPT credential location and format; or
+- official OpenAI backend/client bindings required by either protected
+  first-party authentication path.
+
+Third-party login methods, alternate-provider authentication, Azure/compatible
+endpoints, arbitrary proxies, and custom API base URLs are not protected by
+this boundary. Before deleting shared transport code, prove it is not required
+by either protected official path.
+
+## Approved subtraction targets
+
+- Remove the entire existing stateful MCP client/server implementation and all
+  of its integrations as one dedicated subtraction. A new stateless MCP client
+  is a later project; do not add a replacement during removal.
+- Remove upstream telemetry, analytics, feedback upload, and remote diagnostic
+  reporting while retaining ordinary local logs.
+- Retain local `AGENTS.md` instructions and filesystem skills, but remove the
   current plugin catalog/system, connectors, hooks, and external-agent migration
-  machinery until extensibility is redesigned.
-- Remove the entire existing stateful MCP implementation and its integrations
-  as a dedicated subtraction; do not subtract it piecemeal.
-- Design a new stateless MCP client in a later dedicated phase; do not introduce
-  that replacement during unrelated work.
-- Support macOS and Linux only. Do not add or maintain Windows support.
+  machinery until extensibility is deliberately redesigned.
+- Remove alternate providers such as AWS/Bedrock, Ollama, and LM Studio.
+- In dedicated future phases, remove macOS/Linux sandbox implementations,
+  sandbox-mode configuration, sandbox/approval selection UI, command-approval
+  prompts and single-purpose approval-request plumbing, plus enterprise-managed
+  policy/requirements machinery. The steady state is unrestricted filesystem
+  and process access with a never-ask approval policy.
+- Preserve agent-internal safety logic that independently prevents accidental
+  destructive behavior until it is separately reviewed.
+- If a proposed deletion is coupled to protected authentication, official
+  Responses traffic, web search, image inspection, sessions/resume, exec output,
+  or native collaboration, stop and report the dependency before removing it.
+
+## Repository workflow
+
 - Apply the principle of subtraction: prefer removing unnecessary code and
   infrastructure over adding compatibility layers or replacement machinery.
-- Keep each deletion coherent, and make one coherent deletion per commit.
-- Use Cargo or `just` for targeted, incremental checks of the affected crate or
-  package.
+- Keep each deletion coherent, with one coherent deletion per commit.
+- Use Cargo or `just` for targeted, incremental checks of affected crates.
 - Do not run full-workspace checks or release builds without explicit approval.
 - Preserve `LICENSE`, `NOTICE`, and `UPSTREAM.md`.
-- Treat `upstream` as reference-only. Never push to it or merge from it.
-- Read and follow any more-specific nested `AGENTS.md` before changing files in
-  its subtree.
-
-## Protected native ChatGPT subscription boundary
-
-This boundary overrides every subtraction target above. Do not change or delete
-any of the following without direct user approval for the specific change:
-
-- native ChatGPT subscription login and browser authorization;
-- authentication token acquisition, storage, and refresh;
-- ChatGPT account and session handling;
-- subscription entitlement and model access; or
-- backend and client bindings required by the native ChatGPT subscription path.
+- Never push to or merge from upstream. `/Users/akram/code/codex` is the
+  dedicated upstream reference clone.
+- Read and follow every more-specific nested `AGENTS.md` before changing files
+  in its subtree.
