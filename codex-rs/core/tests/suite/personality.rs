@@ -75,8 +75,7 @@ fn read_only_text_turn_with_personality(
             sandbox_policy: Some(sandbox_policy),
             permission_profile,
             personality,
-            collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                mode: codex_protocol::config_types::ModeKind::Default,
+            agent_settings: Some(codex_protocol::config_types::AgentSettings {
                 settings: codex_protocol::config_types::Settings {
                     model,
                     reasoning_effort: test.config.model_reasoning_effort.clone(),
@@ -641,7 +640,6 @@ async fn remote_model_friendly_personality_instructions_with_feature() -> anyhow
                 personality_pragmatic: Some("Pragmatic variant".to_string()),
             }),
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,
@@ -764,7 +762,6 @@ async fn user_turn_personality_remote_model_template_includes_update_message() -
                 personality_pragmatic: Some(remote_pragmatic_message.to_string()),
             }),
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,

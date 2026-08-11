@@ -197,42 +197,6 @@ async fn queued_slash_compact_dispatches_after_active_turn() {
 }
 
 #[tokio::test]
-async fn queued_slash_review_with_args_dispatches_after_active_turn() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    handle_turn_started(&mut chat, "turn-1");
-
-    queue_composer_text_with_tab(&mut chat, "/review check regressions");
-
-    complete_turn_with_message(&mut chat, "turn-1", Some("done"));
-
-    match op_rx.try_recv() {
-        Ok(Op::Review { target }) => assert_eq!(
-            target,
-            ReviewTarget::Custom {
-                instructions: "check regressions".to_string(),
-            }
-        ),
-        other => panic!("expected queued /review to submit review op, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn queued_slash_review_with_args_restores_for_edit() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.thread_id = Some(ThreadId::new());
-    handle_turn_started(&mut chat, "turn-1");
-
-    queue_composer_text_with_tab(&mut chat, "/review check regressions");
-    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
-
-    assert_eq!(
-        chat.bottom_pane.composer_text(),
-        "/review check regressions"
-    );
-}
-
-#[tokio::test]
 async fn queued_bang_shell_dispatches_after_active_turn() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());
@@ -1540,35 +1504,6 @@ async fn completed_token_activity_refresh_waits_for_active_hook() {
     assert_matches!(rx.try_recv(), Ok(AppEvent::CommitPendingUsageOutput));
 }
 
-#[tokio::test]
-async fn completed_token_activity_refresh_retries_after_plan_item_completion() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    set_chatgpt_auth(&mut chat);
-
-    let request_id = dispatch_usage_and_expect_refresh(&mut chat, &mut rx);
-    let mut controller = crate::streaming::controller::PlanStreamController::new(
-        /*width*/ None,
-        &chat.config.cwd,
-        chat.history_render_mode(),
-    );
-    controller.push("Plan details");
-    chat.plan_stream_controller = Some(controller);
-    assert!(
-        chat.finish_token_activity_refresh(
-            request_id,
-            Err("token activity unavailable".to_string()),
-        )
-    );
-
-    chat.on_plan_item_completed("Plan details".to_string());
-
-    assert!(
-        std::iter::from_fn(|| rx.try_recv().ok())
-            .any(|event| matches!(event, AppEvent::CommitPendingUsageOutputAfterStreamShutdown))
-    );
-}
-
-#[tokio::test]
 async fn pending_token_activity_refresh_keeps_composer_visible_in_short_viewport() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
@@ -1711,33 +1646,6 @@ async fn slash_copy_state_tracks_turn_complete_final_reply() {
     );
 }
 
-#[tokio::test]
-async fn slash_copy_state_tracks_plan_item_completion() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let plan_text = "## Plan\n\n1. Build it\n2. Test it".to_string();
-
-    chat.handle_server_notification(
-        ServerNotification::ItemCompleted(ItemCompletedNotification {
-            thread_id: String::new(),
-            turn_id: "turn-1".to_string(),
-            completed_at_ms: 0,
-            item: CliRuntimeThreadItem::Plan {
-                id: "plan-1".to_string(),
-                text: plan_text.clone(),
-            },
-        }),
-        /*replay_kind*/ None,
-    );
-    handle_turn_completed(&mut chat, "turn-1", /*duration_ms*/ None);
-
-    assert_eq!(chat.last_agent_markdown_text(), Some(plan_text.as_str()));
-    assert_matches!(
-        chat.pending_notification,
-        Some(Notification::AgentTurnComplete { ref response }) if response == &plan_text
-    );
-}
-
-#[tokio::test]
 async fn slash_copy_reports_when_no_agent_response_exists() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

@@ -12,7 +12,6 @@ use crate::protocol::v2::DynamicToolCallStatus;
 use crate::protocol::v2::FileChangePatchUpdatedNotification;
 use crate::protocol::v2::ItemCompletedNotification;
 use crate::protocol::v2::ItemStartedNotification;
-use crate::protocol::v2::PlanDeltaNotification;
 use crate::protocol::v2::ReasoningSummaryPartAddedNotification;
 use crate::protocol::v2::ReasoningSummaryTextDeltaNotification;
 use crate::protocol::v2::ReasoningTextDeltaNotification;
@@ -369,12 +368,6 @@ pub fn item_event_to_server_notification(
                 delta,
             })
         }
-        EventMsg::PlanDelta(event) => ServerNotification::PlanDelta(PlanDeltaNotification {
-            thread_id,
-            turn_id,
-            item_id: event.item_id,
-            delta: event.delta,
-        }),
         EventMsg::ReasoningContentDelta(event) => {
             ServerNotification::ReasoningSummaryTextDelta(ReasoningSummaryTextDeltaNotification {
                 thread_id,

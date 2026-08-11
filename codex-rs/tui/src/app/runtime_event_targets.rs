@@ -72,7 +72,6 @@ pub(super) fn server_notification_thread_target(
         ServerNotification::AgentMessageDelta(notification) => {
             Some(notification.thread_id.as_str())
         }
-        ServerNotification::PlanDelta(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::CommandExecutionOutputDelta(notification) => {
             Some(notification.thread_id.as_str())
         }
@@ -172,8 +171,7 @@ mod tests {
     use codex_cli_protocol::ThreadSettingsUpdatedNotification;
     use codex_cli_protocol::WarningNotification;
     use codex_protocol::ThreadId;
-    use codex_protocol::config_types::CollaborationMode;
-    use codex_protocol::config_types::ModeKind;
+    use codex_protocol::config_types::AgentSettings;
     use codex_protocol::config_types::Settings;
     use codex_protocol::openai_models::ReasoningEffort;
     use pretty_assertions::assert_eq;
@@ -192,8 +190,7 @@ mod tests {
             service_tier: None,
             effort: Some(ReasoningEffort::High),
             summary: None,
-            collaboration_mode: CollaborationMode {
-                mode: ModeKind::Default,
+            agent_settings: AgentSettings {
                 settings: Settings {
                     model: "gpt-5.4".to_string(),
                     reasoning_effort: Some(ReasoningEffort::High),

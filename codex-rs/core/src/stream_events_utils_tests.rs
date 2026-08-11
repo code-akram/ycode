@@ -143,14 +143,9 @@ async fn handle_non_tool_response_item_strips_citations_from_assistant_message()
         "hello<oai-mem-citation><citation_entries>\nMEMORY.md:1-2|note=[x]\n</citation_entries>\n<rollout_ids>\n019cc2ea-1dff-7902-8d40-c8f6e5d83cc4\n</rollout_ids></oai-mem-citation> world",
     );
 
-    let turn_item = handle_non_tool_response_item(
-        &session,
-        TurnItemContributorPolicy::Skip,
-        &item,
-        /*plan_mode*/ false,
-    )
-    .await
-    .expect("assistant message should parse");
+    let turn_item = handle_non_tool_response_item(&session, TurnItemContributorPolicy::Skip, &item)
+        .await
+        .expect("assistant message should parse");
 
     let TurnItem::AgentMessage(agent_message) = turn_item else {
         panic!("expected agent message");
@@ -230,14 +225,10 @@ async fn handle_non_tool_response_item_runs_turn_item_contributors_only_when_req
         "hello<oai-mem-citation>ignored by memory parser</oai-mem-citation> world",
     );
 
-    let provisional_turn_item = handle_non_tool_response_item(
-        &session,
-        TurnItemContributorPolicy::Skip,
-        &item,
-        /*plan_mode*/ false,
-    )
-    .await
-    .expect("assistant message should parse");
+    let provisional_turn_item =
+        handle_non_tool_response_item(&session, TurnItemContributorPolicy::Skip, &item)
+            .await
+            .expect("assistant message should parse");
 
     assert!(turn_store.get::<TurnItemContributorRan>().is_none());
     let TurnItem::AgentMessage(provisional_agent_message) = provisional_turn_item else {
@@ -245,14 +236,10 @@ async fn handle_non_tool_response_item_runs_turn_item_contributors_only_when_req
     };
     assert_eq!(provisional_agent_message.memory_citation, None);
 
-    let turn_item = handle_non_tool_response_item(
-        &session,
-        TurnItemContributorPolicy::Run(&turn_store),
-        &item,
-        /*plan_mode*/ false,
-    )
-    .await
-    .expect("assistant message should parse");
+    let turn_item =
+        handle_non_tool_response_item(&session, TurnItemContributorPolicy::Run(&turn_store), &item)
+            .await
+            .expect("assistant message should parse");
 
     assert!(turn_store.get::<TurnItemContributorRan>().is_some());
     let TurnItem::AgentMessage(agent_message) = turn_item else {
@@ -320,7 +307,6 @@ async fn finalized_turn_item_defers_mailbox_for_contributed_visible_text() {
         &session,
         TurnItemContributorPolicy::Run(&turn_store),
         &item,
-        /*plan_mode*/ false,
     )
     .await
     .expect("assistant message should parse");
@@ -345,7 +331,6 @@ async fn finalized_turn_item_keeps_mailbox_open_for_commentary_text() {
         &session,
         TurnItemContributorPolicy::Run(&turn_store),
         &item,
-        /*plan_mode*/ false,
     )
     .await
     .expect("assistant message should parse");
@@ -358,51 +343,22 @@ async fn finalized_turn_item_keeps_mailbox_open_for_commentary_text() {
 }
 
 #[test]
-fn last_assistant_message_from_item_strips_citations_and_plan_blocks() {
-    let item = assistant_output_text(
-        "before<oai-mem-citation>doc1</oai-mem-citation>\n<proposed_plan>\n- x\n</proposed_plan>\nafter",
-    );
-
-    let message = last_assistant_message_from_item(&item, /*plan_mode*/ true)
-        .expect("assistant text should remain after stripping");
-
-    assert_eq!(message, "before\nafter");
-}
-
-#[test]
 fn last_assistant_message_from_item_returns_none_for_citation_only_message() {
     let item = assistant_output_text("<oai-mem-citation>doc1</oai-mem-citation>");
 
-    assert_eq!(
-        last_assistant_message_from_item(&item, /*plan_mode*/ false),
-        None
-    );
-}
-
-#[test]
-fn last_assistant_message_from_item_returns_none_for_plan_only_hidden_message() {
-    let item = assistant_output_text("<proposed_plan>\n- x\n</proposed_plan>");
-
-    assert_eq!(
-        last_assistant_message_from_item(&item, /*plan_mode*/ true),
-        None
-    );
+    assert_eq!(last_assistant_message_from_item(&item), None);
 }
 
 #[test]
 fn completed_item_defers_mailbox_delivery_for_unknown_phase_messages() {
     let item = assistant_output_text("final answer");
 
-    assert!(completed_item_defers_mailbox_delivery_to_next_turn(
-        &item, /*plan_mode*/ false,
-    ));
+    assert!(completed_item_defers_mailbox_delivery_to_next_turn(&item));
 }
 
 #[test]
 fn completed_item_keeps_mailbox_delivery_open_for_commentary_messages() {
     let item = assistant_output_text_with_phase("still working", Some(MessagePhase::Commentary));
 
-    assert!(!completed_item_defers_mailbox_delivery_to_next_turn(
-        &item, /*plan_mode*/ false,
-    ));
+    assert!(!completed_item_defers_mailbox_delivery_to_next_turn(&item));
 }

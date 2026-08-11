@@ -26,7 +26,7 @@ impl ChatWidget {
 #[derive(Debug)]
 pub(super) enum Notification {
     AgentTurnComplete { response: String },
-    PlanModePrompt { title: String },
+    UserInputPrompt { title: String },
 }
 
 impl Notification {
@@ -36,23 +36,21 @@ impl Notification {
                 Notification::agent_turn_preview(response)
                     .unwrap_or_else(|| "Agent turn complete".to_string())
             }
-            Notification::PlanModePrompt { title } => {
-                format!("Plan mode prompt: {title}")
-            }
+            Notification::UserInputPrompt { title } => title.clone(),
         }
     }
 
     fn type_name(&self) -> &str {
         match self {
             Notification::AgentTurnComplete { .. } => "agent-turn-complete",
-            Notification::PlanModePrompt { .. } => "plan-mode-prompt",
+            Notification::UserInputPrompt { .. } => "user-input-prompt",
         }
     }
 
     fn priority(&self) -> u8 {
         match self {
             Notification::AgentTurnComplete { .. } => 0,
-            Notification::PlanModePrompt { .. } => 1,
+            Notification::UserInputPrompt { .. } => 1,
         }
     }
 

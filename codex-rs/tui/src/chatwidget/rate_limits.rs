@@ -377,7 +377,7 @@ impl ChatWidget {
                 Some(Some(default_effort.clone())),
                 /*summary*/ None,
                 /*service_tier*/ None,
-                /*collaboration_mode*/ None,
+                /*agent_settings*/ None,
                 /*personality*/ None,
             )));
             tx.send(AppEvent::UpdateModel(switch_model_for_events.clone()));

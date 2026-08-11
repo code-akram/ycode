@@ -7,7 +7,6 @@ use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::ConfigTomlLoadResult;
-use crate::legacy_core::config::bootstrap_auth_config;
 use crate::legacy_core::config::load_config_toml_with_layer_stack;
 #[cfg(test)]
 use crate::legacy_core::config::resolve_bootstrap_http_client_factory;
@@ -90,7 +89,6 @@ mod chatwidget;
 mod cli;
 mod clipboard_copy;
 mod clipboard_paste;
-mod collaboration_modes;
 mod color;
 mod config_update;
 pub(crate) mod custom_terminal;

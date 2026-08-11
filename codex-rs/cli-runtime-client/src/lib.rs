@@ -121,7 +121,7 @@ fn event_requires_delivery(event: &InProcessServerEvent) -> bool {
 
 /// Returns `true` for notifications that must survive backpressure.
 ///
-/// Transcript events (`AgentMessageDelta`, `PlanDelta`, reasoning deltas) and
+/// Transcript events (agent-message and reasoning deltas) and
 /// the authoritative `ItemCompleted` / `TurnCompleted` form the lossless tier
 /// of the event stream. Dropping any of these corrupts the visible assistant
 /// output or leaves surfaces waiting for a completion signal that already
@@ -138,7 +138,6 @@ pub(crate) fn server_notification_requires_delivery(notification: &ServerNotific
             | ServerNotification::ItemCompleted(_)
             | ServerNotification::ExternalAgentConfigImportCompleted(_)
             | ServerNotification::AgentMessageDelta(_)
-            | ServerNotification::PlanDelta(_)
             | ServerNotification::ReasoningSummaryTextDelta(_)
             | ServerNotification::ReasoningTextDelta(_)
     )

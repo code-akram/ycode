@@ -110,13 +110,13 @@ fn session_configuration_to_lock_config_toml(
 }
 
 /// Saves values chosen during session construction from the model catalog,
-/// collaboration mode, and resolved prompt setup.
+/// agent settings, and resolved prompt setup.
 ///
 /// These values are not always present in the raw layer stack, so copy them
 /// from the live session when the lockfile should be fully self-contained.
 fn save_session_resolved_fields(sc: &SessionConfiguration, lock_config: &mut ConfigToml) {
-    lock_config.model = Some(sc.collaboration_mode.model().to_string());
-    lock_config.model_reasoning_effort = sc.collaboration_mode.reasoning_effort();
+    lock_config.model = Some(sc.agent_settings.model().to_string());
+    lock_config.model_reasoning_effort = sc.agent_settings.reasoning_effort();
     lock_config.model_reasoning_summary = sc.model_reasoning_summary;
     lock_config.service_tier = sc.service_tier.clone();
     lock_config.instructions = Some(sc.base_instructions.clone());
@@ -138,11 +138,8 @@ fn save_config_resolved_fields(
 ) -> anyhow::Result<()> {
     lock_config.web_search = Some(config.web_search_mode.value());
     lock_config.model_provider = Some(config.model_provider_id.clone());
-    lock_config.plan_mode_reasoning_effort = config.plan_mode_reasoning_effort.clone();
     lock_config.model_verbosity = config.model_verbosity;
     lock_config.include_permissions_instructions = Some(config.include_permissions_instructions);
-    lock_config.include_collaboration_mode_instructions =
-        Some(config.include_collaboration_mode_instructions);
     lock_config.include_environment_context = Some(config.include_environment_context);
     lock_config.background_terminal_max_timeout = Some(config.background_terminal_max_timeout);
 
@@ -301,10 +298,10 @@ mod tests {
         assert_eq!(lock.instructions, Some(sc.base_instructions.clone()));
         assert_eq!(lock.developer_instructions, sc.developer_instructions);
         assert_eq!(lock.compact_prompt, sc.compact_prompt);
-        assert_eq!(lock.model, Some(sc.collaboration_mode.model().to_string()));
+        assert_eq!(lock.model, Some(sc.agent_settings.model().to_string()));
         assert_eq!(
             lock.model_reasoning_effort,
-            sc.collaboration_mode.reasoning_effort()
+            sc.agent_settings.reasoning_effort()
         );
         assert_eq!(lock.profile, None);
         assert!(lock.profiles.is_empty());

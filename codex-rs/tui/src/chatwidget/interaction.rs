@@ -122,20 +122,6 @@ impl ChatWidget {
             return;
         }
 
-        const REVIEW_STEER_UNAVAILABLE_MESSAGE: &str = "Steer messages aren't supported during /review. Press Ctrl+C now to cancel the review.";
-
-        if self.chat_keymap.interrupt_turn.is_pressed(key_event)
-            && self.review.is_review_mode
-            && (!self.input_queue.pending_steers.is_empty()
-                || !self.input_queue.rejected_steers_queue.is_empty())
-            && self.bottom_pane.is_task_running()
-            && self.bottom_pane.no_modal_or_popup_active()
-            && !self.should_handle_vim_insert_escape(key_event)
-        {
-            self.add_warning_message(REVIEW_STEER_UNAVAILABLE_MESSAGE.to_string());
-            return;
-        }
-
         if self.chat_keymap.interrupt_turn.is_pressed(key_event)
             && !self.input_queue.pending_steers.is_empty()
             && self.bottom_pane.is_task_running()
@@ -151,45 +137,17 @@ impl ChatWidget {
             return;
         }
 
-        if matches!(key_event.code, KeyCode::Esc)
-            && key_event.kind == KeyEventKind::Press
-            && self.should_show_plan_mode_nudge()
-        {
-            self.dismiss_plan_mode_nudge();
-            return;
-        }
-
         if self.handle_plugins_popup_key_event(key_event) {
             return;
         }
 
-        match key_event {
-            KeyEvent {
-                code: KeyCode::BackTab,
-                kind: KeyEventKind::Press,
-                ..
-            } if self.collaboration_modes_enabled()
-                && !self.bottom_pane.is_task_running()
-                && self.bottom_pane.no_modal_or_popup_active() =>
-            {
-                if self.blocks_direct_input {
-                    self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
-                } else {
-                    self.cycle_collaboration_mode();
-                    self.refresh_plan_mode_nudge();
-                }
-            }
-            _ => {
-                let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
-                let should_pause_active_goal =
-                    self.bottom_pane.should_interrupt_running_task(key_event);
-                let input_result = self.bottom_pane.handle_key_event(key_event);
-                if should_pause_active_goal {
-                    self.pause_active_goal_for_interrupt();
-                }
-                self.handle_composer_input_result(input_result, had_modal_or_popup);
-            }
+        let had_modal_or_popup = !self.bottom_pane.no_modal_or_popup_active();
+        let should_pause_active_goal = self.bottom_pane.should_interrupt_running_task(key_event);
+        let input_result = self.bottom_pane.handle_key_event(key_event);
+        if should_pause_active_goal {
+            self.pause_active_goal_for_interrupt();
         }
+        self.handle_composer_input_result(input_result, had_modal_or_popup);
     }
 
     /// Attach a local image to the composer when the active model supports image inputs.
@@ -215,7 +173,6 @@ impl ChatWidget {
 
     pub(crate) fn apply_external_edit(&mut self, text: String) {
         self.bottom_pane.apply_external_edit(text);
-        self.refresh_plan_mode_nudge();
         self.request_redraw();
     }
 
@@ -233,7 +190,6 @@ impl ChatWidget {
 
     pub(crate) fn show_selection_view(&mut self, params: SelectionViewParams) {
         self.bottom_pane.show_selection_view(params);
-        self.refresh_plan_mode_nudge();
         self.request_redraw();
     }
 
@@ -249,9 +205,6 @@ impl ChatWidget {
         let replaced = self
             .bottom_pane
             .replace_selection_view_if_present(view_id, params);
-        if replaced {
-            self.refresh_plan_mode_nudge();
-        }
         replaced
     }
 
@@ -353,13 +306,11 @@ impl ChatWidget {
 
     pub(crate) fn handle_paste(&mut self, text: String) {
         self.bottom_pane.handle_paste(text);
-        self.refresh_plan_mode_nudge();
     }
 
     // Returns true if caller should skip rendering this frame (a future frame is scheduled).
     pub(crate) fn handle_paste_burst_tick(&mut self, frame_requester: FrameRequester) -> bool {
         if self.bottom_pane.flush_paste_burst_if_due() {
-            self.refresh_plan_mode_nudge();
             // A paste just flushed; request an immediate redraw and skip this frame.
             self.request_redraw();
             true
@@ -491,9 +442,8 @@ impl ChatWidget {
         self.bottom_pane.show_quit_shortcut_hint(key);
     }
 
-    // Review mode counts as cancellable work so Ctrl+C interrupts instead of quitting.
     fn is_cancellable_work_active(&self) -> bool {
-        self.bottom_pane.is_task_running() || self.review.is_review_mode
+        self.bottom_pane.is_task_running()
     }
 
     fn pause_active_goal_for_interrupt(&self) {

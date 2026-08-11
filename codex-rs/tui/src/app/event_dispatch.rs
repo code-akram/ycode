@@ -401,42 +401,6 @@ impl App {
                 self.chat_widget.note_stream_consolidation_completed();
                 self.insert_pending_usage_output_after_stream_shutdown(tui);
             }
-            AppEvent::ConsolidateProposedPlan(source) => {
-                let end = self.transcript_cells.len();
-                let start = trailing_run_start::<history_cell::ProposedPlanStreamCell>(
-                    &self.transcript_cells,
-                );
-                let consolidated: Arc<dyn HistoryCell> =
-                    Arc::new(history_cell::new_proposed_plan(source, &self.config.cwd));
-
-                if start < end {
-                    self.transcript_cells
-                        .splice(start..end, std::iter::once(consolidated.clone()));
-
-                    if let Some(Overlay::Transcript(t)) = &mut self.overlay {
-                        t.consolidate_cells(start..end, consolidated.clone());
-                        tui.frame_requester().schedule_frame();
-                    }
-
-                    self.finish_required_stream_reflow(tui)?;
-                } else {
-                    self.transcript_cells.push(consolidated.clone());
-                    if let Some(Overlay::Transcript(t)) = &mut self.overlay {
-                        t.insert_cell(consolidated.clone());
-                        tui.frame_requester().schedule_frame();
-                    }
-                    self.insert_history_cell_lines(
-                        tui,
-                        consolidated.as_ref(),
-                        self.chat_widget
-                            .history_wrap_width(tui.terminal.last_known_screen_size.width),
-                    );
-
-                    self.maybe_finish_stream_reflow(tui)?;
-                }
-                self.chat_widget.note_stream_consolidation_completed();
-                self.insert_pending_usage_output_after_stream_shutdown(tui);
-            }
             AppEvent::StartCommitAnimation => {
                 if self
                     .commit_anim_running
@@ -1103,7 +1067,7 @@ impl App {
             }
             AppEvent::UpdateModel(model) => {
                 let model_changed = self.chat_widget.current_model() != model
-                    || self.chat_widget.current_collaboration_mode().model() != model;
+                    || self.chat_widget.current_agent_settings().model() != model;
                 if model_changed {
                     self.chat_widget.set_model(&model);
                     self.sync_active_thread_model_setting(cli_runtime, model, /*effort*/ None)
@@ -1135,7 +1099,7 @@ impl App {
             }
             AppEvent::ApplyAdvancedReasoning { model, effort } => {
                 let model_changed = self.chat_widget.current_model() != model
-                    || self.chat_widget.current_collaboration_mode().model() != model;
+                    || self.chat_widget.current_agent_settings().model() != model;
                 let default_effort =
                     self.on_apply_advanced_reasoning(model.as_str(), effort.clone());
                 if model_changed {
@@ -1148,8 +1112,7 @@ impl App {
                 } else if let Some(mut params) =
                     self.active_thread_reasoning_setting_update_params(Some(effort.clone()))
                 {
-                    params.collaboration_mode =
-                        Some(self.chat_widget.effective_collaboration_mode());
+                    params.agent_settings = Some(self.chat_widget.effective_agent_settings());
                     self.send_thread_settings_update(cli_runtime, params).await;
                 }
                 self.sync_active_thread_service_tier_to_cached_session()
@@ -1175,10 +1138,6 @@ impl App {
                         /*hint*/ None,
                     );
                 }
-            }
-            AppEvent::OpenPlanReasoningScopePrompt { model, effort } => {
-                self.chat_widget
-                    .open_plan_reasoning_scope_prompt(model, effort);
             }
             AppEvent::OpenAllModelsPopup { models } => {
                 self.chat_widget.open_all_models_popup(models);
@@ -1351,11 +1310,6 @@ impl App {
             AppEvent::UpdateRateLimitSwitchPromptHidden(hidden) => {
                 self.chat_widget.set_rate_limit_switch_prompt_hidden(hidden);
             }
-            AppEvent::UpdatePlanModeReasoningEffort(effort) => {
-                self.on_update_plan_mode_reasoning_effort(effort);
-                self.sync_active_thread_plan_mode_reasoning_setting(cli_runtime)
-                    .await;
-            }
             AppEvent::PersistRateLimitSwitchPromptHidden => {
                 if let Err(err) = ConfigEditsBuilder::for_config(&self.config)
                     .set_hide_rate_limit_model_nudge(/*acknowledged*/ true)
@@ -1368,31 +1322,6 @@ impl App {
                     );
                     self.chat_widget.add_error_message(format!(
                         "Failed to save rate limit reminder preference: {err}"
-                    ));
-                }
-            }
-            AppEvent::PersistPlanModeReasoningEffort(effort) => {
-                let key_path = "plan_mode_reasoning_effort";
-                let edit = if let Some(effort) = effort {
-                    crate::config_update::replace_config_value(
-                        key_path,
-                        serde_json::json!(effort.to_string()),
-                    )
-                } else {
-                    crate::config_update::clear_config_value(key_path)
-                };
-                if let Err(err) = crate::config_update::write_config_batch(
-                    cli_runtime.request_handle(),
-                    vec![edit],
-                )
-                .await
-                {
-                    tracing::error!(
-                        error = %err,
-                        "failed to persist plan mode reasoning effort"
-                    );
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save Plan mode reasoning effort: {err}"
                     ));
                 }
             }
@@ -1498,22 +1427,6 @@ impl App {
                 if let Err(err) = result {
                     self.chat_widget.add_error_message(err);
                 }
-            }
-            AppEvent::OpenReviewBranchPicker(cwd) => {
-                self.chat_widget.show_review_branch_picker(&cwd).await;
-            }
-            AppEvent::OpenReviewCommitPicker(cwd) => {
-                self.chat_widget.show_review_commit_picker(&cwd).await;
-            }
-            AppEvent::OpenReviewCustomPrompt => {
-                self.chat_widget.show_review_custom_prompt();
-            }
-            AppEvent::SubmitUserMessageWithMode {
-                text,
-                collaboration_mode,
-            } => {
-                self.chat_widget
-                    .submit_user_message_with_mode(text, collaboration_mode);
             }
             AppEvent::ManageSkillsClosed => {
                 self.chat_widget.handle_manage_skills_closed();

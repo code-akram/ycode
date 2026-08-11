@@ -34,8 +34,7 @@ use codex_goal_extension::GoalSetRequest;
 use codex_goal_extension::GoalTokenBudgetUpdate;
 use codex_goal_extension::install_with_backend;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Settings;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::Event;
@@ -113,23 +112,6 @@ async fn goal_tools_hidden_for_ephemeral_threads() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn goal_tools_hidden_for_review_subagents() -> anyhow::Result<()> {
-    let runtime = test_runtime().await?;
-    let thread_id = test_thread_id()?;
-    let tools = installed_tools_with_start(
-        runtime,
-        thread_id,
-        SessionSource::SubAgent(SubAgentSource::Review),
-        /*persistent_thread_state_available*/ true,
-    )
-    .await;
-
-    assert_eq!(Vec::<String>::new(), tool_names(&tools));
-    Ok(())
-}
-
-#[tokio::test]
 async fn installed_goal_tools_only_replace_complete_goal() -> anyhow::Result<()> {
     let runtime = test_runtime().await?;
     let thread_id = test_thread_id()?;
@@ -684,44 +666,6 @@ async fn usage_limit_budget_limited_goal_accounts_remaining_progress() -> anyhow
     Ok(())
 }
 
-#[tokio::test]
-async fn usage_limit_plan_turn_does_not_stop_goal() -> anyhow::Result<()> {
-    let runtime = test_runtime().await?;
-    let thread_id = test_thread_id()?;
-    seed_thread_metadata(runtime.as_ref(), thread_id).await?;
-    let harness = GoalExtensionHarness::new(runtime.clone(), thread_id).await?;
-
-    let tools = harness.tools();
-    let create_tool = tool_by_name(&tools, "create_goal");
-    create_tool
-        .handle(tool_call(
-            "create_goal",
-            "call-create-goal",
-            json!({ "objective": "ship goal extension backend" }),
-        ))
-        .await?;
-
-    harness
-        .start_turn_with_mode("turn-plan", ModeKind::Plan, &TokenUsage::default())
-        .await;
-    harness.sink.clear();
-    harness
-        .runtime_handle()
-        .usage_limit_active_goal_for_turn("turn-plan")
-        .await
-        .map_err(anyhow::Error::msg)?;
-
-    let goal = runtime
-        .thread_goals()
-        .get_thread_goal(thread_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("goal should exist"))?;
-    assert_eq!(codex_state::ThreadGoalStatus::Active, goal.status);
-    assert_eq!(Vec::<CapturedGoalEvent>::new(), harness.sink.goal_events());
-    Ok(())
-}
-
-#[tokio::test]
 async fn usage_limit_stale_turn_does_not_stop_current_goal() -> anyhow::Result<()> {
     let runtime = test_runtime().await?;
     let thread_id = test_thread_id()?;
@@ -1214,19 +1158,13 @@ impl GoalExtensionHarness {
     }
 
     async fn start_turn(&self, turn_id: &str, usage: &TokenUsage) {
-        self.start_turn_with_mode(turn_id, ModeKind::Default, usage)
-            .await;
-    }
-
-    async fn start_turn_with_mode(&self, turn_id: &str, mode: ModeKind, usage: &TokenUsage) {
         let turn_store = ExtensionData::new(turn_id);
-        let mut collaboration_mode = default_collaboration_mode();
-        collaboration_mode.mode = mode;
+        let agent_settings = default_agent_settings();
         for contributor in self.registry.turn_lifecycle_contributors() {
             contributor
                 .on_turn_start(TurnStartInput {
                     turn_id,
-                    collaboration_mode: &collaboration_mode,
+                    agent_settings: &agent_settings,
                     token_usage_at_turn_start: usage,
                     session_store: &self.session_store,
                     thread_store: &self.thread_store,
@@ -1435,9 +1373,8 @@ struct CapturedGoalEvent {
     tokens_used: i64,
 }
 
-fn default_collaboration_mode() -> CollaborationMode {
-    CollaborationMode {
-        mode: ModeKind::Default,
+fn default_agent_settings() -> AgentSettings {
+    AgentSettings {
         settings: Settings {
             model: "gpt-5".to_string(),
             reasoning_effort: None,

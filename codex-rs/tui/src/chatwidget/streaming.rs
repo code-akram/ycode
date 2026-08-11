@@ -1,6 +1,6 @@
 //! Streaming transcript updates for `ChatWidget`.
 //!
-//! This module owns assistant, plan, and reasoning deltas, including stream-tail
+//! This module owns assistant and reasoning deltas, including stream-tail
 //! cells, commit ticks, and interrupt deferral.
 
 use super::*;
@@ -93,11 +93,6 @@ impl ChatWidget {
             .as_ref()
             .map(|controller| controller.queued_lines() == 0)
             .unwrap_or(true)
-            && self
-                .plan_stream_controller
-                .as_ref()
-                .map(|controller| controller.queued_lines() == 0)
-                .unwrap_or(true)
     }
 
     /// Restore the status indicator only after commentary completion is pending,
@@ -140,90 +135,6 @@ impl ChatWidget {
 
     pub(super) fn on_agent_message_delta(&mut self, delta: String) {
         self.handle_streaming_delta(delta);
-    }
-
-    pub(super) fn on_plan_delta(&mut self, delta: String) {
-        if self.active_mode_kind() != ModeKind::Plan {
-            return;
-        }
-        if !self.transcript.plan_item_active {
-            self.transcript.plan_item_active = true;
-            self.transcript.plan_delta_buffer.clear();
-        }
-        self.transcript.plan_delta_buffer.push_str(&delta);
-        if self.plan_stream_controller.is_none() {
-            // Before starting a plan stream, flush any active exec cell group.
-            self.flush_unified_exec_wait_streak();
-            self.flush_active_cell();
-            self.plan_stream_controller = Some(PlanStreamController::new(
-                self.current_stream_width(/*reserved_cols*/ 4),
-                &self.config.cwd,
-                self.history_render_mode(),
-            ));
-        }
-        if let Some(controller) = self.plan_stream_controller.as_mut()
-            && controller.push(&delta)
-        {
-            self.app_event_tx.send(AppEvent::StartCommitAnimation);
-            self.run_catch_up_commit_tick();
-        }
-        // Unterminated source is buffered by the controller and cannot change the visible tail.
-        if delta.contains('\n') && self.sync_active_stream_tail() {
-            self.request_redraw();
-        }
-    }
-
-    pub(super) fn on_plan_item_completed(&mut self, text: String) {
-        let streamed_plan = self.transcript.plan_delta_buffer.trim().to_string();
-        let plan_text = if text.trim().is_empty() {
-            streamed_plan
-        } else {
-            text
-        };
-        if !plan_text.trim().is_empty() {
-            self.record_agent_markdown(&plan_text);
-            self.transcript.latest_proposed_plan_markdown = Some(plan_text.clone());
-        }
-        // Plan commit ticks can hide the status row; remember whether we streamed plan output so
-        // completion can restore it once stream queues are idle.
-        let should_restore_after_stream = self.plan_stream_controller.is_some();
-        self.transcript.plan_delta_buffer.clear();
-        self.transcript.plan_item_active = false;
-        self.transcript.saw_plan_item_this_turn = true;
-        let (finalized_streamed_cell, consolidated_plan_source) =
-            if let Some(mut controller) = self.plan_stream_controller.take() {
-                let had_live_tail = controller.has_live_tail();
-                self.clear_active_stream_tail();
-                let (cell, source) = controller.finalize();
-                if had_live_tail {
-                    (None, source)
-                } else {
-                    (cell, source)
-                }
-            } else {
-                (None, None)
-            };
-        if let Some(cell) = finalized_streamed_cell {
-            self.add_boxed_history(cell);
-            // TODO: Replace streamed output with the final plan item text if plan streaming is
-            // removed or if we need to reconcile mismatches between streamed and final content.
-            if let Some(source) = consolidated_plan_source {
-                self.note_stream_consolidation_queued();
-                self.app_event_tx
-                    .send(AppEvent::ConsolidateProposedPlan(source));
-            }
-        } else if !plan_text.is_empty() {
-            self.add_to_history(history_cell::new_proposed_plan(plan_text, &self.config.cwd));
-        } else if let Some(source) = consolidated_plan_source {
-            self.note_stream_consolidation_queued();
-            self.app_event_tx
-                .send(AppEvent::ConsolidateProposedPlan(source));
-        }
-        if should_restore_after_stream {
-            self.status_state.pending_status_indicator_restore = true;
-            self.maybe_restore_status_indicator_after_stream_idle();
-            self.request_pending_usage_output_insertion_after_stream_shutdown();
-        }
     }
 
     pub(super) fn on_agent_reasoning_delta(&mut self, delta: String) {
@@ -383,7 +294,6 @@ impl ChatWidget {
         let outcome = run_commit_tick(
             &mut self.adaptive_chunking,
             self.stream_controller.as_mut(),
-            self.plan_stream_controller.as_mut(),
             scope,
             now,
         );
@@ -484,15 +394,14 @@ impl ChatWidget {
     }
 
     pub(super) fn active_cell_is_stream_tail(&self) -> bool {
-        self.transcript.active_cell.as_ref().is_some_and(|cell| {
-            cell.as_any().is::<history_cell::StreamingAgentTailCell>()
-                || cell.as_any().is::<history_cell::StreamingPlanTailCell>()
-        })
+        self.transcript
+            .active_cell
+            .as_ref()
+            .is_some_and(|cell| cell.as_any().is::<history_cell::StreamingAgentTailCell>())
     }
 
     pub(super) fn has_active_stream_tail(&self) -> bool {
-        (self.stream_controller.is_some() || self.plan_stream_controller.is_some())
-            && self.active_cell_is_stream_tail()
+        self.stream_controller.is_some() && self.active_cell_is_stream_tail()
     }
 
     pub(super) fn sync_active_stream_tail(&mut self) -> bool {
@@ -515,35 +424,6 @@ impl ChatWidget {
                     active
                         .as_any()
                         .downcast_ref::<history_cell::StreamingAgentTailCell>()
-                })
-                .is_some_and(|active| active == &cell)
-            {
-                return false;
-            }
-            self.transcript.active_cell = Some(Box::new(cell));
-            self.bump_active_cell_revision();
-            return true;
-        }
-
-        if let Some(controller) = self.plan_stream_controller.as_ref() {
-            let tail_lines = controller.current_tail_display_lines();
-            if tail_lines.is_empty() {
-                return self.clear_active_stream_tail();
-            }
-
-            self.bottom_pane.hide_status_indicator();
-            let cell = history_cell::StreamingPlanTailCell::new(
-                tail_lines,
-                !controller.tail_starts_stream(),
-            );
-            if self
-                .transcript
-                .active_cell
-                .as_ref()
-                .and_then(|active| {
-                    active
-                        .as_any()
-                        .downcast_ref::<history_cell::StreamingPlanTailCell>()
                 })
                 .is_some_and(|active| active == &cell)
             {

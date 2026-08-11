@@ -89,9 +89,7 @@ use codex_models_manager::test_support::construct_model_info_offline_for_tests;
 use codex_models_manager::test_support::get_model_offline_for_tests;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::CollaborationModeMask;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::config_types::ServiceTier;
@@ -636,16 +634,8 @@ async fn replay_thread_snapshot_restores_draft_and_queued_input() {
 
     app.chat_widget
         .apply_external_edit("draft prompt".to_string());
-    app.chat_widget.submit_user_message_with_mode(
-        "queued follow-up".to_string(),
-        CollaborationModeMask {
-            name: "Default".to_string(),
-            mode: None,
-            model: None,
-            reasoning_effort: None,
-            developer_instructions: None,
-        },
-    );
+    app.chat_widget
+        .submit_user_message(UserMessage::from("queued follow-up"));
     let expected_input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -694,15 +684,8 @@ async fn replay_thread_snapshot_restores_the_matching_safety_buffer_prompt() {
     );
     app.activate_thread_channel(thread_id).await;
     app.chat_widget.handle_thread_session(session);
-    let default_mode = CollaborationModeMask {
-        name: "Default".to_string(),
-        mode: None,
-        model: None,
-        reasoning_effort: None,
-        developer_instructions: None,
-    };
     app.chat_widget
-        .submit_user_message_with_mode("buffered prompt A".to_string(), default_mode.clone());
+        .submit_user_message(UserMessage::from("buffered prompt A"));
     let expected_input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -724,7 +707,7 @@ async fn replay_thread_snapshot_restores_the_matching_safety_buffer_prompt() {
         ThreadId::new(),
         test_path_buf("/tmp/other-project"),
     ));
-    chat_widget.submit_user_message_with_mode("buffered prompt B".to_string(), default_mode);
+    chat_widget.submit_user_message(UserMessage::from("buffered prompt B"));
     app.chat_widget = chat_widget;
     app.replay_thread_snapshot(snapshot, /*resume_restored_queue*/ false);
 
@@ -1108,147 +1091,6 @@ async fn replay_thread_snapshot_restores_pending_pastes_for_submit() {
     }
 }
 
-#[tokio::test]
-async fn replay_thread_snapshot_restores_collaboration_mode_for_draft_submit() {
-    let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let thread_id = ThreadId::new();
-    let session = test_thread_session(thread_id, test_path_buf("/tmp/project"));
-    app.chat_widget.handle_thread_session(session.clone());
-    app.chat_widget
-        .set_reasoning_effort(Some(ReasoningEffortConfig::High));
-    app.chat_widget
-        .set_collaboration_mask(CollaborationModeMask {
-            name: "Plan".to_string(),
-            mode: Some(ModeKind::Plan),
-            model: Some("gpt-restored".to_string()),
-            reasoning_effort: Some(Some(ReasoningEffortConfig::High)),
-            developer_instructions: None,
-        });
-    app.chat_widget
-        .apply_external_edit("draft prompt".to_string());
-    let input_state = app
-        .chat_widget
-        .capture_thread_input_state()
-        .expect("expected draft input state");
-
-    let (chat_widget, _app_event_tx, _rx, mut new_op_rx) =
-        make_chatwidget_manual_with_sender().await;
-    app.chat_widget = chat_widget;
-    app.chat_widget.handle_thread_session(session.clone());
-    app.chat_widget
-        .set_reasoning_effort(Some(ReasoningEffortConfig::Low));
-    app.chat_widget
-        .set_collaboration_mask(CollaborationModeMask {
-            name: "Default".to_string(),
-            mode: Some(ModeKind::Default),
-            model: Some("gpt-replacement".to_string()),
-            reasoning_effort: Some(Some(ReasoningEffortConfig::Low)),
-            developer_instructions: None,
-        });
-    while new_op_rx.try_recv().is_ok() {}
-
-    app.replay_thread_snapshot(
-        ThreadEventSnapshot {
-            session: None,
-            turns: Vec::new(),
-            events: vec![],
-            input_state: Some(input_state),
-        },
-        /*resume_restored_queue*/ true,
-    );
-    app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    match next_user_turn_op(&mut new_op_rx) {
-        Op::UserTurn {
-            items,
-            model,
-            effort,
-            collaboration_mode,
-            ..
-        } => {
-            assert_eq!(
-                items,
-                vec![UserInput::Text {
-                    text: "draft prompt".to_string(),
-                    text_elements: Vec::new(),
-                }]
-            );
-            assert_eq!(model, "gpt-restored".to_string());
-            assert_eq!(effort, Some(ReasoningEffortConfig::High));
-            assert_eq!(
-                collaboration_mode,
-                Some(CollaborationMode {
-                    mode: ModeKind::Plan,
-                    settings: Settings {
-                        model: "gpt-restored".to_string(),
-                        reasoning_effort: Some(ReasoningEffortConfig::High),
-                        developer_instructions: None,
-                    },
-                })
-            );
-        }
-        other => panic!("expected restored draft submission, got {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn replay_thread_snapshot_restores_collaboration_mode_without_input() {
-    let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let thread_id = ThreadId::new();
-    let session = test_thread_session(thread_id, test_path_buf("/tmp/project"));
-    app.chat_widget.handle_thread_session(session.clone());
-    app.chat_widget
-        .set_reasoning_effort(Some(ReasoningEffortConfig::High));
-    app.chat_widget
-        .set_collaboration_mask(CollaborationModeMask {
-            name: "Plan".to_string(),
-            mode: Some(ModeKind::Plan),
-            model: Some("gpt-restored".to_string()),
-            reasoning_effort: Some(Some(ReasoningEffortConfig::High)),
-            developer_instructions: None,
-        });
-    let input_state = app
-        .chat_widget
-        .capture_thread_input_state()
-        .expect("expected collaboration-only input state");
-
-    let (chat_widget, _app_event_tx, _rx, _new_op_rx) = make_chatwidget_manual_with_sender().await;
-    app.chat_widget = chat_widget;
-    app.chat_widget.handle_thread_session(session.clone());
-    app.chat_widget
-        .set_reasoning_effort(Some(ReasoningEffortConfig::Low));
-    app.chat_widget
-        .set_collaboration_mask(CollaborationModeMask {
-            name: "Default".to_string(),
-            mode: Some(ModeKind::Default),
-            model: Some("gpt-replacement".to_string()),
-            reasoning_effort: Some(Some(ReasoningEffortConfig::Low)),
-            developer_instructions: None,
-        });
-
-    app.replay_thread_snapshot(
-        ThreadEventSnapshot {
-            session: None,
-            turns: Vec::new(),
-            events: vec![],
-            input_state: Some(input_state),
-        },
-        /*resume_restored_queue*/ true,
-    );
-
-    assert_eq!(
-        app.chat_widget.active_collaboration_mode_kind(),
-        ModeKind::Plan
-    );
-    assert_eq!(app.chat_widget.current_model(), "gpt-restored");
-    assert_eq!(
-        app.chat_widget.current_reasoning_effort(),
-        Some(ReasoningEffortConfig::High)
-    );
-}
-
-#[tokio::test]
 async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let thread_id = ThreadId::new();
@@ -2324,7 +2166,7 @@ default_permissions = "locked-down"
             effort: None,
             summary: None,
             service_tier: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
         }
     );
@@ -2418,7 +2260,7 @@ async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<
             effort: None,
             summary: None,
             service_tier: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
         })
     );
@@ -2513,7 +2355,7 @@ async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restor
             effort: None,
             summary: None,
             service_tier: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
         })
     );
@@ -2594,7 +2436,7 @@ async fn update_feature_flags_enabling_guardian_overrides_explicit_manual_review
             effort: None,
             summary: None,
             service_tier: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
         })
     );
@@ -2654,7 +2496,7 @@ async fn update_feature_flags_disabling_guardian_clears_manual_review_policy_wit
             effort: None,
             summary: None,
             service_tier: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
         })
     );
@@ -4206,7 +4048,7 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
             reasoning_effort: Some(ReasoningEffortConfig::High),
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
             message_history: None,
             network_proxy: None,
@@ -4678,7 +4520,7 @@ fn test_thread_session(thread_id: ThreadId, cwd: PathBuf) -> ThreadSessionState 
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: None,
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -5468,7 +5310,7 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
             reasoning_effort: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
             message_history: None,
             network_proxy: None,
@@ -5539,7 +5381,7 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
             reasoning_effort: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
             message_history: None,
             network_proxy: None,
@@ -5944,7 +5786,6 @@ async fn prompt_edit_forks_before_selected_prompt_and_preserves_source() -> Resu
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: ModeKind::default(),
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
                 message: message.to_string(),
@@ -6357,39 +6198,6 @@ async fn refreshed_snapshot_session_persists_resumed_turns() {
     assert_eq!(store_snapshot.turns, snapshot.turns);
 }
 
-#[tokio::test]
-async fn late_usage_result_can_follow_finalized_plan() {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    app.chat_widget
-        .add_token_activity_output(crate::chatwidget::TokenActivityView::Daily);
-    let request_id = match app_event_rx.try_recv() {
-        Ok(AppEvent::RefreshTokenActivity { request_id }) => request_id,
-        other => panic!("expected token activity refresh request, got {other:?}"),
-    };
-
-    app.chat_widget.note_stream_consolidation_queued();
-    app.transcript_cells
-        .push(Arc::new(history_cell::new_proposed_plan_stream(
-            vec![Line::from("finalized plan")],
-            /*is_stream_continuation*/ false,
-        )));
-    app.chat_widget.note_stream_consolidation_completed();
-
-    assert!(
-        app.chat_widget.finish_token_activity_refresh(
-            request_id,
-            Err("token activity unavailable".to_string()),
-        )
-    );
-    assert!(!app.pending_usage_output_insertion_blocked());
-    assert!(
-        app.chat_widget
-            .take_completed_token_activity_output()
-            .is_some()
-    );
-}
-
-#[tokio::test]
 async fn new_session_requests_shutdown_for_previous_conversation() {
     Box::pin(async {
         let (mut app, mut app_event_rx, mut op_rx) = Box::pin(make_test_app_with_channels()).await;
@@ -6411,7 +6219,7 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
             reasoning_effort: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
             message_history: None,
             network_proxy: None,
@@ -6535,8 +6343,7 @@ async fn override_turn_context_sends_thread_settings_update() {
             .await
             .expect("primary thread should be registered");
         let service_tier = ServiceTier::Fast.request_value().to_string();
-        let collaboration_mode = CollaborationMode {
-            mode: ModeKind::Plan,
+        let agent_settings = AgentSettings {
             settings: Settings {
                 model: "gpt-5.4".to_string(),
                 reasoning_effort: Some(ReasoningEffortConfig::High),
@@ -6556,7 +6363,7 @@ async fn override_turn_context_sends_thread_settings_update() {
             Some(Some(ReasoningEffortConfig::High)),
             /*summary*/ None,
             Some(Some(service_tier.clone())),
-            Some(collaboration_mode.clone()),
+            Some(agent_settings.clone()),
             Some(Personality::Pragmatic),
         );
 
@@ -6593,15 +6400,12 @@ async fn override_turn_context_sends_thread_settings_update() {
             notification.thread_settings.approvals_reviewer.to_core(),
             ApprovalsReviewer::AutoReview
         );
-        let notified_mode = &notification.thread_settings.collaboration_mode;
-        assert_eq!(notified_mode.mode, collaboration_mode.mode);
-        assert_eq!(
-            notified_mode.settings.model,
-            collaboration_mode.settings.model
-        );
+        let notified_mode = &notification.thread_settings.agent_settings;
+        assert_eq!(notified_mode.mode, agent_settings.mode);
+        assert_eq!(notified_mode.settings.model, agent_settings.settings.model);
         assert_eq!(
             notified_mode.settings.reasoning_effort,
-            collaboration_mode.settings.reasoning_effort
+            agent_settings.settings.reasoning_effort
         );
         assert_eq!(
             notification.thread_settings.personality,
@@ -6622,17 +6426,14 @@ async fn override_turn_context_sends_thread_settings_update() {
         assert_eq!(updated_session.model, initial_model);
         assert_eq!(updated_session.reasoning_effort, initial_effort);
         let updated_mode = updated_session
-            .collaboration_mode
+            .agent_settings
             .as_deref()
-            .expect("collaboration mode should be cached");
-        assert_eq!(updated_mode.mode, collaboration_mode.mode);
-        assert_eq!(
-            updated_mode.settings.model,
-            collaboration_mode.settings.model
-        );
+            .expect("agent settings should be cached");
+        assert_eq!(updated_mode.mode, agent_settings.mode);
+        assert_eq!(updated_mode.settings.model, agent_settings.settings.model);
         assert_eq!(
             updated_mode.settings.reasoning_effort,
-            collaboration_mode.settings.reasoning_effort
+            agent_settings.settings.reasoning_effort
         );
         assert_eq!(updated_session.personality, Some(Personality::Pragmatic));
         assert_eq!(updated_session.service_tier, Some(service_tier));
@@ -6764,16 +6565,6 @@ async fn changing_cyber_model_reasoning_preserves_selected_permissions() {
         let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
         for effort in [ReasoningEffortConfig::High, ReasoningEffortConfig::Ultra] {
             if effort == ReasoningEffortConfig::Ultra {
-                app.chat_widget
-                    .set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-                app.chat_widget
-                    .set_collaboration_mask(CollaborationModeMask {
-                        name: "Plan".to_string(),
-                        mode: Some(ModeKind::Plan),
-                        model: Some(model_name.clone()),
-                        reasoning_effort: Some(Some(effort.clone())),
-                        developer_instructions: None,
-                    });
                 app.handle_event(
                     &mut tui,
                     &mut cli_runtime,
@@ -6818,10 +6609,10 @@ async fn changing_cyber_model_reasoning_preserves_selected_permissions() {
                 codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY
             );
             assert_eq!(
-                settings.collaboration_mode.mode,
-                app.chat_widget.effective_collaboration_mode().mode
+                settings.agent_settings.mode,
+                app.chat_widget.effective_agent_settings().mode
             );
-            assert_eq!(settings.collaboration_mode.settings.model, model_name);
+            assert_eq!(settings.agent_settings.settings.model, model_name);
         }
     })
     .await;
@@ -6953,9 +6744,9 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
     assert_eq!(params.model, Some("gpt-5.4".to_string()));
     assert_eq!(
         params
-            .collaboration_mode
+            .agent_settings
             .as_ref()
-            .expect("collaboration mode should sync with model")
+            .expect("agent settings should sync with model")
             .settings
             .model,
         "gpt-5.4"
@@ -6963,14 +6754,6 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
 
     app.chat_widget
         .set_reasoning_effort(Some(ReasoningEffortConfig::Low));
-    app.chat_widget
-        .set_collaboration_mask(CollaborationModeMask {
-            name: "Plan".to_string(),
-            mode: Some(ModeKind::Plan),
-            model: Some("gpt-plan".to_string()),
-            reasoning_effort: Some(Some(ReasoningEffortConfig::Medium)),
-            developer_instructions: None,
-        });
     app.on_update_reasoning_effort(Some(ReasoningEffortConfig::High));
 
     let params = app
@@ -6979,25 +6762,23 @@ async fn thread_setting_update_params_sync_model_and_default_reasoning() {
 
     assert_eq!(params.thread_id, thread_id.to_string());
     assert_eq!(params.effort, Some(ReasoningEffortConfig::High));
-    let collaboration_mode = params
-        .collaboration_mode
-        .expect("collaboration mode should sync with reasoning");
-    assert_eq!(collaboration_mode.mode, ModeKind::Default);
+    let agent_settings = params
+        .agent_settings
+        .expect("agent settings should sync with reasoning");
     assert_eq!(
-        collaboration_mode.settings.reasoning_effort,
+        agent_settings.settings.reasoning_effort,
         Some(ReasoningEffortConfig::High)
     );
 }
 
 #[tokio::test]
-async fn inactive_thread_settings_notification_updates_cached_collaboration_mode() {
+async fn inactive_thread_settings_notification_updates_cached_agent_settings() {
     let mut app = make_test_app().await;
     let primary_thread_id = ThreadId::new();
     let inactive_thread_id = ThreadId::new();
     let primary_session = test_thread_session(primary_thread_id, test_path_buf("/tmp/main"));
     let inactive_session = test_thread_session(inactive_thread_id, test_path_buf("/tmp/inactive"));
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Plan,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model: "gpt-plan".to_string(),
             reasoning_effort: Some(ReasoningEffortConfig::High),
@@ -7040,9 +6821,9 @@ async fn inactive_thread_settings_notification_updates_cached_collaboration_mode
             model: "gpt-plan".to_string(),
             model_provider: "openai".to_string(),
             service_tier: None,
-            effort: collaboration_mode.settings.reasoning_effort.clone(),
+            effort: agent_settings.settings.reasoning_effort.clone(),
             summary: None,
-            collaboration_mode: collaboration_mode.clone(),
+            agent_settings: agent_settings.clone(),
             multi_agent_mode: Default::default(),
             personality: Some(Personality::Pragmatic),
         },
@@ -7067,20 +6848,13 @@ async fn inactive_thread_settings_notification_updates_cached_collaboration_mode
     assert_eq!(cached_session.model, "gpt-test");
     assert_eq!(cached_session.personality, Some(Personality::Pragmatic));
     assert_eq!(
-        cached_session.collaboration_mode.as_deref(),
-        Some(&collaboration_mode)
+        cached_session.agent_settings.as_deref(),
+        Some(&agent_settings)
     );
 
     app.chat_widget.handle_thread_session(cached_session);
-    assert_eq!(
-        app.chat_widget.active_collaboration_mode_kind(),
-        ModeKind::Plan
-    );
     assert_eq!(app.chat_widget.current_model(), "gpt-plan");
-    assert_eq!(
-        app.chat_widget.current_collaboration_mode().model(),
-        "gpt-test"
-    );
+    assert_eq!(app.chat_widget.current_agent_settings().model(), "gpt-test");
     assert_eq!(
         app.chat_widget.current_reasoning_effort(),
         Some(ReasoningEffortConfig::High)
@@ -7112,7 +6886,7 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
             reasoning_effort: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
             message_history: None,
             network_proxy: None,

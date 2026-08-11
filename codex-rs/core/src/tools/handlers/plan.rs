@@ -6,7 +6,6 @@ use crate::tools::context::boxed_tool_output;
 use crate::tools::handlers::plan_spec::create_update_plan_tool;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::plan_tool::UpdatePlanArgs;
@@ -80,12 +79,6 @@ impl PlanHandler {
                 ));
             }
         };
-
-        if turn.mode == ModeKind::Plan {
-            return Err(FunctionCallError::RespondToModel(
-                "update_plan is a TODO/checklist tool and is not allowed in Plan mode".to_string(),
-            ));
-        }
 
         let args = parse_update_plan_arguments(&arguments)?;
         session

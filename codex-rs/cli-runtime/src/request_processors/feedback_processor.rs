@@ -582,7 +582,7 @@ mod tests {
                     model: (*model).to_string(),
                     comp_hash: None,
                     personality: None,
-                    collaboration_mode: None,
+                    agent_settings: None,
                     multi_agent_version: None,
                     multi_agent_mode: None,
                     realtime_active: None,

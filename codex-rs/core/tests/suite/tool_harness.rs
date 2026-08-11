@@ -109,8 +109,7 @@ async fn shell_command_tool_executes_command_and_streams_output() -> anyhow::Res
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -190,8 +189,7 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -281,8 +279,7 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -382,8 +379,7 @@ async fn apply_patch_tool_executes_and_emits_patch_events() -> anyhow::Result<()
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -520,8 +516,7 @@ async fn apply_patch_reports_parse_diagnostics() -> anyhow::Result<()> {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,

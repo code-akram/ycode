@@ -50,7 +50,6 @@ use crate::bottom_pane::TerminalTitleSetupView;
 use crate::diff_model::FileChange;
 use crate::git_action_directives::parse_assistant_markdown;
 use crate::legacy_core::config::Config;
-use crate::legacy_core::config::PermissionProfileSnapshot;
 use crate::mention_codec::LinkedMention;
 use crate::mention_codec::encode_history_mentions;
 use crate::model_catalog::ModelCatalog;
@@ -62,7 +61,6 @@ use crate::status::RateLimitWindowDisplay;
 use crate::status::StatusAccountDisplay;
 use crate::status::StatusHistoryHandle;
 use crate::status::format_directory_display;
-use crate::status::format_tokens_compact;
 use crate::status::rate_limit_snapshot_display_for_limit;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_title::SetTerminalTitleResult;
@@ -88,7 +86,6 @@ use codex_cli_protocol::ItemStartedNotification;
 use codex_cli_protocol::ModelVerification as CliRuntimeModelVerification;
 use codex_cli_protocol::RateLimitReachedType;
 use codex_cli_protocol::RateLimitSnapshot;
-use codex_cli_protocol::ReviewTarget;
 use codex_cli_protocol::ServerNotification;
 use codex_cli_protocol::ServerRequest;
 use codex_cli_protocol::SkillMetadata;
@@ -113,10 +110,7 @@ use codex_features::FEATURES;
 use codex_features::Feature;
 #[cfg(test)]
 use codex_git_utils::CommitLogEntry;
-use codex_git_utils::current_branch_name;
 use codex_git_utils::get_git_repo_root;
-use codex_git_utils::local_git_branches;
-use codex_git_utils::recent_commits;
 use codex_otel::RuntimeMetricsSummary;
 use codex_otel::SessionTelemetry;
 use codex_plugin::PluginCapabilitySummary;
@@ -126,9 +120,7 @@ use codex_protocol::approvals::GuardianAssessmentAction;
 use codex_protocol::approvals::GuardianAssessmentDecisionSource;
 use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::approvals::GuardianAssessmentStatus;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::CollaborationModeMask;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::Settings;
 use codex_protocol::items::AgentMessageContent;
@@ -177,9 +169,6 @@ const MEMORIES_ENABLE_TITLE: &str = "Enable memories?";
 const MEMORIES_ENABLE_YES: &str = "Yes, enable";
 const MEMORIES_ENABLE_NO: &str = "Not now";
 const MEMORIES_ENABLE_NOTICE: &str = "Memories will be enabled in the next session.";
-const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "Apply reasoning change";
-const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "Apply to Plan mode override";
-const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "Apply to global default and Plan mode override";
 const PET_SELECTION_LOADING_VIEW_ID: &str = "pet-selection-loading";
 const AMBIENT_PET_WRAP_GAP_COLUMNS: u16 = 2;
 const TUI_STUB_MESSAGE: &str = "Not available in TUI yet.";
@@ -254,8 +243,6 @@ use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::BottomPane;
 use crate::bottom_pane::BottomPaneParams;
 use crate::bottom_pane::CancellationEvent;
-use crate::bottom_pane::CollaborationModeIndicator;
-use crate::bottom_pane::ColumnWidthMode;
 use crate::bottom_pane::DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED;
 use crate::bottom_pane::ExperimentalFeatureItem;
 use crate::bottom_pane::ExperimentalFeaturesView;
@@ -273,8 +260,6 @@ use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::custom_prompt_view::CustomPromptView;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::clipboard_paste::paste_image_to_temp_png;
-use crate::collaboration_modes;
-use crate::diff_render::display_path_for;
 use crate::exec_cell::CommandOutput;
 use crate::exec_cell::ExecCell;
 use crate::exec_cell::new_active_exec_command;
@@ -345,8 +330,6 @@ mod plugin_catalog;
 mod plugins;
 use self::plugins::PluginListFetchState;
 use self::plugins::PluginsCacheState;
-mod plan_implementation;
-use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
 mod model_popups;
 mod notifications;
 use self::notifications::Notification;
@@ -364,11 +347,6 @@ pub(crate) use self::rate_limits::limit_label_for_window;
 mod reasoning_shortcuts;
 mod rendering;
 mod replay;
-mod review;
-mod review_popups;
-use self::review::ReviewState;
-#[cfg(test)]
-pub(crate) use self::review_popups::show_review_commit_picker_with_entries;
 mod safety_buffering;
 mod service_tiers;
 mod settings;
@@ -423,7 +401,6 @@ pub(crate) use crate::branch_summary::StatusLineGitSummary;
 use crate::streaming::chunking::AdaptiveChunkingPolicy;
 use crate::streaming::commit_tick::CommitTickScope;
 use crate::streaming::commit_tick::run_commit_tick;
-use crate::streaming::controller::PlanStreamController;
 use crate::streaming::controller::StreamController;
 use crate::workspace_command::WorkspaceCommandRunner;
 
@@ -503,12 +480,8 @@ pub(crate) struct ChatWidget {
     raw_output_mode: bool,
     /// Runtime value resolved by core. `config.service_tier` remains the explicit user choice.
     effective_service_tier: Option<String>,
-    /// The unmasked collaboration mode settings (always Default mode).
-    ///
-    /// Masks are applied on top of this base mode to derive the effective mode.
-    current_collaboration_mode: CollaborationMode,
-    /// The currently active collaboration mask, if any.
-    active_collaboration_mask: Option<CollaborationModeMask>,
+    /// Model, reasoning, and developer settings used by subsequent turns.
+    current_agent_settings: AgentSettings,
     has_chatgpt_account: bool,
     has_codex_backend_auth: bool,
     model_catalog: Arc<ModelCatalog>,
@@ -544,8 +517,6 @@ pub(crate) struct ChatWidget {
     adaptive_chunking: AdaptiveChunkingPolicy,
     // Stream lifecycle controller
     stream_controller: Option<StreamController>,
-    // Stream lifecycle controller for proposed plan output.
-    plan_stream_controller: Option<PlanStreamController>,
     pending_stream_consolidations: usize,
     /// Holds the platform clipboard lease so copied text remains available while supported.
     clipboard_lease: Option<crate::clipboard_copy::ClipboardLease>,
@@ -579,7 +550,6 @@ pub(crate) struct ChatWidget {
     // Preserves reasoning-summary part boundaries for transcript-only recording.
     reasoning_summary_parts: Vec<String>,
     status_state: StatusState,
-    review: ReviewState,
     // Active hook runs render in a dedicated live cell so they can run alongside tools.
     active_hook_cell: Option<HookCell>,
     // Reused for built-in pet CDN requests so redirects remain route-aware.
@@ -594,11 +564,6 @@ pub(crate) struct ChatWidget {
     #[cfg(test)]
     pet_image_support_override: Option<crate::pets::PetImageSupport>,
     thread_id: Option<ThreadId>,
-    /// Nudge dismissals that should survive draft edits within the current thread scope.
-    ///
-    /// The nudge is only a discovery aid, so once a user dismisses it or enters Plan mode we keep it
-    /// hidden for that thread instead of resurfacing it on every matching draft.
-    dismissed_plan_mode_nudge_scopes: HashSet<PlanModeNudgeScope>,
     thread_name: Option<String>,
     thread_rename_block_message: Option<String>,
     active_side_conversation: bool,
@@ -757,15 +722,6 @@ enum SessionConfiguredDisplay {
     SideConversation,
 }
 
-/// Scope used to keep Plan-mode nudge dismissal local to one conversation context.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum PlanModeNudgeScope {
-    /// Drafts entered before the server has assigned a thread id.
-    NewThread,
-    /// Drafts associated with one configured thread.
-    Thread(ThreadId),
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum TurnAbortReason {
     Interrupted,
@@ -777,11 +733,6 @@ pub(crate) enum TurnAbortReason {
 /// This intentionally mirrors the App suggestion heuristic instead of trying to infer broader
 /// planning intent from substrings such as `planning`. Slash and shell drafts still match here so
 /// callers can keep lexical matching separate from presentation policy.
-fn contains_plan_keyword(text: &str) -> bool {
-    text.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
-        .any(|word| word.eq_ignore_ascii_case("plan"))
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ThreadItemRenderSource {
     Live,
@@ -1041,19 +992,6 @@ impl ChatWidget {
         Some(info.total_token_usage.tokens_in_context_window())
     }
 
-    fn restore_pre_review_token_info(&mut self) {
-        if let Some(saved) = self.review.pre_review_token_info.take() {
-            match saved {
-                Some(info) => self.apply_token_info(info),
-                None => {
-                    self.bottom_pane
-                        .set_context_window(/*percent*/ None, /*used_tokens*/ None);
-                    self.token_info = None;
-                }
-            }
-        }
-    }
-
     pub(crate) fn handle_history_entry_response(&mut self, event: HistoryLookupResponse) {
         self.bottom_pane.on_history_lookup_response(event);
     }
@@ -1065,7 +1003,6 @@ impl ChatWidget {
         if let Some(pet) = self.ambient_pet.as_ref() {
             pet.schedule_next_frame();
         }
-        self.refresh_plan_mode_nudge();
         self.refresh_goal_status_indicator_for_time_tick();
         if self.terminal_title_shows_action_required() != self.last_terminal_title_requires_action {
             self.refresh_terminal_title();
@@ -1110,37 +1047,9 @@ impl ChatWidget {
         self.app_event_tx.send(AppEvent::InsertHistoryCell(cell));
     }
 
-    fn enter_review_mode_with_hint(&mut self, hint: String, from_replay: bool) {
-        if self.review.pre_review_token_info.is_none() {
-            self.review.pre_review_token_info = Some(self.token_info.clone());
-        }
-        if !from_replay && !self.bottom_pane.is_task_running() {
-            self.bottom_pane.set_task_running(/*running*/ true);
-        }
-        self.review.is_review_mode = true;
-        let banner = format!(">> Code review started: {hint} <<");
-        self.add_to_history(history_cell::new_review_status_line(banner));
-        self.request_redraw();
-    }
-
-    fn exit_review_mode_after_item(&mut self) {
-        self.flush_answer_stream_with_separator();
-        self.flush_interrupt_queue();
-        self.flush_active_cell();
-        self.review.is_review_mode = false;
-        self.restore_pre_review_token_info();
-        self.add_to_history(history_cell::new_review_status_line(
-            "<< Code review finished >>".to_string(),
-        ));
-        self.request_redraw();
-    }
-
     fn on_committed_user_message(&mut self, items: &[UserInput], from_replay: bool) {
         let display = Self::user_message_display_from_inputs(items);
         if from_replay {
-            if self.review.is_review_mode {
-                return;
-            }
             self.bottom_pane
                 .record_replayed_user_message_history(HistoryEntry {
                     text: display.message.clone(),
@@ -1172,9 +1081,7 @@ impl ChatWidget {
                 );
                 self.on_user_message_display(display);
             }
-        } else if !self.review.is_review_mode
-            && self.last_rendered_user_message_display.as_ref() != Some(&display)
-        {
+        } else if self.last_rendered_user_message_display.as_ref() != Some(&display) {
             self.on_user_message_display(display);
         }
     }
@@ -1415,9 +1322,6 @@ impl ChatWidget {
         if let Some(controller) = self.stream_controller.as_mut() {
             controller.set_render_mode(render_mode);
         }
-        if let Some(controller) = self.plan_stream_controller.as_mut() {
-            controller.set_render_mode(render_mode);
-        }
         self.refresh_status_surfaces();
     }
 
@@ -1451,12 +1355,8 @@ impl ChatWidget {
         let had_rendered_width = self.last_rendered_width.get().is_some();
         self.last_rendered_width.set(Some(width as usize));
         let stream_width = self.current_stream_width(/*reserved_cols*/ 2);
-        let plan_stream_width = self.current_stream_width(/*reserved_cols*/ 4);
         if let Some(controller) = self.stream_controller.as_mut() {
             controller.set_width(stream_width);
-        }
-        if let Some(controller) = self.plan_stream_controller.as_mut() {
-            controller.set_width(plan_stream_width);
         }
         self.sync_active_stream_tail();
         if !had_rendered_width {
@@ -1467,15 +1367,6 @@ impl ChatWidget {
     /// Whether an agent message stream is active (not a plan stream).
     pub(crate) fn has_active_agent_stream(&self) -> bool {
         self.stream_controller.is_some()
-    }
-
-    /// Whether a proposed-plan stream is active.
-    pub(crate) fn has_active_plan_stream(&self) -> bool {
-        self.plan_stream_controller.is_some()
-    }
-
-    fn is_plan_streaming_in_tui(&self) -> bool {
-        self.plan_stream_controller.is_some()
     }
 
     pub(crate) fn composer_is_empty(&self) -> bool {
@@ -1558,18 +1449,12 @@ impl ChatWidget {
     {
         let op: AppCommand = op.into();
         if self.blocks_direct_input
-            && matches!(
-                &op,
-                AppCommand::UserTurn { .. } | AppCommand::Review { .. } | AppCommand::Compact
-            )
+            && matches!(&op, AppCommand::UserTurn { .. } | AppCommand::Compact)
         {
             self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
             return false;
         }
         self.prepare_local_op_submission(&op);
-        if op.is_review() && !self.bottom_pane.is_task_running() {
-            self.bottom_pane.set_task_running(/*running*/ true);
-        }
         match &self.codex_op_target {
             CodexOpTarget::Direct(codex_op_tx) => {
                 crate::session_log::log_outbound_op(&op);
@@ -1597,17 +1482,12 @@ impl ChatWidget {
     pub(crate) fn prepare_local_op_submission(&mut self, op: &AppCommand) {
         if matches!(
             op,
-            AppCommand::Compact
-                | AppCommand::Review { .. }
-                | AppCommand::RunUserShellCommand { .. }
+            AppCommand::Compact | AppCommand::RunUserShellCommand { .. }
         ) {
             self.input_queue.user_turn_pending_start = true;
         }
         if matches!(op, AppCommand::Interrupt) && self.turn_lifecycle.agent_turn_running {
             if let Some(controller) = self.stream_controller.as_mut() {
-                controller.clear_queue();
-            }
-            if let Some(controller) = self.plan_stream_controller.as_mut() {
                 controller.clear_queue();
             }
             self.clear_active_stream_tail();
@@ -1789,7 +1669,7 @@ const PLACEHOLDERS: [&str; 8] = [
     "Find and fix a bug in @filename",
     "Write tests for @filename",
     "Improve documentation in @filename",
-    "Run /review on my current changes",
+    "Review my current changes",
     "Use /skills to list available skills",
 ];
 

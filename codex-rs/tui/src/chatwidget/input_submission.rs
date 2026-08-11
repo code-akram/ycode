@@ -245,7 +245,7 @@ impl ChatWidget {
             }
         }
 
-        let effective_mode = self.effective_collaboration_mode();
+        let effective_mode = self.effective_agent_settings();
         if effective_mode.model().trim().is_empty() {
             self.add_error_message(
                 "Thread model is unavailable. Wait for the thread to finish syncing or choose a model before sending input.".to_string(),
@@ -265,13 +265,7 @@ impl ChatWidget {
 
         self.maybe_apply_ide_context(&mut items);
 
-        let collaboration_mode = if self.collaboration_modes_enabled() {
-            self.active_collaboration_mask
-                .as_ref()
-                .map(|_| effective_mode.clone())
-        } else {
-            None
-        };
+        let agent_settings = Some(effective_mode.clone());
         let pending_steer = (!render_in_history).then(|| PendingSteer {
             user_message: UserMessage {
                 text: text.clone(),
@@ -297,7 +291,7 @@ impl ChatWidget {
             /*summary*/ None,
             service_tier,
             /*final_output_json_schema*/ None,
-            collaboration_mode,
+            agent_settings,
             personality,
         );
         let submitted_message = UserMessage {
@@ -358,7 +352,6 @@ impl ChatWidget {
 
         if let Some(pending_steer) = pending_steer {
             self.input_queue.pending_steers.push_back(pending_steer);
-            self.transcript.saw_plan_item_this_turn = false;
             self.refresh_pending_input_preview();
         }
 

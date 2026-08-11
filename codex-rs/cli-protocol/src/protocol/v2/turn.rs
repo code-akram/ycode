@@ -5,7 +5,7 @@ use super::Turn;
 use crate::JsonSchema;
 use crate::TS;
 use codex_experimental_api_macros::ExperimentalApi;
-use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
@@ -129,14 +129,9 @@ pub struct TurnStartParams {
     #[ts(optional = nullable)]
     pub output_schema: Option<JsonValue>,
 
-    /// EXPERIMENTAL - Set a pre-set collaboration mode.
-    /// Takes precedence over model, reasoning_effort, and developer instructions if set.
-    ///
-    /// For `collaboration_mode.settings.developer_instructions`, `null` means
-    /// "use the built-in instructions for the selected mode".
-    #[experimental("turn/start.collaborationMode")]
+    /// Set the model, reasoning effort, and developer instructions as one value.
     #[ts(optional = nullable)]
-    pub collaboration_mode: Option<CollaborationMode>,
+    pub agent_settings: Option<AgentSettings>,
 
     /// @deprecated Ignored. Use `effort: "ultra"` for proactive multi-agent behavior.
     #[experimental("turn/start.multiAgentMode")]

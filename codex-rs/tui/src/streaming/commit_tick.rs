@@ -23,7 +23,6 @@ use super::chunking::ChunkingDecision;
 use super::chunking::ChunkingMode;
 use super::chunking::DrainPlan;
 use super::chunking::QueueSnapshot;
-use super::controller::PlanStreamController;
 use super::controller::StreamController;
 
 /// Describes whether a commit tick may run in all modes or only in catch-up mode.
@@ -62,32 +61,23 @@ impl Default for CommitTickOutput {
 /// Runs one commit tick against the provided stream controllers.
 ///
 /// This function collects a [`QueueSnapshot`], asks [`AdaptiveChunkingPolicy`] for a
-/// [`ChunkingDecision`], and then applies the resulting [`DrainPlan`] to both controllers.
+/// [`ChunkingDecision`], and then applies the resulting [`DrainPlan`] to the controller.
 /// If callers pass stale controller references (for example, references not tied to the
 /// current turn), queue age can be misread and the policy may stay in catch-up longer
 /// than expected.
 pub(crate) fn run_commit_tick(
     policy: &mut AdaptiveChunkingPolicy,
     stream_controller: Option<&mut StreamController>,
-    plan_stream_controller: Option<&mut PlanStreamController>,
     scope: CommitTickScope,
     now: Instant,
 ) -> CommitTickOutput {
-    let snapshot = stream_queue_snapshot(
-        stream_controller.as_deref(),
-        plan_stream_controller.as_deref(),
-        now,
-    );
+    let snapshot = stream_queue_snapshot(stream_controller.as_deref(), now);
     let decision = resolve_chunking_plan(policy, snapshot, now);
     if scope == CommitTickScope::CatchUpOnly && decision.mode != ChunkingMode::CatchUp {
         return CommitTickOutput::default();
     }
 
-    apply_commit_tick_plan(
-        decision.drain_plan,
-        stream_controller,
-        plan_stream_controller,
-    )
+    apply_commit_tick_plan(decision.drain_plan, stream_controller)
 }
 
 /// Builds the combined queue-pressure snapshot consumed by chunking policy.
@@ -96,7 +86,6 @@ pub(crate) fn run_commit_tick(
 /// so policy decisions reflect the most delayed queued line currently visible.
 fn stream_queue_snapshot(
     stream_controller: Option<&StreamController>,
-    plan_stream_controller: Option<&PlanStreamController>,
     now: Instant,
 ) -> QueueSnapshot {
     let mut queued_lines = 0usize;
@@ -106,11 +95,6 @@ fn stream_queue_snapshot(
         queued_lines += controller.queued_lines();
         oldest_age = max_duration(oldest_age, controller.oldest_queued_age(now));
     }
-    if let Some(controller) = plan_stream_controller {
-        queued_lines += controller.queued_lines();
-        oldest_age = max_duration(oldest_age, controller.oldest_queued_age(now));
-    }
-
     QueueSnapshot {
         queued_lines,
         oldest_age,
@@ -148,7 +132,6 @@ fn resolve_chunking_plan(
 fn apply_commit_tick_plan(
     drain_plan: DrainPlan,
     stream_controller: Option<&mut StreamController>,
-    plan_stream_controller: Option<&mut PlanStreamController>,
 ) -> CommitTickOutput {
     let mut output = CommitTickOutput::default();
 
@@ -160,15 +143,6 @@ fn apply_commit_tick_plan(
         }
         output.all_idle &= is_idle;
     }
-    if let Some(controller) = plan_stream_controller {
-        output.has_controller = true;
-        let (cell, is_idle) = drain_plan_stream_controller(controller, drain_plan);
-        if let Some(cell) = cell {
-            output.cells.push(cell);
-        }
-        output.all_idle &= is_idle;
-    }
-
     output
 }
 
@@ -179,20 +153,6 @@ fn apply_commit_tick_plan(
 /// queued backlog).
 fn drain_stream_controller(
     controller: &mut StreamController,
-    drain_plan: DrainPlan,
-) -> (Option<Box<dyn HistoryCell>>, bool) {
-    match drain_plan {
-        DrainPlan::Single => controller.on_commit_tick(),
-        DrainPlan::Batch(max_lines) => controller.on_commit_tick_batch(max_lines),
-    }
-}
-
-/// Applies one drain step to the plan stream controller.
-///
-/// This mirrors [`drain_stream_controller`] so both controller types follow the
-/// same chunking policy decisions.
-fn drain_plan_stream_controller(
-    controller: &mut PlanStreamController,
     drain_plan: DrainPlan,
 ) -> (Option<Box<dyn HistoryCell>>, bool) {
     match drain_plan {

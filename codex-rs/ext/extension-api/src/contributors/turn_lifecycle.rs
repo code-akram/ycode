@@ -1,4 +1,4 @@
-use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TurnAbortReason;
@@ -9,8 +9,8 @@ use crate::ExtensionData;
 pub struct TurnStartInput<'a> {
     /// Stable host-owned turn identifier.
     pub turn_id: &'a str,
-    /// Effective collaboration mode for this turn.
-    pub collaboration_mode: &'a CollaborationMode,
+    /// Effective agent settings for this turn.
+    pub agent_settings: &'a AgentSettings,
     /// Total token usage snapshot captured when the turn started.
     pub token_usage_at_turn_start: &'a TokenUsage,
     /// Store scoped to the host session runtime.

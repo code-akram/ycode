@@ -77,7 +77,6 @@ fn completed_user_turn_rollout(
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -195,7 +194,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
         model: previous_model.to_string(),
         comp_hash: None,
         personality: turn_context.personality,
-        collaboration_mode: Some(turn_context.collaboration_mode()),
+        agent_settings: Some(turn_context.agent_settings()),
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
@@ -242,7 +241,7 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
         model: previous_model.to_string(),
         comp_hash: Some("comp-hash-a".to_string()),
         personality: turn_context.personality,
-        collaboration_mode: Some(turn_context.collaboration_mode()),
+        agent_settings: Some(turn_context.agent_settings()),
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
@@ -262,7 +261,6 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -334,7 +332,6 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -370,7 +367,6 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -454,7 +450,6 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -487,7 +482,6 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -553,7 +547,6 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -586,7 +579,6 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -618,7 +610,6 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::ResponseItem(standalone_assistant),
@@ -685,7 +676,6 @@ async fn reconstruct_history_rollback_counts_inter_agent_assistant_turns() {
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -718,7 +708,6 @@ async fn reconstruct_history_rollback_counts_inter_agent_assistant_turns() {
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::TurnContext(assistant_turn_context),
@@ -782,7 +771,6 @@ async fn reconstruct_history_rollback_clears_history_and_metadata_when_exceeding
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -839,7 +827,6 @@ async fn record_initial_history_resumed_rollback_skips_only_user_turns() {
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -871,7 +858,6 @@ async fn record_initial_history_resumed_rollback_skips_only_user_turns() {
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
@@ -919,7 +905,6 @@ async fn record_initial_history_resumed_rollback_drops_incomplete_user_turn_comp
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -950,7 +935,6 @@ async fn record_initial_history_resumed_rollback_drops_incomplete_user_turn_comp
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1250,7 +1234,6 @@ async fn reconstruct_history_legacy_compaction_without_replacement_history_clear
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1305,7 +1288,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
         model: previous_model.to_string(),
         comp_hash: None,
         personality: turn_context.personality,
-        collaboration_mode: Some(turn_context.collaboration_mode()),
+        agent_settings: Some(turn_context.agent_settings()),
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
@@ -1323,7 +1306,6 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1394,7 +1376,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
             model: previous_model.to_string(),
             comp_hash: None,
             personality: turn_context.personality,
-            collaboration_mode: Some(turn_context.collaboration_mode()),
+            agent_settings: Some(turn_context.agent_settings()),
             multi_agent_version: None,
             multi_agent_mode: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -1426,7 +1408,7 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
         model: previous_model.to_string(),
         comp_hash: None,
         personality: turn_context.personality,
-        collaboration_mode: Some(turn_context.collaboration_mode()),
+        agent_settings: Some(turn_context.agent_settings()),
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
@@ -1446,7 +1428,6 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1477,7 +1458,6 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1556,7 +1536,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
         model: current_model.to_string(),
         comp_hash: None,
         personality: turn_context.personality,
-        collaboration_mode: Some(turn_context.collaboration_mode()),
+        agent_settings: Some(turn_context.agent_settings()),
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
@@ -1571,7 +1551,6 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1602,7 +1581,6 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1683,7 +1661,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
         model: previous_model.to_string(),
         comp_hash: None,
         personality: turn_context.personality,
-        collaboration_mode: Some(turn_context.collaboration_mode()),
+        agent_settings: Some(turn_context.agent_settings()),
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
@@ -1703,7 +1681,6 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1734,7 +1711,6 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1792,7 +1768,6 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_preserves_turn_
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1853,7 +1828,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
         model: previous_model.to_string(),
         comp_hash: None,
         personality: turn_context.personality,
-        collaboration_mode: Some(turn_context.collaboration_mode()),
+        agent_settings: Some(turn_context.agent_settings()),
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
@@ -1874,7 +1849,6 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1905,7 +1879,6 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -1934,7 +1907,6 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
     ];

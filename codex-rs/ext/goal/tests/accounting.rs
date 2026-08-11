@@ -4,7 +4,6 @@
 mod accounting;
 
 use accounting::GoalAccountingState;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::protocol::TokenUsage;
 use pretty_assertions::assert_eq;
 
@@ -13,7 +12,6 @@ fn goal_accounting_uses_turn_start_baseline_for_exact_deltas() {
     let state = GoalAccountingState::default();
     state.start_turn(
         "turn-1",
-        ModeKind::Default,
         &token_usage(
             /*input_tokens*/ 100, /*cached_input_tokens*/ 10, /*output_tokens*/ 30,
             /*reasoning_output_tokens*/ 5, /*total_tokens*/ 135,
@@ -33,22 +31,6 @@ fn goal_accounting_uses_turn_start_baseline_for_exact_deltas() {
 
     assert_eq!(28, recorded.turn_delta);
     assert_eq!(28, recorded.thread_unflushed_delta);
-}
-
-#[test]
-fn goal_accounting_ignores_plan_mode_turns() {
-    let state = GoalAccountingState::default();
-    state.start_turn("turn-1", ModeKind::Plan, &TokenUsage::default());
-
-    let recorded = state.record_token_usage(
-        "turn-1",
-        &token_usage(
-            /*input_tokens*/ 20, /*cached_input_tokens*/ 5, /*output_tokens*/ 8,
-            /*reasoning_output_tokens*/ 2, /*total_tokens*/ 30,
-        ),
-    );
-
-    assert_eq!(None, recorded);
 }
 
 fn token_usage(

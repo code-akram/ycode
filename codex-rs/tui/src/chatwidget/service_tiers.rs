@@ -112,7 +112,7 @@ impl ChatWidget {
                 /*effort*/ None,
                 /*summary*/ None,
                 Some(service_tier.clone()),
-                /*collaboration_mode*/ None,
+                /*agent_settings*/ None,
                 /*personality*/ None,
             )));
         self.app_event_tx

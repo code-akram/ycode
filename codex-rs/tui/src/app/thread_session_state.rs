@@ -38,7 +38,7 @@ impl App {
             if session.thread_id != thread_id {
                 // `thread/read` does not include thread settings, so do not carry
                 // thread-scoped state from the currently active session.
-                session.collaboration_mode = None;
+                session.agent_settings = None;
                 session.personality = None;
             }
             session
@@ -55,7 +55,7 @@ impl App {
                 runtime_workspace_roots: self.config.workspace_roots.clone(),
                 instruction_source_paths: Vec::new(),
                 reasoning_effort: self.chat_widget.current_reasoning_effort(),
-                collaboration_mode: None,
+                agent_settings: None,
                 personality: None,
                 message_history: None,
                 rollout_path: thread.path.clone(),
@@ -119,7 +119,7 @@ mod tests {
             runtime_workspace_roots: vec![cwd.abs()],
             instruction_source_paths: Vec::new(),
             reasoning_effort: None,
-            collaboration_mode: None,
+            agent_settings: None,
             personality: None,
             message_history: None,
             network_proxy: None,

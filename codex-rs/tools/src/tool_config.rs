@@ -1,7 +1,5 @@
 use codex_features::Feature;
 use codex_features::Features;
-use codex_protocol::config_types::ModeKind;
-use codex_protocol::config_types::TUI_VISIBLE_COLLABORATION_MODES;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -31,17 +29,6 @@ pub enum ToolUserShellType {
     Zsh,
     Bash,
     Sh,
-}
-
-pub fn request_user_input_available_modes(features: &Features) -> Vec<ModeKind> {
-    TUI_VISIBLE_COLLABORATION_MODES
-        .into_iter()
-        .filter(|mode| {
-            mode.allows_request_user_input()
-                || (features.enabled(Feature::DefaultModeRequestUserInput)
-                    && *mode == ModeKind::Default)
-        })
-        .collect()
 }
 
 pub fn shell_command_backend_for_features(features: &Features) -> ShellCommandBackendConfig {

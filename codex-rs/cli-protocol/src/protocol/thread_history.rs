@@ -1656,7 +1656,7 @@ mod tests {
     }
 
     #[test]
-    fn review_mode_events_replay_persisted_ids() {
+    fn legacy_review_events_replay_persisted_ids() {
         let events = vec![
             EventMsg::EnteredReviewMode(EnteredReviewModeEvent {
                 target: ReviewTarget::Custom {
@@ -1705,7 +1705,7 @@ mod tests {
     }
 
     #[test]
-    fn review_mode_items_replay_without_turn_started() {
+    fn legacy_review_items_replay_without_turn_started() {
         let thread_id = ThreadId::new();
         let entered = CoreTurnItem::EnteredReviewMode(CoreEnteredReviewModeItem {
             id: "entered-review".into(),
@@ -1826,7 +1826,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -1891,7 +1890,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::ItemCompleted(ItemCompletedEvent {
                 thread_id,
@@ -1938,7 +1936,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::ItemCompleted(ItemCompletedEvent {
                 thread_id,
@@ -2025,7 +2022,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
                 call_id: "exec-1".to_string(),
@@ -2142,7 +2138,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::ItemStarted(ItemStartedEvent {
                 thread_id,
@@ -2228,7 +2223,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -2583,7 +2577,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -2650,7 +2643,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -2749,7 +2741,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -2833,7 +2824,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -2929,7 +2919,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3021,7 +3010,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3091,7 +3079,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3115,7 +3102,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3197,7 +3183,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3221,7 +3206,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3297,7 +3281,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3365,7 +3348,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3433,7 +3415,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3457,7 +3438,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3511,7 +3491,6 @@ mod tests {
                 trace_id: None,
                 started_at: Some(10),
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3526,7 +3505,6 @@ mod tests {
                 trace_id: None,
                 started_at: Some(30),
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3611,7 +3589,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3635,7 +3612,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -3679,7 +3655,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             })),
             RolloutItem::Compacted(CompactedItem {
                 message: String::new(),
@@ -3943,7 +3918,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -4004,7 +3978,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -4061,7 +4034,6 @@ mod tests {
                 trace_id: None,
                 started_at: Some(10),
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
             EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -4129,7 +4101,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,
@@ -4189,7 +4160,6 @@ mod tests {
             trace_id: None,
             started_at: None,
             model_context_window: None,
-            collaboration_mode_kind: Default::default(),
         }));
         builder.handle_event(&EventMsg::ItemCompleted(ItemCompletedEvent {
             thread_id: ThreadId::new(),
@@ -4213,7 +4183,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             })),
             RolloutItem::ResponseItem(codex_protocol::models::ResponseItem::Message {
                 id: Some(codex_protocol::ResponseItemId::with_suffix("msg", "1")),
@@ -4369,7 +4338,6 @@ mod tests {
                 trace_id: None,
                 started_at: Some(10),
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             }),
         ));
         assert_eq!(
@@ -4483,7 +4451,6 @@ mod tests {
                 trace_id: None,
                 started_at: Some(10),
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             })),
             RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
                 turn_id: "turn-a".into(),
@@ -4522,7 +4489,6 @@ mod tests {
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: Default::default(),
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,

@@ -524,7 +524,6 @@ fn turn_started(turn_id: &str) -> RolloutItem {
         trace_id: None,
         started_at: None,
         model_context_window: Some(128_000),
-        collaboration_mode_kind: Default::default(),
     }))
 }
 
@@ -602,7 +601,7 @@ fn turn_context(root: &Path, turn_id: &str) -> RolloutItem {
         model: "test-model".to_string(),
         comp_hash: None,
         personality: None,
-        collaboration_mode: None,
+        agent_settings: None,
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: None,

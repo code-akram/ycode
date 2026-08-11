@@ -11,7 +11,6 @@ use codex_cli_protocol::ServerRequest;
 use codex_cli_protocol::ServerResponse;
 use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::ServiceTier;
@@ -157,7 +156,6 @@ pub struct TurnResolvedConfigFact {
     pub approval_policy: AskForApproval,
     pub approvals_reviewer: ApprovalsReviewer,
     pub sandbox_network_access: bool,
-    pub collaboration_mode: ModeKind,
     pub personality: Option<Personality>,
     pub workspace_kind: Option<String>,
     pub is_first_turn: bool,
@@ -248,7 +246,6 @@ pub enum TurnSteerResult {
 pub enum TurnSteerRejectionReason {
     NoActiveTurn,
     ExpectedTurnMismatch,
-    NonSteerableReview,
     NonSteerableCompact,
     EmptyInput,
     InputTooLarge,
@@ -274,7 +271,6 @@ pub enum AnalyticsJsonRpcError {
 pub enum TurnSteerRequestError {
     NoActiveTurn,
     ExpectedTurnMismatch,
-    NonSteerableReview,
     NonSteerableCompact,
 }
 
@@ -289,7 +285,6 @@ impl From<TurnSteerRequestError> for TurnSteerRejectionReason {
         match error {
             TurnSteerRequestError::NoActiveTurn => Self::NoActiveTurn,
             TurnSteerRequestError::ExpectedTurnMismatch => Self::ExpectedTurnMismatch,
-            TurnSteerRequestError::NonSteerableReview => Self::NonSteerableReview,
             TurnSteerRequestError::NonSteerableCompact => Self::NonSteerableCompact,
         }
     }

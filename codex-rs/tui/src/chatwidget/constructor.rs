@@ -41,24 +41,16 @@ impl ChatWidget {
         let side_placeholder =
             SIDE_PLACEHOLDERS[rng.random_range(0..SIDE_PLACEHOLDERS.len())].to_string();
 
-        let model_override = model.as_deref();
         let model_for_header = model
             .clone()
             .unwrap_or_else(|| DEFAULT_MODEL_DISPLAY_NAME.to_string());
-        let active_collaboration_mask =
-            Self::initial_collaboration_mask(&config, model_catalog.as_ref(), model_override);
-        let header_model = active_collaboration_mask
-            .as_ref()
-            .and_then(|mask| mask.model.clone())
-            .unwrap_or_else(|| model_for_header.clone());
+        let header_model = model_for_header.clone();
         let fallback_default = Settings {
             model: header_model.clone(),
             reasoning_effort: None,
             developer_instructions: None,
         };
-        // Collaboration modes start in Default mode.
-        let current_collaboration_mode = CollaborationMode {
-            mode: ModeKind::Default,
+        let current_agent_settings = AgentSettings {
             settings: fallback_default,
         };
 
@@ -116,8 +108,7 @@ impl ChatWidget {
             effective_service_tier,
             skills_all: Vec::new(),
             skills_initial_state: None,
-            current_collaboration_mode,
-            active_collaboration_mask,
+            current_agent_settings,
             has_chatgpt_account,
             has_codex_backend_auth,
             model_catalog,
@@ -152,7 +143,6 @@ impl ChatWidget {
             add_credits_nudge_email_in_flight: None,
             adaptive_chunking: AdaptiveChunkingPolicy::default(),
             stream_controller: None,
-            plan_stream_controller: None,
             pending_stream_consolidations: 0,
             clipboard_lease: None,
             copy_last_response_binding,
@@ -179,7 +169,6 @@ impl ChatWidget {
             reasoning_header: None,
             reasoning_summary_parts: Vec::new(),
             status_state: StatusState::default(),
-            review: ReviewState::default(),
             active_hook_cell: None,
             pet_http_client,
             ambient_pet: None,
@@ -191,7 +180,6 @@ impl ChatWidget {
             #[cfg(test)]
             pet_image_support_override: None,
             thread_id: None,
-            dismissed_plan_mode_nudge_scopes: HashSet::new(),
             thread_name: None,
             thread_rename_block_message: None,
             active_side_conversation: false,
@@ -255,9 +243,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
-        widget
-            .bottom_pane
-            .set_collaboration_modes_enabled(/*enabled*/ true);
         widget.sync_service_tier_commands();
         widget.sync_personality_command_enabled();
         widget.sync_plugins_command_enabled();
@@ -266,7 +251,7 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_queued_message_edit_binding(widget.queued_message_edit_hint_binding);
-        widget.update_collaboration_mode_indicator();
+        widget.update_goal_status_indicator();
 
         widget
             .bottom_pane

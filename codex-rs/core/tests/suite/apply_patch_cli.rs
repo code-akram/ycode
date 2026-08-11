@@ -109,8 +109,7 @@ async fn submit_without_wait_with_turn_permissions(
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -1699,8 +1698,7 @@ async fn apply_patch_turn_diff_tracks_local_and_remote_environment_paths() -> Re
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: test.session_configured.model.clone(),
                         reasoning_effort: None,

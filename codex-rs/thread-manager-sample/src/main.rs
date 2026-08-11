@@ -205,7 +205,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         developer_instructions: None,
         guardian_policy_config: None,
         include_permissions_instructions: false,
-        include_collaboration_mode_instructions: false,
+        include_agent_settings_instructions: false,
         include_skill_instructions: false,
         orchestrator_skills_enabled: false,
         include_environment_context: false,
@@ -259,7 +259,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe,
         zsh_path: None,
         model_reasoning_effort: None,
-        plan_mode_reasoning_effort: None,
         model_reasoning_summary: None,
         model_catalog: None,
         model_verbosity: None,
@@ -345,7 +344,6 @@ async fn run_turn(thread: &CodexThread, thread_id: &str, prompt: String) -> anyh
             | EventMsg::CollabResumeEnd(_)
             | EventMsg::SubAgentActivity(_)
             | EventMsg::AgentMessageContentDelta(_)
-            | EventMsg::PlanDelta(_)
             | EventMsg::ReasoningContentDelta(_)
             | EventMsg::ReasoningRawContentDelta(_)
             | EventMsg::AgentReasoningSectionBreak(_)

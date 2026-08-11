@@ -22,7 +22,7 @@ impl ChatWidget {
             (1, None) => "Question requested".to_string(),
             (count, _) => format!("{count} questions requested"),
         };
-        self.notify(Notification::PlanModePrompt { title });
+        self.notify(Notification::UserInputPrompt { title });
         self.bottom_pane.push_user_input_request(ev);
         self.set_ambient_pet_notification(
             crate::pets::PetNotificationKind::Waiting,

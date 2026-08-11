@@ -670,9 +670,6 @@ pub struct Config {
     /// Whether to inject the `<permissions instructions>` developer block.
     pub include_permissions_instructions: bool,
 
-    /// Whether to inject the `<collaboration_mode>` developer block.
-    pub include_collaboration_mode_instructions: bool,
-
     /// Whether to inject the `<skills_instructions>` developer block.
     pub include_skill_instructions: bool,
 
@@ -725,7 +722,7 @@ pub struct Config {
     /// Start the TUI in raw scrollback mode for copy-friendly transcript output.
     pub tui_raw_output_mode: bool,
 
-    /// Start the TUI in the specified collaboration mode (plan/default).
+    /// Start the TUI in the specified agent settings (plan/default).
 
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///
@@ -896,7 +893,6 @@ pub struct Config {
     /// `medium`). When explicitly set (including `none`), this overrides the
     /// Plan preset. The `none` value means "no reasoning" (not "inherit the
     /// global default").
-    pub plan_mode_reasoning_effort: Option<ReasoningEffort>,
 
     /// Optional value to use for `reasoning.summary` when making a request
     /// using the Responses API. When unset, the model catalog default is used.
@@ -3506,8 +3502,6 @@ impl Config {
             .or(cfg.instructions.clone());
         let developer_instructions = developer_instructions.or(cfg.developer_instructions);
         let include_permissions_instructions = cfg.include_permissions_instructions.unwrap_or(true);
-        let include_collaboration_mode_instructions =
-            cfg.include_collaboration_mode_instructions.unwrap_or(true);
         let include_skill_instructions = cfg
             .skills
             .as_ref()
@@ -3712,7 +3706,6 @@ impl Config {
             developer_instructions,
             compact_prompt,
             include_permissions_instructions: false,
-            include_collaboration_mode_instructions,
             include_skill_instructions,
             orchestrator_skills_enabled,
             include_environment_context,
@@ -3784,7 +3777,6 @@ impl Config {
                 .unwrap_or(false),
             guardian_policy_config,
             model_reasoning_effort: cfg.model_reasoning_effort,
-            plan_mode_reasoning_effort: cfg.plan_mode_reasoning_effort,
             model_reasoning_summary: cfg.model_reasoning_summary,
             model_catalog,
             model_verbosity: cfg.model_verbosity,

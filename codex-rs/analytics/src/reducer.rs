@@ -131,7 +131,6 @@ use codex_cli_protocol::WebSearchAction;
 use codex_git_utils::collect_git_info;
 use codex_git_utils::get_git_repo_root;
 use codex_login::default_client::originator;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::items::is_safe_plugin_relative_path;
@@ -2991,7 +2990,6 @@ fn codex_turn_event_params(
         approval_policy,
         approvals_reviewer,
         sandbox_network_access,
-        collaboration_mode,
         personality,
         workspace_kind,
         is_first_turn,
@@ -3034,7 +3032,6 @@ fn codex_turn_event_params(
         approval_policy: approval_policy.to_string(),
         approvals_reviewer: approvals_reviewer.to_string(),
         sandbox_network_access,
-        collaboration_mode: Some(collaboration_mode_mode(collaboration_mode)),
         personality: personality_mode(personality),
         workspace_kind,
         num_input_images,
@@ -3107,13 +3104,6 @@ fn sandbox_policy_mode(permission_profile: &PermissionProfile, cwd: &Path) -> &'
                 "workspace_write"
             }
         }
-    }
-}
-
-fn collaboration_mode_mode(mode: ModeKind) -> &'static str {
-    match mode {
-        ModeKind::Plan => "plan",
-        ModeKind::Default => "default",
     }
 }
 

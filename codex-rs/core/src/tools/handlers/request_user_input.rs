@@ -8,18 +8,13 @@ use crate::tools::handlers::request_user_input_spec::REQUEST_USER_INPUT_TOOL_NAM
 use crate::tools::handlers::request_user_input_spec::RequestUserInputToolArgs;
 use crate::tools::handlers::request_user_input_spec::create_request_user_input_tool;
 use crate::tools::handlers::request_user_input_spec::normalize_request_user_input_tool_args;
-use crate::tools::handlers::request_user_input_spec::request_user_input_tool_description;
-use crate::tools::handlers::request_user_input_spec::request_user_input_unavailable_message;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 
-pub struct RequestUserInputHandler {
-    pub available_modes: Vec<ModeKind>,
-}
+pub struct RequestUserInputHandler;
 
 impl ToolExecutor<ToolInvocation> for RequestUserInputHandler {
     fn tool_name(&self) -> ToolName {
@@ -27,7 +22,7 @@ impl ToolExecutor<ToolInvocation> for RequestUserInputHandler {
     }
 
     fn spec(&self) -> ToolSpec {
-        create_request_user_input_tool(request_user_input_tool_description(&self.available_modes))
+        create_request_user_input_tool()
     }
 
     fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
@@ -63,17 +58,12 @@ impl RequestUserInputHandler {
             ));
         }
 
-        let mode = turn.collaboration_mode().mode;
-        if let Some(message) = request_user_input_unavailable_message(mode, &self.available_modes) {
-            return Err(FunctionCallError::RespondToModel(message));
-        }
-
         let args: RequestUserInputToolArgs = parse_arguments(&arguments)?;
         let args = normalize_request_user_input_tool_args(args)
             .map_err(FunctionCallError::RespondToModel)?;
         let args = RequestUserInputArgs {
             questions: args.questions,
-            is_blocking: mode == ModeKind::Plan,
+            is_blocking: false,
             auto_resolution_ms: None,
         };
         let response = session
@@ -99,7 +89,3 @@ impl RequestUserInputHandler {
 }
 
 impl CoreToolRuntime for RequestUserInputHandler {}
-
-#[cfg(test)]
-#[path = "request_user_input_tests.rs"]
-mod tests;

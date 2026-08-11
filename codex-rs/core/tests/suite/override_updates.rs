@@ -1,7 +1,6 @@
 use anyhow::Result;
 use codex_core::config::Constrained;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Settings;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
@@ -14,9 +13,8 @@ use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use tempfile::TempDir;
 
-fn collab_mode_with_instructions(instructions: Option<&str>) -> CollaborationMode {
-    CollaborationMode {
-        mode: ModeKind::Default,
+fn collab_mode_with_instructions(instructions: Option<&str>) -> AgentSettings {
+    AgentSettings {
         settings: Settings {
             model: "gpt-5.4".to_string(),
             reasoning_effort: None,
@@ -95,12 +93,12 @@ async fn thread_settings_update_without_user_turn_does_not_record_collaboration_
     let server = start_mock_server().await;
     let test = test_codex().build(&server).await?;
     let collab_text = "override collaboration instructions";
-    let collaboration_mode = collab_mode_with_instructions(Some(collab_text));
+    let agent_settings = collab_mode_with_instructions(Some(collab_text));
 
     core_test_support::submit_thread_settings(
         &test.codex,
         codex_protocol::protocol::ThreadSettingsOverrides {
-            collaboration_mode: Some(collaboration_mode),
+            agent_settings: Some(agent_settings),
             ..Default::default()
         },
     )

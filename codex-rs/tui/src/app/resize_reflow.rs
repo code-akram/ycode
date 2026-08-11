@@ -653,10 +653,7 @@ impl App {
     /// consolidation event that replaces transient stream cells with source-backed cells.
     pub(super) fn should_mark_reflow_as_stream_time(&self) -> bool {
         self.chat_widget.has_active_agent_stream()
-            || self.chat_widget.has_active_plan_stream()
             || trailing_run_start::<history_cell::AgentMessageCell>(&self.transcript_cells)
-                < self.transcript_cells.len()
-            || trailing_run_start::<history_cell::ProposedPlanStreamCell>(&self.transcript_cells)
                 < self.transcript_cells.len()
     }
 }

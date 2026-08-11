@@ -3874,7 +3874,7 @@ fn turn_start_params_preserve_explicit_null_service_tier() {
         effort: None,
         summary: None,
         output_schema: None,
-        collaboration_mode: None,
+        agent_settings: None,
         multi_agent_mode: None,
         personality: None,
     };
@@ -3977,23 +3977,6 @@ fn thread_settings_update_params_preserve_field_level_experimental_gates() {
     assert_eq!(
         crate::experimental_api::ExperimentalApi::experimental_reason(&granular_approval),
         Some("askForApproval.granular")
-    );
-
-    let collaboration_mode = ThreadSettingsUpdateParams {
-        thread_id: "thread_123".to_string(),
-        collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-            mode: codex_protocol::config_types::ModeKind::Plan,
-            settings: codex_protocol::config_types::Settings {
-                model: "mock-model".to_string(),
-                reasoning_effort: None,
-                developer_instructions: None,
-            },
-        }),
-        ..Default::default()
-    };
-    assert_eq!(
-        crate::experimental_api::ExperimentalApi::experimental_reason(&collaboration_mode),
-        Some("thread/settings/update.collaborationMode")
     );
 }
 

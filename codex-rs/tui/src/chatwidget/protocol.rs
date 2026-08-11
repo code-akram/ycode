@@ -67,7 +67,6 @@ impl ChatWidget {
             ServerNotification::AgentMessageDelta(notification) => {
                 self.on_agent_message_delta(notification.delta);
             }
-            ServerNotification::PlanDelta(notification) => self.on_plan_delta(notification.delta),
             ServerNotification::ReasoningSummaryTextDelta(notification) => {
                 self.on_agent_reasoning_delta(notification.delta);
             }
@@ -310,9 +309,7 @@ impl ChatWidget {
                 agents_states,
             }),
             item @ ThreadItem::SubAgentActivity { .. } => self.on_sub_agent_activity(item),
-            ThreadItem::EnteredReviewMode { review, .. } if !from_replay => {
-                self.enter_review_mode_with_hint(review, /*from_replay*/ false);
-            }
+            ThreadItem::EnteredReviewMode { .. } | ThreadItem::ExitedReviewMode { .. } => {}
             _ => {}
         }
     }

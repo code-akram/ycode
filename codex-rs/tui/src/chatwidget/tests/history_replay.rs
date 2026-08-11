@@ -32,7 +32,7 @@ async fn resumed_initial_messages_render_history() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -120,43 +120,6 @@ async fn replayed_failed_turns_preserve_overload_warnings_between_retries() {
     insta::assert_snapshot!(
         "replayed_failed_turns_preserve_overload_warnings_between_retries",
         rendered
-    );
-}
-
-#[tokio::test]
-async fn restored_conversation_ultra_remains_selected_after_switching_to_plan() {
-    let (mut chat, _rx, _ops) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-    chat.set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    chat.handle_thread_session(crate::session_state::ThreadSessionState {
-        thread_id: ThreadId::new(),
-        forked_from_id: None,
-        fork_parent_title: None,
-        thread_name: None,
-        model: "gpt-5.4".to_string(),
-        model_provider_id: "test-provider".to_string(),
-        service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
-        cwd: test_path_buf("/home/user/project").abs(),
-        runtime_workspace_roots: Vec::new(),
-        instruction_source_paths: Vec::new(),
-        reasoning_effort: Some(ReasoningEffortConfig::Ultra),
-        collaboration_mode: None,
-        personality: None,
-        message_history: None,
-        network_proxy: None,
-        rollout_path: None,
-    });
-    chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
-
-    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
-    assert_eq!(
-        chat.current_reasoning_effort(),
-        Some(ReasoningEffortConfig::Ultra)
     );
 }
 
@@ -251,113 +214,6 @@ async fn replayed_user_messages_seed_composer_history() {
 }
 
 #[tokio::test]
-async fn replayed_review_prompt_does_not_seed_composer_history() {
-    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.replay_thread_item(
-        CliRuntimeThreadItem::EnteredReviewMode {
-            id: "review-start".to_string(),
-            review: "changes against main".to_string(),
-        },
-        "turn-1".to_string(),
-        ReplayKind::ResumeInitialMessages,
-    );
-    replay_user_message_text(
-        &mut chat,
-        "review-prompt",
-        "Review the code changes against the base branch 'main'.",
-        ReplayKind::ResumeInitialMessages,
-    );
-    drain_insert_history(&mut rx);
-
-    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-    assert_eq!(chat.bottom_pane.composer_text(), "");
-}
-
-#[tokio::test]
-async fn replayed_nested_review_prompts_do_not_render_or_seed_composer_history() {
-    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
-    let review_hint = "current changes";
-    let review_prompt = "Review the current code changes (staged, unstaged, and untracked files).";
-    let user_message = |id: &str, text: &str| CliRuntimeThreadItem::UserMessage {
-        id: id.to_string(),
-        client_id: None,
-        content: vec![CliRuntimeUserInput::Text {
-            text: text.to_string(),
-            text_elements: Vec::new(),
-        }],
-    };
-    let review_marker = |turn_id: &str| CliRuntimeTurn {
-        items: vec![
-            CliRuntimeThreadItem::EnteredReviewMode {
-                id: format!("{turn_id}-start"),
-                review: review_hint.to_string(),
-            },
-            CliRuntimeThreadItem::ExitedReviewMode {
-                id: format!("{turn_id}-end"),
-                review: "review complete".to_string(),
-            },
-        ],
-        ..cli_runtime_turn(
-            turn_id,
-            CliRuntimeTurnStatus::Completed,
-            /*duration_ms*/ None,
-            /*error*/ None,
-        )
-    };
-
-    chat.replay_thread_turns(
-        vec![
-            review_marker("turn-review-before-steer"),
-            CliRuntimeTurn {
-                items: vec![
-                    user_message("interrupted-prompt", review_hint),
-                    user_message("interrupted-steer", review_hint),
-                ],
-                completed_at: Some(1),
-                ..cli_runtime_turn(
-                    "turn-interrupted",
-                    CliRuntimeTurnStatus::Interrupted,
-                    /*duration_ms*/ None,
-                    /*error*/ None,
-                )
-            },
-            review_marker("turn-review"),
-            CliRuntimeTurn {
-                items: vec![
-                    user_message("review-prompt-1", review_prompt),
-                    user_message("review-prompt-2", review_prompt),
-                    CliRuntimeThreadItem::AgentMessage {
-                        id: "review-result".to_string(),
-                        text: "review result is retained".to_string(),
-                        phase: Some(MessagePhase::FinalAnswer),
-                        memory_citation: None,
-                    },
-                ],
-                ..cli_runtime_turn(
-                    "turn-review-child",
-                    CliRuntimeTurnStatus::Interrupted,
-                    /*duration_ms*/ None,
-                    /*error*/ None,
-                )
-            },
-        ],
-        ReplayKind::ResumeInitialMessages,
-    );
-
-    let rendered = drain_insert_history(&mut rx)
-        .into_iter()
-        .map(|lines| lines_to_single_string(&lines))
-        .collect::<String>();
-    assert!(!rendered.contains(review_prompt));
-    assert_eq!(rendered.matches(review_hint).count(), 4);
-    insta::assert_snapshot!("replayed_nested_review_prompts", rendered);
-
-    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-    assert_eq!(chat.bottom_pane.composer_text(), review_hint);
-}
-
-#[tokio::test]
 async fn replayed_user_message_preserves_text_elements_and_local_images() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -387,7 +243,7 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -459,7 +315,7 @@ async fn replayed_user_message_preserves_remote_image_urls() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -563,7 +419,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         runtime_workspace_roots: vec![expected_cwd.clone()],
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -636,7 +492,7 @@ async fn session_configured_preserves_profile_workspace_roots() {
         runtime_workspace_roots: session_runtime_workspace_roots.clone(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -683,7 +539,7 @@ async fn session_configured_external_sandbox_keeps_external_runtime_policy() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -724,7 +580,7 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -782,7 +638,7 @@ async fn replayed_user_message_with_only_local_images_renders_history_cell() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -983,25 +839,6 @@ async fn cli_runtime_forked_thread_history_line_without_cli_runtime_name_ignores
 }
 
 #[tokio::test]
-async fn thread_snapshot_replay_preserves_agent_message_during_review_mode() {
-    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    replay_entered_review_mode(&mut chat, "current changes");
-    let _ = drain_insert_history(&mut rx);
-
-    replay_agent_message(
-        &mut chat,
-        "review-message",
-        "Review progress update",
-        ReplayKind::ThreadSnapshot,
-    );
-
-    let inserted = drain_insert_history(&mut rx);
-    assert_eq!(inserted.len(), 1);
-    assert!(lines_to_single_string(&inserted[0]).contains("Review progress update"));
-}
-
-#[tokio::test]
 async fn replayed_retryable_cli_runtime_error_keeps_turn_running() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -1081,7 +918,7 @@ async fn replayed_reasoning_item_preserves_summary_parts_and_hides_raw_reasoning
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: None,
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -1132,7 +969,7 @@ async fn replayed_reasoning_item_shows_raw_reasoning_when_enabled() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: None,
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,

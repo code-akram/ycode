@@ -6,7 +6,6 @@
 use std::path::PathBuf;
 
 use crate::app_command::AppCommand;
-use codex_cli_protocol::ReviewTarget;
 use codex_cli_protocol::ToolRequestUserInputResponse;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -46,10 +45,6 @@ impl AppEventSender {
 
     pub(crate) fn set_thread_name(&self, name: String) {
         self.send(AppEvent::CodexOp(AppCommand::set_thread_name(name)));
-    }
-
-    pub(crate) fn review(&self, target: ReviewTarget) {
-        self.send(AppEvent::CodexOp(AppCommand::review(target)));
     }
 
     pub(crate) fn list_skills(&self, cwds: Vec<PathBuf>, force_reload: bool) {

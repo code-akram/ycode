@@ -1,4 +1,3 @@
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::request_user_input::RequestUserInputQuestion;
 use codex_tools::JsonSchema;
 use codex_tools::ResponsesApiTool;
@@ -13,7 +12,7 @@ pub(crate) struct RequestUserInputToolArgs {
     pub questions: Vec<RequestUserInputQuestion>,
 }
 
-pub fn create_request_user_input_tool(description: String) -> ToolSpec {
+pub fn create_request_user_input_tool() -> ToolSpec {
     let option_props = BTreeMap::from([
         (
             "label".to_string(),
@@ -76,7 +75,9 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: REQUEST_USER_INPUT_TOOL_NAME.to_string(),
-        description,
+        description:
+            "Request user input for one to three short questions and wait for the response."
+                .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::object(
@@ -86,20 +87,6 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
         ),
         output_schema: None,
     })
-}
-
-pub fn request_user_input_unavailable_message(
-    mode: ModeKind,
-    available_modes: &[ModeKind],
-) -> Option<String> {
-    if available_modes.contains(&mode) {
-        None
-    } else {
-        let mode_name = mode.display_name();
-        Some(format!(
-            "request_user_input is unavailable in {mode_name} mode"
-        ))
-    }
 }
 
 pub(crate) fn normalize_request_user_input_tool_args(
@@ -119,28 +106,3 @@ pub(crate) fn normalize_request_user_input_tool_args(
 
     Ok(args)
 }
-
-pub fn request_user_input_tool_description(available_modes: &[ModeKind]) -> String {
-    let allowed_modes = format_allowed_modes(available_modes);
-    format!(
-        "Request user input for one to three short questions and wait for the response. This tool is only available in {allowed_modes}."
-    )
-}
-
-fn format_allowed_modes(available_modes: &[ModeKind]) -> String {
-    let mode_names: Vec<&str> = available_modes
-        .iter()
-        .map(|mode| mode.display_name())
-        .collect();
-
-    match mode_names.as_slice() {
-        [] => "no modes".to_string(),
-        [mode] => format!("{mode} mode"),
-        [first, second] => format!("{first} or {second} mode"),
-        [..] => format!("modes: {}", mode_names.join(",")),
-    }
-}
-
-#[cfg(test)]
-#[path = "request_user_input_spec_tests.rs"]
-mod tests;

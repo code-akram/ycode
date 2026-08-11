@@ -2,7 +2,6 @@ use crate::app_command::AppCommand;
 use codex_cli_protocol::RequestId as CliRuntimeRequestId;
 use codex_cli_protocol::ServerNotification;
 use codex_cli_protocol::ServerRequest;
-use codex_cli_protocol::ThreadItem;
 use std::collections::HashMap;
 use std::collections::HashSet;
 

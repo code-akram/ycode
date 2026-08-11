@@ -169,9 +169,8 @@ mod tests {
     use chrono::DateTime;
     use chrono::Utc;
     use codex_protocol::ThreadId;
+    use codex_protocol::config_types::AgentSettings;
     use codex_protocol::config_types::ApprovalsReviewer;
-    use codex_protocol::config_types::CollaborationMode;
-    use codex_protocol::config_types::ModeKind;
     use codex_protocol::config_types::ReasoningSummary;
     use codex_protocol::config_types::Settings;
     use codex_protocol::items::TurnItem;
@@ -434,7 +433,7 @@ mod tests {
                 model: "gpt-5".to_string(),
                 comp_hash: None,
                 personality: None,
-                collaboration_mode: None,
+                agent_settings: None,
                 multi_agent_version: None,
                 multi_agent_mode: None,
                 realtime_active: None,
@@ -480,7 +479,7 @@ mod tests {
                 model: "gpt-5".to_string(),
                 comp_hash: None,
                 personality: None,
-                collaboration_mode: None,
+                agent_settings: None,
                 multi_agent_version: None,
                 multi_agent_mode: None,
                 realtime_active: None,
@@ -522,7 +521,7 @@ mod tests {
                 model: "gpt-5".to_string(),
                 comp_hash: None,
                 personality: None,
-                collaboration_mode: None,
+                agent_settings: None,
                 multi_agent_version: None,
                 multi_agent_mode: None,
                 realtime_active: None,
@@ -561,7 +560,7 @@ mod tests {
                 model: "gpt-5".to_string(),
                 comp_hash: None,
                 personality: None,
-                collaboration_mode: None,
+                agent_settings: None,
                 multi_agent_version: None,
                 multi_agent_mode: None,
                 realtime_active: None,
@@ -596,8 +595,7 @@ mod tests {
                     reasoning_effort: Some(ReasoningEffort::Ultra),
                     reasoning_summary: Some(ReasoningSummary::Auto),
                     personality: None,
-                    collaboration_mode: CollaborationMode {
-                        mode: ModeKind::Default,
+                    agent_settings: AgentSettings {
                         settings: Settings {
                             model: "gpt-5.2-codex".to_string(),
                             reasoning_effort: Some(ReasoningEffort::Ultra),

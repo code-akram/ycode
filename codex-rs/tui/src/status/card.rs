@@ -99,7 +99,6 @@ struct StatusHistoryCell {
     model_details: Vec<String>,
     directory: PathBuf,
     agents_summary: Arc<RwLock<String>>,
-    collaboration_mode: Option<String>,
     model_provider: Option<String>,
     remote_connection: Option<RemoteConnectionStatus>,
     show_chatgpt_usage_link: bool,
@@ -125,7 +124,6 @@ pub(crate) fn new_status_output(
     _plan_type: Option<PlanType>,
     now: DateTime<Local>,
     model_name: &str,
-    collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
 ) -> CompositeHistoryCell {
     let snapshots = rate_limits.map(std::slice::from_ref).unwrap_or_default();
@@ -141,7 +139,6 @@ pub(crate) fn new_status_output(
         _plan_type,
         now,
         model_name,
-        collaboration_mode,
         reasoning_effort_override,
         /*refreshing_rate_limits*/ false,
     )
@@ -161,7 +158,6 @@ pub(crate) fn new_status_output_with_rate_limits(
     _plan_type: Option<PlanType>,
     now: DateTime<Local>,
     model_name: &str,
-    collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
     refreshing_rate_limits: bool,
 ) -> CompositeHistoryCell {
@@ -179,7 +175,6 @@ pub(crate) fn new_status_output_with_rate_limits(
         _plan_type,
         now,
         model_name,
-        collaboration_mode,
         reasoning_effort_override,
         "<none>".to_string(),
         refreshing_rate_limits,
@@ -202,7 +197,6 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     _plan_type: Option<PlanType>,
     now: DateTime<Local>,
     model_name: &str,
-    collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
     agents_summary: String,
     refreshing_rate_limits: bool,
@@ -222,7 +216,6 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
         _plan_type,
         now,
         model_name,
-        collaboration_mode,
         reasoning_effort_override,
         agents_summary,
         refreshing_rate_limits,
@@ -250,7 +243,6 @@ impl StatusHistoryCell {
         _plan_type: Option<PlanType>,
         now: DateTime<Local>,
         model_name: &str,
-        collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
         agents_summary: String,
         refreshing_rate_limits: bool,
@@ -313,7 +305,6 @@ impl StatusHistoryCell {
                 model_name,
                 model_details,
                 directory: config.cwd.to_path_buf(),
-                collaboration_mode: collaboration_mode.map(ToString::to_string),
                 model_provider,
                 remote_connection: remote_connection.cloned(),
                 show_chatgpt_usage_link,
@@ -590,9 +581,6 @@ impl HistoryCell for StatusHistoryCell {
         if self.session_id.is_some() && self.forked_from.is_some() {
             push_label(&mut labels, &mut seen, "Forked from");
         }
-        if self.collaboration_mode.is_some() {
-            push_label(&mut labels, &mut seen, "Collaboration mode");
-        }
         push_label(&mut labels, &mut seen, "Token usage");
         if self.token_usage.context_window.is_some() {
             push_label(&mut labels, &mut seen, "Context window");
@@ -662,9 +650,6 @@ impl HistoryCell for StatusHistoryCell {
 
         if let Some(thread_name) = thread_name {
             lines.push(formatter.line("Thread name", vec![Span::from(thread_name.to_string())]));
-        }
-        if let Some(collab_mode) = self.collaboration_mode.as_ref() {
-            lines.push(formatter.line("Collaboration mode", vec![Span::from(collab_mode.clone())]));
         }
         if let Some(session) = self.session_id.as_ref() {
             lines.push(formatter.line("Session", vec![Span::from(session.clone())]));

@@ -217,18 +217,7 @@ where
             }
 
             let accounting = runtime.accounting_state();
-            accounting.start_turn(
-                input.turn_id,
-                input.collaboration_mode.mode,
-                input.token_usage_at_turn_start,
-            );
-            if matches!(
-                input.collaboration_mode.mode,
-                codex_protocol::config_types::ModeKind::Plan
-            ) {
-                accounting.clear_current_turn_goal();
-                return;
-            }
+            accounting.start_turn(input.turn_id, input.token_usage_at_turn_start);
             let Ok(goal) = self
                 .state_dbs
                 .thread_goals()

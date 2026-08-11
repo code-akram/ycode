@@ -122,7 +122,18 @@ impl ChatWidget {
                     from_replay,
                 );
             }
-            ThreadItem::Plan { text, .. } => self.on_plan_item_completed(text),
+            ThreadItem::Plan { text, .. } => {
+                if from_replay && !text.trim().is_empty() {
+                    self.record_agent_markdown(&text);
+                    self.add_to_history(
+                        history_cell::AgentMarkdownCell::new_with_inline_visualizations(
+                            text,
+                            &self.config.cwd,
+                            /*inline_visualization_context*/ None,
+                        ),
+                    );
+                }
+            }
             ThreadItem::Reasoning {
                 summary, content, ..
             } => {
@@ -173,14 +184,7 @@ impl ChatWidget {
                     item.saved_path,
                 );
             }
-            ThreadItem::EnteredReviewMode { review, .. } => {
-                if from_replay {
-                    self.enter_review_mode_with_hint(review, /*from_replay*/ true);
-                }
-            }
-            ThreadItem::ExitedReviewMode { .. } => {
-                self.exit_review_mode_after_item();
-            }
+            ThreadItem::EnteredReviewMode { .. } | ThreadItem::ExitedReviewMode { .. } => {}
             ThreadItem::ContextCompaction { .. } => {
                 self.add_info_message("Context compacted".to_string(), /*hint*/ None);
             }

@@ -187,15 +187,6 @@ impl CatalogRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
-    pub(crate) async fn collaboration_mode_list(
-        &self,
-        params: CollaborationModeListParams,
-    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        Self::list_collaboration_modes(self.thread_manager.clone(), params)
-            .await
-            .map(|response| Some(response.into()))
-    }
-
     pub(crate) async fn mock_experimental_method(
         &self,
         params: MockExperimentalMethodParams,
@@ -303,20 +294,6 @@ impl CatalogRequestProcessor {
             data: items,
             next_cursor,
         })
-    }
-
-    async fn list_collaboration_modes(
-        thread_manager: Arc<ThreadManager>,
-        params: CollaborationModeListParams,
-    ) -> Result<CollaborationModeListResponse, JSONRPCErrorError> {
-        let CollaborationModeListParams {} = params;
-        let items = thread_manager
-            .list_collaboration_modes()
-            .into_iter()
-            .map(Into::into)
-            .collect();
-        let response = CollaborationModeListResponse { data: items };
-        Ok(response)
     }
 
     async fn experimental_feature_list_response(

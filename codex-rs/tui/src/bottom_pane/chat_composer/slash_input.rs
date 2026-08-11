@@ -171,7 +171,6 @@ impl<'a> SlashInput<'a> {
     pub(super) fn command_popup(&self, filter_text: &str) -> CommandPopup {
         let mut command_popup = CommandPopup::new(
             CommandPopupFlags {
-                collaboration_modes_enabled: self.command_flags.collaboration_modes_enabled,
                 plugins_command_enabled: self.command_flags.plugins_command_enabled,
                 token_activity_command_enabled: self.command_flags.token_activity_command_enabled,
                 service_tier_commands_enabled: self.command_flags.service_tier_commands_enabled,
@@ -610,31 +609,13 @@ mod tests {
 
     #[test]
     fn esc_dismisses_slash_popup_while_idle() {
-        let mut composer = composer_with_text_at_cursor("/rev", "/rev".len());
+        let mut composer = composer_with_text_at_cursor("/mod", "/mod".len());
         assert!(composer.popup_active());
 
         assert_eq!(press(&mut composer, KeyCode::Esc), InputResult::None);
 
         assert!(!composer.popup_active());
-        assert_eq!(composer.draft.textarea.text(), "/rev");
-    }
-
-    #[test]
-    fn slash_completion_preserves_existing_draft_tail_for_inline_arg_commands() {
-        let draft = "view the diff";
-        let expected_text = "/review view the diff";
-
-        let mut composer = composer_with_draft_tail("/re", draft);
-        assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
-        assert_eq!(composer.draft.textarea.text(), expected_text);
-        assert_eq!(composer.draft.textarea.cursor(), expected_text.len());
-
-        let mut composer = composer_with_draft_tail("/re", draft);
-        assert_eq!(
-            press(&mut composer, KeyCode::Enter),
-            InputResult::CommandWithArgs(SlashCommand::Review, draft.to_string(), Vec::new())
-        );
-        assert_eq!(composer.draft.textarea.text(), expected_text);
+        assert_eq!(composer.draft.textarea.text(), "/mod");
     }
 
     #[test]
@@ -647,19 +628,5 @@ mod tests {
         assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
         assert_eq!(composer.draft.textarea.text(), "/model ");
         assert_eq!(composer.draft.textarea.cursor(), "/model ".len());
-    }
-
-    #[test]
-    fn slash_completion_does_not_turn_command_suffix_into_args() {
-        let mut composer = composer_with_text_at_cursor("/review", "/re".len());
-        assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
-        assert_eq!(composer.draft.textarea.text(), "/review ");
-
-        let mut composer = composer_with_text_at_cursor("/review", "/re".len());
-        assert_eq!(
-            press(&mut composer, KeyCode::Enter),
-            InputResult::Command(SlashCommand::Review)
-        );
-        assert!(composer.draft.textarea.is_empty());
     }
 }

@@ -147,8 +147,7 @@ pub struct TurnContext {
     pub(crate) timezone: Option<String>,
     pub(crate) cli_runtime_client_name: Option<String>,
     pub(crate) developer_instructions: Option<String>,
-    pub(crate) mode: ModeKind,
-    pub(crate) collaboration_mode_developer_instructions: Option<String>,
+    pub(crate) agent_settings_developer_instructions: Option<String>,
     pub(crate) multi_agent_version: MultiAgentVersion,
     pub(crate) personality: Option<Personality>,
     pub(crate) windows_sandbox_level: WindowsSandboxLevel,
@@ -177,13 +176,12 @@ impl TurnContext {
         snapshot
     }
 
-    pub(crate) fn collaboration_mode(&self) -> CollaborationMode {
-        CollaborationMode {
-            mode: self.mode,
+    pub(crate) fn agent_settings(&self) -> AgentSettings {
+        AgentSettings {
             settings: Settings {
                 model: self.model_info.slug.clone(),
                 reasoning_effort: self.reasoning_effort.clone(),
-                developer_instructions: self.collaboration_mode_developer_instructions.clone(),
+                developer_instructions: self.agent_settings_developer_instructions.clone(),
             },
         }
     }
@@ -306,9 +304,8 @@ impl TurnContext {
             timezone: self.timezone.clone(),
             cli_runtime_client_name: self.cli_runtime_client_name.clone(),
             developer_instructions: self.developer_instructions.clone(),
-            mode: self.mode,
-            collaboration_mode_developer_instructions: self
-                .collaboration_mode_developer_instructions
+            agent_settings_developer_instructions: self
+                .agent_settings_developer_instructions
                 .clone(),
             multi_agent_version: self.multi_agent_version,
             personality: self.personality,
@@ -365,7 +362,7 @@ impl TurnContext {
             model: self.model_info.slug.clone(),
             comp_hash: self.model_info.comp_hash.clone(),
             personality: self.personality,
-            collaboration_mode: Some(self.collaboration_mode()),
+            agent_settings: Some(self.agent_settings()),
             multi_agent_version: Some(self.multi_agent_version),
             multi_agent_mode: None,
             realtime_active: Some(self.realtime_active),
@@ -423,7 +420,7 @@ impl Session {
             .permissions
             .set_workspace_roots(workspace_roots);
         per_turn_config.model_reasoning_effort =
-            session_configuration.collaboration_mode.reasoning_effort();
+            session_configuration.agent_settings.reasoning_effort();
         per_turn_config.model_reasoning_summary = session_configuration.model_reasoning_summary;
         per_turn_config.service_tier = session_configuration.service_tier.clone();
         per_turn_config.personality = session_configuration.personality;
@@ -457,7 +454,7 @@ impl Session {
     ) -> Config {
         let mut config =
             Self::build_per_turn_config(session_configuration, session_configuration.cwd().clone());
-        config.model = Some(session_configuration.collaboration_mode.model().to_string());
+        config.model = Some(session_configuration.agent_settings.model().to_string());
         config
     }
 
@@ -481,13 +478,13 @@ impl Session {
         sub_id: String,
         skills_snapshot: HostSkillsSnapshot,
     ) -> TurnContext {
-        let collaboration_mode = &session_configuration.collaboration_mode;
-        let reasoning_effort = collaboration_mode.reasoning_effort();
+        let agent_settings = &session_configuration.agent_settings;
+        let reasoning_effort = agent_settings.reasoning_effort();
         let reasoning_summary = session_configuration
             .model_reasoning_summary
             .unwrap_or(model_info.default_reasoning_summary);
         let session_telemetry = session_telemetry.clone().with_model(
-            session_configuration.collaboration_mode.model(),
+            session_configuration.agent_settings.model(),
             model_info.slug.as_str(),
         );
         let session_source = session_configuration.session_source.clone();
@@ -544,8 +541,7 @@ impl Session {
             timezone: Some(timezone),
             cli_runtime_client_name: session_configuration.cli_runtime_client_name.clone(),
             developer_instructions: session_configuration.developer_instructions.clone(),
-            mode: collaboration_mode.mode,
-            collaboration_mode_developer_instructions: collaboration_mode
+            agent_settings_developer_instructions: agent_settings
                 .settings
                 .developer_instructions
                 .clone(),
@@ -688,7 +684,7 @@ impl Session {
             .services
             .models_manager
             .get_model_info(
-                session_configuration.collaboration_mode.model(),
+                session_configuration.agent_settings.model(),
                 &per_turn_config.to_models_manager_config(),
             )
             .await;

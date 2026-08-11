@@ -210,8 +210,7 @@ async fn submit_unified_exec_turn(
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -355,8 +354,7 @@ async fn unified_exec_intercepts_apply_patch_exec_command() -> Result<()> {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -2579,8 +2577,7 @@ async fn unified_exec_keeps_long_running_session_after_turn_end() -> Result<()> 
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -2682,8 +2679,7 @@ async fn unified_exec_interrupt_preserves_long_running_session() -> Result<()> {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -3186,8 +3182,7 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -3309,8 +3304,7 @@ async fn unified_exec_enforces_glob_deny_read_policy() -> Result<()> {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,

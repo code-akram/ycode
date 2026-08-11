@@ -66,7 +66,9 @@ pub enum TurnItem {
     /// This remains separate from [`Self::Extension`] because core still owns
     /// hosted image persistence and legacy-event fanout.
     ImageGeneration(ImageGenerationItem),
+    /// Legacy decode-only marker retained for persisted conversation history.
     EnteredReviewMode(EnteredReviewModeItem),
+    /// Legacy decode-only marker retained for persisted conversation history.
     ExitedReviewMode(ExitedReviewModeItem),
     FileChange(FileChangeItem),
     ContextCompaction(ContextCompactionItem),

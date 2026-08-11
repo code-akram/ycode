@@ -992,8 +992,7 @@ impl TestCodex {
                     sandbox_policy: Some(sandbox_policy),
                     permission_profile,
                     service_tier,
-                    collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                        mode: codex_protocol::config_types::ModeKind::Default,
+                    agent_settings: Some(codex_protocol::config_types::AgentSettings {
                         settings: codex_protocol::config_types::Settings {
                             model: session_model,
                             reasoning_effort: None,

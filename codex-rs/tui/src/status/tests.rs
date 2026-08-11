@@ -261,7 +261,6 @@ fn permissions_text_for(config: &Config) -> Option<String> {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     render_lines(&composite.display_lines(/*width*/ 80))
@@ -340,7 +339,6 @@ async fn status_snapshot_includes_reasoning_details() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         reasoning_effort_override,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -406,7 +404,6 @@ async fn status_snapshot_shows_chatgpt_plan_without_email() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let sanitized =
@@ -716,7 +713,6 @@ async fn status_snapshot_shows_active_user_defined_profile() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -763,7 +759,6 @@ async fn status_model_provider_uses_bedrock_runtime_base_url_and_gates_usage_lin
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
         "<none>".to_string(),
         /*refreshing_rate_limits*/ false,
@@ -804,7 +799,6 @@ async fn status_model_provider_uses_bedrock_runtime_base_url_and_gates_usage_lin
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
         "<none>".to_string(),
         /*refreshing_rate_limits*/ false,
@@ -871,7 +865,6 @@ async fn status_snapshot_shows_auto_review_permissions() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -971,7 +964,6 @@ async fn status_snapshot_includes_forked_from() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -1036,7 +1028,6 @@ async fn status_snapshot_includes_monthly_limit() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -1101,7 +1092,6 @@ async fn status_snapshot_includes_enterprise_monthly_credit_limit() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 92));
@@ -1166,7 +1156,6 @@ async fn status_snapshot_shows_unlimited_credits() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let rendered = render_lines(&composite.display_lines(/*width*/ 120));
@@ -1218,7 +1207,6 @@ async fn status_snapshot_shows_positive_credits() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let rendered = render_lines(&composite.display_lines(/*width*/ 120));
@@ -1277,7 +1265,6 @@ async fn status_snapshot_shows_available_credits_without_display_balance() {
             None,
             captured_at,
             &model_slug,
-            /*collaboration_mode*/ None,
             /*reasoning_effort_override*/ None,
         );
         let rendered = render_lines(&composite.display_lines(/*width*/ 120));
@@ -1330,7 +1317,6 @@ async fn status_snapshot_respects_unlimited_without_has_credits_flag() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let rendered = render_lines(&composite.display_lines(/*width*/ 120));
@@ -1377,7 +1363,6 @@ async fn status_card_token_usage_excludes_cached_tokens() {
         None,
         now,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let rendered = render_lines(&composite.display_lines(/*width*/ 120));
@@ -1442,7 +1427,6 @@ async fn status_snapshot_truncates_in_narrow_terminal() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         reasoning_effort_override,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 70));
@@ -1483,7 +1467,7 @@ async fn status_snapshot_truncates_halfwidth_kana_in_narrow_terminal() {
         /*plan_type*/ None,
         now,
         "ｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟ-model",
-        Some("ｶﾞﾊﾟ collaboration mode"),
+        Some("ｶﾞﾊﾟ agent settings"),
         /*reasoning_effort_override*/ None,
     );
     let rendered_lines = render_lines(&composite.display_lines(/*width*/ 42));
@@ -1527,7 +1511,6 @@ async fn status_snapshot_shows_missing_limits_message() {
         None,
         now,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -1581,7 +1564,6 @@ async fn status_snapshot_uses_default_reasoning_when_config_empty() {
         None,
         now,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ Some(Some(ReasoningEffort::Medium)),
         "<none>".to_string(),
         /*refreshing_rate_limits*/ false,
@@ -1649,7 +1631,6 @@ async fn status_snapshot_shows_refreshing_limits_notice() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
         /*refreshing_rate_limits*/ true,
     );
@@ -1690,7 +1671,6 @@ async fn transcript_overlay_remeasures_status_after_rate_limit_refresh() {
         None,
         now,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
         "<none>".to_string(),
         /*refreshing_rate_limits*/ true,
@@ -1805,7 +1785,6 @@ async fn status_snapshot_includes_credits_and_limits() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -1865,7 +1844,6 @@ async fn status_snapshot_shows_unavailable_limits_message() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -1924,7 +1902,6 @@ async fn status_snapshot_treats_refreshing_empty_limits_as_unavailable() {
         None,
         captured_at,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
         /*refreshing_rate_limits*/ true,
     );
@@ -1994,7 +1971,6 @@ async fn status_snapshot_shows_stale_limits_message() {
         None,
         now,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -2067,7 +2043,6 @@ async fn status_snapshot_cached_limits_hide_credits_without_flag() {
         None,
         now,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let mut rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
@@ -2125,7 +2100,6 @@ async fn status_context_window_uses_last_usage() {
         None,
         now,
         &model_slug,
-        /*collaboration_mode*/ None,
         /*reasoning_effort_override*/ None,
     );
     let rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));

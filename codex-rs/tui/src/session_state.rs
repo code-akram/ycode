@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Personality;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
@@ -30,7 +30,7 @@ pub(crate) struct ThreadSessionState {
     pub(crate) runtime_workspace_roots: Vec<AbsolutePathBuf>,
     pub(crate) instruction_source_paths: Vec<PathUri>,
     pub(crate) reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
-    pub(crate) collaboration_mode: Option<Box<CollaborationMode>>,
+    pub(crate) agent_settings: Option<Box<AgentSettings>>,
     pub(crate) personality: Option<Personality>,
     pub(crate) message_history: Option<MessageHistoryMetadata>,
     pub(crate) rollout_path: Option<PathBuf>,

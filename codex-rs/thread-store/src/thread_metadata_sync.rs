@@ -403,9 +403,8 @@ fn git_info_patch_from_observation(git_info: GitInfo) -> GitInfoPatch {
 mod tests {
     use std::sync::Arc;
 
+    use codex_protocol::config_types::AgentSettings;
     use codex_protocol::config_types::ApprovalsReviewer;
-    use codex_protocol::config_types::CollaborationMode;
-    use codex_protocol::config_types::ModeKind;
     use codex_protocol::config_types::ReasoningSummary;
     use codex_protocol::config_types::Settings;
     use codex_protocol::items::UserMessageItem;
@@ -582,7 +581,6 @@ mod tests {
                     trace_id: None,
                     started_at: None,
                     model_context_window: None,
-                    collaboration_mode_kind: Default::default(),
                 },
             ))])
             .expect("turn start metadata update");
@@ -614,8 +612,7 @@ mod tests {
                     reasoning_effort: Some(ReasoningEffort::Ultra),
                     reasoning_summary: Some(ReasoningSummary::Auto),
                     personality: None,
-                    collaboration_mode: CollaborationMode {
-                        mode: ModeKind::Default,
+                    agent_settings: AgentSettings {
                         settings: Settings {
                             model: "gpt-5.2-codex".to_string(),
                             reasoning_effort: Some(ReasoningEffort::Ultra),
@@ -649,7 +646,7 @@ mod tests {
         event.thread_settings.reasoning_effort = None;
         event
             .thread_settings
-            .collaboration_mode
+            .agent_settings
             .settings
             .reasoning_effort = None;
 

@@ -16,8 +16,7 @@ use crate::bottom_pane::MentionBinding;
 use crate::bottom_pane::QueuedInputAction;
 use codex_cli_protocol::TextElement as CliRuntimeTextElement;
 use codex_cli_protocol::UserInput;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::CollaborationModeMask;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
@@ -133,8 +132,7 @@ pub(crate) struct ThreadInputState {
     pub(super) queued_user_message_history_records: VecDeque<UserMessageHistoryRecord>,
     pub(super) user_turn_pending_start: bool,
     pub(super) submit_pending_steers_after_interrupt: bool,
-    pub(super) current_collaboration_mode: CollaborationMode,
-    pub(super) active_collaboration_mask: Option<CollaborationModeMask>,
+    pub(super) current_agent_settings: AgentSettings,
     pub(super) task_running: bool,
     pub(super) agent_turn_running: bool,
 }

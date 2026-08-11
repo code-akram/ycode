@@ -14,7 +14,6 @@ async fn parent_owned_thread_blocks_all_direct_input_entry_points() {
         make_chatwidget_manual(/*model_override*/ Some("gpt-5")).await;
     chat.thread_id = Some(ThreadId::new());
     drain_insert_history(&mut rx);
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
     chat.set_parent_owned_thread();
     chat.set_side_conversation_active(/*active*/ false);
     chat.bottom_pane
@@ -33,16 +32,8 @@ async fn parent_owned_thread_blocks_all_direct_input_entry_points() {
         .join("\n");
     assert_chatwidget_snapshot!("parent_owned_thread_rejects_input", rendered);
 
-    let collaboration_mode_before = chat.active_collaboration_mask.clone();
-    let plan_mode = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
-        .expect("expected plan collaboration mode");
-    chat.submit_user_message_with_mode("Implement the plan.".to_string(), plan_mode);
-    assert_eq!(chat.active_collaboration_mask, collaboration_mode_before);
-    assert_no_submit_op(&mut op_rx);
-
     for command in [
         "/init",
-        "/review check this",
         "/side inspect this",
         "/archive",
         "/rename",
@@ -68,23 +59,19 @@ async fn parent_owned_thread_blocks_settings_shortcuts() {
     let (mut chat, mut rx, _op_rx) =
         make_chatwidget_manual(/*model_override*/ Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::Medium));
     chat.set_parent_owned_thread();
     drain_insert_history(&mut rx);
 
-    let collaboration_mode_before = chat.active_collaboration_mask.clone();
     let reasoning_effort_before = chat.current_reasoning_effort();
 
     for key_event in [
-        KeyEvent::from(KeyCode::BackTab),
         KeyEvent::new(KeyCode::Char('.'), KeyModifiers::ALT),
         KeyEvent::new(KeyCode::Char(','), KeyModifiers::ALT),
     ] {
         chat.handle_key_event(key_event);
     }
 
-    assert_eq!(chat.active_collaboration_mask, collaboration_mode_before);
     assert_eq!(chat.current_reasoning_effort(), reasoning_effort_before);
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert!(events.iter().all(|event| !matches!(
@@ -92,7 +79,6 @@ async fn parent_owned_thread_blocks_settings_shortcuts() {
         AppEvent::SubmitThreadOp { .. }
             | AppEvent::UpdateModel(_)
             | AppEvent::UpdateReasoningEffort(_)
-            | AppEvent::UpdatePlanModeReasoningEffort(_)
     )));
 
     let rendered = events
@@ -173,7 +159,7 @@ async fn submission_preserves_text_elements_and_local_images() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -282,7 +268,7 @@ async fn submission_includes_configured_active_permission_profile() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -337,7 +323,7 @@ async fn submission_omits_active_permission_profile_for_legacy_snapshot() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -382,7 +368,7 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -480,7 +466,7 @@ async fn enter_with_only_remote_images_submits_user_turn() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -547,7 +533,7 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -588,7 +574,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -629,7 +615,7 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -673,7 +659,7 @@ async fn submission_prefers_selected_duplicate_skill_path() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -923,54 +909,6 @@ async fn restored_message_preserves_existing_composer_draft_and_attachments() {
     );
 }
 
-#[tokio::test]
-async fn interrupted_turn_restore_keeps_active_mode_for_resubmission() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
-    chat.thread_id = Some(ThreadId::new());
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-
-    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
-        .expect("expected plan collaboration mode");
-    let expected_mode = plan_mask
-        .mode
-        .expect("expected mode kind on plan collaboration mode");
-
-    chat.set_collaboration_mask(plan_mask);
-    chat.on_task_started();
-    chat.input_queue.queued_user_messages.push_back(
-        UserMessage {
-            text: "Implement the plan.".to_string(),
-            local_images: Vec::new(),
-            remote_image_urls: Vec::new(),
-            text_elements: Vec::new(),
-            mention_bindings: Vec::new(),
-        }
-        .into(),
-    );
-    chat.refresh_pending_input_preview();
-
-    handle_turn_interrupted(&mut chat, "turn-1");
-
-    assert_eq!(chat.bottom_pane.composer_text(), "Implement the plan.");
-    assert!(chat.input_queue.queued_user_messages.is_empty());
-    assert_eq!(chat.active_collaboration_mode_kind(), expected_mode);
-
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            collaboration_mode: Some(CollaborationMode { mode, .. }),
-            personality: None,
-            ..
-        } => assert_eq!(mode, expected_mode),
-        other => {
-            panic!("expected Op::UserTurn with active mode, got {other:?}")
-        }
-    }
-    assert_eq!(chat.active_collaboration_mode_kind(), expected_mode);
-}
-
-#[tokio::test]
 async fn remap_placeholders_uses_attachment_labels() {
     let placeholder_one = "[Image #1]";
     let placeholder_two = "[Image #2]";
@@ -1284,8 +1222,7 @@ async fn restore_thread_input_state_applies_running_state_policy() {
         queued_user_message_history_records: VecDeque::from([queued_history.clone()]),
         user_turn_pending_start: true,
         submit_pending_steers_after_interrupt: true,
-        current_collaboration_mode: chat.current_collaboration_mode.clone(),
-        active_collaboration_mask: chat.active_collaboration_mask.clone(),
+        current_agent_settings: chat.current_agent_settings.clone(),
         task_running: true,
         agent_turn_running: true,
     };

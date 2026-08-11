@@ -92,32 +92,6 @@ async fn slash_rename_with_args_is_rejected_for_side_threads() {
 }
 
 #[tokio::test]
-async fn slash_commands_without_side_flag_are_rejected_for_side_threads() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_side_conversation_active(/*active*/ true);
-
-    chat.dispatch_command(SlashCommand::Review);
-
-    let event = rx
-        .try_recv()
-        .expect("expected side conversation slash command error");
-    match event {
-        AppEvent::InsertHistoryCell(cell) => {
-            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            assert!(
-                rendered.contains(
-                    "'/review' is unavailable in side conversations. Press Ctrl+C to return to the main thread first."
-                ),
-                "expected side conversation slash command error, got {rendered:?}"
-            );
-        }
-        other => panic!("expected InsertHistoryCell error, got {other:?}"),
-    }
-    assert!(rx.try_recv().is_err(), "expected no follow-up events");
-    assert!(op_rx.try_recv().is_err(), "expected no review op");
-}
-
-#[tokio::test]
 async fn slash_side_is_rejected_for_side_threads() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_side_conversation_active(/*active*/ true);
@@ -135,60 +109,6 @@ async fn slash_side_is_rejected_for_side_threads() {
                     "'/side' is unavailable in side conversations. Press Ctrl+C to return to the main thread first."
                 ),
                 "expected side conversation slash command error, got {rendered:?}"
-            );
-        }
-        other => panic!("expected InsertHistoryCell error, got {other:?}"),
-    }
-    assert!(rx.try_recv().is_err(), "expected no follow-up events");
-    assert!(
-        op_rx.try_recv().is_err(),
-        "expected no side conversation op"
-    );
-}
-
-#[tokio::test]
-async fn slash_side_is_rejected_during_review_mode() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.review.is_review_mode = true;
-
-    chat.dispatch_command(SlashCommand::Side);
-
-    let event = rx
-        .try_recv()
-        .expect("expected review-mode side conversation error");
-    match event {
-        AppEvent::InsertHistoryCell(cell) => {
-            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            assert!(
-                rendered.contains("'/side' is unavailable while code review is running."),
-                "expected review-mode side conversation error, got {rendered:?}"
-            );
-        }
-        other => panic!("expected InsertHistoryCell error, got {other:?}"),
-    }
-    assert!(rx.try_recv().is_err(), "expected no follow-up events");
-    assert!(
-        op_rx.try_recv().is_err(),
-        "expected no side conversation op"
-    );
-}
-
-#[tokio::test]
-async fn slash_btw_is_rejected_during_review_mode() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.review.is_review_mode = true;
-
-    chat.dispatch_command(SlashCommand::Btw);
-
-    let event = rx
-        .try_recv()
-        .expect("expected review-mode btw conversation error");
-    match event {
-        AppEvent::InsertHistoryCell(cell) => {
-            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            assert!(
-                rendered.contains("'/btw' is unavailable while code review is running."),
-                "expected review-mode btw conversation error, got {rendered:?}"
             );
         }
         other => panic!("expected InsertHistoryCell error, got {other:?}"),

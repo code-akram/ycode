@@ -17,8 +17,6 @@ use codex_cli::run_login_with_device_code;
 use codex_cli::run_logout;
 use codex_cloud_tasks::Cli as CloudTasksCli;
 use codex_exec::Cli as ExecCli;
-use codex_exec::Command as ExecCommand;
-use codex_exec::ReviewArgs;
 use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
 use codex_rollout_trace::REDUCED_STATE_FILE_NAME;
 use codex_rollout_trace::replay_bundle;
@@ -108,9 +106,6 @@ enum Subcommand {
     /// Run Codex non-interactively.
     #[clap(visible_alias = "e")]
     Exec(ExecCli),
-
-    /// Run a code review non-interactively.
-    Review(ReviewCommand),
 
     /// Manage login.
     Login(LoginCommand),
@@ -214,16 +209,6 @@ struct DebugModelsCommand {
     /// Skip refresh and dump only the bundled catalog shipped with this binary.
     #[arg(long = "bundled", default_value_t = false)]
     bundled: bool,
-}
-
-#[derive(Debug, Parser)]
-struct ReviewCommand {
-    /// Error out when config.toml contains fields that are not recognized by this version of Codex.
-    #[arg(long = "strict-config", default_value_t = false)]
-    strict_config: bool,
-
-    #[clap(flatten)]
-    args: ReviewArgs,
 }
 
 #[derive(Debug, Parser)]
@@ -629,23 +614,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             );
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
         }
-        Some(Subcommand::Review(ReviewCommand {
-            strict_config,
-            args: review_args,
-        })) => {
-            let mut exec_cli = ExecCli::try_parse_from(["codex", "exec"])?;
-            exec_cli
-                .shared
-                .inherit_exec_root_options(&interactive.shared);
-            exec_cli.psp = psp;
-            exec_cli.command = Some(ExecCommand::Review(review_args));
-            exec_cli.strict_config = strict_config || root_strict_config;
-            prepend_config_flags(
-                &mut exec_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
-            codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
-        }
         Some(Subcommand::Plugin(plugin_cli)) => {
             let PluginCli {
                 mut config_overrides,
@@ -909,7 +877,6 @@ fn profile_v2_for_subcommand<'a>(
 
     match subcommand {
         Subcommand::Exec(_)
-        | Subcommand::Review(_)
         | Subcommand::Resume(_)
         | Subcommand::Archive(_)
         | Subcommand::Delete(_)
@@ -919,7 +886,7 @@ fn profile_v2_for_subcommand<'a>(
             subcommand: DebugSubcommand::PromptInput(_),
         }) => Ok(Some(profile_v2)),
         _ => anyhow::bail!(
-            "--profile only applies to runtime commands: `codex`, `codex exec`, `codex review`, `codex resume`, `codex archive`, `codex delete`, `codex unarchive`, `codex fork`, and `codex debug prompt-input`."
+            "--profile only applies to runtime commands: `codex`, `codex exec`, `codex resume`, `codex archive`, `codex delete`, `codex unarchive`, `codex fork`, and `codex debug prompt-input`."
         ),
     }
 }
@@ -1192,7 +1159,6 @@ fn unsupported_subcommand_name_for_strict_config(
     match subcommand {
         None
         | Some(Subcommand::Exec(_))
-        | Some(Subcommand::Review(_))
         | Some(Subcommand::Resume(_))
         | Some(Subcommand::Archive(_))
         | Some(Subcommand::Delete(_))

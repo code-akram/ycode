@@ -3,8 +3,7 @@
 use anyhow::Result;
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_features::Feature;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Settings;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
@@ -31,13 +30,12 @@ use std::fs;
 
 const COMPLEX_FORCED_RM_COMMAND: &str = "for target in \"\"; do rm -rf \"$target\"; done";
 
-fn collaboration_mode_for_model(model: String) -> CollaborationMode {
-    CollaborationMode {
-        mode: ModeKind::Default,
+fn agent_settings_for_model(model: String) -> AgentSettings {
+    AgentSettings {
         settings: Settings {
             model,
             reasoning_effort: None,
-            developer_instructions: Some("exercise approvals in collaboration mode".to_string()),
+            developer_instructions: Some("exercise approvals in agent settings".to_string()),
         },
     }
 }
@@ -47,7 +45,7 @@ async fn submit_user_turn(
     prompt: &str,
     approval_policy: AskForApproval,
     permission_profile: PermissionProfile,
-    collaboration_mode: Option<CollaborationMode>,
+    agent_settings: Option<AgentSettings>,
 ) -> Result<()> {
     let session_model = test.session_configured.model.clone();
     let (sandbox_policy, permission_profile) =
@@ -66,9 +64,8 @@ async fn submit_user_turn(
                 approval_policy: Some(approval_policy),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: collaboration_mode.or({
-                    Some(codex_protocol::config_types::CollaborationMode {
-                        mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: agent_settings.or({
+                    Some(codex_protocol::config_types::AgentSettings {
                         settings: codex_protocol::config_types::Settings {
                             model: session_model,
                             reasoning_effort: None,
@@ -184,7 +181,7 @@ async fn granular_complex_forced_rm_denial_explains_why_the_command_was_rejected
             request_permissions: true,
         }),
         PermissionProfile::read_only(),
-        /*collaboration_mode*/ None,
+        /*agent_settings*/ None,
     )
     .await?;
 
@@ -247,7 +244,7 @@ async fn granular_complex_forced_rm_requests_approval_when_allowed() -> Result<(
             request_permissions: true,
         }),
         PermissionProfile::read_only(),
-        /*collaboration_mode*/ None,
+        /*agent_settings*/ None,
     )
     .await?;
 
@@ -413,8 +410,7 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_model,
                         reasoning_effort: None,
@@ -527,12 +523,12 @@ prefix_rules = [
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
+async fn shell_command_empty_script_with_agent_settings_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_codex().with_model("gpt-5.2").with_config(|config| {
         config
             .features
-            .enable(Feature::CollaborationModes)
+            .enable(Feature::AgentSettingss)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -560,13 +556,13 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
     )
     .await;
 
-    let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
+    let agent_settings = agent_settings_for_model(test.session_configured.model.clone());
     submit_user_turn(
         &test,
         "run an empty shell command",
         AskForApproval::OnRequest,
         PermissionProfile::Disabled,
-        Some(collaboration_mode),
+        Some(agent_settings),
     )
     .await?;
 
@@ -582,7 +578,7 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
+async fn unified_exec_empty_script_with_agent_settings_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_codex().with_model("gpt-5.2").with_config(|config| {
         config
@@ -591,7 +587,7 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
             .expect("test config should allow feature update");
         config
             .features
-            .enable(Feature::CollaborationModes)
+            .enable(Feature::AgentSettingss)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -619,13 +615,13 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
     )
     .await;
 
-    let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
+    let agent_settings = agent_settings_for_model(test.session_configured.model.clone());
     submit_user_turn(
         &test,
         "run empty unified exec command",
         AskForApproval::OnRequest,
         PermissionProfile::Disabled,
-        Some(collaboration_mode),
+        Some(agent_settings),
     )
     .await?;
 
@@ -641,12 +637,12 @@ async fn unified_exec_empty_script_with_collaboration_mode_does_not_panic() -> R
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
+async fn shell_command_whitespace_script_with_agent_settings_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_codex().with_model("gpt-5.2").with_config(|config| {
         config
             .features
-            .enable(Feature::CollaborationModes)
+            .enable(Feature::AgentSettingss)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -674,13 +670,13 @@ async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic(
     )
     .await;
 
-    let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
+    let agent_settings = agent_settings_for_model(test.session_configured.model.clone());
     submit_user_turn(
         &test,
         "run whitespace shell command",
         AskForApproval::OnRequest,
         PermissionProfile::Disabled,
-        Some(collaboration_mode),
+        Some(agent_settings),
     )
     .await?;
 
@@ -696,7 +692,7 @@ async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
+async fn unified_exec_whitespace_script_with_agent_settings_does_not_panic() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_codex().with_model("gpt-5.2").with_config(|config| {
         config
@@ -705,7 +701,7 @@ async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic()
             .expect("test config should allow feature update");
         config
             .features
-            .enable(Feature::CollaborationModes)
+            .enable(Feature::AgentSettingss)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -733,13 +729,13 @@ async fn unified_exec_whitespace_script_with_collaboration_mode_does_not_panic()
     )
     .await;
 
-    let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
+    let agent_settings = agent_settings_for_model(test.session_configured.model.clone());
     submit_user_turn(
         &test,
         "run whitespace unified exec command",
         AskForApproval::OnRequest,
         PermissionProfile::Disabled,
-        Some(collaboration_mode),
+        Some(agent_settings),
     )
     .await?;
 

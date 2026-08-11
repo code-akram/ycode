@@ -17,7 +17,7 @@ use crate::TS;
 use codex_experimental_api_macros::ExperimentalApi;
 pub use codex_protocol::capabilities::CapabilityRootLocation;
 pub use codex_protocol::capabilities::SelectedCapabilityRoot;
-use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
@@ -212,13 +212,9 @@ pub struct ThreadSettingsUpdateParams {
     /// Override the reasoning summary for subsequent turns.
     #[ts(optional = nullable)]
     pub summary: Option<ReasoningSummary>,
-    /// EXPERIMENTAL - Set a pre-set collaboration mode for subsequent turns.
-    ///
-    /// For `collaboration_mode.settings.developer_instructions`, `null` means
-    /// "use the built-in instructions for the selected mode".
-    #[experimental("thread/settings/update.collaborationMode")]
+    /// Set the model, reasoning effort, and developer instructions as one value.
     #[ts(optional = nullable)]
-    pub collaboration_mode: Option<CollaborationMode>,
+    pub agent_settings: Option<AgentSettings>,
     /// @deprecated Ignored. Use `effort: "ultra"` for proactive multi-agent behavior.
     #[experimental("thread/settings/update.multiAgentMode")]
     #[ts(optional = nullable)]
@@ -243,7 +239,7 @@ pub struct ThreadSettings {
     pub service_tier: Option<String>,
     pub effort: Option<ReasoningEffort>,
     pub summary: Option<ReasoningSummary>,
-    pub collaboration_mode: CollaborationMode,
+    pub agent_settings: AgentSettings,
     /// @deprecated Always `explicitRequestOnly`. Use `effort` for Ultra behavior.
     #[experimental("thread/settings.multiAgentMode")]
     #[serde(default)]

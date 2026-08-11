@@ -41,7 +41,6 @@ pub(crate) struct CommandPopup {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CommandPopupFlags {
-    pub(crate) collaboration_modes_enabled: bool,
     pub(crate) plugins_command_enabled: bool,
     pub(crate) token_activity_command_enabled: bool,
     pub(crate) service_tier_commands_enabled: bool,
@@ -53,7 +52,6 @@ pub(crate) struct CommandPopupFlags {
 impl From<CommandPopupFlags> for BuiltinCommandFlags {
     fn from(value: CommandPopupFlags) -> Self {
         Self {
-            collaboration_modes_enabled: value.collaboration_modes_enabled,
             plugins_command_enabled: value.plugins_command_enabled,
             token_activity_command_enabled: value.token_activity_command_enabled,
             service_tier_commands_enabled: value.service_tier_commands_enabled,
@@ -500,55 +498,9 @@ mod tests {
         assert!(items.contains(&CommandItem::Builtin(SlashCommand::Btw)));
     }
 
-    #[test]
-    fn plan_command_hidden_when_collaboration_modes_disabled() {
-        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
-        popup.on_composer_text_change("/".to_string());
-
-        let cmds: Vec<String> = popup
-            .filtered_items()
-            .into_iter()
-            .map(|item| match item {
-                CommandItem::Builtin(cmd) => cmd.command().to_string(),
-                CommandItem::ServiceTier(command) => command.name,
-            })
-            .collect();
-        assert!(
-            !cmds.iter().any(|cmd| cmd == "plan"),
-            "expected '/plan' to be hidden when collaboration modes are disabled, got {cmds:?}"
-        );
-    }
-
-    #[test]
-    fn plan_command_visible_when_collaboration_modes_enabled() {
-        let mut popup = CommandPopup::new(
-            CommandPopupFlags {
-                collaboration_modes_enabled: true,
-                plugins_command_enabled: false,
-                token_activity_command_enabled: false,
-                service_tier_commands_enabled: false,
-                goal_command_enabled: false,
-                personality_command_enabled: true,
-                side_conversation_active: false,
-            },
-            Vec::new(),
-        );
-        popup.on_composer_text_change("/plan".to_string());
-
-        match popup.selected_item() {
-            Some(CommandItem::Builtin(cmd)) => assert_eq!(cmd.command(), "plan"),
-            Some(CommandItem::ServiceTier(command)) => {
-                panic!("expected plan command, got service tier {command:?}")
-            }
-            other => panic!("expected plan to be selected for exact match, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn personality_command_hidden_when_disabled() {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
-                collaboration_modes_enabled: true,
                 plugins_command_enabled: false,
                 token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,
@@ -578,7 +530,6 @@ mod tests {
     fn personality_command_visible_when_enabled() {
         let mut popup = CommandPopup::new(
             CommandPopupFlags {
-                collaboration_modes_enabled: true,
                 plugins_command_enabled: false,
                 token_activity_command_enabled: false,
                 service_tier_commands_enabled: false,

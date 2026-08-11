@@ -512,7 +512,6 @@ pub struct ModelMessages {
     pub instructions_template: Option<String>,
     pub instructions_variables: Option<ModelInstructionsVariables>,
     pub approvals: Option<ApprovalMessages>,
-    pub collaboration_modes: Option<CollaborationModeMessages>,
     pub auto_review: Option<AutoReviewMessages>,
     pub permissions: Option<PermissionMessages>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -535,12 +534,6 @@ pub struct ApprovalMessages {
     pub on_request_auto_review: Option<String>,
     pub never: Option<String>,
     pub unless_trusted: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema)]
-pub struct CollaborationModeMessages {
-    pub default: Option<String>,
-    pub plan: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema)]
@@ -694,7 +687,6 @@ where
                     instructions_template: None,
                     instructions_variables: None,
                     approvals: None,
-                    collaboration_modes: None,
                     auto_review: None,
                     permissions: None,
                     token_budget: None,
@@ -880,7 +872,6 @@ mod tests {
                 instructions_template: None,
                 instructions_variables: None,
                 approvals: None,
-                collaboration_modes: None,
                 auto_review: None,
                 permissions: None,
                 token_budget: None,
@@ -977,36 +968,6 @@ mod tests {
     }
 
     #[test]
-    fn collaboration_mode_messages_preserve_missing_and_empty_values() {
-        let messages: ModelMessages = from_str(
-            r#"{
-                "instructions_template": null,
-                "instructions_variables": null,
-                "collaboration_modes": {
-                    "default": ""
-                }
-            }"#,
-        )
-        .expect("collaboration mode messages should deserialize");
-
-        assert_eq!(
-            messages,
-            ModelMessages {
-                instructions_template: None,
-                instructions_variables: None,
-                approvals: None,
-                collaboration_modes: Some(CollaborationModeMessages {
-                    default: Some(String::new()),
-                    plan: None,
-                }),
-                auto_review: None,
-                permissions: None,
-                token_budget: None,
-            }
-        );
-    }
-
-    #[test]
     fn reasoning_effort_accepts_known_and_custom_values() {
         let custom = ReasoningEffort::Custom("future".to_string());
         let deserialized = from_str::<ReasoningEffort>(r#""future""#)
@@ -1078,7 +1039,6 @@ mod tests {
             instructions_template: Some("Hello {{ personality }}".to_string()),
             instructions_variables: Some(personality_variables()),
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,
@@ -1099,7 +1059,6 @@ mod tests {
                 personality_pragmatic: None,
             }),
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,
@@ -1121,7 +1080,6 @@ mod tests {
                 personality_pragmatic: None,
             }),
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,
@@ -1154,7 +1112,6 @@ mod tests {
                 personality_pragmatic: None,
             }),
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,
@@ -1193,7 +1150,6 @@ mod tests {
                 instructions_template: Some("legacy instructions".to_string()),
                 instructions_variables: None,
                 approvals: None,
-                collaboration_modes: None,
                 auto_review: None,
                 permissions: None,
                 token_budget: None,
@@ -1243,7 +1199,6 @@ mod tests {
                     personality_pragmatic: Some("pragmatic".to_string()),
                 }),
                 approvals: None,
-                collaboration_modes: None,
                 auto_review: None,
                 permissions: None,
                 token_budget: None,
@@ -1268,10 +1223,6 @@ mod tests {
                 on_request_auto_review: None,
                 never: Some("never approval".to_string()),
                 unless_trusted: Some("unless-trusted approval".to_string()),
-            }),
-            collaboration_modes: Some(CollaborationModeMessages {
-                default: Some("default collaboration".to_string()),
-                plan: Some("plan collaboration".to_string()),
             }),
             auto_review: Some(AutoReviewMessages {
                 policy: Some("policy".to_string()),
@@ -1300,7 +1251,6 @@ mod tests {
             instructions_template: Some("canonical instructions".to_string()),
             instructions_variables: None,
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,

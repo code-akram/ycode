@@ -220,8 +220,7 @@ mod tests {
     use codex_cli_protocol::ApprovalsReviewer;
     use codex_cli_protocol::AskForApproval;
     use codex_cli_protocol::SandboxPolicy;
-    use codex_protocol::config_types::CollaborationMode;
-    use codex_protocol::config_types::ModeKind;
+    use codex_protocol::config_types::AgentSettings;
     use codex_protocol::config_types::Settings;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
@@ -256,8 +255,7 @@ mod tests {
             service_tier: None,
             effort: None,
             summary: None,
-            collaboration_mode: CollaborationMode {
-                mode: ModeKind::Default,
+            agent_settings: AgentSettings {
                 settings: Settings {
                     model: model.to_string(),
                     reasoning_effort: None,

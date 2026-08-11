@@ -8,9 +8,6 @@ use codex_extension_items::ExtensionItem;
 use codex_extension_items::sleep::SleepItem;
 use codex_features::Feature;
 use codex_protocol::AgentPath;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
-use codex_protocol::config_types::Settings;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
@@ -19,7 +16,6 @@ use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
-use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
@@ -48,12 +44,7 @@ use tokio::sync::oneshot;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn idle_user_input_reaches_the_first_model_request() -> anyhow::Result<()> {
-    assert_idle_user_input_reaches_the_first_model_request(ModeKind::Default).await
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn idle_user_input_reaches_the_first_model_request_in_plan_mode() -> anyhow::Result<()> {
-    assert_idle_user_input_reaches_the_first_model_request(ModeKind::Plan).await
+    assert_idle_user_input_reaches_the_first_model_request().await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -105,9 +96,7 @@ async fn idle_response_items_include_pending_mailbox_in_first_request() -> anyho
     Ok(())
 }
 
-async fn assert_idle_user_input_reaches_the_first_model_request(
-    mode: ModeKind,
-) -> anyhow::Result<()> {
+async fn assert_idle_user_input_reaches_the_first_model_request() -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
     let response = responses::mount_sse_once(
         &server,
@@ -118,24 +107,6 @@ async fn assert_idle_user_input_reaches_the_first_model_request(
     )
     .await;
     let test = test_codex().build_with_auto_env(&server).await?;
-
-    if mode == ModeKind::Plan {
-        core_test_support::submit_thread_settings(
-            test.codex.as_ref(),
-            ThreadSettingsOverrides {
-                collaboration_mode: Some(CollaborationMode {
-                    mode,
-                    settings: Settings {
-                        model: test.session_configured.model.clone(),
-                        reasoning_effort: None,
-                        developer_instructions: None,
-                    },
-                }),
-                ..Default::default()
-            },
-        )
-        .await?;
-    }
 
     let expected_input = vec![UserInput::Text {
         text: "queued user input reaches the first request".to_string(),
@@ -299,8 +270,7 @@ async fn submit_danger_full_access_user_turn(test: &TestCodex, text: &str) {
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: test.session_configured.model.clone(),
                         reasoning_effort: None,

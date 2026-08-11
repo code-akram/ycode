@@ -3,7 +3,6 @@ use std::sync::Arc;
 use super::session::Session;
 use super::step_context::StepContext;
 use crate::context::world_state::AgentsMdState;
-use crate::context::world_state::CollaborationModeState;
 use crate::context::world_state::ContextWindowGuidanceState;
 use crate::context::world_state::EnvironmentsInstructionsState;
 use crate::context::world_state::EnvironmentsState;
@@ -108,16 +107,6 @@ impl Session {
                 .and_then(|instructions| instructions.end.as_deref()),
         ));
         world_state.add_section(AgentsMdState::new(step_context.loaded_agents_md.as_deref()));
-        if turn_context.config.include_collaboration_mode_instructions {
-            world_state.add_section(CollaborationModeState::from_collaboration_mode(
-                &turn_context.collaboration_mode(),
-                turn_context
-                    .model_info
-                    .model_messages
-                    .as_ref()
-                    .and_then(|messages| messages.collaboration_modes.as_ref()),
-            ));
-        }
         if turn_context.config.include_environment_context {
             let current_date = self
                 .services

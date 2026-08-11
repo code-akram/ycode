@@ -39,7 +39,6 @@ pub struct ConfigProfile {
     #[schemars(skip)]
     pub sandbox_mode: Option<SandboxMode>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
-    pub plan_mode_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,
     pub model_verbosity: Option<Verbosity>,
     /// Optional path to a JSON model catalog (applied on startup only).
@@ -59,7 +58,6 @@ pub struct ConfigProfile {
     #[schemars(skip)]
     pub include_permissions_instructions: Option<bool>,
     pub include_apps_instructions: Option<bool>,
-    pub include_collaboration_mode_instructions: Option<bool>,
     pub include_environment_context: Option<bool>,
     pub experimental_use_unified_exec_tool: Option<bool>,
     pub tools: Option<ToolsToml>,

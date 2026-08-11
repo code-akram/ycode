@@ -30,7 +30,6 @@ impl ChatWidget {
                     return;
                 }
                 let should_submit_now = self.is_session_configured()
-                    && !self.is_plan_streaming_in_tui()
                     && !self.input_queue.suppress_queue_autosend
                     && (!self.input_queue.user_turn_pending_start
                         || self.turn_lifecycle.agent_turn_running);
@@ -78,7 +77,6 @@ impl ChatWidget {
         if had_modal_or_popup && self.bottom_pane.no_modal_or_popup_active() {
             self.maybe_send_next_queued_input();
         }
-        self.refresh_plan_mode_nudge();
     }
 
     pub(super) fn defer_input_until_settings_applied(&mut self) {
@@ -181,7 +179,6 @@ impl ChatWidget {
     pub(super) fn is_user_turn_pending_or_running(&self) -> bool {
         self.input_queue.user_turn_pending_start
             || self.turn_lifecycle.agent_turn_running
-            || self.review.is_review_mode
             || self.bottom_pane.is_task_running()
     }
 
@@ -202,44 +199,6 @@ impl ChatWidget {
             preview.pending_steers,
             preview.rejected_steers,
         );
-    }
-
-    pub(crate) fn submit_user_message_with_mode(
-        &mut self,
-        text: String,
-        mut collaboration_mode: CollaborationModeMask,
-    ) {
-        if self.blocks_direct_input {
-            self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
-            return;
-        }
-        if collaboration_mode.mode == Some(ModeKind::Plan)
-            && let Some(effort) = self.config.plan_mode_reasoning_effort.clone()
-        {
-            collaboration_mode.reasoning_effort = Some(Some(effort));
-        }
-        if self.turn_lifecycle.agent_turn_running
-            && self.active_collaboration_mask.as_ref() != Some(&collaboration_mode)
-        {
-            self.add_error_message(
-                "Cannot switch collaboration mode while a turn is running.".to_string(),
-            );
-            return;
-        }
-        self.set_collaboration_mask_from_user_action(collaboration_mode);
-        let should_queue = self.is_plan_streaming_in_tui();
-        let user_message = UserMessage {
-            text,
-            local_images: Vec::new(),
-            remote_image_urls: Vec::new(),
-            text_elements: Vec::new(),
-            mention_bindings: Vec::new(),
-        };
-        if should_queue {
-            self.queue_user_message(user_message);
-        } else {
-            self.submit_user_message(user_message);
-        }
     }
 
     #[cfg(test)]

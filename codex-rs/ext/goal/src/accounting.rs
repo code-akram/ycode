@@ -1,4 +1,3 @@
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::protocol::TokenUsage;
 use codex_state::ThreadGoalStatus;
 use std::collections::HashMap;
@@ -67,7 +66,6 @@ impl GoalAccountingState {
     pub(crate) fn start_turn(
         &self,
         turn_id: impl Into<String>,
-        collaboration_mode: ModeKind,
         token_usage_at_turn_start: &TokenUsage,
     ) {
         let turn_id = turn_id.into();
@@ -75,10 +73,7 @@ impl GoalAccountingState {
         inner.current_turn_id = Some(turn_id.clone());
         inner.turns.insert(
             turn_id,
-            GoalTurnAccounting::new(
-                token_usage_at_turn_start.clone(),
-                !matches!(collaboration_mode, ModeKind::Plan),
-            ),
+            GoalTurnAccounting::new(token_usage_at_turn_start.clone(), true),
         );
     }
 

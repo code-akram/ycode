@@ -551,55 +551,6 @@ pub(super) fn handle_agent_reasoning_final(chat: &mut ChatWidget) {
     );
 }
 
-pub(super) fn handle_entered_review_mode(chat: &mut ChatWidget, review: impl Into<String>) {
-    chat.handle_server_notification(
-        ServerNotification::ItemStarted(ItemStartedNotification {
-            thread_id: thread_id(chat),
-            turn_id: chat
-                .turn_lifecycle
-                .last_turn_id
-                .clone()
-                .unwrap_or_else(|| "turn-1".to_string()),
-            started_at_ms: 0,
-            item: CliRuntimeThreadItem::EnteredReviewMode {
-                id: "review-start".to_string(),
-                review: review.into(),
-            },
-        }),
-        /*replay_kind*/ None,
-    );
-}
-
-pub(super) fn replay_entered_review_mode(chat: &mut ChatWidget, review: impl Into<String>) {
-    chat.replay_thread_item(
-        CliRuntimeThreadItem::EnteredReviewMode {
-            id: "review-start".to_string(),
-            review: review.into(),
-        },
-        "turn-1".to_string(),
-        ReplayKind::ThreadSnapshot,
-    );
-}
-
-pub(super) fn handle_exited_review_mode(chat: &mut ChatWidget) {
-    chat.handle_server_notification(
-        ServerNotification::ItemCompleted(ItemCompletedNotification {
-            thread_id: thread_id(chat),
-            turn_id: chat
-                .turn_lifecycle
-                .last_turn_id
-                .clone()
-                .unwrap_or_else(|| "turn-1".to_string()),
-            completed_at_ms: 0,
-            item: CliRuntimeThreadItem::ExitedReviewMode {
-                id: "review-end".to_string(),
-                review: String::new(),
-            },
-        }),
-        /*replay_kind*/ None,
-    );
-}
-
 pub(super) fn handle_exec_approval_request(
     chat: &mut ChatWidget,
     id: impl Into<String>,

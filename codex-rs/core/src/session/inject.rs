@@ -7,7 +7,6 @@ use crate::state::ActiveTurn;
 use crate::state::TurnState;
 use crate::tasks::MailboxParentProvenance;
 use crate::tasks::RegularTask;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::models::ResponseItem;
 use std::sync::Arc;
 
@@ -41,9 +40,7 @@ impl Session {
     ///
     /// This is the shared gate for extension-initiated idle work. It refuses to
     /// start a turn when user/client-triggered work is queued or any task is
-    /// still active. Work without user input is also rejected in Plan mode.
-    /// Active Review tasks are covered by the active-task check because Review
-    /// turns are not steerable.
+    /// still active.
     pub(crate) async fn try_start_turn_if_idle(
         self: &Arc<Self>,
         input: Vec<TurnInput>,
@@ -60,13 +57,6 @@ impl Session {
                 input,
             ));
         }
-        if !has_user_input && self.collaboration_mode().await.mode == ModeKind::Plan {
-            return Err(TryStartTurnIfIdleError::new(
-                TryStartTurnIfIdleRejectionReason::PlanMode,
-                input,
-            ));
-        }
-
         let turn_state = {
             let mut active_turn = self.active_turn.lock().await;
             if active_turn.is_some() {
@@ -91,14 +81,6 @@ impl Session {
         let turn_context = self
             .new_default_turn_with_sub_id(uuid::Uuid::new_v4().to_string())
             .await;
-        if !has_user_input && turn_context.mode == ModeKind::Plan {
-            self.clear_reserved_idle_turn(&turn_state).await;
-            self.maybe_start_turn_for_pending_work().await;
-            return Err(TryStartTurnIfIdleError::new(
-                TryStartTurnIfIdleRejectionReason::PlanMode,
-                input,
-            ));
-        }
         self.maybe_emit_model_warnings_for_turn(turn_context.as_ref())
             .await;
         if self.input_queue.has_trigger_turn_mailbox_items().await {

@@ -23,8 +23,7 @@ use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ResponseItemId;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::ModelProviderAuthInfo;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::Settings;
@@ -2039,7 +2038,7 @@ async fn includes_default_reasoning_effort_in_request_when_defined_by_model_info
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn user_turn_collaboration_mode_overrides_model_and_effort() -> anyhow::Result<()> {
+async fn user_turn_agent_settings_overrides_model_and_effort() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
     let server = MockServer::start().await;
 
@@ -2050,8 +2049,7 @@ async fn user_turn_collaboration_mode_overrides_model_and_effort() -> anyhow::Re
     .await;
     let TestCodex { codex, config, .. } = test_codex().with_model("gpt-5.4").build(&server).await?;
 
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model: "gpt-5.4".to_string(),
             reasoning_effort: Some(ReasoningEffort::High),
@@ -2077,7 +2075,7 @@ async fn user_turn_collaboration_mode_overrides_model_and_effort() -> anyhow::Re
                         .model_reasoning_summary
                         .unwrap_or(ReasoningSummary::Auto),
                 ),
-                collaboration_mode: Some(collaboration_mode),
+                agent_settings: Some(agent_settings),
                 ..Default::default()
             },
         })
@@ -2356,8 +2354,7 @@ async fn user_turn_explicit_reasoning_summary_overrides_model_catalog_default() 
                 approval_policy: Some(config.permissions.approval_policy.value()),
                 sandbox_policy: Some(config.legacy_sandbox_policy()),
                 summary: Some(ReasoningSummary::Concise),
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: session_configured.model,
                         reasoning_effort: None,

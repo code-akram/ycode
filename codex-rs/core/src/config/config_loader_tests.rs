@@ -733,7 +733,7 @@ unknown_key = true"#;
 fn schema_error_points_to_feature_value() {
     let tmp = tempdir().expect("tempdir");
     let contents = r#"[features]
-collaboration_modes = "true""#;
+memories = "true""#;
     let config_path = tmp.path().join(CONFIG_TOML_FILE);
     std::fs::write(&config_path, contents).expect("write config");
 

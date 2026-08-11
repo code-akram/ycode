@@ -60,24 +60,24 @@ fn normalize_legacy_turn_context(value: &mut Value) {
     let Some(payload) = payload_object_mut(value) else {
         return;
     };
-    let Some(collaboration_mode) = payload
-        .get_mut("collaboration_mode")
+    let Some(agent_settings) = payload
+        .get_mut("agent_settings")
         .and_then(Value::as_object_mut)
     else {
         return;
     };
-    if collaboration_mode.contains_key("settings") {
+    if agent_settings.contains_key("settings") {
         return;
     }
 
     let mut settings = Map::new();
     for key in ["model", "reasoning_effort", "developer_instructions"] {
-        if let Some(value) = collaboration_mode.get(key) {
+        if let Some(value) = agent_settings.get(key) {
             settings.insert(key.to_string(), value.clone());
         }
     }
     if !settings.is_empty() {
-        collaboration_mode.insert("settings".to_string(), Value::Object(settings));
+        agent_settings.insert("settings".to_string(), Value::Object(settings));
     }
 }
 

@@ -201,7 +201,6 @@ impl ChatWidget {
         let total_usage = token_info
             .map(|ti| &ti.total_token_usage)
             .unwrap_or(&default_usage);
-        let collaboration_mode = self.collaboration_mode_label();
         let model = self.current_model().to_string();
         let model_default_reasoning_effort =
             self.model_catalog
@@ -239,7 +238,6 @@ impl ChatWidget {
             self.plan_type,
             Local::now(),
             self.model_display_name(),
-            collaboration_mode,
             reasoning_effort_override,
             agents_summary,
             refreshing_rate_limits,

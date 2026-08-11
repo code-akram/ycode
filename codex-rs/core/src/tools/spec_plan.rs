@@ -77,7 +77,6 @@ use codex_tools::UnifiedExecShellMode;
 use codex_tools::can_request_original_image_detail;
 use codex_tools::collect_code_mode_exec_prompt_tool_definitions;
 use codex_tools::default_namespace_description;
-use codex_tools::request_user_input_available_modes;
 use codex_tools::shell_command_backend_for_features;
 use codex_tools::shell_type_for_model_and_features;
 use futures::future::BoxFuture;
@@ -798,12 +797,7 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
     }
 
     if turn_context.config.experimental_request_user_input_enabled {
-        registry.add_with_exposure(
-            RequestUserInputHandler {
-                available_modes: request_user_input_available_modes(features),
-            },
-            ToolExposure::DirectModelOnly,
-        );
+        registry.add_with_exposure(RequestUserInputHandler, ToolExposure::DirectModelOnly);
     }
 
     if features.enabled(Feature::TokenBudget) {

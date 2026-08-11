@@ -20,9 +20,8 @@ use crate::ResponseItemId;
 use crate::SessionId;
 use crate::ThreadId;
 use crate::capabilities::SelectedCapabilityRoot;
+use crate::config_types::AgentSettings;
 use crate::config_types::ApprovalsReviewer;
-use crate::config_types::CollaborationMode;
-use crate::config_types::ModeKind;
 use crate::config_types::MultiAgentMode;
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary as ReasoningSummaryConfig;
@@ -109,8 +108,8 @@ pub const PLUGINS_INSTRUCTIONS_OPEN_TAG: &str = "<plugins_instructions>";
 pub const PLUGINS_INSTRUCTIONS_CLOSE_TAG: &str = "</plugins_instructions>";
 pub const TOOLS_OPEN_TAG: &str = "<tools>";
 pub const TOOLS_CLOSE_TAG: &str = "</tools>";
-pub const COLLABORATION_MODE_OPEN_TAG: &str = "<collaboration_mode>";
-pub const COLLABORATION_MODE_CLOSE_TAG: &str = "</collaboration_mode>";
+pub const COLLABORATION_MODE_OPEN_TAG: &str = "<agent_settings>";
+pub const COLLABORATION_MODE_CLOSE_TAG: &str = "</agent_settings>";
 pub const MULTI_AGENT_MODE_OPEN_TAG: &str = "<multi_agent_mode>";
 pub const MULTI_AGENT_MODE_CLOSE_TAG: &str = "</multi_agent_mode>";
 pub const REALTIME_CONVERSATION_OPEN_TAG: &str = "<realtime_conversation>";
@@ -498,9 +497,9 @@ pub struct ThreadSettingsOverrides {
     /// preference, or `None` to leave the existing value unchanged.
     pub service_tier: Option<Option<String>>,
 
-    /// EXPERIMENTAL - set a pre-set collaboration mode.
+    /// EXPERIMENTAL - set a pre-set agent settings.
     /// Takes precedence over model, effort, and developer instructions if set.
-    pub collaboration_mode: Option<CollaborationMode>,
+    pub agent_settings: Option<AgentSettings>,
 
     /// Updated personality preference.
     pub personality: Option<Personality>,
@@ -645,9 +644,6 @@ pub enum Op {
     /// This does not attempt to revert local filesystem changes. Clients are
     /// responsible for undoing any edits on disk.
     ThreadRollback { num_turns: u32 },
-
-    /// Request a code review from the agent.
-    Review { review_request: ReviewRequest },
 
     /// Record that the user approved one retry of a concrete Guardian-denied action.
     ApproveGuardianDeniedAction { event: GuardianAssessmentEvent },
@@ -865,7 +861,6 @@ impl Op {
             Self::Compact => "compact",
             Self::SetThreadMemoryMode { .. } => "set_thread_memory_mode",
             Self::ThreadRollback { .. } => "thread_rollback",
-            Self::Review { .. } => "review",
             Self::ApproveGuardianDeniedAction { .. } => "approve_guardian_denied_action",
             Self::Shutdown => "shutdown",
             Self::RunUserShellCommand { .. } => "run_user_shell_command",
@@ -1405,10 +1400,10 @@ pub enum EventMsg {
     /// Notification that the agent is shutting down.
     ShutdownComplete,
 
-    /// Entered review mode.
+    /// Legacy decode-only event retained for persisted conversation history.
     EnteredReviewMode(EnteredReviewModeEvent),
 
-    /// Exited review mode with an optional final result to apply.
+    /// Legacy decode-only event retained for persisted conversation history.
     ExitedReviewMode(ExitedReviewModeEvent),
 
     RawResponseItem(RawResponseItemEvent),
@@ -1420,7 +1415,6 @@ pub enum EventMsg {
     HookCompleted(HookCompletedEvent),
 
     AgentMessageContentDelta(AgentMessageContentDeltaEvent),
-    PlanDelta(PlanDeltaEvent),
     ReasoningContentDelta(ReasoningContentDeltaEvent),
     ReasoningRawContentDelta(ReasoningRawContentDeltaEvent),
 
@@ -1711,7 +1705,6 @@ pub enum AgentStatus {
 #[serde(rename_all = "snake_case")]
 #[ts(rename_all = "snake_case")]
 pub enum NonSteerableTurnKind {
-    Review,
     Compact,
 }
 
@@ -1819,14 +1812,6 @@ const fn default_item_completed_at_ms() -> i64 {
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct AgentMessageContentDeltaEvent {
-    pub thread_id: String,
-    pub turn_id: String,
-    pub item_id: String,
-    pub delta: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
-pub struct PlanDeltaEvent {
     pub thread_id: String,
     pub turn_id: String,
     pub item_id: String,
@@ -1985,8 +1970,6 @@ pub struct TurnStartedEvent {
     pub started_at: Option<i64>,
     // TODO(aibrahim): make this not optional
     pub model_context_window: Option<i64>,
-    #[serde(default)]
-    pub collaboration_mode_kind: ModeKind,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
@@ -2013,7 +1996,7 @@ pub struct ThreadSettingsSnapshot {
     pub reasoning_summary: Option<ReasoningSummaryConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub personality: Option<Personality>,
-    pub collaboration_mode: CollaborationMode,
+    pub agent_settings: AgentSettings,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq, JsonSchema, TS)]
@@ -2720,6 +2703,7 @@ pub enum InternalSessionSource {
 #[serde(rename_all = "snake_case")]
 #[ts(rename_all = "snake_case")]
 pub enum SubAgentSource {
+    /// Legacy decode-only source retained for persisted conversation metadata.
     Review,
     Compact,
     ThreadSpawn {
@@ -3188,7 +3172,7 @@ pub struct TurnContextItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub personality: Option<Personality>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub collaboration_mode: Option<CollaborationMode>,
+    pub agent_settings: Option<AgentSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_agent_version: Option<MultiAgentVersion>,
     /// Legacy effective model-visible mode retained to deserialize older rollouts.
@@ -3298,17 +3282,11 @@ pub struct GitInfo {
     pub repository_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewDelivery {
-    Inline,
-    Detached,
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(tag = "type")]
 pub enum ReviewTarget {
+    /// Legacy decode-only payload retained for persisted review-mode history.
     /// Review the working tree: staged, unstaged, and untracked files.
     UncommittedChanges,
 
@@ -3330,15 +3308,6 @@ pub enum ReviewTarget {
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     Custom { instructions: String },
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
-/// Review request sent to the review session.
-pub struct ReviewRequest {
-    pub target: ReviewTarget,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub user_facing_hint: Option<String>,
 }
 
 /// Structured review result produced by a child review session.
@@ -5332,17 +5301,6 @@ mod tests {
     }
 
     #[test]
-    fn active_turn_not_steerable_error_does_not_affect_turn_status() {
-        let event = ErrorEvent {
-            message: "cannot steer a review turn".into(),
-            codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
-                turn_kind: NonSteerableTurnKind::Review,
-            }),
-        };
-        assert!(!event.affects_turn_status());
-    }
-
-    #[test]
     fn generic_error_affects_turn_status() {
         let event = ErrorEvent {
             message: "generic".into(),
@@ -5707,7 +5665,7 @@ mod tests {
             model: "gpt-5".to_string(),
             comp_hash: None,
             personality: None,
-            collaboration_mode: None,
+            agent_settings: None,
             multi_agent_version: None,
             multi_agent_mode: None,
             realtime_active: None,

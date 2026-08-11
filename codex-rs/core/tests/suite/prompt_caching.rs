@@ -6,8 +6,7 @@ use std::path::Path;
 use codex_core::shell::default_user_shell;
 use codex_features::Feature;
 use codex_prompts::APPLY_PATCH_TOOL_INSTRUCTIONS;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::WebSearchMode;
@@ -149,7 +148,7 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
                 .expect("test web_search_mode should satisfy constraints");
             config
                 .features
-                .enable(Feature::CollaborationModes)
+                .enable(Feature::AgentSettingss)
                 .expect("test config should allow feature update");
         })
         .build(&server)
@@ -253,7 +252,7 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
         .with_config(|config| {
             config
                 .features
-                .enable(Feature::CollaborationModes)
+                .enable(Feature::AgentSettingss)
                 .expect("test config should allow feature update");
             config.model = Some("gpt-5.2".to_string());
         })
@@ -333,7 +332,7 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
         .with_config(|config| {
             config
                 .features
-                .enable(Feature::CollaborationModes)
+                .enable(Feature::AgentSettingss)
                 .expect("test config should allow feature update");
         })
         .build(&server)
@@ -434,7 +433,7 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
         .with_config(|config| {
             config
                 .features
-                .enable(Feature::CollaborationModes)
+                .enable(Feature::AgentSettingss)
                 .expect("test config should allow feature update");
         })
         .build(&server)
@@ -558,8 +557,7 @@ async fn override_before_first_turn_emits_environment_context() -> anyhow::Resul
 
     let TestCodex { codex, .. } = test_codex().build(&server).await?;
 
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model: "gpt-5.4".to_string(),
             reasoning_effort: Some(ReasoningEffort::High),
@@ -573,7 +571,7 @@ async fn override_before_first_turn_emits_environment_context() -> anyhow::Resul
             approval_policy: Some(AskForApproval::Never),
             model: Some("gpt-5.4".to_string()),
             effort: Some(Some(ReasoningEffort::Low)),
-            collaboration_mode: Some(collaboration_mode),
+            agent_settings: Some(agent_settings),
             ..Default::default()
         },
     )
@@ -720,7 +718,7 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
         .with_config(|config| {
             config
                 .features
-                .enable(Feature::CollaborationModes)
+                .enable(Feature::AgentSettingss)
                 .expect("test config should allow feature update");
         })
         .build(&server)
@@ -861,7 +859,7 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
         .with_config(|config| {
             config
                 .features
-                .enable(Feature::CollaborationModes)
+                .enable(Feature::AgentSettingss)
                 .expect("test config should allow feature update");
         })
         .build(&server)
@@ -888,8 +886,7 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
                 approval_policy: Some(default_approval_policy),
                 sandbox_policy: Some(default_sandbox_policy.clone()),
                 summary: Some(default_summary.unwrap_or(ReasoningSummary::Auto)),
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: default_model.clone(),
                         reasoning_effort: default_effort.clone(),
@@ -916,8 +913,7 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
                 approval_policy: Some(default_approval_policy),
                 sandbox_policy: Some(default_sandbox_policy.clone()),
                 summary: Some(default_summary.unwrap_or(ReasoningSummary::Auto)),
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: default_model.clone(),
                         reasoning_effort: default_effort,
@@ -1000,7 +996,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
         .with_config(|config| {
             config
                 .features
-                .enable(Feature::CollaborationModes)
+                .enable(Feature::AgentSettingss)
                 .expect("test config should allow feature update");
         })
         .build(&server)
@@ -1027,8 +1023,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
                 approval_policy: Some(default_approval_policy),
                 sandbox_policy: Some(default_sandbox_policy.clone()),
                 summary: Some(default_summary.unwrap_or(ReasoningSummary::Auto)),
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: default_model,
                         reasoning_effort: default_effort,
@@ -1058,8 +1053,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
                 summary: Some(ReasoningSummary::Detailed),
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: "o3".to_string(),
                         reasoning_effort: Some(ReasoningEffort::High),

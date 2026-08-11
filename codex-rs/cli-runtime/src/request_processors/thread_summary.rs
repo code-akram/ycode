@@ -176,7 +176,7 @@ pub(crate) fn thread_settings_from_config_snapshot(
         service_tier: config_snapshot.service_tier.clone(),
         effort: config_snapshot.reasoning_effort.clone(),
         summary: config_snapshot.reasoning_summary,
-        collaboration_mode: config_snapshot.collaboration_mode.clone(),
+        agent_settings: config_snapshot.agent_settings.clone(),
         multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
         personality: config_snapshot.personality,
     }
@@ -193,7 +193,7 @@ pub(crate) fn thread_settings_from_core_snapshot(
         reasoning_effort,
         reasoning_summary,
         personality,
-        collaboration_mode,
+        agent_settings,
         ..
     } = snapshot;
     ThreadSettings {
@@ -203,7 +203,7 @@ pub(crate) fn thread_settings_from_core_snapshot(
         service_tier,
         effort: reasoning_effort,
         summary: reasoning_summary,
-        collaboration_mode,
+        agent_settings,
         multi_agent_mode: MultiAgentMode::ExplicitRequestOnly,
         personality,
     }

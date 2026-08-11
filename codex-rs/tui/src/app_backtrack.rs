@@ -495,8 +495,9 @@ impl App {
 
 /// Find the persisted turn that contains a selected transcript prompt.
 ///
-/// Replay hides review prompts and other display-empty inputs, so the selected ordinal must be
-/// resolved against the same visible projection before restoring its canonical mention bindings.
+/// Replay hides legacy review-mode prompts and other display-empty inputs, so the selected ordinal
+/// must be resolved against the same visible projection before restoring its canonical mention
+/// bindings.
 ///
 /// A turn can contain multiple user messages when it was steered. Only its initial prompt can be
 /// reopened independently because cli-runtime cannot fork in the middle of a turn.
@@ -506,7 +507,7 @@ pub(crate) fn backtrack_fork_before_turn_id(
     prompt: &mut UserMessage,
 ) -> Result<Option<String>> {
     let mut visible_user_messages_seen = 0_usize;
-    let mut review_mode = false;
+    let mut legacy_review_history = false;
     for (turn_index, turn) in turns.iter().enumerate() {
         let hidden_nested_review_turn = turn_index
             .checked_sub(/*rhs*/ 1)
@@ -516,11 +517,11 @@ pub(crate) fn backtrack_fork_before_turn_id(
         for item in &turn.items {
             let content = match item {
                 ThreadItem::EnteredReviewMode { .. } => {
-                    review_mode = true;
+                    legacy_review_history = true;
                     continue;
                 }
                 ThreadItem::ExitedReviewMode { .. } => {
-                    review_mode = false;
+                    legacy_review_history = false;
                     continue;
                 }
                 ThreadItem::UserMessage { content, .. } => content,
@@ -528,7 +529,7 @@ pub(crate) fn backtrack_fork_before_turn_id(
             };
             let is_steer = user_messages_in_turn > 0;
             user_messages_in_turn = user_messages_in_turn.saturating_add(/*rhs*/ 1);
-            if review_mode {
+            if legacy_review_history {
                 continue;
             }
 
@@ -573,7 +574,7 @@ pub(crate) fn backtrack_fork_before_turn_id(
     bail!("the selected prompt was not found in the persisted thread")
 }
 
-/// Returns whether a turn is the reconstructed inline-review child with duplicated prompt inputs.
+/// Returns whether a turn is a legacy inline-review child with duplicated prompt inputs.
 pub(crate) fn is_hidden_nested_review_turn(previous: &Turn, turn: &Turn) -> bool {
     if previous.status != TurnStatus::Completed
         || turn.status != TurnStatus::Interrupted
@@ -824,7 +825,7 @@ mod tests {
     }
 
     #[test]
-    fn backtrack_fork_before_turn_id_skips_hidden_review_prompts() {
+    fn backtrack_fork_before_turn_id_skips_legacy_review_prompts() {
         let mut review_turn = turn(
             "turn-review",
             TurnStatus::Completed,
@@ -859,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn backtrack_fork_before_turn_id_skips_hidden_nested_review_prompts() {
+    fn backtrack_fork_before_turn_id_skips_legacy_nested_review_prompts() {
         let review_hint = "current changes";
         let review_prompt =
             "Review the current code changes (staged, unstaged, and untracked files).";

@@ -2,13 +2,11 @@
 
 use super::App;
 use crate::app_command::AppCommand;
-use crate::app_event::AppEvent;
 use crate::runtime_session::CliRuntimeSession;
 use crate::session_state::ThreadSessionState;
 use codex_cli_protocol::ThreadSettings;
 use codex_cli_protocol::ThreadSettingsUpdateParams;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::ModeKind;
 
 impl App {
     pub(super) async fn sync_active_thread_model_setting(
@@ -32,7 +30,7 @@ impl App {
         let params = ThreadSettingsUpdateParams {
             thread_id: thread_id.to_string(),
             model: Some(model),
-            collaboration_mode: Some(self.chat_widget.effective_collaboration_mode()),
+            agent_settings: Some(self.chat_widget.effective_agent_settings()),
             ..ThreadSettingsUpdateParams::default()
         };
 
@@ -58,24 +56,9 @@ impl App {
         Some(ThreadSettingsUpdateParams {
             thread_id: thread_id.to_string(),
             effort,
-            collaboration_mode: Some(self.chat_widget.current_collaboration_mode().clone()),
+            agent_settings: Some(self.chat_widget.current_agent_settings().clone()),
             ..ThreadSettingsUpdateParams::default()
         })
-    }
-
-    pub(super) async fn sync_active_thread_plan_mode_reasoning_setting(
-        &mut self,
-        cli_runtime: &mut CliRuntimeSession,
-    ) {
-        let Some(thread_id) = self.active_thread_id else {
-            return;
-        };
-        let params = ThreadSettingsUpdateParams {
-            thread_id: thread_id.to_string(),
-            collaboration_mode: Some(self.chat_widget.effective_collaboration_mode()),
-            ..ThreadSettingsUpdateParams::default()
-        };
-        self.send_thread_settings_update(cli_runtime, params).await;
     }
 
     pub(super) async fn sync_active_thread_personality_setting(
@@ -106,7 +89,7 @@ impl App {
             effort,
             summary,
             service_tier,
-            collaboration_mode,
+            agent_settings,
             personality,
             ..
         } = op
@@ -121,7 +104,7 @@ impl App {
             effort: effort.clone().unwrap_or_default(),
             summary: *summary,
             service_tier: service_tier.clone(),
-            collaboration_mode: collaboration_mode.clone(),
+            agent_settings: agent_settings.clone(),
             personality: *personality,
             ..ThreadSettingsUpdateParams::default()
         };
@@ -168,21 +151,16 @@ impl App {
 }
 
 fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: &ThreadSettings) {
-    if settings.collaboration_mode.mode == ModeKind::Default {
-        session.model = settings.model.clone();
-        session.reasoning_effort = settings.effort.clone();
-    }
+    session.model = settings.model.clone();
+    session.reasoning_effort = settings.effort.clone();
     session.model_provider_id = settings.model_provider.clone();
     session.service_tier = settings.service_tier.clone();
     session.set_cwd_retargeting_implicit_runtime_workspace_root(settings.cwd.clone());
     session.personality = settings.personality;
-    let mut collaboration_mode = settings.collaboration_mode.clone();
-    collaboration_mode
-        .settings
-        .model
-        .clone_from(&settings.model);
-    collaboration_mode.settings.reasoning_effort = settings.effort.clone();
-    session.collaboration_mode = Some(Box::new(collaboration_mode));
+    let mut agent_settings = settings.agent_settings.clone();
+    agent_settings.settings.model.clone_from(&settings.model);
+    agent_settings.settings.reasoning_effort = settings.effort.clone();
+    session.agent_settings = Some(Box::new(agent_settings));
 }
 
 fn thread_settings_update_has_changes(params: &ThreadSettingsUpdateParams) -> bool {
@@ -191,6 +169,6 @@ fn thread_settings_update_has_changes(params: &ThreadSettingsUpdateParams) -> bo
         || params.service_tier.is_some()
         || params.effort.is_some()
         || params.summary.is_some()
-        || params.collaboration_mode.is_some()
+        || params.agent_settings.is_some()
         || params.personality.is_some()
 }

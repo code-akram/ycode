@@ -338,36 +338,10 @@ impl App {
     }
 
     pub(super) fn on_update_reasoning_effort(&mut self, effort: Option<ReasoningEffortConfig>) {
-        let clear_ephemeral_plan_effort = effort != Some(ReasoningEffortConfig::Ultra)
-            && self.chat_widget.config_ref().plan_mode_reasoning_effort
-                == Some(ReasoningEffortConfig::Ultra)
-            && self.config.plan_mode_reasoning_effort != Some(ReasoningEffortConfig::Ultra);
         // TODO(aibrahim): Remove this and don't use config as a state object.
-        // Instead, explicitly pass the stored collaboration mode's effort into new sessions.
+        // Instead, explicitly pass the stored agent settings's effort into new sessions.
         self.config.model_reasoning_effort = effort.clone();
         self.chat_widget.set_reasoning_effort(effort.clone());
-        if clear_ephemeral_plan_effort {
-            self.chat_widget.set_plan_mode_reasoning_effort(effort);
-        }
-    }
-
-    pub(super) fn on_update_plan_mode_reasoning_effort(
-        &mut self,
-        effort: Option<ReasoningEffortConfig>,
-    ) {
-        let clear_ephemeral_default_effort = effort != Some(ReasoningEffortConfig::Ultra)
-            && self
-                .chat_widget
-                .current_collaboration_mode()
-                .reasoning_effort()
-                == Some(ReasoningEffortConfig::Ultra)
-            && self.config.model_reasoning_effort != Some(ReasoningEffortConfig::Ultra);
-        self.config.plan_mode_reasoning_effort = effort.clone();
-        self.chat_widget
-            .set_plan_mode_reasoning_effort(effort.clone());
-        if clear_ephemeral_default_effort {
-            self.chat_widget.set_reasoning_effort(effort);
-        }
     }
 
     pub(super) fn on_apply_advanced_reasoning(
@@ -382,8 +356,6 @@ impl App {
         }
         self.chat_widget.set_model(model);
         self.chat_widget.set_reasoning_effort(Some(effort.clone()));
-        self.chat_widget
-            .set_plan_mode_reasoning_effort(Some(effort));
         default_effort
     }
 
@@ -568,7 +540,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[tokio::test]
-    async fn update_reasoning_effort_updates_collaboration_mode() {
+    async fn update_reasoning_effort_updates_agent_settings() {
         let mut app = make_test_app().await;
         app.chat_widget
             .set_reasoning_effort(Some(ReasoningEffortConfig::Medium));
@@ -657,102 +629,6 @@ mod tests {
                 new_thread_config.model_reasoning_effort,
             ),
             (Some("gpt-5.4"), Some(ReasoningEffortConfig::Low))
-        );
-    }
-
-    #[tokio::test]
-    async fn conversation_reasoning_updates_active_plan_without_changing_plan_default() {
-        let mut app = make_test_app().await;
-        app.config.model_reasoning_effort = Some(ReasoningEffortConfig::Low);
-        app.config.plan_mode_reasoning_effort = Some(ReasoningEffortConfig::High);
-        app.chat_widget
-            .set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-        app.chat_widget
-            .set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::High));
-        app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
-
-        let default_effort =
-            app.on_apply_advanced_reasoning("gpt-5.4", ReasoningEffortConfig::Ultra);
-
-        assert_eq!(default_effort, Some(ReasoningEffortConfig::Low));
-        assert_eq!(
-            app.chat_widget.current_reasoning_effort(),
-            Some(ReasoningEffortConfig::Ultra)
-        );
-        app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
-        assert_eq!(
-            app.chat_widget.current_reasoning_effort(),
-            Some(ReasoningEffortConfig::Ultra)
-        );
-        app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
-        assert_eq!(
-            app.chat_widget.current_reasoning_effort(),
-            Some(ReasoningEffortConfig::Ultra)
-        );
-        assert_eq!(
-            (
-                app.config.model_reasoning_effort.clone(),
-                app.config.plan_mode_reasoning_effort.clone(),
-            ),
-            (
-                Some(ReasoningEffortConfig::Low),
-                Some(ReasoningEffortConfig::High),
-            )
-        );
-    }
-
-    #[tokio::test]
-    async fn leaving_conversation_ultra_in_default_clears_the_ephemeral_plan_effort() {
-        let mut app = make_test_app().await;
-        app.config.model_reasoning_effort = Some(ReasoningEffortConfig::Low);
-        app.config.plan_mode_reasoning_effort = Some(ReasoningEffortConfig::High);
-        app.chat_widget
-            .set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-        app.chat_widget
-            .set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-        app.on_apply_advanced_reasoning("gpt-5.4", ReasoningEffortConfig::Ultra);
-        app.on_update_reasoning_effort(Some(ReasoningEffortConfig::Medium));
-        app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
-
-        assert_eq!(
-            app.chat_widget.current_reasoning_effort(),
-            Some(ReasoningEffortConfig::Medium)
-        );
-        assert_eq!(
-            app.config.plan_mode_reasoning_effort,
-            Some(ReasoningEffortConfig::High)
-        );
-    }
-
-    #[tokio::test]
-    async fn leaving_conversation_ultra_in_plan_clears_the_ephemeral_default_effort() {
-        let mut app = make_test_app().await;
-        app.config.model_reasoning_effort = Some(ReasoningEffortConfig::Low);
-        app.config.plan_mode_reasoning_effort = Some(ReasoningEffortConfig::High);
-        app.chat_widget
-            .set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-        app.chat_widget
-            .set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::High));
-        app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
-
-        app.on_apply_advanced_reasoning("gpt-5.4", ReasoningEffortConfig::Ultra);
-        app.on_update_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::Medium));
-        app.chat_widget
-            .handle_key_event(KeyEvent::from(KeyCode::BackTab));
-
-        assert_eq!(
-            app.chat_widget.current_reasoning_effort(),
-            Some(ReasoningEffortConfig::Medium)
-        );
-        assert_eq!(
-            app.config.model_reasoning_effort,
-            Some(ReasoningEffortConfig::Low)
         );
     }
 
@@ -967,7 +843,7 @@ enabled = false
                 runtime_workspace_roots: Vec::new(),
                 instruction_source_paths: Vec::new(),
                 reasoning_effort: None,
-                collaboration_mode: None,
+                agent_settings: None,
                 personality: None,
                 message_history: None,
                 network_proxy: None,

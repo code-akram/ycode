@@ -77,7 +77,7 @@
 //!
 //! The numeric auto-submit path used by the slash popup performs the same pending-paste expansion
 //! and attachment pruning, and clears pending paste state on success.
-//! Slash commands with arguments (like `/plan` and `/review`) reuse the same preparation path so
+//! Slash commands with arguments reuse the same preparation path so
 //! pasted content and text elements are preserved when extracting args.
 //!
 //! # Parent-Owned Thread Mode
@@ -210,7 +210,6 @@ use super::effort_ignition::IgnitionStyle;
 use super::effort_status_line::EFFORT_STATUS_LINE_FRAME_TICK;
 use super::effort_status_line::EffortStatusLineTransition;
 use super::file_search_popup::FileSearchPopup;
-use super::footer::CollaborationModeIndicator;
 use super::footer::FooterKeyHints;
 use super::footer::FooterMode;
 use super::footer::FooterProps;
@@ -469,7 +468,6 @@ pub(crate) struct ChatComposer {
     pending_slash_command_history: Option<HistoryEntry>,
     skills: Option<Vec<SkillMetadata>>,
     plugins: Option<Vec<PluginCapabilitySummary>>,
-    collaboration_modes_enabled: bool,
     config: ChatComposerConfig,
     plugins_command_enabled: bool,
     token_activity_command_enabled: bool,
@@ -519,19 +517,6 @@ pub(crate) struct ComposerDraftSnapshot {
 
 const FOOTER_SPACING_HEIGHT: u16 = 0;
 
-/// Builds the one-line nudge that replaces the ambient footer without adding layout height.
-fn plan_mode_nudge_line() -> Line<'static> {
-    Line::from(vec![
-        "Create a plan?".magenta(),
-        "  ".into(),
-        key_hint::shift(KeyCode::Tab).into(),
-        " use Plan mode".into(),
-        "   ".into(),
-        key_hint::plain(KeyCode::Esc).into(),
-        " dismiss".into(),
-    ])
-}
-
 impl ChatComposer {
     fn slash_input(&self) -> SlashInput<'_> {
         SlashInput::new(
@@ -544,7 +529,6 @@ impl ChatComposer {
 
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
-            collaboration_modes_enabled: self.collaboration_modes_enabled,
             plugins_command_enabled: self.plugins_command_enabled,
             token_activity_command_enabled: self.token_activity_command_enabled,
             service_tier_commands_enabled: self.service_tier_commands_enabled,
@@ -600,12 +584,10 @@ impl ChatComposer {
                 use_shift_enter_hint,
                 mode: FooterMode::ComposerEmpty,
                 hint_override: None,
-                plan_mode_nudge_visible: false,
                 flash: None,
                 context_window_percent: None,
                 context_window_used_tokens: None,
                 context_window_pending: false,
-                collaboration_mode_indicator: None,
                 goal_status_indicator: None,
                 ide_context_active: false,
                 status_line_value: None,
@@ -647,7 +629,6 @@ impl ChatComposer {
             pending_slash_command_history: None,
             skills: None,
             plugins: None,
-            collaboration_modes_enabled: false,
             config,
             plugins_command_enabled: false,
             token_activity_command_enabled: false,
@@ -703,7 +684,6 @@ impl ChatComposer {
             self.effort_ignition = Some(EffortIgnition::new(tier, style));
             self.effort_animation_style = Some(style);
             if self.footer.status_line_enabled
-                && !self.footer.plan_mode_nudge_visible
                 && let Some(previous) = passive_footer_status_line(&self.footer_props())
             {
                 self.effort_status_line_transition =
@@ -791,10 +771,6 @@ impl ChatComposer {
         ordered
     }
 
-    pub fn set_collaboration_modes_enabled(&mut self, enabled: bool) {
-        self.collaboration_modes_enabled = enabled;
-    }
-
     pub fn set_service_tier_commands_enabled(&mut self, enabled: bool) {
         self.service_tier_commands_enabled = enabled;
     }
@@ -856,13 +832,6 @@ impl ChatComposer {
             return KeymapContextSet::default();
         }
         KeymapContextSet::new(KeymapContext::Composer).with(self.draft.textarea.keymap_context())
-    }
-
-    pub fn set_collaboration_mode_indicator(
-        &mut self,
-        indicator: Option<CollaborationModeIndicator>,
-    ) {
-        self.footer.collaboration_mode_indicator = indicator;
     }
 
     pub fn set_goal_status_indicator(&mut self, indicator: Option<GoalStatusIndicator>) {
@@ -1297,16 +1266,14 @@ impl ChatComposer {
             })
     }
 
-    fn mode_indicator_line(&self, show_cycle_hint: bool) -> Option<Line<'static>> {
+    fn right_indicator_line(&self) -> Option<Line<'static>> {
         let mut spans: Vec<Span<'static>> = Vec::new();
         if let Some(vim_mode) = self.vim_mode_indicator_span() {
             spans.push(vim_mode);
         }
         if let Some(indicators) = status_line_right_indicator_line(
-            self.footer.collaboration_mode_indicator,
             self.footer.goal_status_indicator.as_ref(),
             self.footer.ide_context_active,
-            show_cycle_hint,
         ) {
             if !spans.is_empty() {
                 spans.push(" | ".dim());
@@ -1371,23 +1338,6 @@ impl ChatComposer {
     /// `None` restores the default shortcut footer.
     pub(crate) fn set_footer_hint_override(&mut self, items: Option<Vec<(String, String)>>) {
         self.footer.hint_override = items;
-    }
-
-    /// Updates whether the Plan-mode nudge replaces the ambient footer row.
-    ///
-    /// Returns `true` only when the rendered footer can change so callers can avoid scheduling
-    /// redundant redraws while reevaluating nudge policy on routine composer updates.
-    pub(crate) fn set_plan_mode_nudge_visible(&mut self, visible: bool) -> bool {
-        if self.footer.plan_mode_nudge_visible == visible {
-            return false;
-        }
-        self.footer.plan_mode_nudge_visible = visible;
-        true
-    }
-
-    #[cfg(test)]
-    pub(crate) fn plan_mode_nudge_visible(&self) -> bool {
-        self.footer.plan_mode_nudge_visible
     }
 
     pub(crate) fn set_remote_image_urls(&mut self, urls: Vec<String>) {
@@ -3186,7 +3136,7 @@ impl ChatComposer {
     /// full-text offsets to command-arg offsets.
     ///
     /// Callers that already staged slash-command history should normally pass `false` for
-    /// `record_history`; otherwise a command such as `/plan investigate` would be entered into
+    /// `record_history`; otherwise an inline-argument command would be entered into
     /// local recall through both the slash-command path and the message-submission path.
     pub(crate) fn prepare_inline_args_submission(
         &mut self,
@@ -3656,7 +3606,6 @@ impl ChatComposer {
             is_task_running: self.is_task_running,
             queue_submissions: self.queue_submissions,
             quit_shortcut_key: self.footer.quit_shortcut_key,
-            collaboration_modes_enabled: self.collaboration_modes_enabled,
             status_line_value: self.footer.status_line_value.clone(),
             status_line_enabled: self.footer.status_line_enabled,
             key_hints: FooterKeyHints {
@@ -4098,7 +4047,6 @@ impl ChatComposer {
         self.footer.quit_shortcut_expires_at = None;
         self.footer.mode = FooterMode::ComposerEmpty;
         self.footer.hint_override = Some(Vec::new());
-        self.footer.plan_mode_nudge_visible = false;
         self.footer.flash = None;
     }
 
@@ -4385,8 +4333,6 @@ impl ChatComposer {
             }
             ActivePopup::None => {
                 let footer_props = self.footer_props();
-                let show_cycle_hint = !footer_props.is_task_running
-                    && self.footer.collaboration_mode_indicator.is_some();
                 let show_shortcuts_hint = match footer_props.mode {
                     FooterMode::ComposerEmpty => !self.is_in_paste_burst(),
                     FooterMode::ComposerHasDraft => false,
@@ -4419,17 +4365,6 @@ impl ChatComposer {
                 };
                 if let Some(line) = self.history_search_footer_line() {
                     render_footer_line(hint_rect, buf, line);
-                } else if self.footer.plan_mode_nudge_visible {
-                    let available_width =
-                        hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
-                    render_footer_line(
-                        hint_rect,
-                        buf,
-                        truncate_line_with_ellipsis_if_overflow(
-                            plan_mode_nudge_line(),
-                            available_width,
-                        ),
-                    );
                 } else {
                     let available_width =
                         hint_rect.width.saturating_sub(FOOTER_INDENT_COLS as u16) as usize;
@@ -4465,11 +4400,6 @@ impl ChatComposer {
                     } else {
                         None
                     };
-                    let left_mode_indicator = if status_line_active {
-                        None
-                    } else {
-                        self.footer.collaboration_mode_indicator
-                    };
                     let active_footer_hint_override = self.footer.hint_override.as_ref();
                     let mut left_width = if self.footer.flash_visible() {
                         self.footer
@@ -4485,13 +4415,7 @@ impl ChatComposer {
                             .map(|line| line.width() as u16)
                             .unwrap_or(0)
                     } else {
-                        footer_line_width(
-                            &footer_props,
-                            left_mode_indicator,
-                            show_cycle_hint,
-                            show_shortcuts_hint,
-                            show_queue_hint,
-                        )
+                        footer_line_width(&footer_props, show_shortcuts_hint, show_queue_hint)
                     };
                     let right_line =
                         if let Some(label) = self.footer.side_conversation_context_label.as_ref() {
@@ -4501,14 +4425,7 @@ impl ChatComposer {
                         } else if transition_active {
                             None
                         } else if status_line_active {
-                            let full = self.mode_indicator_line(show_cycle_hint);
-                            let compact = self.mode_indicator_line(/*show_cycle_hint*/ false);
-                            let full_width = full.as_ref().map(|l| l.width() as u16).unwrap_or(0);
-                            if can_show_left_with_context(hint_rect, left_width, full_width) {
-                                full
-                            } else {
-                                compact
-                            }
+                            self.right_indicator_line()
                         } else {
                             Some(self.right_footer_line_with_context())
                         };
@@ -4534,13 +4451,10 @@ impl ChatComposer {
                             FooterMode::ComposerEmpty | FooterMode::ComposerHasDraft => {
                                 // Both of these modes render the single-line footer style (with
                                 // either the shortcuts hint or the optional queue hint). We still
-                                // want the single-line collapse rules so the mode label can win over
-                                // the context indicator on narrow widths.
+                                // want the single-line collapse rules for narrow widths.
                                 Some(single_line_footer_layout(
                                     hint_rect,
                                     right_width,
-                                    left_mode_indicator,
-                                    show_cycle_hint,
                                     show_shortcuts_hint,
                                     show_queue_hint,
                                     footer_props.key_hints,
@@ -4578,8 +4492,6 @@ impl ChatComposer {
                                             hint_rect,
                                             buf,
                                             &footer_props,
-                                            left_mode_indicator,
-                                            show_cycle_hint,
                                             show_shortcuts_hint,
                                             show_queue_hint,
                                         );
@@ -4589,8 +4501,6 @@ impl ChatComposer {
                                         hint_rect,
                                         buf,
                                         &footer_props,
-                                        left_mode_indicator,
-                                        show_cycle_hint,
                                         show_shortcuts_hint,
                                         show_queue_hint,
                                     );
@@ -4616,8 +4526,6 @@ impl ChatComposer {
                             hint_rect,
                             buf,
                             &footer_props,
-                            self.footer.collaboration_mode_indicator,
-                            show_cycle_hint,
                             show_shortcuts_hint,
                             show_queue_hint,
                         );
@@ -5491,105 +5399,37 @@ mod tests {
 
     #[test]
     fn footer_collapse_snapshots() {
-        fn setup_collab_footer(
-            composer: &mut ChatComposer,
-            context_percent: i64,
-            indicator: Option<CollaborationModeIndicator>,
-        ) {
-            composer.set_collaboration_modes_enabled(/*enabled*/ true);
-            composer.set_collaboration_mode_indicator(indicator);
-            composer.set_context_window(Some(context_percent), /*used_tokens*/ None);
-        }
-
         // Empty textarea, agent idle: shortcuts hint can show, and cycle hint is hidden.
         snapshot_composer_state_with_width(
             "footer_collapse_empty_full",
             /*width*/ 120,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 100, /*indicator*/ None,
-                );
+                composer.set_context_window(Some(100), /*used_tokens*/ None);
             },
         );
         snapshot_composer_state_with_width(
-            "footer_collapse_empty_mode_cycle_with_context",
+            "footer_collapse_empty_short_with_context",
             /*width*/ 60,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 100, /*indicator*/ None,
-                );
+                composer.set_context_window(Some(100), /*used_tokens*/ None);
             },
         );
         snapshot_composer_state_with_width(
-            "footer_collapse_empty_mode_cycle_without_context",
+            "footer_collapse_empty_short_without_context",
             /*width*/ 44,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 100, /*indicator*/ None,
-                );
+                composer.set_context_window(Some(100), /*used_tokens*/ None);
             },
         );
         snapshot_composer_state_with_width(
-            "footer_collapse_empty_mode_only",
+            "footer_collapse_empty_context_only",
             /*width*/ 26,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 100, /*indicator*/ None,
-                );
-            },
-        );
-
-        // Empty textarea, plan mode idle: shortcuts hint and cycle hint are available.
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_empty_full",
-            /*width*/ 120,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 100,
-                    Some(CollaborationModeIndicator::Plan),
-                );
-            },
-        );
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_empty_mode_cycle_with_context",
-            /*width*/ 60,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 100,
-                    Some(CollaborationModeIndicator::Plan),
-                );
-            },
-        );
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_empty_mode_cycle_without_context",
-            /*width*/ 44,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 100,
-                    Some(CollaborationModeIndicator::Plan),
-                );
-            },
-        );
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_empty_mode_only",
-            /*width*/ 26,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 100,
-                    Some(CollaborationModeIndicator::Plan),
-                );
+                composer.set_context_window(Some(100), /*used_tokens*/ None);
             },
         );
 
@@ -5599,9 +5439,7 @@ mod tests {
             /*width*/ 120,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 98, /*indicator*/ None,
-                );
+                composer.set_context_window(Some(98), /*used_tokens*/ None);
                 composer.set_task_running(/*running*/ true);
                 composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
             },
@@ -5611,9 +5449,7 @@ mod tests {
             /*width*/ 50,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 98, /*indicator*/ None,
-                );
+                composer.set_context_window(Some(98), /*used_tokens*/ None);
                 composer.set_task_running(/*running*/ true);
                 composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
             },
@@ -5623,9 +5459,7 @@ mod tests {
             /*width*/ 40,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 98, /*indicator*/ None,
-                );
+                composer.set_context_window(Some(98), /*used_tokens*/ None);
                 composer.set_task_running(/*running*/ true);
                 composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
             },
@@ -5635,93 +5469,17 @@ mod tests {
             /*width*/ 30,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 98, /*indicator*/ None,
-                );
+                composer.set_context_window(Some(98), /*used_tokens*/ None);
                 composer.set_task_running(/*running*/ true);
                 composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
             },
         );
         snapshot_composer_state_with_width(
-            "footer_collapse_queue_mode_only",
+            "footer_collapse_queue_hint_only",
             /*width*/ 20,
             /*enhanced_keys_supported*/ true,
             |composer| {
-                setup_collab_footer(
-                    composer, /*context_percent*/ 98, /*indicator*/ None,
-                );
-                composer.set_task_running(/*running*/ true);
-                composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-            },
-        );
-
-        // Textarea has content, plan mode active, agent running: queue hint + mode.
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_queue_full",
-            /*width*/ 120,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 98,
-                    Some(CollaborationModeIndicator::Plan),
-                );
-                composer.set_task_running(/*running*/ true);
-                composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-            },
-        );
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_queue_short_with_context",
-            /*width*/ 50,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 98,
-                    Some(CollaborationModeIndicator::Plan),
-                );
-                composer.set_task_running(/*running*/ true);
-                composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-            },
-        );
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_queue_message_without_context",
-            /*width*/ 40,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 98,
-                    Some(CollaborationModeIndicator::Plan),
-                );
-                composer.set_task_running(/*running*/ true);
-                composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-            },
-        );
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_queue_short_without_context",
-            /*width*/ 30,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 98,
-                    Some(CollaborationModeIndicator::Plan),
-                );
-                composer.set_task_running(/*running*/ true);
-                composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-            },
-        );
-        snapshot_composer_state_with_width(
-            "footer_collapse_plan_queue_mode_only",
-            /*width*/ 20,
-            /*enhanced_keys_supported*/ true,
-            |composer| {
-                setup_collab_footer(
-                    composer,
-                    /*context_percent*/ 98,
-                    Some(CollaborationModeIndicator::Plan),
-                );
+                composer.set_context_window(Some(98), /*used_tokens*/ None);
                 composer.set_task_running(/*running*/ true);
                 composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
             },
@@ -5861,46 +5619,6 @@ mod tests {
         assert!(matches!(result, InputResult::Command(SlashCommand::Diff)));
     }
 
-    #[test]
-    fn inline_slash_command_dispatch_resets_vim_mode_to_normal() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
-
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ true,
-            "Ask Codex to do anything".to_string(),
-            /*disable_paste_burst*/ true,
-        );
-        composer.set_collaboration_modes_enabled(/*enabled*/ true);
-        composer.set_vim_enabled(/*enabled*/ true);
-
-        composer.handle_key_event(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
-        composer.set_text_content("/plan investigate this".to_string(), Vec::new(), Vec::new());
-        composer.popups.active = ActivePopup::None;
-        let (result, needs_redraw) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-        assert!(needs_redraw);
-        assert_eq!(
-            composer.vim_mode_indicator_span(),
-            Some("Vim: Normal".magenta())
-        );
-        match result {
-            InputResult::CommandWithArgs(cmd, args, text_elements) => {
-                assert_eq!(cmd, SlashCommand::Plan);
-                assert_eq!(args, "investigate this");
-                assert!(text_elements.is_empty());
-            }
-            _ => panic!("expected CommandWithArgs"),
-        }
-    }
-
-    #[test]
     fn bang_enters_shell_mode_in_vim_normal_mode() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
@@ -9468,15 +9186,14 @@ mod tests {
             "Ask Codex to do anything".to_string(),
             /*disable_paste_burst*/ false,
         );
-        composer.set_collaboration_modes_enabled(/*enabled*/ true);
 
-        type_chars_humanlike(&mut composer, &['/', 'p', 'l', 'a', 'n', ' ']);
+        type_chars_humanlike(&mut composer, &['/', 'm', 'o', 'd', 'e', 'l', ' ']);
 
         let text = composer.draft.textarea.text().to_string();
         let elements = composer.draft.textarea.text_elements();
-        assert_eq!(text, "/plan ");
+        assert_eq!(text, "/model ");
         assert_eq!(elements.len(), 1);
-        assert_eq!(elements[0].placeholder(&text), Some("/plan"));
+        assert_eq!(elements[0].placeholder(&text), Some("/model"));
     }
 
     #[test]
@@ -9490,7 +9207,6 @@ mod tests {
             "Ask Codex to do anything".to_string(),
             /*disable_paste_burst*/ false,
         );
-        composer.set_collaboration_modes_enabled(/*enabled*/ true);
 
         type_chars_humanlike(&mut composer, &['/', 'U', 's', 'e', 'r', 's', ' ']);
 
@@ -9662,45 +9378,6 @@ mod tests {
         assert_eq!(composer.draft.textarea.text(), "@");
     }
 
-    #[test]
-    fn slash_plan_args_preserve_text_elements() {
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
-
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        composer.set_collaboration_modes_enabled(/*enabled*/ true);
-
-        type_chars_humanlike(&mut composer, &['/', 'p', 'l', 'a', 'n', ' ']);
-        let placeholder = local_image_label_text(/*label_number*/ 1);
-        composer.attach_image(PathBuf::from("/tmp/plan.png"));
-
-        let (result, _needs_redraw) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-        match result {
-            InputResult::CommandWithArgs(cmd, args, text_elements) => {
-                assert_eq!(cmd.command(), "plan");
-                assert_eq!(args, placeholder);
-                assert_eq!(text_elements.len(), 1);
-                assert_eq!(
-                    text_elements[0].placeholder(&args),
-                    Some(placeholder.as_str())
-                );
-            }
-            _ => panic!("expected CommandWithArgs for /plan with args"),
-        }
-    }
-
-    #[test]
     fn file_completion_preserves_large_paste_placeholder_elements() {
         use crossterm::event::KeyCode;
         use crossterm::event::KeyEvent;
@@ -11632,41 +11309,6 @@ mod tests {
         assert_eq!(composer.current_text(), "/diff");
     }
 
-    #[test]
-    fn inline_slash_command_can_be_recalled_after_recording_pending_history() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        composer.set_collaboration_modes_enabled(/*enabled*/ true);
-
-        composer.set_text_content("/plan investigate this".to_string(), Vec::new(), Vec::new());
-        composer.popups.active = ActivePopup::None;
-        let (result, _needs_redraw) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-        match result {
-            InputResult::CommandWithArgs(cmd, args, text_elements) => {
-                assert_eq!(cmd, SlashCommand::Plan);
-                assert_eq!(args, "investigate this");
-                assert!(text_elements.is_empty());
-            }
-            other => panic!("expected inline /plan command, got {other:?}"),
-        }
-        composer.record_pending_slash_command_history();
-
-        let (result, _needs_redraw) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-        assert_eq!(result, InputResult::None);
-        assert_eq!(composer.current_text(), "/plan investigate this");
-    }
-
-    #[test]
     fn apply_external_edit_rebuilds_text_and_attachments() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);

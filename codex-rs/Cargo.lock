@@ -2409,10 +2409,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-collaboration-mode-templates"
-version = "0.147.0"
-
-[[package]]
 name = "codex-config"
 version = "0.147.0"
 dependencies = [
@@ -3314,7 +3310,6 @@ name = "codex-models-manager"
 version = "0.147.0"
 dependencies = [
  "chrono",
- "codex-collaboration-mode-templates",
  "codex-http-client",
  "codex-login",
  "codex-otel",

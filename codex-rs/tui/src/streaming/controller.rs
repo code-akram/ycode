@@ -1,4 +1,4 @@
-//! Two-region streaming controllers for agent messages and proposed plans.
+//! Two-region streaming controller for agent messages.
 //!
 //! Each stream partitions rendered markdown into a *stable region* (committed
 //! to scrollback via the animation queue in `StreamState`) and a *tail region*
@@ -6,8 +6,7 @@
 //!
 //! `StreamCore` owns the shared bookkeeping: source accumulation, re-rendering,
 //! stable/tail partitioning, commit-animation queue management, and terminal
-//! resize handling.  `StreamController` and `PlanStreamController` are thin
-//! wrappers that add only their `emit()` styling and finalize return types.
+//! resize handling. `StreamController` adds only its `emit()` styling and finalize return type.
 //!
 //! ## Table holdback
 //!
@@ -16,7 +15,7 @@
 //! (`table_holdback_state`) detects pipe-table patterns (header + delimiter
 //! pair) in the accumulated source and keeps content from the table header
 //! onward as mutable tail until the stream finalizes. Holdback is enabled for
-//! agent and proposed-plan streams. Lines in `Outside` and `Markdown` fence
+//! agent streams. Lines in `Outside` and `Markdown` fence
 //! contexts are scanned; lines inside non-markdown fences are skipped.
 //!
 //! ## Resize handling
@@ -40,11 +39,7 @@ use crate::history_cell::HistoryRenderMode;
 use crate::history_cell::{self};
 use crate::inline_visualization::InlineVisualizationContext;
 use crate::markdown::render_markdown_agent_with_links_cwd_and_visualizations;
-use crate::style::proposed_plan_style;
 use crate::terminal_hyperlinks::HyperlinkLine;
-use crate::terminal_hyperlinks::prefix_hyperlink_lines;
-use ratatui::prelude::Stylize;
-use ratatui::text::Line;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -59,15 +54,13 @@ use super::table_holdback::TableHoldbackState;
 use super::table_holdback::table_holdback_state;
 
 // ---------------------------------------------------------------------------
-// StreamCore — shared bookkeeping for both stream controllers
+// StreamCore — shared streaming bookkeeping
 // ---------------------------------------------------------------------------
 
 /// Shared state and logic for the two-region streaming model.
 ///
-/// Both [`StreamController`] (agent messages) and [`PlanStreamController`]
-/// (proposed plans) delegate their core bookkeeping here: source
-/// accumulation, re-rendering, stable/tail partitioning, commit-animation
-/// queue management, and terminal resize handling.
+/// [`StreamController`] delegates its core bookkeeping here: source accumulation, re-rendering,
+/// stable/tail partitioning, commit-animation queue management, and terminal resize handling.
 ///
 /// The wrapping controllers add only their own `emit()` styling and
 /// finalize return types.
@@ -589,178 +582,12 @@ impl StreamController {
         ))
     }
 }
-// ---------------------------------------------------------------------------
-// PlanStreamController — proposed plan streams
-// ---------------------------------------------------------------------------
-
-/// Controller that streams proposed plan markdown into a styled plan block.
-///
-/// Wraps [`StreamCore`] and adds plan-specific header, indentation, and
-/// background styling.
-pub(crate) struct PlanStreamController {
-    core: StreamCore,
-    header_emitted: bool,
-    top_padding_emitted: bool,
-}
-
-impl PlanStreamController {
-    /// Create a plan-stream controller whose markdown renderer shortens local file links relative
-    /// to `cwd`.
-    ///
-    /// The width has the same meaning as in `StreamController`: it is the markdown body width, and
-    /// callers must update it when the terminal width changes.
-    pub(crate) fn new(width: Option<usize>, cwd: &Path, render_mode: HistoryRenderMode) -> Self {
-        Self {
-            core: StreamCore::new(
-                width,
-                cwd,
-                render_mode,
-                /*inline_visualization_context*/ None,
-            ),
-            header_emitted: false,
-            top_padding_emitted: false,
-        }
-    }
-
-    pub(crate) fn push(&mut self, delta: &str) -> bool {
-        self.core.push_delta(delta)
-    }
-
-    /// Finalize the active stream. Returns the final cell (if any remaining
-    /// lines) plus raw markdown source for consolidation.
-    pub(crate) fn finalize(&mut self) -> (Option<Box<dyn HistoryCell>>, Option<String>) {
-        let (remaining, source) = self.core.finalize_remaining();
-        if source.is_empty() {
-            self.core.reset();
-            return (None, None);
-        }
-
-        let out = self.emit(remaining, /*include_bottom_padding*/ true);
-        self.core.reset();
-        (out, Some(source))
-    }
-
-    pub(crate) fn on_commit_tick(&mut self) -> (Option<Box<dyn HistoryCell>>, bool) {
-        let step = self.core.tick();
-        (
-            self.emit(step, /*include_bottom_padding*/ false),
-            self.core.is_idle(),
-        )
-    }
-
-    pub(crate) fn on_commit_tick_batch(
-        &mut self,
-        max_lines: usize,
-    ) -> (Option<Box<dyn HistoryCell>>, bool) {
-        let step = self.core.tick_batch(max_lines);
-        (
-            self.emit(step, /*include_bottom_padding*/ false),
-            self.core.is_idle(),
-        )
-    }
-
-    #[inline]
-    pub(crate) fn queued_lines(&self) -> usize {
-        self.core.queued_lines()
-    }
-
-    #[inline]
-    pub(crate) fn has_live_tail(&self) -> bool {
-        self.core.has_tail()
-    }
-
-    #[inline]
-    pub(crate) fn current_tail_lines(&self) -> Vec<HyperlinkLine> {
-        self.core.current_tail_lines()
-    }
-
-    #[inline]
-    pub(crate) fn tail_starts_stream(&self) -> bool {
-        !self.header_emitted && self.core.enqueued_stable_len == 0
-    }
-
-    pub(crate) fn current_tail_display_lines(&self) -> Vec<HyperlinkLine> {
-        let lines = self.current_tail_lines();
-        if lines.is_empty() {
-            return Vec::new();
-        }
-        self.render_display_lines(lines, /*include_bottom_padding*/ false)
-    }
-
-    pub(crate) fn oldest_queued_age(&self, now: Instant) -> Option<Duration> {
-        self.core.oldest_queued_age(now)
-    }
-
-    pub(crate) fn clear_queue(&mut self) {
-        self.core.state.clear_queue();
-        self.core.enqueued_stable_len = self.core.emitted_stable_len;
-    }
-
-    pub(crate) fn set_width(&mut self, width: Option<usize>) {
-        self.core.set_width(width);
-    }
-
-    pub(crate) fn set_render_mode(&mut self, render_mode: HistoryRenderMode) {
-        self.core.set_render_mode(render_mode);
-    }
-
-    fn emit(
-        &mut self,
-        lines: Vec<HyperlinkLine>,
-        include_bottom_padding: bool,
-    ) -> Option<Box<dyn HistoryCell>> {
-        if lines.is_empty() && !include_bottom_padding {
-            return None;
-        }
-
-        let is_stream_continuation = self.header_emitted;
-        let out_lines = self.render_display_lines(lines, include_bottom_padding);
-        self.header_emitted = true;
-        self.top_padding_emitted = true;
-
-        Some(Box::new(history_cell::new_proposed_plan_stream(
-            out_lines,
-            is_stream_continuation,
-        )))
-    }
-
-    fn render_display_lines(
-        &self,
-        lines: Vec<HyperlinkLine>,
-        include_bottom_padding: bool,
-    ) -> Vec<HyperlinkLine> {
-        let mut out_lines: Vec<HyperlinkLine> = Vec::with_capacity(/*capacity*/ 4);
-        if !self.header_emitted {
-            out_lines.push(HyperlinkLine::new(
-                vec!["• ".dim(), "Proposed Plan".bold()].into(),
-            ));
-            out_lines.push(HyperlinkLine::new(Line::from(" ")));
-        }
-
-        let mut plan_lines: Vec<HyperlinkLine> = Vec::with_capacity(/*capacity*/ 4);
-        if !self.top_padding_emitted {
-            plan_lines.push(HyperlinkLine::new(Line::from(" ")));
-        }
-        plan_lines.extend(lines);
-        if include_bottom_padding {
-            plan_lines.push(HyperlinkLine::new(Line::from(" ")));
-        }
-
-        let plan_style = proposed_plan_style();
-        let plan_lines = prefix_hyperlink_lines(plan_lines, "  ".into(), "  ".into())
-            .into_iter()
-            .map(|line| line.style(plan_style))
-            .collect::<Vec<_>>();
-        out_lines.extend(plan_lines);
-        out_lines
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::terminal_hyperlinks::visible_lines;
     use pretty_assertions::assert_eq;
+    use ratatui::text::Line;
     use std::path::PathBuf;
 
     fn test_cwd() -> PathBuf {
@@ -771,10 +598,6 @@ mod tests {
 
     fn stream_controller(width: Option<usize>) -> StreamController {
         StreamController::new(width, &test_cwd(), HistoryRenderMode::Rich)
-    }
-
-    fn plan_stream_controller(width: Option<usize>) -> PlanStreamController {
-        PlanStreamController::new(width, &test_cwd(), HistoryRenderMode::Rich)
     }
 
     fn lines_to_plain_strings(lines: &[ratatui::text::Line<'_>]) -> Vec<String> {
@@ -840,24 +663,6 @@ mod tests {
         );
     }
 
-    fn collect_plan_streamed_lines(deltas: &[&str], width: Option<usize>) -> Vec<String> {
-        let mut ctrl = plan_stream_controller(width);
-        let mut lines = Vec::new();
-        for d in deltas {
-            ctrl.push(d);
-            while let (Some(cell), idle) = ctrl.on_commit_tick() {
-                lines.extend(cell.transcript_lines(u16::MAX));
-                if idle {
-                    break;
-                }
-            }
-        }
-        if let (Some(cell), _source) = ctrl.finalize() {
-            lines.extend(cell.transcript_lines(u16::MAX));
-        }
-        lines_to_plain_strings(&lines)
-    }
-
     #[test]
     fn controller_set_width_rebuilds_queued_lines() {
         let mut ctrl = stream_controller(Some(120));
@@ -918,19 +723,6 @@ mod tests {
     #[test]
     fn controller_has_live_tail_reflects_tail_presence() {
         let mut ctrl = stream_controller(Some(80));
-        assert!(!ctrl.has_live_tail());
-
-        ctrl.core.render.lines = vec![Line::from("tail line").into()];
-        ctrl.core.enqueued_stable_len = 0;
-        assert!(ctrl.has_live_tail());
-
-        ctrl.core.enqueued_stable_len = 1;
-        assert!(!ctrl.has_live_tail());
-    }
-
-    #[test]
-    fn plan_controller_has_live_tail_reflects_tail_presence() {
-        let mut ctrl = plan_stream_controller(Some(80));
         assert!(!ctrl.has_live_tail());
 
         ctrl.core.render.lines = vec![Line::from("tail line").into()];
@@ -1100,42 +892,6 @@ mod tests {
         assert!(
             joined.contains('A') && joined.contains('B'),
             "expected table header content to remain in tail after resize: {tail_after:?}",
-        );
-    }
-
-    #[test]
-    fn plan_controller_set_width_preserves_in_flight_tail() {
-        let mut ctrl = plan_stream_controller(Some(80));
-        ctrl.push("1. Item without newline");
-        ctrl.set_width(Some(24));
-
-        let rendered = lines_to_plain_strings(
-            &(ctrl
-                .finalize()
-                .0
-                .expect("expected finalized tail")
-                .transcript_lines(u16::MAX)),
-        );
-
-        assert!(
-            rendered
-                .iter()
-                .any(|line| line.contains("Item without newline")),
-            "expected finalized plan content after resize, got {rendered:?}",
-        );
-    }
-
-    #[test]
-    fn plan_controller_holds_table_header_as_live_tail() {
-        let mut ctrl = plan_stream_controller(Some(80));
-        assert!(ctrl.push("Intro\n"));
-        let (_cell, idle) = ctrl.on_commit_tick_batch(usize::MAX);
-        assert!(idle, "intro line should fully drain");
-
-        assert!(!ctrl.push("| Step | Owner |\n"));
-        assert!(
-            ctrl.has_live_tail(),
-            "expected plan table header to be held"
         );
     }
 
@@ -1711,92 +1467,6 @@ mod tests {
                 .iter()
                 .any(|line| line.contains('━') || line.contains('─')),
             "did not expect a table separator for non-markdown fence: {streamed:?}"
-        );
-    }
-
-    #[test]
-    fn plan_controller_streamed_table_matches_final_render() {
-        let deltas = vec![
-            "## Build plan\n\n",
-            "| Step | Owner |\n",
-            "|---|---|\n",
-            "| Write tests | Agent |\n",
-            "| Verify output | User |\n",
-            "\n",
-        ];
-        let streamed = collect_plan_streamed_lines(&deltas, Some(80));
-
-        let source: String = deltas.iter().copied().collect();
-        let baseline = collect_plan_streamed_lines(&[source.as_str()], Some(80));
-
-        assert_eq!(streamed, baseline);
-        assert!(
-            streamed.iter().any(|line| line.contains('━')),
-            "expected table separators in plan streamed output: {streamed:?}"
-        );
-        assert!(
-            !streamed
-                .iter()
-                .any(|line| line.trim() == "| Step | Owner |"),
-            "did not expect raw table header line in plan output: {streamed:?}"
-        );
-    }
-
-    #[test]
-    fn finalized_plan_stream_preserves_semantic_url_fragments() {
-        let destination = "https://example.com/a/very/long/path/to/a/table/artifact";
-        let source = format!("| Step | URL |\n| --- | --- |\n| Verify | {destination} |\n");
-        let mut ctrl = PlanStreamController::new(
-            /*width*/ Some(32),
-            &test_cwd(),
-            HistoryRenderMode::Rich,
-        );
-        ctrl.push(&source);
-
-        let (cell, _) = ctrl.finalize();
-        let lines = cell
-            .expect("final plan stream table cell")
-            .display_hyperlink_lines(/*width*/ 32);
-        let linked_rows = lines
-            .iter()
-            .filter(|line| !line.hyperlinks.is_empty())
-            .collect::<Vec<_>>();
-
-        assert!(linked_rows.len() > 1);
-        assert!(linked_rows.iter().all(|line| {
-            line.hyperlinks
-                .iter()
-                .all(|link| link.destination == destination)
-        }));
-    }
-
-    #[test]
-    fn plan_controller_streamed_markdown_fenced_table_matches_final_render() {
-        let deltas = vec![
-            "## Build plan\n\n",
-            "```md\n",
-            "| Step | Owner |\n",
-            "|---|---|\n",
-            "| Write tests | Agent |\n",
-            "| Verify output | User |\n",
-            "```\n",
-            "\n",
-        ];
-        let streamed = collect_plan_streamed_lines(&deltas, Some(80));
-
-        let source: String = deltas.iter().copied().collect();
-        let baseline = collect_plan_streamed_lines(&[source.as_str()], Some(80));
-
-        assert_eq!(streamed, baseline);
-        assert!(
-            streamed.iter().any(|line| line.contains('━')),
-            "expected table separators in fenced plan output: {streamed:?}"
-        );
-        assert!(
-            !streamed
-                .iter()
-                .any(|line| line.trim() == "| Step | Owner |"),
-            "did not expect raw table header line in fenced plan output: {streamed:?}"
         );
     }
 

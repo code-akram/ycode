@@ -155,7 +155,6 @@ use codex_plugin::PluginId;
 use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::approvals::NetworkApprovalProtocol;
 use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::error::CodexErr;
 use codex_protocol::models::NetworkPermissions as CoreNetworkPermissions;
 use codex_protocol::models::PermissionProfile as CorePermissionProfile;
@@ -436,7 +435,6 @@ fn sample_turn_resolved_config(thread_id: &str, turn_id: &str) -> TurnResolvedCo
         approval_policy: AskForApproval::OnRequest,
         approvals_reviewer: ApprovalsReviewer::AutoReview,
         sandbox_network_access: true,
-        collaboration_mode: ModeKind::Plan,
         personality: None,
         workspace_kind: None,
         is_first_turn: true,
@@ -4220,7 +4218,7 @@ fn turn_event_serializes_expected_shape() {
             approval_policy: "on-request".to_string(),
             approvals_reviewer: "auto_review".to_string(),
             sandbox_network_access: true,
-            collaboration_mode: Some("plan"),
+            agent_settings: Some("plan"),
             personality: Some("pragmatic".to_string()),
             workspace_kind: Some("projectless".to_string()),
             num_input_images: 2,
@@ -4303,7 +4301,7 @@ fn turn_event_serializes_expected_shape() {
                 "approval_policy": "on-request",
                 "approvals_reviewer": "auto_review",
                 "sandbox_network_access": true,
-                "collaboration_mode": "plan",
+                "agent_settings": "plan",
                 "personality": "pragmatic",
                 "workspace_kind": "projectless",
                 "num_input_images": 2,

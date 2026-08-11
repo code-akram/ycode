@@ -472,7 +472,7 @@ impl App {
                 summary,
                 service_tier,
                 final_output_json_schema,
-                collaboration_mode,
+                agent_settings,
                 personality,
             } => {
                 let mut should_start_turn = true;
@@ -552,7 +552,7 @@ impl App {
                             effort.clone(),
                             *summary,
                             service_tier.clone(),
-                            collaboration_mode.clone(),
+                            agent_settings.clone(),
                             *personality,
                             final_output_json_schema.clone(),
                         )
@@ -586,15 +586,6 @@ impl App {
                 cli_runtime
                     .thread_set_name(thread_id, name.to_string())
                     .await?;
-                Ok(true)
-            }
-            AppCommand::Review { target } => {
-                let response = cli_runtime.review_start(thread_id, target.clone()).await?;
-                let review_thread_id = ThreadId::from_string(&response.review_thread_id)
-                    .wrap_err("review/start returned invalid review thread id")?;
-                let store = Arc::clone(&self.ensure_thread_channel(review_thread_id).store);
-                let mut store = store.lock().await;
-                store.active_turn_id = Some(response.turn.id);
                 Ok(true)
             }
             AppCommand::CleanBackgroundTerminals => {
@@ -1190,10 +1181,6 @@ impl App {
         let suppress_replay_notices =
             replay_filter::snapshot_has_pending_interactive_request(&snapshot);
         if let Some(session) = snapshot.session {
-            if session.reasoning_effort != Some(ReasoningEffortConfig::Ultra) {
-                self.chat_widget
-                    .set_plan_mode_reasoning_effort(self.config.plan_mode_reasoning_effort.clone());
-            }
             if self.side_threads.contains_key(&session.thread_id) {
                 self.chat_widget.handle_side_thread_session(session);
             } else if suppress_replay_notices {

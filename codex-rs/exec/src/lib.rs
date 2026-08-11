@@ -12,15 +12,11 @@ pub(crate) mod exec_events;
 
 pub use cli::Cli;
 pub use cli::Command;
-pub use cli::ReviewArgs;
 use codex_arg0::Arg0DispatchPaths;
 use codex_cli_protocol::ClientRequest;
 use codex_cli_protocol::ConfigWarningNotification;
 use codex_cli_protocol::JSONRPCErrorError;
 use codex_cli_protocol::RequestId;
-use codex_cli_protocol::ReviewStartParams;
-use codex_cli_protocol::ReviewStartResponse;
-use codex_cli_protocol::ReviewTarget as ApiReviewTarget;
 use codex_cli_protocol::ServerNotification;
 use codex_cli_protocol::ServerRequest;
 use codex_cli_protocol::Thread as CliRuntimeThread;
@@ -42,7 +38,6 @@ use codex_cli_protocol::TurnInterruptParams;
 use codex_cli_protocol::TurnInterruptResponse;
 use codex_cli_protocol::TurnStartParams;
 use codex_cli_protocol::TurnStartResponse;
-use codex_cli_protocol::TurnStartedNotification;
 use codex_cli_runtime_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
 use codex_cli_runtime_client::EnvironmentManager;
 use codex_cli_runtime_client::ExecServerRuntimePaths;
@@ -59,7 +54,6 @@ use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::ConfigTomlLoadResult;
-use codex_core::config::bootstrap_auth_config;
 use codex_core::config::find_codex_home;
 use codex_core::config::load_config_toml_with_layer_stack;
 use codex_core::config::resolve_oss_provider;
@@ -78,8 +72,6 @@ use codex_otel::set_parent_from_context;
 use codex_otel::traceparent_context_from_env;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::ReviewRequest;
-use codex_protocol::protocol::ReviewTarget;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::protocol::SessionConfiguredEvent;
@@ -125,7 +117,6 @@ pub use exec_events::Usage;
 pub use exec_events::WebSearchItem;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::future::Future;
 use std::io::IsTerminal;
 use std::io::Read;
 use std::path::Path;
@@ -152,9 +143,6 @@ enum InitialOperation {
     UserTurn {
         items: Vec<UserInput>,
         output_schema: Option<Value>,
-    },
-    Review {
-        review_request: ReviewRequest,
     },
 }
 
@@ -587,11 +575,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     let default_effort = config.model_reasoning_effort.clone();
 
     let (initial_operation, prompt_summary) = match (command.as_ref(), prompt, images) {
-        (Some(ExecCommand::Review(review_cli)), _, _) => {
-            let review_request = build_review_request(review_cli)?;
-            let summary = codex_core::review_prompts::user_facing_hint(&review_request.target);
-            (InitialOperation::Review { review_request }, summary)
-        }
         (Some(ExecCommand::Resume(args)), root_prompt, imgs) => {
             let prompt_arg = args
                 .prompt
@@ -757,7 +740,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                         summary: None,
                         personality: None,
                         output_schema,
-                        collaboration_mode: None,
+                        agent_settings: None,
                         multi_agent_mode: None,
                     },
                 },
@@ -767,31 +750,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
             .map_err(anyhow::Error::msg)?;
             let task_id = response.turn.id;
             info!("Sent prompt with event ID: {task_id}");
-            task_id
-        }
-        InitialOperation::Review { review_request } => {
-            let response: ReviewStartResponse = send_request_with_response(
-                &client,
-                ClientRequest::ReviewStart {
-                    request_id: request_ids.next(),
-                    params: ReviewStartParams {
-                        thread_id: primary_thread_id_for_span.clone(),
-                        target: review_target_to_api(review_request.target),
-                        delivery: None,
-                    },
-                },
-                "review/start",
-            )
-            .await
-            .map_err(anyhow::Error::msg)?;
-            let _ = event_processor.process_server_notification(ServerNotification::TurnStarted(
-                TurnStartedNotification {
-                    thread_id: response.review_thread_id.clone(),
-                    turn: response.turn.clone(),
-                },
-            ));
-            let task_id = response.turn.id;
-            info!("Sent review request with event ID: {task_id}");
             task_id
         }
     };
@@ -993,15 +951,6 @@ fn session_configured_from_thread_resume_response(
         response.cwd.clone(),
         response.reasoning_effort.clone(),
     )
-}
-
-fn review_target_to_api(target: ReviewTarget) -> ApiReviewTarget {
-    match target {
-        ReviewTarget::UncommittedChanges => ApiReviewTarget::UncommittedChanges,
-        ReviewTarget::BaseBranch { branch } => ApiReviewTarget::BaseBranch { branch },
-        ReviewTarget::Commit { sha, title } => ApiReviewTarget::Commit { sha, title },
-        ReviewTarget::Custom { instructions } => ApiReviewTarget::Custom { instructions },
-    }
 }
 
 #[expect(
@@ -1678,36 +1627,6 @@ fn resolve_root_prompt(prompt_arg: Option<String>) -> String {
         }
         maybe_dash => resolve_prompt(maybe_dash),
     }
-}
-
-fn build_review_request(args: &ReviewArgs) -> anyhow::Result<ReviewRequest> {
-    let target = if args.uncommitted {
-        ReviewTarget::UncommittedChanges
-    } else if let Some(branch) = args.base.clone() {
-        ReviewTarget::BaseBranch { branch }
-    } else if let Some(sha) = args.commit.clone() {
-        ReviewTarget::Commit {
-            sha,
-            title: args.commit_title.clone(),
-        }
-    } else if let Some(prompt_arg) = args.prompt.clone() {
-        let prompt = resolve_prompt(Some(prompt_arg)).trim().to_string();
-        if prompt.is_empty() {
-            anyhow::bail!("Review prompt cannot be empty");
-        }
-        ReviewTarget::Custom {
-            instructions: prompt,
-        }
-    } else {
-        anyhow::bail!(
-            "Specify --uncommitted, --base, --commit, or provide custom review instructions"
-        );
-    };
-
-    Ok(ReviewRequest {
-        target,
-        user_facing_hint: None,
-    })
 }
 
 #[cfg(test)]

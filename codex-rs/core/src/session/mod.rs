@@ -72,13 +72,11 @@ use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::dynamic_tools::DynamicToolResponse;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
-use codex_protocol::items::EnteredReviewModeItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::models::ActivePermissionProfile;
@@ -187,7 +185,6 @@ mod handlers;
 mod inject;
 mod input_queue;
 pub(crate) mod multi_agents;
-mod review;
 mod rollout_budget;
 mod rollout_reconstruction;
 #[allow(clippy::module_inception)]
@@ -207,7 +204,6 @@ use self::handlers::submission_loop;
 pub(crate) use self::input_queue::InputQueueActivity;
 pub use self::input_queue::TurnInput;
 pub(crate) use self::input_queue::TurnInputQueue;
-use self::review::spawn_review_thread;
 use self::session::CliRuntimeClientMetadata;
 use self::session::Session;
 use self::session::SessionConfiguration;
@@ -241,7 +237,6 @@ impl SteerInputError {
             },
             Self::ActiveTurnNotSteerable { turn_kind } => {
                 let turn_kind_label = match turn_kind {
-                    NonSteerableTurnKind::Review => "review",
                     NonSteerableTurnKind::Compact => "compact",
                 };
                 ErrorEvent {
@@ -285,7 +280,6 @@ use crate::state::SessionState;
 use crate::stream_events_utils::HandleOutputCtx;
 #[cfg(test)]
 use crate::stream_events_utils::handle_output_item_done;
-use crate::tasks::ReviewTask;
 #[cfg(test)]
 use crate::tools::parallel::ToolCallRuntime;
 use crate::turn_timing::TurnTimingState;
@@ -298,7 +292,7 @@ use codex_otel::SessionTelemetry;
 use codex_otel::THREAD_STARTED_METRIC;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ResponseItemId;
-use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -339,9 +333,6 @@ use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
 use codex_tools::UnifiedExecShellMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
-#[cfg(test)]
-use codex_utils_stream_parser::ProposedPlanSegment;
-
 /// Queue and lifecycle endpoints for a running [`Session`].
 ///
 /// Runtime state lives on `Session`; keeping these endpoints separate lets all
@@ -579,10 +570,9 @@ impl Session {
         } else {
             dynamic_tools
         };
-        // TODO (aibrahim): Consolidate config.model and config.model_reasoning_effort into config.collaboration_mode
-        // to avoid extracting these fields separately and constructing CollaborationMode here.
-        let collaboration_mode = CollaborationMode {
-            mode: ModeKind::Default,
+        // TODO (aibrahim): Consolidate config.model and config.model_reasoning_effort into config.agent_settings
+        // to avoid extracting these fields separately and constructing AgentSettings here.
+        let agent_settings = AgentSettings {
             settings: Settings {
                 model: model.clone(),
                 reasoning_effort: config.model_reasoning_effort.clone(),
@@ -602,7 +592,7 @@ impl Session {
                 config.model_provider.clone(),
                 Some(Arc::clone(&auth_manager)),
             ),
-            collaboration_mode,
+            agent_settings,
             model_reasoning_summary: config.model_reasoning_summary,
             service_tier,
             developer_instructions: config.developer_instructions.clone(),
@@ -2987,9 +2977,9 @@ impl Session {
         self.features.clone()
     }
 
-    pub(crate) async fn collaboration_mode(&self) -> CollaborationMode {
+    pub(crate) async fn agent_settings(&self) -> AgentSettings {
         let state = self.state.lock().await;
-        state.session_configuration.collaboration_mode.clone()
+        state.session_configuration.agent_settings.clone()
     }
 
     pub(crate) fn multi_agent_version(&self) -> Option<MultiAgentVersion> {
@@ -3589,11 +3579,6 @@ impl Session {
 
         match active_task.kind {
             crate::state::TaskKind::Regular => {}
-            crate::state::TaskKind::Review => {
-                return Err(SteerInputError::ActiveTurnNotSteerable {
-                    turn_kind: NonSteerableTurnKind::Review,
-                });
-            }
             crate::state::TaskKind::Compact => {
                 return Err(SteerInputError::ActiveTurnNotSteerable {
                     turn_kind: NonSteerableTurnKind::Compact,

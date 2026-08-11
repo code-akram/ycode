@@ -97,69 +97,6 @@ fn exec_root_span_can_be_parented_from_trace_context() {
     );
 }
 
-#[test]
-fn builds_uncommitted_review_request() {
-    let args = ReviewArgs {
-        uncommitted: true,
-        base: None,
-        commit: None,
-        commit_title: None,
-        prompt: None,
-    };
-    let request = build_review_request(&args).expect("builds uncommitted review request");
-
-    let expected = ReviewRequest {
-        target: ReviewTarget::UncommittedChanges,
-        user_facing_hint: None,
-    };
-
-    assert_eq!(request, expected);
-}
-
-#[test]
-fn builds_commit_review_request_with_title() {
-    let args = ReviewArgs {
-        uncommitted: false,
-        base: None,
-        commit: Some("123456789".to_string()),
-        commit_title: Some("Add review command".to_string()),
-        prompt: None,
-    };
-    let request = build_review_request(&args).expect("builds commit review request");
-
-    let expected = ReviewRequest {
-        target: ReviewTarget::Commit {
-            sha: "123456789".to_string(),
-            title: Some("Add review command".to_string()),
-        },
-        user_facing_hint: None,
-    };
-
-    assert_eq!(request, expected);
-}
-
-#[test]
-fn builds_custom_review_request_trims_prompt() {
-    let args = ReviewArgs {
-        uncommitted: false,
-        base: None,
-        commit: None,
-        commit_title: None,
-        prompt: Some("  custom review instructions  ".to_string()),
-    };
-    let request = build_review_request(&args).expect("builds custom review request");
-
-    let expected = ReviewRequest {
-        target: ReviewTarget::Custom {
-            instructions: "custom review instructions".to_string(),
-        },
-        user_facing_hint: None,
-    };
-
-    assert_eq!(request, expected);
-}
-
-#[test]
 fn decode_prompt_bytes_strips_utf8_bom() {
     let input = [0xEF, 0xBB, 0xBF, b'h', b'i', b'\n'];
 

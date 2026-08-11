@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use codex_extension_api::ExtensionData;
 use codex_protocol::ResponseItemId;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::items::TurnItem;
 use codex_utils_stream_parser::strip_citations;
 use tokio_util::sync::CancellationToken;
@@ -26,35 +25,24 @@ use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_rollout::state_db;
-use codex_utils_stream_parser::strip_proposed_plan_blocks;
 use futures::Future;
 use tracing::debug;
 use tracing::instrument;
 use tracing::warn;
 
-fn strip_hidden_assistant_markup(text: &str, plan_mode: bool) -> String {
+fn strip_hidden_assistant_markup(text: &str) -> String {
     let (without_citations, _) = strip_citations(text);
-    if plan_mode {
-        strip_proposed_plan_blocks(&without_citations)
-    } else {
-        without_citations
-    }
+    without_citations
 }
 
 fn strip_hidden_assistant_markup_and_parse_memory_citation(
     text: &str,
-    plan_mode: bool,
 ) -> (
     String,
     Option<codex_protocol::memory_citation::MemoryCitation>,
 ) {
     let (without_citations, citations) = strip_citations(text);
-    let visible_text = if plan_mode {
-        strip_proposed_plan_blocks(&without_citations)
-    } else {
-        without_citations
-    };
-    (visible_text, parse_memory_citation(citations))
+    (without_citations, parse_memory_citation(citations))
 }
 
 pub(crate) fn raw_assistant_output_text_from_item(item: &ResponseItem) -> Option<String> {
@@ -97,12 +85,7 @@ pub(crate) async fn record_completed_response_item_with_finalized_facts(
     sess.record_conversation_items(turn_context, std::slice::from_ref(item))
         .await;
     let defers_mailbox_delivery = finalized_facts.map_or_else(
-        || {
-            completed_item_defers_mailbox_delivery_to_next_turn(
-                item,
-                turn_context.mode == ModeKind::Plan,
-            )
-        },
+        || completed_item_defers_mailbox_delivery_to_next_turn(item),
         |facts| facts.defers_mailbox_delivery_to_next_turn,
     );
     if defers_mailbox_delivery {
@@ -244,10 +227,8 @@ pub(crate) async fn finalize_non_tool_response_item(
     sess: &Session,
     contributor_policy: TurnItemContributorPolicy<'_>,
     item: &ResponseItem,
-    plan_mode: bool,
 ) -> Option<FinalizedTurnItem> {
-    let turn_item =
-        handle_non_tool_response_item(sess, contributor_policy, item, plan_mode).await?;
+    let turn_item = handle_non_tool_response_item(sess, contributor_policy, item).await?;
     let (memory_citation, last_agent_message, defers_mailbox_delivery_to_next_turn) =
         match &turn_item {
             TurnItem::AgentMessage(agent_message) => {
@@ -291,8 +272,6 @@ pub(crate) async fn handle_output_item_done(
     previously_active_item: Option<TurnItem>,
 ) -> Result<OutputItemResult> {
     let mut output = OutputItemResult::default();
-    let plan_mode = ctx.turn_context.mode == ModeKind::Plan;
-
     match ToolRouter::build_tool_call(item.clone()) {
         // The model emitted a tool call; log it, persist the item immediately, and queue the tool execution.
         Ok(Some(call)) => {
@@ -331,7 +310,6 @@ pub(crate) async fn handle_output_item_done(
                 ctx.sess.as_ref(),
                 TurnItemContributorPolicy::Run(ctx.turn_store.as_ref()),
                 &item,
-                plan_mode,
             )
             .await;
             let finalized_facts = finalized_turn_item
@@ -393,7 +371,6 @@ pub(crate) async fn handle_non_tool_response_item(
     sess: &Session,
     contributor_policy: TurnItemContributorPolicy<'_>,
     item: &ResponseItem,
-    plan_mode: bool,
 ) -> Option<TurnItem> {
     let item_type = match item {
         ResponseItem::AdditionalTools { .. } => "additional_tools",
@@ -425,7 +402,7 @@ pub(crate) async fn handle_non_tool_response_item(
         | ResponseItem::Reasoning { .. }
         | ResponseItem::WebSearchCall { .. } => {
             let mut turn_item = parse_turn_item(item)?;
-            finalize_turn_item(sess, contributor_policy, &mut turn_item, plan_mode).await;
+            finalize_turn_item(sess, contributor_policy, &mut turn_item).await;
             Some(turn_item)
         }
         ResponseItem::FunctionCallOutput { .. }
@@ -442,7 +419,6 @@ pub(crate) async fn finalize_turn_item(
     sess: &Session,
     contributor_policy: TurnItemContributorPolicy<'_>,
     turn_item: &mut TurnItem,
-    plan_mode: bool,
 ) {
     if let TurnItemContributorPolicy::Run(turn_store) = contributor_policy {
         apply_turn_item_contributors(sess, turn_store, turn_item).await;
@@ -456,7 +432,7 @@ pub(crate) async fn finalize_turn_item(
             })
             .collect::<String>();
         let (stripped, memory_citation) =
-            strip_hidden_assistant_markup_and_parse_memory_citation(&combined, plan_mode);
+            strip_hidden_assistant_markup_and_parse_memory_citation(&combined);
         agent_message.content =
             vec![codex_protocol::items::AgentMessageContent::Text { text: stripped }];
         if agent_message.memory_citation.is_none() {
@@ -465,15 +441,12 @@ pub(crate) async fn finalize_turn_item(
     }
 }
 
-pub(crate) fn last_assistant_message_from_item(
-    item: &ResponseItem,
-    plan_mode: bool,
-) -> Option<String> {
+pub(crate) fn last_assistant_message_from_item(item: &ResponseItem) -> Option<String> {
     if let Some(combined) = raw_assistant_output_text_from_item(item) {
         if combined.is_empty() {
             return None;
         }
-        let stripped = strip_hidden_assistant_markup(&combined, plan_mode);
+        let stripped = strip_hidden_assistant_markup(&combined);
         if stripped.trim().is_empty() {
             return None;
         }
@@ -482,10 +455,7 @@ pub(crate) fn last_assistant_message_from_item(
     None
 }
 
-fn completed_item_defers_mailbox_delivery_to_next_turn(
-    item: &ResponseItem,
-    plan_mode: bool,
-) -> bool {
+fn completed_item_defers_mailbox_delivery_to_next_turn(item: &ResponseItem) -> bool {
     match item {
         ResponseItem::Message { role, phase, .. } => {
             if role != "assistant" || matches!(phase, Some(MessagePhase::Commentary)) {
@@ -493,7 +463,7 @@ fn completed_item_defers_mailbox_delivery_to_next_turn(
             }
             // Treat `None` like final-answer text so untagged providers default
             // to the safer "defer mailbox mail" behavior.
-            last_assistant_message_from_item(item, plan_mode).is_some()
+            last_assistant_message_from_item(item).is_some()
         }
         _ => false,
     }

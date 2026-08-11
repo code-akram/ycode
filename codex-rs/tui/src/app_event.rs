@@ -46,7 +46,6 @@ use crate::goal_files::GoalDraft;
 use crate::runtime_session::CliRuntimeStartedThread;
 use codex_features::Feature;
 use codex_plugin::PluginCapabilitySummary;
-use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::config_types::Personality;
 use codex_protocol::openai_models::ReasoningEffort;
 
@@ -701,13 +700,6 @@ pub(crate) enum AppEvent {
         deferred_history_cell: Option<Box<dyn HistoryCell>>,
     },
 
-    /// Replace the contiguous run of streaming `ProposedPlanStreamCell`s at the
-    /// end of the transcript with a single source-backed `ProposedPlanCell`.
-    ///
-    /// Emitted by `ChatWidget::on_plan_item_completed` after plan stream
-    /// finalization.
-    ConsolidateProposedPlan(String),
-
     StartCommitAnimation,
     StopCommitAnimation,
     CommitTick,
@@ -760,12 +752,6 @@ pub(crate) enum AppEvent {
         effort: ReasoningEffort,
     },
 
-    /// Open the Plan-mode reasoning scope prompt for the selected model/effort.
-    OpenPlanReasoningScopePrompt {
-        model: String,
-        effort: Option<ReasoningEffort>,
-    },
-
     /// Open the full model picker (non-auto models).
     OpenAllModelsPopup {
         models: Vec<ModelPreset>,
@@ -788,14 +774,8 @@ pub(crate) enum AppEvent {
     /// Update whether the rate limit switch prompt has been acknowledged for the session.
     UpdateRateLimitSwitchPromptHidden(bool),
 
-    /// Update the Plan-mode-specific reasoning effort in memory.
-    UpdatePlanModeReasoningEffort(Option<ReasoningEffort>),
-
     /// Persist the acknowledgement flag for the rate limit switch prompt.
     PersistRateLimitSwitchPromptHidden,
-
-    /// Persist the Plan-mode-specific reasoning effort.
-    PersistPlanModeReasoningEffort(Option<ReasoningEffort>),
 
     /// Persist the acknowledgement flag for the model migration prompt.
     PersistModelMigrationPromptAcknowledged {
@@ -848,21 +828,6 @@ pub(crate) enum AppEvent {
 
     /// Notify that the manage skills popup was closed.
     ManageSkillsClosed,
-
-    /// Open the branch picker option from the review popup.
-    OpenReviewBranchPicker(PathBuf),
-
-    /// Open the commit picker option from the review popup.
-    OpenReviewCommitPicker(PathBuf),
-
-    /// Open the custom prompt option from the review popup.
-    OpenReviewCustomPrompt,
-
-    /// Submit a user message with an explicit collaboration mask.
-    SubmitUserMessageWithMode {
-        text: String,
-        collaboration_mode: CollaborationModeMask,
-    },
 
     /// Open the feedback note entry overlay after the user selects a category.
     OpenFeedbackNote {

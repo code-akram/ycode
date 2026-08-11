@@ -1,7 +1,6 @@
 //! Runtime settings state and model/collaboration coordination for `ChatWidget`.
 
 use super::*;
-use crate::app_event::AppEvent;
 use crate::chatwidget::rate_limits::RATE_LIMIT_SWITCH_PROMPT_VIEW_ID;
 
 impl ChatWidget {
@@ -32,7 +31,7 @@ impl ChatWidget {
                 self.current_goal_status = None;
                 self.turn_lifecycle.goal_status_active_turn_started_at = None;
                 self.turn_lifecycle.budget_limited_turn_ids.clear();
-                self.update_collaboration_mode_indicator();
+                self.update_goal_status_indicator();
             }
         }
         if feature == Feature::MentionsV2 {
@@ -44,46 +43,13 @@ impl ChatWidget {
         enabled
     }
 
-    /// Override the reasoning effort used when Plan mode is active.
-    ///
-    /// When the active mask is already Plan, the override is applied immediately
-    /// so the footer reflects it without waiting for the next mode switch.
-    /// Passing `None` resets to the Plan-mode preset default.
-    pub(crate) fn set_plan_mode_reasoning_effort(&mut self, effort: Option<ReasoningEffortConfig>) {
-        self.config.plan_mode_reasoning_effort = effort.clone();
-        if self.collaboration_modes_enabled()
-            && let Some(mask) = self.active_collaboration_mask.as_mut()
-            && mask.mode == Some(ModeKind::Plan)
-        {
-            if let Some(effort) = effort {
-                mask.reasoning_effort = Some(Some(effort));
-            } else if let Some(plan_mask) =
-                collaboration_modes::plan_mask(self.model_catalog.as_ref())
-            {
-                mask.reasoning_effort = plan_mask.reasoning_effort;
-            }
-        }
-        self.refresh_model_dependent_surfaces();
-    }
-
-    /// Set the reasoning effort for the non-Plan collaboration mode.
-    ///
-    /// Does not touch the active Plan mask — Plan reasoning is controlled
-    /// exclusively by the Plan preset and `set_plan_mode_reasoning_effort`.
+    /// Set the reasoning effort used by subsequent turns.
     pub(crate) fn set_reasoning_effort(&mut self, effort: Option<ReasoningEffortConfig>) {
-        self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
+        self.current_agent_settings = self.current_agent_settings.with_updates(
             /*model*/ None,
             Some(effort.clone()),
             /*developer_instructions*/ None,
         );
-        if self.collaboration_modes_enabled()
-            && let Some(mask) = self.active_collaboration_mask.as_mut()
-            && mask.mode != Some(ModeKind::Plan)
-        {
-            // Generic "global default" updates should not mutate the active Plan mask.
-            // Plan reasoning is controlled by the Plan preset and Plan-only override updates.
-            mask.reasoning_effort = Some(effort);
-        }
         self.refresh_model_dependent_surfaces();
     }
 
@@ -160,30 +126,19 @@ impl ChatWidget {
         self.config.tui_theme = theme;
     }
 
-    /// Set the model in the widget's config copy and stored collaboration mode.
+    /// Set the model in the widget's config copy and stored agent settings.
     pub(crate) fn set_model(&mut self, model: &str) {
-        self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
+        self.current_agent_settings = self.current_agent_settings.with_updates(
             Some(model.to_string()),
             /*effort*/ None,
             /*developer_instructions*/ None,
         );
-        if self.collaboration_modes_enabled()
-            && let Some(mask) = self.active_collaboration_mask.as_mut()
-        {
-            mask.model = Some(model.to_string());
-        }
         self.refresh_effective_service_tier();
         self.refresh_model_dependent_surfaces();
     }
 
     pub(crate) fn current_model(&self) -> &str {
-        if !self.collaboration_modes_enabled() {
-            return self.current_collaboration_mode.model();
-        }
-        self.active_collaboration_mask
-            .as_ref()
-            .and_then(|mask| mask.model.as_deref())
-            .unwrap_or_else(|| self.current_collaboration_mode.model())
+        self.current_agent_settings.model()
     }
 
     pub(super) fn sync_personality_command_enabled(&mut self) {
@@ -250,8 +205,8 @@ impl ChatWidget {
         )
     }
 
-    pub(crate) fn current_collaboration_mode(&self) -> &CollaborationMode {
-        &self.current_collaboration_mode
+    pub(crate) fn current_agent_settings(&self) -> &AgentSettings {
+        &self.current_agent_settings
     }
 
     pub(crate) fn current_reasoning_effort(&self) -> Option<ReasoningEffortConfig> {
@@ -276,103 +231,20 @@ impl ChatWidget {
         self.apply_thread_settings(notification.thread_settings);
     }
 
-    #[cfg(test)]
-    pub(crate) fn active_collaboration_mode_kind(&self) -> ModeKind {
-        self.active_mode_kind()
-    }
-
     pub(super) fn is_session_configured(&self) -> bool {
         self.thread_id.is_some()
     }
 
-    pub(super) fn collaboration_modes_enabled(&self) -> bool {
-        true
-    }
-
-    /// Returns the dismissal scope that applies to the currently visible draft.
-    fn plan_mode_nudge_scope(&self) -> PlanModeNudgeScope {
-        self.thread_id
-            .map_or(PlanModeNudgeScope::NewThread, PlanModeNudgeScope::Thread)
-    }
-
-    /// Returns whether the current draft should replace the normal footer with the Plan-mode nudge.
-    ///
-    /// `ChatWidget` owns this policy because it can combine lexical draft matching with mode
-    /// availability, interaction state, and thread-scoped dismissal. `ChatComposer` only renders
-    /// the resulting visibility bit. Keeping slash and shell drafts out here avoids advertising a
-    /// mode switch while the user is intentionally composing another local command.
-    pub(super) fn should_show_plan_mode_nudge(&self) -> bool {
-        let text = self.bottom_pane.composer_text();
-        let trimmed = text.trim_start();
-        self.collaboration_modes_enabled()
-            && collaboration_modes::plan_mask(self.model_catalog.as_ref()).is_some()
-            && self.active_mode_kind() != ModeKind::Plan
-            && self.bottom_pane.composer_input_enabled()
-            && !self.bottom_pane.is_task_running()
-            && self.bottom_pane.no_modal_or_popup_active()
-            && !trimmed.starts_with('/')
-            && !trimmed.starts_with('!')
-            && contains_plan_keyword(&text)
-            && !self
-                .dismissed_plan_mode_nudge_scopes
-                .contains(&self.plan_mode_nudge_scope())
-    }
-
-    /// Synchronizes the footer presentation with the current Plan-mode nudge policy.
-    pub(super) fn refresh_plan_mode_nudge(&mut self) {
-        self.bottom_pane
-            .set_plan_mode_nudge_visible(self.should_show_plan_mode_nudge());
-    }
-
-    /// Hides the nudge for the current thread scope until the user changes conversation context.
-    pub(super) fn dismiss_plan_mode_nudge(&mut self) {
-        self.dismissed_plan_mode_nudge_scopes
-            .insert(self.plan_mode_nudge_scope());
-        self.refresh_plan_mode_nudge();
-    }
-
-    pub(super) fn initial_collaboration_mask(
-        _config: &Config,
-        model_catalog: &ModelCatalog,
-        model_override: Option<&str>,
-    ) -> Option<CollaborationModeMask> {
-        let mut mask = collaboration_modes::default_mask(model_catalog)?;
-        if let Some(model_override) = model_override {
-            mask.model = Some(model_override.to_string());
-        }
-        Some(mask)
-    }
-
-    pub(super) fn active_mode_kind(&self) -> ModeKind {
-        self.active_collaboration_mask
-            .as_ref()
-            .and_then(|mask| mask.mode)
-            .unwrap_or(ModeKind::Default)
-    }
-
     pub(super) fn effective_reasoning_effort(&self) -> Option<ReasoningEffortConfig> {
-        if !self.collaboration_modes_enabled() {
-            return self.current_collaboration_mode.reasoning_effort();
-        }
-        let current_effort = self.current_collaboration_mode.reasoning_effort();
-        self.active_collaboration_mask
-            .as_ref()
-            .and_then(|mask| mask.reasoning_effort.clone())
-            .unwrap_or(current_effort)
+        self.current_agent_settings.reasoning_effort()
     }
 
-    pub(crate) fn effective_collaboration_mode(&self) -> CollaborationMode {
-        if !self.collaboration_modes_enabled() {
-            return self.current_collaboration_mode.clone();
-        }
-        self.active_collaboration_mask.as_ref().map_or_else(
-            || self.current_collaboration_mode.clone(),
-            |mask| self.current_collaboration_mode.apply_mask(mask),
-        )
+    pub(crate) fn effective_agent_settings(&self) -> AgentSettings {
+        self.current_agent_settings.clone()
     }
 
     pub(super) fn refresh_model_display(&mut self) {
-        let effective = self.effective_collaboration_mode();
+        let effective = self.effective_agent_settings();
         self.session_header.set_model(effective.model());
         // Keep composer paste affordances aligned with the currently effective model.
         self.sync_image_paste_enabled();
@@ -383,14 +255,7 @@ impl ChatWidget {
             .set_active_reasoning_effort(effort.as_ref());
     }
 
-    /// Refresh every UI surface that depends on the effective model, reasoning
-    /// effort, or collaboration mode.
-    ///
-    /// Call this at the end of any setter that mutates `current_collaboration_mode`,
-    /// `active_collaboration_mask`, or per-mode reasoning-effort overrides.
-    /// Consolidating both refreshes here prevents the bug where callers update the
-    /// header/title (`refresh_model_display`) but forget the footer status line
-    /// (`refresh_status_line`).
+    /// Refresh every UI surface that depends on the effective model or reasoning effort.
     pub(super) fn refresh_model_dependent_surfaces(&mut self) {
         self.refresh_model_display();
         self.refresh_status_line();
@@ -403,9 +268,9 @@ impl ChatWidget {
         self.set_service_tier(settings.service_tier.clone());
         self.config.personality = settings.personality;
 
-        settings.collaboration_mode.settings.model = settings.model;
-        settings.collaboration_mode.settings.reasoning_effort = settings.effort;
-        self.set_effective_collaboration_mode(settings.collaboration_mode);
+        settings.agent_settings.settings.model = settings.model;
+        settings.agent_settings.settings.reasoning_effort = settings.effort;
+        self.set_effective_agent_settings(settings.agent_settings);
         self.refresh_effective_service_tier();
         self.refresh_status_surfaces();
         self.sync_service_tier_commands();
@@ -438,24 +303,8 @@ impl ChatWidget {
             .set_workspace_roots(self.config.workspace_roots.clone());
     }
 
-    pub(super) fn set_effective_collaboration_mode(&mut self, mode: CollaborationMode) {
-        let mode_kind = mode.mode;
-        let settings = mode.settings;
-        if mode_kind == ModeKind::Default {
-            self.current_collaboration_mode = CollaborationMode {
-                mode: ModeKind::Default,
-                settings: settings.clone(),
-            };
-        }
-        self.active_collaboration_mask = Some(CollaborationModeMask {
-            name: mode_kind.display_name().to_string(),
-            mode: Some(mode_kind),
-            model: Some(settings.model.clone()),
-            reasoning_effort: Some(settings.reasoning_effort.clone()),
-            developer_instructions: Some(settings.developer_instructions),
-        });
-        self.update_collaboration_mode_indicator();
-        self.refresh_plan_mode_nudge();
+    pub(super) fn set_effective_agent_settings(&mut self, settings: AgentSettings) {
+        self.current_agent_settings = settings;
         self.refresh_model_dependent_surfaces();
     }
 
@@ -468,43 +317,13 @@ impl ChatWidget {
         }
     }
 
-    /// Get the label for the current collaboration mode.
-    pub(super) fn collaboration_mode_label(&self) -> Option<&'static str> {
-        if !self.collaboration_modes_enabled() {
-            return None;
-        }
-        let active_mode = self.active_mode_kind();
-        active_mode
-            .is_tui_visible()
-            .then_some(active_mode.display_name())
-    }
-
-    fn collaboration_mode_indicator(&self) -> Option<CollaborationModeIndicator> {
-        if !self.collaboration_modes_enabled() {
-            return None;
-        }
-        match self.active_mode_kind() {
-            ModeKind::Plan => Some(CollaborationModeIndicator::Plan),
-            ModeKind::Default => None,
-        }
-    }
-
-    pub(super) fn update_collaboration_mode_indicator(&mut self) {
-        let indicator = self.collaboration_mode_indicator();
-        let goal_indicator = if indicator.is_none() {
-            self.goal_status_indicator(Instant::now())
-        } else {
-            None
-        };
+    pub(super) fn update_goal_status_indicator(&mut self) {
+        let goal_indicator = self.goal_status_indicator(Instant::now());
         self.current_goal_status_indicator = goal_indicator.clone();
-        self.bottom_pane.set_collaboration_mode_indicator(indicator);
         self.bottom_pane.set_goal_status_indicator(goal_indicator);
     }
 
     pub(super) fn refresh_goal_status_indicator_for_time_tick(&mut self) {
-        if self.collaboration_mode_indicator().is_some() {
-            return;
-        }
         let goal_indicator = self.goal_status_indicator(Instant::now());
         if goal_indicator != self.current_goal_status_indicator {
             self.current_goal_status_indicator = goal_indicator.clone();
@@ -530,7 +349,7 @@ impl ChatWidget {
         if !self.config.features.enabled(Feature::Goals) {
             self.current_goal_status_indicator = None;
             self.current_goal_status = None;
-            self.update_collaboration_mode_indicator();
+            self.update_goal_status_indicator();
             return;
         }
         if goal.status == AppThreadGoalStatus::BudgetLimited
@@ -539,90 +358,6 @@ impl ChatWidget {
             self.turn_lifecycle.mark_budget_limited(turn_id);
         }
         self.current_goal_status = Some(GoalStatusState::new(goal, Instant::now()));
-        self.update_collaboration_mode_indicator();
-    }
-
-    /// Cycle to the next collaboration mode variant (Plan -> Default -> Plan).
-    pub(super) fn cycle_collaboration_mode(&mut self) {
-        if !self.collaboration_modes_enabled() {
-            return;
-        }
-
-        if let Some(next_mask) = collaboration_modes::next_mask(
-            self.model_catalog.as_ref(),
-            self.active_collaboration_mask.as_ref(),
-        ) {
-            self.set_collaboration_mask_from_user_action(next_mask);
-        }
-    }
-
-    pub(crate) fn set_collaboration_mask_from_user_action(&mut self, mask: CollaborationModeMask) {
-        self.set_collaboration_mask(mask);
-        self.submit_collaboration_mode_settings_update();
-    }
-
-    /// Update the active collaboration mask.
-    ///
-    /// When collaboration modes are enabled and a preset is selected,
-    /// the current mode is attached to submissions as `Op::UserTurn { collaboration_mode: Some(...) }`.
-    pub(crate) fn set_collaboration_mask(&mut self, mut mask: CollaborationModeMask) {
-        if !self.collaboration_modes_enabled() {
-            return;
-        }
-        let previous_mode = self.active_mode_kind();
-        let previous_model = self.current_model().to_string();
-        let previous_effort = self.effective_reasoning_effort();
-        if mask.mode == Some(ModeKind::Plan)
-            && let Some(effort) = self.config.plan_mode_reasoning_effort.clone()
-        {
-            mask.reasoning_effort = Some(Some(effort));
-        }
-        if mask.mode == Some(ModeKind::Plan) {
-            self.dismissed_plan_mode_nudge_scopes
-                .insert(self.plan_mode_nudge_scope());
-        }
-        self.active_collaboration_mask = Some(mask);
-        self.update_collaboration_mode_indicator();
-        self.refresh_plan_mode_nudge();
-        self.refresh_model_dependent_surfaces();
-        let next_mode = self.active_mode_kind();
-        let next_model = self.current_model();
-        let next_effort = self.effective_reasoning_effort();
-        if previous_mode != next_mode
-            && (previous_model != next_model || previous_effort != next_effort)
-        {
-            let mut message = format!("Model changed to {next_model}");
-            if !next_model.starts_with("codex-auto-") {
-                let reasoning_label = match next_effort.as_ref() {
-                    None | Some(ReasoningEffortConfig::None) => "default",
-                    Some(effort) => effort.as_str(),
-                };
-                message.push(' ');
-                message.push_str(reasoning_label);
-            }
-            message.push_str(" for ");
-            message.push_str(next_mode.display_name());
-            message.push_str(" mode.");
-            self.add_info_message(message, /*hint*/ None);
-        }
-        self.request_redraw();
-    }
-
-    fn submit_collaboration_mode_settings_update(&self) {
-        let Some(thread_id) = self.thread_id else {
-            return;
-        };
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id,
-            op: AppCommand::override_turn_context(
-                /*cwd*/ None,
-                /*model*/ None,
-                /*effort*/ None,
-                /*summary*/ None,
-                /*service_tier*/ None,
-                Some(self.effective_collaboration_mode()),
-                /*personality*/ None,
-            ),
-        });
+        self.update_goal_status_indicator();
     }
 }

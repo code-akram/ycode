@@ -17,10 +17,6 @@ pub fn user_message_style() -> Style {
     user_message_style_for(default_bg())
 }
 
-pub fn proposed_plan_style() -> Style {
-    proposed_plan_style_for(default_bg())
-}
-
 /// Returns a low-contrast rule style for separators within markdown tables.
 pub(crate) fn table_separator_style() -> Style {
     table_separator_style_for(default_fg(), default_bg(), stdout_color_level())
@@ -35,13 +31,6 @@ pub(crate) fn accent_style() -> Style {
 pub fn user_message_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
     match terminal_bg {
         Some(bg) => Style::default().bg(user_message_bg(bg)),
-        None => Style::default(),
-    }
-}
-
-pub fn proposed_plan_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
-    match terminal_bg {
-        Some(bg) => Style::default().bg(proposed_plan_bg(bg)),
         None => Style::default(),
     }
 }
@@ -83,11 +72,6 @@ pub(crate) fn user_message_bg_rgb(terminal_bg: (u8, u8, u8)) -> (u8, u8, u8) {
         ((255, 255, 255), 0.12)
     };
     blend(top, terminal_bg, alpha)
-}
-
-#[allow(clippy::disallowed_methods)]
-pub fn proposed_plan_bg(terminal_bg: (u8, u8, u8)) -> Color {
-    user_message_bg(terminal_bg)
 }
 
 #[cfg(test)]

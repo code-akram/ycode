@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
-use codex_cli_protocol::ReviewTarget;
 use codex_cli_protocol::ToolRequestUserInputResponse;
 use codex_cli_protocol::UserInput;
-use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -26,7 +25,7 @@ pub(crate) enum AppCommand {
         summary: Option<ReasoningSummaryConfig>,
         service_tier: Option<Option<String>>,
         final_output_json_schema: Option<Value>,
-        collaboration_mode: Option<CollaborationMode>,
+        agent_settings: Option<AgentSettings>,
         personality: Option<Personality>,
     },
     OverrideTurnContext {
@@ -35,7 +34,7 @@ pub(crate) enum AppCommand {
         effort: Option<Option<ReasoningEffortConfig>>,
         summary: Option<ReasoningSummaryConfig>,
         service_tier: Option<Option<String>>,
-        collaboration_mode: Option<CollaborationMode>,
+        agent_settings: Option<AgentSettings>,
         personality: Option<Personality>,
     },
     UserInputAnswer {
@@ -50,9 +49,6 @@ pub(crate) enum AppCommand {
     Compact,
     SetThreadName {
         name: String,
-    },
-    Review {
-        target: ReviewTarget,
     },
 }
 
@@ -78,7 +74,7 @@ impl AppCommand {
         summary: Option<ReasoningSummaryConfig>,
         service_tier: Option<Option<String>>,
         final_output_json_schema: Option<Value>,
-        collaboration_mode: Option<CollaborationMode>,
+        agent_settings: Option<AgentSettings>,
         personality: Option<Personality>,
     ) -> Self {
         Self::UserTurn {
@@ -89,7 +85,7 @@ impl AppCommand {
             summary,
             service_tier,
             final_output_json_schema,
-            collaboration_mode,
+            agent_settings,
             personality,
         }
     }
@@ -101,7 +97,7 @@ impl AppCommand {
         effort: Option<Option<ReasoningEffortConfig>>,
         summary: Option<ReasoningSummaryConfig>,
         service_tier: Option<Option<String>>,
-        collaboration_mode: Option<CollaborationMode>,
+        agent_settings: Option<AgentSettings>,
         personality: Option<Personality>,
     ) -> Self {
         Self::OverrideTurnContext {
@@ -110,7 +106,7 @@ impl AppCommand {
             effort,
             summary,
             service_tier,
-            collaboration_mode,
+            agent_settings,
             personality,
         }
     }
@@ -133,14 +129,6 @@ impl AppCommand {
 
     pub(crate) fn set_thread_name(name: String) -> Self {
         Self::SetThreadName { name }
-    }
-
-    pub(crate) fn review(target: ReviewTarget) -> Self {
-        Self::Review { target }
-    }
-
-    pub(crate) fn is_review(&self) -> bool {
-        matches!(self, Self::Review { .. })
     }
 }
 

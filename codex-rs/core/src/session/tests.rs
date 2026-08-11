@@ -101,8 +101,7 @@ use codex_network_proxy::NetworkProxyConfig;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_otel::TelemetryAuthMode;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Settings;
 use codex_protocol::items::HookPromptFragment;
 use codex_protocol::items::build_hook_prompt_message;
@@ -755,7 +754,7 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
 
 #[test]
 fn assistant_message_stream_parsers_can_be_seeded_from_output_item_added_text() {
-    let mut parsers = AssistantMessageStreamParsers::new(/*plan_mode*/ false);
+    let mut parsers = AssistantMessageStreamParsers::default();
     let item_id = "msg-1";
 
     let seeded = parsers.seed_item_text(item_id, "hello <oai-mem-citation>doc");
@@ -772,7 +771,7 @@ fn assistant_message_stream_parsers_can_be_seeded_from_output_item_added_text() 
 
 #[test]
 fn assistant_message_stream_parsers_seed_buffered_prefix_stays_out_of_finish_tail() {
-    let mut parsers = AssistantMessageStreamParsers::new(/*plan_mode*/ false);
+    let mut parsers = AssistantMessageStreamParsers::default();
     let item_id = "msg-1";
 
     let seeded = parsers.seed_item_text(item_id, "hello <oai-mem-");
@@ -785,34 +784,6 @@ fn assistant_message_stream_parsers_seed_buffered_prefix_stays_out_of_finish_tai
     assert_eq!(parsed.citations, vec!["doc".to_string()]);
     assert_eq!(tail.visible_text, "");
     assert_eq!(tail.citations, Vec::<String>::new());
-}
-
-#[test]
-fn assistant_message_stream_parsers_seed_plan_parser_across_added_and_delta_boundaries() {
-    let mut parsers = AssistantMessageStreamParsers::new(/*plan_mode*/ true);
-    let item_id = "msg-1";
-
-    let seeded = parsers.seed_item_text(item_id, "Intro\n<proposed");
-    let parsed = parsers.parse_delta(item_id, "_plan>\n- step\n</proposed_plan>\nOutro");
-    let tail = parsers.finish_item(item_id);
-
-    assert_eq!(seeded.visible_text, "Intro\n");
-    assert_eq!(
-        seeded.plan_segments,
-        vec![ProposedPlanSegment::Normal("Intro\n".to_string())]
-    );
-    assert_eq!(parsed.visible_text, "Outro");
-    assert_eq!(
-        parsed.plan_segments,
-        vec![
-            ProposedPlanSegment::ProposedPlanStart,
-            ProposedPlanSegment::ProposedPlanDelta("- step\n".to_string()),
-            ProposedPlanSegment::ProposedPlanEnd,
-            ProposedPlanSegment::Normal("Outro".to_string()),
-        ]
-    );
-    assert_eq!(tail.visible_text, "");
-    assert!(tail.plan_segments.is_empty());
 }
 
 #[test]
@@ -2502,7 +2473,7 @@ async fn turn_start_lifecycle_exposes_turn_metadata_and_token_baseline() {
         thread_level_id: String,
         turn_level_id: String,
         turn_id: String,
-        collaboration_mode: CollaborationMode,
+        agent_settings: AgentSettings,
         token_usage_at_turn_start: TokenUsage,
         saw_session_store: bool,
         saw_thread_store: bool,
@@ -2526,7 +2497,7 @@ async fn turn_start_lifecycle_exposes_turn_metadata_and_token_baseline() {
                         thread_level_id: input.thread_store.level_id().to_string(),
                         turn_level_id: input.turn_store.level_id().to_string(),
                         turn_id: input.turn_id.to_string(),
-                        collaboration_mode: input.collaboration_mode.clone(),
+                        agent_settings: input.agent_settings.clone(),
                         token_usage_at_turn_start: input.token_usage_at_turn_start.clone(),
                         saw_session_store: input
                             .session_store
@@ -2573,7 +2544,7 @@ async fn turn_start_lifecycle_exposes_turn_metadata_and_token_baseline() {
         thread_level_id: session.thread_id.to_string(),
         turn_level_id: turn_context.sub_id.clone(),
         turn_id: turn_context.sub_id.clone(),
-        collaboration_mode: turn_context.collaboration_mode(),
+        agent_settings: turn_context.agent_settings(),
         token_usage_at_turn_start,
         saw_session_store: true,
         saw_thread_store: true,
@@ -2742,7 +2713,7 @@ async fn config_change_contributor_observes_effective_config_changes() {
         .thread_extension_data
         .insert(ThreadConfigMarker);
 
-    let original_model = session.collaboration_mode().await.model().to_string();
+    let original_model = session.agent_settings().await.model().to_string();
     let original_disabled_tools = session
         .get_config()
         .await
@@ -2754,14 +2725,14 @@ async fn config_change_contributor_observes_effective_config_changes() {
     } else {
         "gpt-5.4"
     };
-    let collaboration_mode = session.collaboration_mode().await.with_updates(
+    let agent_settings = session.agent_settings().await.with_updates(
         Some(next_model.to_string()),
         /*effort*/ None,
         /*developer_instructions*/ None,
     );
     session
         .update_settings(SessionSettingsUpdate {
-            collaboration_mode: Some(collaboration_mode),
+            agent_settings: Some(agent_settings),
             ..Default::default()
         })
         .await
@@ -3030,8 +3001,7 @@ async fn fork_startup_context_then_first_turn_diff_snapshot() -> anyhow::Result<
         )
         .await?;
 
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Plan,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model: forked.session_configured.model.clone(),
             reasoning_effort: None,
@@ -3050,7 +3020,7 @@ async fn fork_startup_context_then_first_turn_diff_snapshot() -> anyhow::Result<
             additional_context: Default::default(),
             thread_settings: ThreadSettingsOverrides {
                 approval_policy: Some(AskForApproval::Never),
-                collaboration_mode: Some(collaboration_mode),
+                agent_settings: Some(agent_settings),
                 ..Default::default()
             },
         })
@@ -3100,7 +3070,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
         model: previous_model.to_string(),
         comp_hash: None,
         personality: turn_context.personality,
-        collaboration_mode: Some(turn_context.collaboration_mode()),
+        agent_settings: Some(turn_context.agent_settings()),
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(turn_context.realtime_active),
@@ -3118,7 +3088,6 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -3323,7 +3292,6 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -3354,7 +3322,6 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(
@@ -3447,7 +3414,6 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
@@ -3476,7 +3442,6 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::Compacted(CompactedItem {
@@ -3502,7 +3467,6 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
@@ -3582,7 +3546,6 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
@@ -3611,7 +3574,6 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
@@ -3640,7 +3602,6 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
                 trace_id: None,
                 started_at: None,
                 model_context_window: Some(128_000),
-                collaboration_mode_kind: ModeKind::Default,
             },
         )),
         RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
@@ -3748,8 +3709,7 @@ async fn set_rate_limits_retains_previous_credits() {
     let model_info =
         construct_model_info_offline_for_tests(model.as_str(), &config.to_models_manager_config());
     let reasoning_effort = config.model_reasoning_effort.clone();
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model,
             reasoning_effort,
@@ -3758,7 +3718,7 @@ async fn set_rate_limits_retains_previous_credits() {
     };
     let session_configuration = SessionConfiguration {
         provider: create_model_provider(config.model_provider.clone(), /*auth_manager*/ None),
-        collaboration_mode,
+        agent_settings,
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         service_tier: None,
@@ -3857,8 +3817,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
     let model_info =
         construct_model_info_offline_for_tests(model.as_str(), &config.to_models_manager_config());
     let reasoning_effort = config.model_reasoning_effort.clone();
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model,
             reasoning_effort,
@@ -3867,7 +3826,7 @@ async fn set_rate_limits_updates_plan_type_when_present() {
     };
     let session_configuration = SessionConfiguration {
         provider: create_model_provider(config.model_provider.clone(), /*auth_manager*/ None),
-        collaboration_mode,
+        agent_settings,
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         service_tier: None,
@@ -3993,14 +3952,14 @@ async fn turn_context_with_model_updates_model_fields() {
         .await;
 
     assert_eq!(updated.config.model.as_deref(), Some("gpt-5.4"));
-    assert_eq!(updated.collaboration_mode().model(), "gpt-5.4");
+    assert_eq!(updated.agent_settings().model(), "gpt-5.4");
     assert_eq!(updated.model_info, expected_model_info);
     assert_eq!(
         updated.reasoning_effort,
         Some(ReasoningEffortConfig::Medium)
     );
     assert_eq!(
-        updated.collaboration_mode().reasoning_effort(),
+        updated.agent_settings().reasoning_effort(),
         Some(ReasoningEffortConfig::Medium)
     );
     assert_eq!(
@@ -4313,8 +4272,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
     let model_info =
         construct_model_info_offline_for_tests(model.as_str(), &config.to_models_manager_config());
     let reasoning_effort = config.model_reasoning_effort.clone();
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model,
             reasoning_effort,
@@ -4324,7 +4282,7 @@ pub(crate) async fn make_session_configuration_for_tests() -> SessionConfigurati
 
     SessionConfiguration {
         provider: create_model_provider(config.model_provider.clone(), /*auth_manager*/ None),
-        collaboration_mode,
+        agent_settings,
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         service_tier: None,
@@ -5106,8 +5064,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
     let model = get_model_offline_for_tests(config.model.as_deref());
     let model_info =
         construct_model_info_offline_for_tests(model.as_str(), &config.to_models_manager_config());
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model,
             reasoning_effort: config.model_reasoning_effort.clone(),
@@ -5119,7 +5076,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
             config.model_provider.clone(),
             Some(Arc::clone(&auth_manager)),
         ),
-        collaboration_mode,
+        agent_settings,
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         service_tier: None,
@@ -5241,8 +5198,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let model_info =
         construct_model_info_offline_for_tests(model.as_str(), &config.to_models_manager_config());
     let reasoning_effort = config.model_reasoning_effort.clone();
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model,
             reasoning_effort,
@@ -5255,7 +5211,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             config.model_provider.clone(),
             Some(Arc::clone(&auth_manager)),
         ),
-        collaboration_mode,
+        agent_settings,
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         service_tier: None,
@@ -5288,7 +5244,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let per_turn_config =
         Session::build_per_turn_config(&session_configuration, session_configuration.cwd().clone());
     let model_info = construct_model_info_offline_for_tests(
-        session_configuration.collaboration_mode.model(),
+        session_configuration.agent_settings.model(),
         &per_turn_config.to_models_manager_config(),
     );
     let session_telemetry = session_telemetry(
@@ -5499,8 +5455,7 @@ async fn make_session_with_config_and_rx(
     let model = get_model_offline_for_tests(config.model.as_deref());
     let model_info =
         construct_model_info_offline_for_tests(model.as_str(), &config.to_models_manager_config());
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model,
             reasoning_effort: config.model_reasoning_effort.clone(),
@@ -5513,7 +5468,7 @@ async fn make_session_with_config_and_rx(
             config.model_provider.clone(),
             Some(Arc::clone(&auth_manager)),
         ),
-        collaboration_mode,
+        agent_settings,
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         service_tier: None,
@@ -5608,8 +5563,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
     let model = get_model_offline_for_tests(config.model.as_deref());
     let model_info =
         construct_model_info_offline_for_tests(model.as_str(), &config.to_models_manager_config());
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model,
             reasoning_effort: config.model_reasoning_effort.clone(),
@@ -5622,7 +5576,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
             config.model_provider.clone(),
             Some(Arc::clone(&auth_manager)),
         ),
-        collaboration_mode,
+        agent_settings,
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         service_tier: None,
@@ -6572,8 +6526,7 @@ async fn user_turn_updates_approvals_reviewer() {
                 sandbox_policy: Some(config.legacy_sandbox_policy()),
                 summary: config.model_reasoning_summary,
                 personality: config.personality,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: turn_context.model_info.slug.clone(),
                         reasoning_effort: config.model_reasoning_effort.clone(),
@@ -7427,8 +7380,7 @@ where
     let model_info =
         construct_model_info_offline_for_tests(model.as_str(), &config.to_models_manager_config());
     let reasoning_effort = config.model_reasoning_effort.clone();
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Default,
+    let agent_settings = AgentSettings {
         settings: Settings {
             model,
             reasoning_effort,
@@ -7441,7 +7393,7 @@ where
             config.model_provider.clone(),
             Some(Arc::clone(&auth_manager)),
         ),
-        collaboration_mode,
+        agent_settings,
         model_reasoning_summary: config.model_reasoning_summary,
         developer_instructions: config.developer_instructions.clone(),
         service_tier: None,
@@ -7474,7 +7426,7 @@ where
     let per_turn_config =
         Session::build_per_turn_config(&session_configuration, session_configuration.cwd().clone());
     let model_info = construct_model_info_offline_for_tests(
-        session_configuration.collaboration_mode.model(),
+        session_configuration.agent_settings.model(),
         &per_turn_config.to_models_manager_config(),
     );
     let session_telemetry = session_telemetry(
@@ -9616,81 +9568,6 @@ async fn try_start_turn_if_idle_rejects_active_turn_without_injecting() {
 }
 
 #[tokio::test]
-async fn try_start_turn_if_idle_rejects_plan_mode_without_injecting() {
-    let (sess, _tc, _rx) = make_session_and_context_with_rx().await;
-    let mut collaboration_mode = sess.collaboration_mode().await;
-    collaboration_mode.mode = ModeKind::Plan;
-    {
-        let mut state = sess.state.lock().await;
-        state.session_configuration.collaboration_mode = collaboration_mode;
-    }
-
-    let item = TurnInput::ResponseItem(user_message("synthetic idle input"));
-    let err = sess
-        .try_start_turn_if_idle(vec![item.clone()])
-        .await
-        .expect_err("plan mode should reject automatic idle input");
-
-    assert_eq!(TryStartTurnIfIdleRejectionReason::PlanMode, err.reason());
-    assert_eq!(vec![item], err.into_input());
-    assert!(sess.active_turn.lock().await.is_none());
-    assert_eq!(
-        (Vec::<TurnInput>::new(), None),
-        sess.input_queue.get_pending_input(&sess.active_turn).await
-    );
-}
-
-#[tokio::test]
-async fn try_start_turn_if_idle_accepts_user_input_in_plan_mode() {
-    let (sess, _tc, _rx) = make_session_and_context_with_rx().await;
-    let mut collaboration_mode = sess.collaboration_mode().await;
-    collaboration_mode.mode = ModeKind::Plan;
-    {
-        let mut state = sess.state.lock().await;
-        state.session_configuration.collaboration_mode = collaboration_mode;
-    }
-
-    sess.try_start_turn_if_idle(vec![TurnInput::UserInput {
-        content: vec![UserInput::Text {
-            text: "queued user input".to_string(),
-            text_elements: Vec::new(),
-        }],
-        client_id: Some("queued-user-message".to_string()),
-    }])
-    .await
-    .expect("plan mode should accept user-authored idle input");
-
-    sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
-}
-
-#[tokio::test]
-async fn try_start_turn_if_idle_rejects_empty_user_input_in_plan_mode() {
-    let (sess, _tc, _rx) = make_session_and_context_with_rx().await;
-    let mut collaboration_mode = sess.collaboration_mode().await;
-    collaboration_mode.mode = ModeKind::Plan;
-    {
-        let mut state = sess.state.lock().await;
-        state.session_configuration.collaboration_mode = collaboration_mode;
-    }
-
-    let input = vec![
-        TurnInput::UserInput {
-            content: Vec::new(),
-            client_id: Some("empty-queued-user-message".to_string()),
-        },
-        TurnInput::ResponseItem(user_message("automatic idle input")),
-    ];
-    let error = sess
-        .try_start_turn_if_idle(input.clone())
-        .await
-        .expect_err("empty user input should not bypass plan mode");
-
-    assert_eq!(TryStartTurnIfIdleRejectionReason::PlanMode, error.reason());
-    assert_eq!(input, error.into_input());
-    assert!(sess.active_turn.lock().await.is_none());
-}
-
-#[tokio::test]
 async fn try_start_turn_if_idle_rejects_pending_trigger_turn_without_injecting() {
     let (sess, _tc, _rx) = make_session_and_context_with_rx().await;
     sess.input_queue
@@ -9719,35 +9596,6 @@ async fn try_start_turn_if_idle_rejects_pending_trigger_turn_without_injecting()
     assert_eq!(vec![item], err.into_input());
     assert!(sess.active_turn.lock().await.is_none());
     assert!(sess.input_queue.has_trigger_turn_mailbox_items().await);
-}
-
-#[tokio::test]
-async fn try_start_turn_if_idle_rejects_active_review_turn_without_injecting() {
-    let (sess, tc, _rx) = make_session_and_context_with_rx().await;
-    sess.spawn_task(
-        Arc::clone(&tc),
-        Vec::new(),
-        NeverEndingTask {
-            kind: TaskKind::Review,
-            listen_to_cancellation_token: true,
-        },
-    )
-    .await;
-
-    let item = TurnInput::ResponseItem(user_message("synthetic idle input"));
-    let err = sess
-        .try_start_turn_if_idle(vec![item.clone()])
-        .await
-        .expect_err("active review turn should reject automatic idle input");
-
-    assert_eq!(TryStartTurnIfIdleRejectionReason::Busy, err.reason());
-    assert_eq!(vec![item], err.into_input());
-    assert_eq!(
-        (Vec::<TurnInput>::new(), None),
-        sess.input_queue.get_pending_input(&sess.active_turn).await
-    );
-
-    sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
 }
 
 #[tokio::test]
@@ -10195,83 +10043,6 @@ async fn tool_calls_reopen_mailbox_delivery_for_current_turn() {
     assert_eq!(
         (sess.input_queue.get_pending_input(&sess.active_turn).await).0,
         vec![TurnInput::InterAgentCommunication(communication)],
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn abort_review_task_emits_exited_then_aborted_and_records_history() {
-    let (sess, tc, rx) = make_session_and_context_with_rx().await;
-    let input = vec![TurnInput::UserInput {
-        content: vec![UserInput::Text {
-            text: "start review".to_string(),
-            text_elements: Vec::new(),
-        }],
-        client_id: None,
-    }];
-    sess.spawn_task(Arc::clone(&tc), input, ReviewTask::new())
-        .await;
-
-    sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
-
-    // Aborting a review task should exit review mode before surfacing the abort to the client.
-    // We scan for these events (rather than relying on fixed ordering) since unrelated events
-    // may interleave.
-    let mut exited_review_mode_idx = None;
-    let mut turn_aborted_idx = None;
-    let mut idx = 0usize;
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
-    while tokio::time::Instant::now() < deadline {
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        let evt = tokio::time::timeout(remaining, rx.recv())
-            .await
-            .expect("timeout waiting for event")
-            .expect("event");
-        let event_idx = idx;
-        idx = idx.saturating_add(1);
-        match evt.msg {
-            EventMsg::ExitedReviewMode(ev) => {
-                assert!(ev.review_output.is_none());
-                exited_review_mode_idx = Some(event_idx);
-            }
-            EventMsg::TurnAborted(ev) => {
-                assert_eq!(TurnAbortReason::Interrupted, ev.reason);
-                turn_aborted_idx = Some(event_idx);
-                break;
-            }
-            _ => {}
-        }
-    }
-    assert!(
-        exited_review_mode_idx.is_some(),
-        "expected ExitedReviewMode after abort"
-    );
-    assert!(
-        turn_aborted_idx.is_some(),
-        "expected TurnAborted after abort"
-    );
-    assert!(
-        exited_review_mode_idx.unwrap() < turn_aborted_idx.unwrap(),
-        "expected ExitedReviewMode before TurnAborted"
-    );
-
-    let history = sess.clone_history().await;
-    // Verify the `<turn_aborted>` marker is still recorded in history for the model.
-    assert!(
-        history.raw_items().iter().any(|item| {
-            let ResponseItem::Message { role, content, .. } = item else {
-                return false;
-            };
-            if role != "user" {
-                return false;
-            }
-            content.iter().any(|content_item| {
-                let ContentItem::InputText { text } = content_item else {
-                    return false;
-                };
-                TurnAborted::matches_text(text)
-            })
-        }),
-        "expected a model-visible turn aborted marker in history after interrupt"
     );
 }
 

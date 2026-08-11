@@ -89,7 +89,7 @@ impl App {
             .apply_older_history_page(thread_id, cursor, page, &mut turns)
             .await?;
         let mut hidden_item_ids = HashSet::new();
-        let mut review_mode = false;
+        let mut legacy_review_history = false;
         for (index, turn) in turns.iter().enumerate() {
             let hidden_nested_review_turn = index
                 .checked_sub(/*rhs*/ 1)
@@ -99,9 +99,11 @@ impl App {
                 });
             for item in &turn.items {
                 match item {
-                    ThreadItem::EnteredReviewMode { .. } => review_mode = true,
-                    ThreadItem::ExitedReviewMode { .. } => review_mode = false,
-                    ThreadItem::UserMessage { .. } if review_mode || hidden_nested_review_turn => {
+                    ThreadItem::EnteredReviewMode { .. } => legacy_review_history = true,
+                    ThreadItem::ExitedReviewMode { .. } => legacy_review_history = false,
+                    ThreadItem::UserMessage { .. }
+                        if legacy_review_history || hidden_nested_review_turn =>
+                    {
                         hidden_item_ids.insert(item.id());
                     }
                     _ => {}

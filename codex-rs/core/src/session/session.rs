@@ -56,7 +56,7 @@ pub(crate) struct SessionConfiguration {
     /// Runtime provider and its provider-specific execution policy.
     pub(super) provider: SharedModelProvider,
 
-    pub(super) collaboration_mode: CollaborationMode,
+    pub(super) agent_settings: AgentSettings,
     pub(super) model_reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(super) service_tier: Option<String>,
 
@@ -202,7 +202,7 @@ impl SessionConfiguration {
 
     pub(super) fn thread_config_snapshot(&self) -> ThreadConfigSnapshot {
         ThreadConfigSnapshot {
-            model: self.collaboration_mode.model().to_string(),
+            model: self.agent_settings.model().to_string(),
             model_provider_id: self.original_config_do_not_use.model_provider_id.clone(),
             service_tier: self.service_tier.clone(),
             approval_policy: self.approval_policy.value(),
@@ -213,10 +213,10 @@ impl SessionConfiguration {
             workspace_roots: self.primary_workspace_roots(),
             profile_workspace_roots: self.profile_workspace_roots().to_vec(),
             ephemeral: self.original_config_do_not_use.ephemeral,
-            reasoning_effort: self.collaboration_mode.reasoning_effort(),
+            reasoning_effort: self.agent_settings.reasoning_effort(),
             reasoning_summary: self.model_reasoning_summary,
             personality: self.personality,
-            collaboration_mode: self.collaboration_mode.clone(),
+            agent_settings: self.agent_settings.clone(),
             session_source: self.session_source.clone(),
             history_mode: self.history_mode,
             forked_from_thread_id: self.forked_from_thread_id,
@@ -252,8 +252,8 @@ impl SessionConfiguration {
                             }
                         )
                 });
-        if let Some(collaboration_mode) = updates.collaboration_mode.clone() {
-            next_configuration.collaboration_mode = collaboration_mode;
+        if let Some(agent_settings) = updates.agent_settings.clone() {
+            next_configuration.agent_settings = agent_settings;
         }
         if let Some(summary) = updates.reasoning_summary {
             next_configuration.model_reasoning_summary = Some(summary);
@@ -430,7 +430,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) permission_profile: Option<PermissionProfile>,
     pub(crate) active_permission_profile: Option<ActivePermissionProfile>,
     pub(crate) windows_sandbox_level: Option<WindowsSandboxLevel>,
-    pub(crate) collaboration_mode: Option<CollaborationMode>,
+    pub(crate) agent_settings: Option<AgentSettings>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(crate) service_tier: Option<Option<String>>,
     pub(crate) final_output_json_schema: Option<Option<Value>>,
@@ -513,7 +513,7 @@ impl Session {
     ) -> anyhow::Result<Arc<Self>> {
         debug!(
             "Configuring session: model={}; provider={:?}",
-            session_configuration.collaboration_mode.model(),
+            session_configuration.agent_settings.model(),
             session_configuration.provider
         );
         let forked_from_id = session_configuration
@@ -739,7 +739,7 @@ impl Session {
                 session_source: session_configuration.session_source.clone(),
                 cwd: session_configuration.cwd().to_path_buf(),
                 rollout_path: rollout_path.clone(),
-                model: session_configuration.collaboration_mode.model().to_string(),
+                model: session_configuration.agent_settings.model().to_string(),
                 provider_name: config.model_provider_id.clone(),
                 approval_policy: session_configuration.approval_policy.value().to_string(),
                 sandbox_policy: format!("{:?}", session_configuration.sandbox_policy()),
@@ -796,7 +796,7 @@ impl Session {
             let account_email = telemetry_auth.and_then(CodexAuth::get_account_email);
             let originator = session_configuration.originator.clone();
             let terminal_type = user_agent();
-            let session_model = session_configuration.collaboration_mode.model().to_string();
+            let session_model = session_configuration.agent_settings.model().to_string();
             let auth_env_telemetry = collect_auth_env_telemetry(
                 session_configuration.provider.info(),
                 auth_manager.codex_api_key_env_enabled(),
@@ -833,7 +833,7 @@ impl Session {
 
             session_telemetry.conversation_starts(
                 config.model_provider.name.as_str(),
-                session_configuration.collaboration_mode.reasoning_effort(),
+                session_configuration.agent_settings.reasoning_effort(),
                 config
                     .model_reasoning_summary
                     .unwrap_or(ReasoningSummaryConfig::Auto),
@@ -1061,11 +1061,11 @@ impl Session {
                     parent_thread_id,
                     thread_source: session_configuration.thread_source.clone(),
                     thread_name: session_configuration.thread_name.clone(),
-                    model: session_configuration.collaboration_mode.model().to_string(),
+                    model: session_configuration.agent_settings.model().to_string(),
                     model_provider_id: config.model_provider_id.clone(),
                     service_tier: session_configuration.service_tier.clone(),
                     cwd: session_configuration.cwd().clone(),
-                    reasoning_effort: session_configuration.collaboration_mode.reasoning_effort(),
+                    reasoning_effort: session_configuration.agent_settings.reasoning_effort(),
                     initial_messages,
                     rollout_path,
                 }),

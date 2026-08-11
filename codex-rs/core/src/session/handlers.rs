@@ -16,8 +16,6 @@ use crate::session::session::Session;
 use crate::session::session::SessionSettingsUpdate;
 
 use crate::config::Config;
-use crate::review_prompts::resolve_review_request;
-use crate::session::spawn_review_thread;
 use crate::tasks::CompactTask;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::UserShellCommandTask;
@@ -25,8 +23,6 @@ use crate::tasks::execute_user_shell_command;
 use crate::user_message_admission::UserMessageAdmission;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
-use codex_protocol::models::ContentItem;
-use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::ErrorEvent;
@@ -39,7 +35,6 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RealtimeConversationListVoicesResponseEvent;
 use codex_protocol::protocol::RealtimeVoicesList;
 use codex_protocol::protocol::ReviewDecision;
-use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::ThreadRolledBackEvent;
@@ -140,18 +135,18 @@ async fn thread_settings_update(
         effort,
         summary,
         service_tier,
-        collaboration_mode,
+        agent_settings,
         personality,
     } = thread_settings;
-    let collaboration_mode = match collaboration_mode {
-        Some(collaboration_mode) => collaboration_mode,
+    let agent_settings = match agent_settings {
+        Some(agent_settings) => agent_settings,
         None => {
             let state = sess.state.lock().await;
-            // Model and reasoning effort live in CollaborationMode settings today, so
+            // Model and reasoning effort live in AgentSettings settings today, so
             // partial thread-settings updates refresh those fields on the active mode.
             state
                 .session_configuration
-                .collaboration_mode
+                .agent_settings
                 .with_updates(model, effort, /*developer_instructions*/ None)
         }
     };
@@ -164,7 +159,7 @@ async fn thread_settings_update(
         permission_profile,
         active_permission_profile,
         windows_sandbox_level,
-        collaboration_mode: Some(collaboration_mode),
+        agent_settings: Some(agent_settings),
         reasoning_summary: summary,
         service_tier,
         personality,
@@ -612,40 +607,6 @@ pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
     true
 }
 
-pub async fn review(
-    sess: &Arc<Session>,
-    config: &Arc<Config>,
-    sub_id: String,
-    review_request: ReviewRequest,
-) {
-    let turn_context = sess.new_default_turn_with_sub_id(sub_id.clone()).await;
-    sess.maybe_emit_model_warnings_for_turn(turn_context.as_ref())
-        .await;
-    #[allow(deprecated)]
-    match resolve_review_request(review_request, &turn_context.cwd) {
-        Ok(resolved) => {
-            spawn_review_thread(
-                Arc::clone(sess),
-                Arc::clone(config),
-                turn_context.clone(),
-                sub_id,
-                resolved,
-            )
-            .await;
-        }
-        Err(err) => {
-            let event = Event {
-                id: sub_id,
-                msg: EventMsg::Error(ErrorEvent {
-                    message: err.to_string(),
-                    codex_error_info: Some(CodexErrorInfo::Other),
-                }),
-            };
-            sess.send_event(&turn_context, event.msg).await;
-        }
-    }
-}
-
 pub(super) async fn submission_loop(
     sess: Arc<Session>,
     config: Arc<Config>,
@@ -755,10 +716,6 @@ pub(super) async fn submission_loop(
                     false
                 }
                 Op::Shutdown => shutdown(&sess, sub.id.clone()).await,
-                Op::Review { review_request } => {
-                    review(&sess, &config, sub.id.clone(), review_request).await;
-                    false
-                }
                 _ => false, // Ignore unknown ops; enum is non_exhaustive to allow extensions.
             }
         }

@@ -134,10 +134,12 @@ pub(crate) fn thread_items_to_transcript_cells(
                 }
             }
             ThreadItem::Plan { text, .. } => {
-                if !text.trim().is_empty() {
-                    cells.push(Arc::new(crate::history_cell::new_proposed_plan(
-                        text,
+                let parsed = parse_assistant_markdown(&text, cwd.as_path());
+                if !parsed.visible_markdown.trim().is_empty() {
+                    cells.push(Arc::new(AgentMarkdownCell::new_with_inline_visualizations(
+                        parsed.visible_markdown,
                         cwd.as_path(),
+                        inline_visualization_context.clone(),
                     )));
                 }
             }
@@ -259,12 +261,7 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
                     .into(),
             ]
         }
-        ThreadItem::EnteredReviewMode { review, .. } => {
-            vec![vec!["review started: ".dim(), review.clone().into()].into()]
-        }
-        ThreadItem::ExitedReviewMode { review, .. } => {
-            vec![vec!["review finished: ".dim(), review.clone().into()].into()]
-        }
+        ThreadItem::EnteredReviewMode { .. } | ThreadItem::ExitedReviewMode { .. } => return None,
         ThreadItem::ContextCompaction { .. } => {
             vec!["context compacted".dim().into()]
         }

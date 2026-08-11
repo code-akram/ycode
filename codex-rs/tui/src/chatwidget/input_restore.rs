@@ -360,8 +360,7 @@ impl ChatWidget {
             submit_pending_steers_after_interrupt: self
                 .input_queue
                 .submit_pending_steers_after_interrupt,
-            current_collaboration_mode: self.current_collaboration_mode.clone(),
-            active_collaboration_mask: self.active_collaboration_mask.clone(),
+            current_agent_settings: self.current_agent_settings.clone(),
             task_running: self.bottom_pane.is_task_running(),
             agent_turn_running: self.turn_lifecycle.agent_turn_running,
         })
@@ -376,8 +375,7 @@ impl ChatWidget {
         let restored_task_running =
             preserve_in_flight_turn && input_state.as_ref().is_some_and(|state| state.task_running);
         if let Some(input_state) = input_state {
-            self.current_collaboration_mode = input_state.current_collaboration_mode;
-            self.active_collaboration_mask = input_state.active_collaboration_mask;
+            self.current_agent_settings = input_state.current_agent_settings;
             self.safety_buffering_prompt = input_state.safety_buffering_prompt;
             self.turn_lifecycle.restore_running(
                 preserve_in_flight_turn && input_state.agent_turn_running,
@@ -387,7 +385,7 @@ impl ChatWidget {
                 preserve_in_flight_turn && input_state.user_turn_pending_start;
             self.input_queue.submit_pending_steers_after_interrupt =
                 preserve_in_flight_turn && input_state.submit_pending_steers_after_interrupt;
-            self.update_collaboration_mode_indicator();
+            self.update_goal_status_indicator();
             self.refresh_model_dependent_surfaces();
             self.restore_composer_state(input_state.composer.unwrap_or_default());
             let mut pending_steer_history_records = input_state.pending_steer_history_records;

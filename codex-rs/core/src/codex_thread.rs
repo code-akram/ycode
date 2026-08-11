@@ -11,8 +11,8 @@ use codex_exec_server::SelectedCapabilityRootsStatus;
 use codex_features::Feature;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::ApprovalsReviewer;
-use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -76,7 +76,7 @@ pub struct ThreadConfigSnapshot {
     pub reasoning_effort: Option<ReasoningEffort>,
     pub reasoning_summary: Option<ReasoningSummary>,
     pub personality: Option<Personality>,
-    pub collaboration_mode: CollaborationMode,
+    pub agent_settings: AgentSettings,
     pub session_source: SessionSource,
     pub history_mode: ThreadHistoryMode,
     pub forked_from_thread_id: Option<ThreadId>,
@@ -92,9 +92,6 @@ pub enum TryStartTurnIfIdleRejectionReason {
     /// User/client-triggered mailbox work is already queued and must take
     /// priority over extension-initiated idle work.
     PendingTriggerTurn,
-    /// The thread is in Plan mode, where idle work without user input must not
-    /// start a new model turn.
-    PlanMode,
     /// Another turn or task is active, or the idle reservation was lost before
     /// the automatic turn could start.
     Busy,
@@ -152,7 +149,7 @@ impl ThreadConfigSnapshot {
             reasoning_effort: self.reasoning_effort,
             reasoning_summary: self.reasoning_summary,
             personality: self.personality,
-            collaboration_mode: self.collaboration_mode,
+            agent_settings: self.agent_settings,
         }
     }
 }
@@ -172,7 +169,7 @@ pub struct CodexThreadSettingsOverrides {
     pub effort: Option<Option<ReasoningEffort>>,
     pub summary: Option<ReasoningSummary>,
     pub service_tier: Option<Option<String>>,
-    pub collaboration_mode: Option<CollaborationMode>,
+    pub agent_settings: Option<AgentSettings>,
     pub personality: Option<Personality>,
 }
 
@@ -373,9 +370,7 @@ impl CodexThread {
     /// This is the required entry point for extensions that want to launch
     /// model-visible work from `ThreadLifecycleContributor::on_thread_idle`.
     /// The call succeeds only if no user/client-triggered turn is queued and no
-    /// task is currently active. Work without user input is also rejected in
-    /// Plan mode. Active Review tasks are rejected by the active-task check
-    /// because Review turns are not steerable.
+    /// task is currently active.
     ///
     /// On rejection, the returned error includes a stable reason and carries
     /// the original `items` unchanged so the caller can decide whether to drop
@@ -423,14 +418,14 @@ impl CodexThread {
             effort,
             summary,
             service_tier,
-            collaboration_mode,
+            agent_settings,
             personality,
         } = overrides;
-        let collaboration_mode = if let Some(collaboration_mode) = collaboration_mode {
-            collaboration_mode
+        let agent_settings = if let Some(agent_settings) = agent_settings {
+            agent_settings
         } else {
             self.session
-                .collaboration_mode()
+                .agent_settings()
                 .await
                 .with_updates(model, effort, /*developer_instructions*/ None)
         };
@@ -444,7 +439,7 @@ impl CodexThread {
             permission_profile,
             active_permission_profile,
             windows_sandbox_level,
-            collaboration_mode: Some(collaboration_mode),
+            agent_settings: Some(agent_settings),
             reasoning_summary: summary,
             service_tier,
             personality,

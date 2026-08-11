@@ -3,7 +3,6 @@ use crate::ModelsManagerConfig;
 use codex_protocol::config_types::Personality;
 use codex_protocol::openai_models::ApprovalMessages;
 use codex_protocol::openai_models::AutoReviewMessages;
-use codex_protocol::openai_models::CollaborationModeMessages;
 use codex_protocol::openai_models::ModelTokenBudgetConfig;
 use codex_protocol::openai_models::PermissionMessages;
 use pretty_assertions::assert_eq;
@@ -25,10 +24,6 @@ fn base_instruction_override_is_literal_and_preserves_catalog_messages() {
         on_request_auto_review: Some("auto approvals".to_string()),
         never: Some("never approvals".to_string()),
         unless_trusted: Some("unless-trusted approvals".to_string()),
-    };
-    let collaboration_modes = CollaborationModeMessages {
-        default: Some("default instructions".to_string()),
-        plan: Some("plan instructions".to_string()),
     };
     let auto_review = AutoReviewMessages {
         policy: Some("review policy".to_string()),
@@ -54,7 +49,6 @@ fn base_instruction_override_is_literal_and_preserves_catalog_messages() {
             personality_pragmatic: Some("pragmatic".to_string()),
         }),
         approvals: Some(approvals.clone()),
-        collaboration_modes: Some(collaboration_modes.clone()),
         auto_review: Some(auto_review.clone()),
         permissions: Some(permissions.clone()),
         token_budget: Some(token_budget.clone()),
@@ -72,7 +66,6 @@ fn base_instruction_override_is_literal_and_preserves_catalog_messages() {
             instructions_template: Some(override_instructions.to_string()),
             instructions_variables: None,
             approvals: Some(approvals),
-            collaboration_modes: Some(collaboration_modes),
             auto_review: Some(auto_review),
             permissions: Some(permissions),
             token_budget: Some(token_budget),
@@ -101,7 +94,6 @@ fn disabled_personality_bakes_default_and_preserves_catalog_approval_messages() 
             personality_pragmatic: Some("pragmatic".to_string()),
         }),
         approvals: Some(approvals.clone()),
-        collaboration_modes: None,
         auto_review: None,
         permissions: None,
         token_budget: None,
@@ -119,7 +111,6 @@ fn disabled_personality_bakes_default_and_preserves_catalog_approval_messages() 
             instructions_template: Some("before default after".to_string()),
             instructions_variables: None,
             approvals: Some(approvals),
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,
@@ -144,7 +135,6 @@ fn disabled_personality_uses_plain_base_instructions_for_local_personality_model
                 instructions_template: Some(BASE_INSTRUCTIONS.to_string()),
                 instructions_variables: None,
                 approvals: None,
-                collaboration_modes: None,
                 auto_review: None,
                 permissions: None,
                 token_budget: None,
@@ -183,7 +173,6 @@ fn personality_none_strips_catalog_instruction_sources_through_the_next_h1() {
             instructions_template: Some(instructions.to_string()),
             instructions_variables: None,
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,

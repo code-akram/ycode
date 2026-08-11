@@ -410,55 +410,6 @@ async fn flush_answer_stream_requests_scrollback_reflow_for_live_table_tail() {
 }
 
 #[tokio::test]
-async fn completed_plan_table_tail_skips_provisional_history_insert() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    let cwd = chat.config.cwd.to_path_buf();
-
-    let mut controller = crate::streaming::controller::PlanStreamController::new(
-        Some(80),
-        cwd.as_path(),
-        HistoryRenderMode::Rich,
-    );
-    controller.push("| Step | Owner |\n");
-    controller.push("| --- | --- |\n");
-    controller.push("| Verify | Codex |\n");
-    assert!(
-        controller.has_live_tail(),
-        "expected plan table holdback to leave a live tail",
-    );
-    chat.plan_stream_controller = Some(controller);
-    chat.transcript.plan_delta_buffer =
-        "| Step | Owner |\n| --- | --- |\n| Verify | Codex |\n".to_string();
-
-    while rx.try_recv().is_ok() {}
-
-    chat.on_plan_item_completed(String::new());
-
-    let mut saw_source_backed_plan = false;
-    let mut saw_stream_plan = false;
-    let mut rendered_plan = String::new();
-    while let Ok(event) = rx.try_recv() {
-        if let AppEvent::InsertHistoryCell(cell) = event {
-            if cell.as_any().is::<history_cell::ProposedPlanCell>() {
-                saw_source_backed_plan = true;
-                rendered_plan = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            }
-            saw_stream_plan |= cell.as_any().is::<history_cell::ProposedPlanStreamCell>();
-        }
-    }
-
-    assert!(saw_source_backed_plan, "expected source-backed plan insert");
-    assert!(
-        rendered_plan.contains('━'),
-        "expected completed plan table to render with separators, got: {rendered_plan:?}"
-    );
-    assert!(
-        !saw_stream_plan,
-        "live plan table tail should not be inserted provisionally"
-    );
-}
-
-#[tokio::test]
 async fn configured_pet_load_is_deferred_until_after_construction() {
     let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
     let tx = AppEventSender::new(tx_raw);
@@ -3196,71 +3147,6 @@ async fn status_line_and_terminal_title_reasoning_render_only_effort() {
 }
 
 #[tokio::test]
-async fn status_line_reasoning_updates_on_mode_switch_without_manual_refresh() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-    chat.config.tui_status_line = Some(vec!["reasoning".to_string()]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    assert_eq!(status_line_text(&chat), Some("high".to_string()));
-
-    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-
-    assert_eq!(status_line_text(&chat), Some("medium".to_string()));
-}
-
-#[tokio::test]
-async fn status_line_model_with_reasoning_updates_on_mode_switch_without_manual_refresh() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-    chat.config.tui_status_line = Some(vec!["model-with-reasoning".to_string()]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 high".to_string()));
-
-    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 medium".to_string()));
-
-    let default_mask = collaboration_modes::default_mask(chat.model_catalog.as_ref())
-        .expect("expected default collaboration mode");
-    chat.set_collaboration_mask(default_mask);
-
-    assert_eq!(status_line_text(&chat), Some("gpt-5.2 high".to_string()));
-}
-
-#[tokio::test]
-async fn status_line_model_with_reasoning_plan_mode_footer_snapshot() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2")).await;
-    chat.show_welcome_banner = false;
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-    chat.config.tui_status_line = Some(vec!["model-with-reasoning".to_string()]);
-    chat.set_reasoning_effort(Some(ReasoningEffortConfig::High));
-
-    let plan_mask = collaboration_modes::plan_mask(chat.model_catalog.as_ref())
-        .expect("expected plan collaboration mode");
-    chat.set_collaboration_mask(plan_mask);
-
-    let width = 80;
-    let height = chat.desired_height(width);
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-    terminal
-        .draw(|f| chat.render(f.area(), f.buffer_mut()))
-        .expect("draw plan-mode footer");
-    assert_chatwidget_snapshot!(
-        "status_line_model_with_reasoning_plan_mode_footer",
-        normalized_backend_snapshot(terminal.backend())
-    );
-}
-
-#[tokio::test]
 async fn renamed_thread_footer_title_snapshot() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -3479,7 +3365,7 @@ async fn session_configured_clears_goal_status_footer() {
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
-        collaboration_mode: None,
+        agent_settings: None,
         personality: None,
         message_history: None,
         network_proxy: None,
@@ -3836,53 +3722,6 @@ async fn newline_agent_delta_redraws_stream_tail_after_noop_catch_up() {
         draw_rx.try_recv().is_ok(),
         "expected the changed assistant stream tail to schedule a redraw",
     );
-}
-
-#[tokio::test]
-async fn newline_plan_delta_redraws_stream_tail_after_noop_catch_up() {
-    let (frame_requester, mut draw_rx) = FrameRequester::test_channel();
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual_with_auth(
-        /*model_override*/ Some("gpt-5"),
-        /*has_chatgpt_account*/ false,
-        /*has_codex_backend_auth*/ false,
-        frame_requester,
-    )
-    .await;
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
-        .expect("expected plan collaboration mask");
-    chat.set_collaboration_mask(plan_mask);
-    chat.on_task_started();
-    chat.on_plan_delta("Earlier line\n".to_string());
-    chat.on_commit_tick();
-    assert!(!chat.bottom_pane.status_indicator_visible());
-    while draw_rx.try_recv().is_ok() {}
-
-    chat.on_plan_delta("Intro line\n| Step | Owner |\n".to_string());
-
-    assert!(chat.active_cell_is_stream_tail());
-    assert!(
-        draw_rx.try_recv().is_ok(),
-        "expected the changed plan stream tail to schedule a redraw",
-    );
-}
-
-#[tokio::test]
-async fn regular_commit_tick_clears_orphaned_plan_stream_tail() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
-    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
-    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
-        .expect("expected plan collaboration mask");
-    chat.set_collaboration_mask(plan_mask);
-    chat.on_task_started();
-    chat.on_plan_delta("| Step | Owner |\n".to_string());
-    assert!(chat.active_cell_is_stream_tail());
-
-    chat.on_task_started();
-    assert!(chat.active_cell_is_stream_tail());
-    chat.on_commit_tick();
-
-    assert!(!chat.active_cell_is_stream_tail());
 }
 
 #[tokio::test]

@@ -81,7 +81,7 @@ fn normalizes_legacy_rate_limit_reset_timestamps() {
 }
 
 #[test]
-fn normalizes_legacy_turn_context_collaboration_mode() {
+fn normalizes_legacy_turn_context_agent_settings() {
     let cwd = std::env::temp_dir().to_string_lossy().into_owned();
     let bytes = line(
         "turn_context",
@@ -91,7 +91,7 @@ fn normalizes_legacy_turn_context_collaboration_mode() {
             "sandbox_policy": {"type": "danger-full-access"},
             "model": "gpt-test",
             "personality": null,
-            "collaboration_mode": {
+            "agent_settings": {
                 "mode": "plan",
                 "model": "gpt-test",
                 "reasoning_effort": null,
@@ -109,10 +109,7 @@ fn normalizes_legacy_turn_context_collaboration_mode() {
         panic!("expected turn context");
     };
     assert_eq!(
-        context
-            .collaboration_mode
-            .expect("collaboration mode")
-            .model(),
+        context.agent_settings.expect("agent settings").model(),
         "gpt-test"
     );
 }

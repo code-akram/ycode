@@ -39,13 +39,8 @@ use codex_cli_protocol::MemoryResetResponse;
 use codex_cli_protocol::Model as ApiModel;
 use codex_cli_protocol::ModelListParams;
 use codex_cli_protocol::ModelListResponse;
-use codex_cli_protocol::NewThreadModelDefaults;
 use codex_cli_protocol::RateLimitSnapshot;
 use codex_cli_protocol::RequestId;
-use codex_cli_protocol::ReviewDelivery;
-use codex_cli_protocol::ReviewStartParams;
-use codex_cli_protocol::ReviewStartResponse;
-use codex_cli_protocol::ReviewTarget;
 use codex_cli_protocol::SessionSource;
 use codex_cli_protocol::SkillsListParams;
 use codex_cli_protocol::SkillsListResponse;
@@ -1039,7 +1034,7 @@ impl CliRuntimeSession {
         effort: Option<codex_protocol::openai_models::ReasoningEffort>,
         summary: Option<codex_protocol::config_types::ReasoningSummary>,
         service_tier: Option<Option<String>>,
-        collaboration_mode: Option<codex_protocol::config_types::CollaborationMode>,
+        agent_settings: Option<codex_protocol::config_types::AgentSettings>,
         personality: Option<codex_protocol::config_types::Personality>,
         output_schema: Option<serde_json::Value>,
     ) -> Result<TurnStartResponse> {
@@ -1062,7 +1057,7 @@ impl CliRuntimeSession {
                     summary,
                     personality,
                     output_schema,
-                    collaboration_mode,
+                    agent_settings,
                     multi_agent_mode: None,
                 },
             })
@@ -1304,25 +1299,6 @@ impl CliRuntimeSession {
             .await
             .wrap_err("thread/backgroundTerminals/clean failed in TUI")?;
         Ok(())
-    }
-
-    pub(crate) async fn review_start(
-        &mut self,
-        thread_id: ThreadId,
-        target: ReviewTarget,
-    ) -> Result<ReviewStartResponse> {
-        let request_id = self.next_request_id();
-        self.client
-            .request_typed(ClientRequest::ReviewStart {
-                request_id,
-                params: ReviewStartParams {
-                    thread_id: thread_id.to_string(),
-                    target,
-                    delivery: Some(ReviewDelivery::Inline),
-                },
-            })
-            .await
-            .wrap_err("review/start failed in TUI")
     }
 
     pub(crate) async fn skills_list(
@@ -1784,7 +1760,7 @@ async fn thread_session_state_from_thread_response(
         runtime_workspace_roots,
         instruction_source_paths,
         reasoning_effort,
-        collaboration_mode: None,
+        agent_settings: None,
         personality: config.personality,
         message_history: Some(MessageHistoryMetadata {
             log_id,

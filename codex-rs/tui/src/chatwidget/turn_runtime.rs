@@ -22,8 +22,7 @@ impl ChatWidget {
     /// the agent turn lifecycle.
     pub(super) fn update_task_running_state(&mut self) {
         self.bottom_pane
-            .set_task_running(self.turn_lifecycle.agent_turn_running || self.review.is_review_mode);
-        self.refresh_plan_mode_nudge();
+            .set_task_running(self.turn_lifecycle.agent_turn_running);
         self.refresh_status_surfaces();
     }
 
@@ -61,9 +60,6 @@ impl ChatWidget {
         self.turn_lifecycle.start(Instant::now());
         self.transcript.reset_turn_flags();
         self.adaptive_chunking.reset();
-        if self.plan_stream_controller.take().is_some() {
-            self.request_pending_usage_output_insertion_after_stream_shutdown();
-        }
         self.turn_runtime_metrics = RuntimeMetricsSummary::default();
         self.session_telemetry.reset_runtime_metrics();
         self.bottom_pane.clear_quit_shortcut_hint();
@@ -114,20 +110,6 @@ impl ChatWidget {
         self.transcript.saw_copy_source_this_turn = false;
         // If a stream is currently active, finalize it.
         self.flush_answer_stream_with_separator();
-        if let Some(mut controller) = self.plan_stream_controller.take() {
-            let had_live_tail = controller.has_live_tail();
-            self.clear_active_stream_tail();
-            let (cell, source) = controller.finalize();
-            if !had_live_tail && let Some(cell) = cell {
-                self.add_boxed_history(cell);
-            }
-            if let Some(source) = source {
-                self.note_stream_consolidation_queued();
-                self.app_event_tx
-                    .send(AppEvent::ConsolidateProposedPlan(source));
-            }
-            self.request_pending_usage_output_insertion_after_stream_shutdown();
-        }
         self.flush_unified_exec_wait_streak();
         if !from_replay {
             self.collect_runtime_metrics_delta();
@@ -179,14 +161,6 @@ impl ChatWidget {
         let had_pending_steers = !self.input_queue.pending_steers.is_empty();
         self.refresh_pending_input_preview();
 
-        if !from_replay && !self.has_queued_follow_up_messages() && !had_pending_steers {
-            self.maybe_prompt_plan_implementation();
-        }
-        // Keep this flag for replayed completion events so a subsequent live TurnComplete can
-        // still show the prompt once after thread switch replay.
-        if !from_replay {
-            self.transcript.saw_plan_item_this_turn = false;
-        }
         // If there is a queued user message, send exactly one now to begin the next turn.
         let follow_up_started = self.maybe_send_next_queued_input();
         let active_goal_continuing = self
@@ -204,77 +178,6 @@ impl ChatWidget {
         }
 
         self.maybe_show_pending_rate_limit_prompt();
-    }
-
-    pub(super) fn maybe_prompt_plan_implementation(&mut self) {
-        if !self.collaboration_modes_enabled() {
-            return;
-        }
-        if self.has_queued_follow_up_messages() {
-            return;
-        }
-        if self.active_mode_kind() != ModeKind::Plan {
-            return;
-        }
-        if !self.transcript.saw_plan_item_this_turn {
-            return;
-        }
-        if !self.bottom_pane.no_modal_or_popup_active() {
-            return;
-        }
-
-        if matches!(
-            self.rate_limit_switch_prompt,
-            RateLimitSwitchPromptState::Pending
-        ) {
-            return;
-        }
-
-        self.open_plan_implementation_prompt();
-    }
-
-    pub(super) fn open_plan_implementation_prompt(&mut self) {
-        let default_mask = collaboration_modes::default_mode_mask(self.model_catalog.as_ref());
-        let context_usage_label = self.plan_implementation_context_usage_label();
-
-        self.bottom_pane
-            .show_selection_view(plan_implementation::selection_view_params(
-                default_mask,
-                self.transcript.latest_proposed_plan_markdown.as_deref(),
-                context_usage_label.as_deref(),
-            ));
-        self.notify(Notification::PlanModePrompt {
-            title: PLAN_IMPLEMENTATION_TITLE.to_string(),
-        });
-    }
-
-    /// Returns a context-used label for the plan implementation prompt.
-    ///
-    /// The footer reports context remaining because it is ambient status, but
-    /// this prompt is asking whether to discard prior conversation state before
-    /// implementing a plan. Reporting used context makes the cleanup tradeoff
-    /// explicit. A fully fresh or unknown context window returns no label so
-    /// the clear-context option does not imply urgency without evidence.
-    pub(super) fn plan_implementation_context_usage_label(&self) -> Option<String> {
-        let info = self.token_info.as_ref()?;
-        let percent = self.context_remaining_percent(info);
-
-        let used_tokens = self.context_used_tokens(info, percent.is_some());
-        if let Some(percent) = percent {
-            let used_percent = 100 - percent.clamp(0, 100);
-            if used_percent <= 0 {
-                return None;
-            }
-            return Some(format!("{used_percent}% used"));
-        }
-
-        if let Some(tokens) = used_tokens
-            && tokens > 0
-        {
-            return Some(format!("{} used", format_tokens_compact(tokens)));
-        }
-
-        None
     }
 
     pub(super) fn has_queued_follow_up_messages(&self) -> bool {
@@ -313,7 +216,6 @@ impl ChatWidget {
         self.unified_exec_wait_streak = None;
         self.adaptive_chunking.reset();
         self.stream_controller = None;
-        self.plan_stream_controller = None;
         self.request_pending_usage_output_insertion_after_stream_shutdown();
         self.status_state.pending_status_indicator_restore = false;
         self.safety_buffering_prompt = None;

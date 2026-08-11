@@ -54,7 +54,7 @@ impl App {
             items,
             model: turn_model,
             effort,
-            collaboration_mode,
+            agent_settings,
             ..
         } = &mut turn
         else {
@@ -65,7 +65,7 @@ impl App {
         };
         *turn_model = model.clone();
         *effort = Some(ReasoningEffortConfig::Low);
-        *collaboration_mode = collaboration_mode.as_ref().map(|mode| {
+        *agent_settings = agent_settings.as_ref().map(|mode| {
             mode.with_updates(
                 Some(model),
                 Some(Some(ReasoningEffortConfig::Low)),

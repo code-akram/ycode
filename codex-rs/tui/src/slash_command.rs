@@ -21,7 +21,6 @@ pub enum SlashCommand {
     Skills,
     Import,
     Hooks,
-    Review,
     Rename,
     New,
     Archive,
@@ -31,7 +30,6 @@ pub enum SlashCommand {
     App,
     Init,
     Compact,
-    Plan,
     Goal,
     Agent,
     Side,
@@ -75,7 +73,6 @@ impl SlashCommand {
             SlashCommand::New => "start a new chat during a conversation",
             SlashCommand::Init => "create an AGENTS.md file with instructions for Codex",
             SlashCommand::Compact => "summarize conversation to prevent hitting the context limit",
-            SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
             SlashCommand::Archive => "archive this session and exit",
@@ -106,7 +103,6 @@ impl SlashCommand {
                 "include current selection, open files, and other context from your IDE"
             }
             SlashCommand::Personality => "choose a communication style for Codex",
-            SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Goal => "set or view the goal for a long-running task",
             SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
             SlashCommand::Side | SlashCommand::Btw => {
@@ -132,12 +128,10 @@ impl SlashCommand {
     pub fn supports_inline_args(self) -> bool {
         matches!(
             self,
-            SlashCommand::Review
-                | SlashCommand::Rename
+            SlashCommand::Rename
                 | SlashCommand::New
                 | SlashCommand::Clear
                 | SlashCommand::Fork
-                | SlashCommand::Plan
                 | SlashCommand::Goal
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
@@ -178,8 +172,6 @@ impl SlashCommand {
             | SlashCommand::Experimental
             | SlashCommand::Memories
             | SlashCommand::Import
-            | SlashCommand::Review
-            | SlashCommand::Plan
             | SlashCommand::Clear
             | SlashCommand::Logout
             | SlashCommand::MemoryDrop

@@ -20,13 +20,12 @@ impl ChatWidget {
         self.thread_id = Some(session.thread_id);
         self.bottom_pane
             .set_queue_submissions(/*queue_submissions*/ false);
-        self.refresh_plan_mode_nudge();
         self.turn_lifecycle.reset_thread();
         self.clear_safety_buffering();
         self.thread_name = session.thread_name.clone();
         self.current_goal_status_indicator = None;
         self.current_goal_status = None;
-        self.update_collaboration_mode_indicator();
+        self.update_goal_status_indicator();
         self.forked_from = session.forked_from_id;
         self.current_rollout_path = session.rollout_path.clone();
         self.current_cwd = Some(session.cwd.to_path_buf());
@@ -41,30 +40,16 @@ impl ChatWidget {
         self.status_line_project_root_name_cache = None;
         let forked_from_id = session.forked_from_id;
         let default_model = session.model.clone();
-        self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
+        self.current_agent_settings = self.current_agent_settings.with_updates(
             Some(default_model.clone()),
             Some(session.reasoning_effort.clone()),
             /*developer_instructions*/ None,
         );
-        if session.reasoning_effort == Some(ReasoningEffortConfig::Ultra) {
-            self.set_plan_mode_reasoning_effort(Some(ReasoningEffortConfig::Ultra));
-        }
-        match session.collaboration_mode.as_deref() {
-            Some(collaboration_mode) => {
-                self.set_effective_collaboration_mode(collaboration_mode.clone());
+        match session.agent_settings.as_deref() {
+            Some(agent_settings) => {
+                self.set_effective_agent_settings(agent_settings.clone());
             }
-            None => {
-                self.active_collaboration_mask = Self::initial_collaboration_mask(
-                    &self.config,
-                    self.model_catalog.as_ref(),
-                    Some(&default_model),
-                );
-                if let Some(mask) = self.active_collaboration_mask.as_mut() {
-                    mask.reasoning_effort = Some(session.reasoning_effort.clone());
-                }
-                self.update_collaboration_mode_indicator();
-                self.refresh_plan_mode_nudge();
-            }
+            None => {}
         }
         let effort = self.effective_reasoning_effort();
         self.bottom_pane

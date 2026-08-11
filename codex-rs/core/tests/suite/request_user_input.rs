@@ -3,9 +3,7 @@
 use core_test_support::test_codex::local_selections;
 use std::collections::HashMap;
 
-use codex_features::Feature;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Settings;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
@@ -68,34 +66,23 @@ fn call_output_content_and_success(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_round_trip_resolves_pending() -> anyhow::Result<()> {
-    request_user_input_round_trip_for_mode(ModeKind::Plan).await
+    request_user_input_round_trip().await
 }
 
-async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Result<()> {
+async fn request_user_input_round_trip() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
 
-    let builder = test_codex();
     let TestCodex {
         codex,
         cwd,
         session_configured,
         ..
-    } = builder
-        .with_config(move |config| {
-            if mode == ModeKind::Default {
-                config
-                    .features
-                    .enable(Feature::DefaultModeRequestUserInput)
-                    .expect("test config should allow feature update");
-            }
-        })
-        .build(&server)
-        .await?;
+    } = test_codex().build(&server).await?;
 
     let call_id = "user-input-call";
-    let expected_is_blocking = mode == ModeKind::Plan;
+    let expected_is_blocking = false;
     let request_args = json!({
         "questions": [{
             "id": "confirm_path",
@@ -143,8 +130,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(CollaborationMode {
-                    mode,
+                agent_settings: Some(AgentSettings {
                     settings: Settings {
                         model: session_configured.model.clone(),
                         reasoning_effort: None,
@@ -288,8 +274,7 @@ async fn request_user_input_interrupt_emits_deferred_token_count() -> anyhow::Re
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(CollaborationMode {
-                    mode: ModeKind::Plan,
+                agent_settings: Some(AgentSettings {
                     settings: Settings {
                         model: session_configured.model,
                         reasoning_effort: None,
@@ -328,7 +313,7 @@ async fn request_user_input_interrupt_emits_deferred_token_count() -> anyhow::Re
 
 async fn assert_request_user_input_rejected<F>(mode_name: &str, build_mode: F) -> anyhow::Result<()>
 where
-    F: FnOnce(String) -> CollaborationMode,
+    F: FnOnce(String) -> AgentSettings,
 {
     skip_if_no_network!(Ok(()));
 
@@ -374,7 +359,7 @@ where
     let second_mock = responses::mount_sse_once(&server, second_response).await;
 
     let session_model = session_configured.model.clone();
-    let collaboration_mode = build_mode(session_model.clone());
+    let agent_settings = build_mode(session_model.clone());
     let (sandbox_policy, permission_profile) =
         turn_permission_fields(PermissionProfile::Disabled, cwd.path());
 
@@ -392,7 +377,7 @@ where
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(collaboration_mode),
+                agent_settings: Some(agent_settings),
                 ..Default::default()
             },
         })
@@ -413,8 +398,7 @@ where
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_rejected_in_default_mode_by_default() -> anyhow::Result<()> {
-    assert_request_user_input_rejected("Default", |model| CollaborationMode {
-        mode: ModeKind::Default,
+    assert_request_user_input_rejected("Default", |model| AgentSettings {
         settings: Settings {
             model,
             reasoning_effort: None,
@@ -422,9 +406,4 @@ async fn request_user_input_rejected_in_default_mode_by_default() -> anyhow::Res
         },
     })
     .await
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn request_user_input_round_trip_in_default_mode_with_feature() -> anyhow::Result<()> {
-    request_user_input_round_trip_for_mode(ModeKind::Default).await
 }

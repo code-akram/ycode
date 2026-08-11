@@ -246,8 +246,8 @@ pub enum ThreadItem {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
-    /// EXPERIMENTAL - proposed plan item content. The completed plan item is
-    /// authoritative and may not match the concatenation of `PlanDelta` text.
+    /// Legacy decode-only item retained so persisted conversations containing
+    /// completed plans can still be read. There is no live Plan-mode producer.
     Plan {
         id: String,
         text: String,
@@ -355,12 +355,14 @@ pub enum ThreadItem {
     ImageGeneration(ImageGenerationItem),
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
+    /// Legacy decode-only marker retained for persisted conversation history.
     EnteredReviewMode {
         id: String,
         review: String,
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
+    /// Legacy decode-only marker retained for persisted conversation history.
     ExitedReviewMode {
         id: String,
         review: String,
@@ -1212,18 +1214,6 @@ pub struct RawResponseItemCompletedNotification {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct AgentMessageDeltaNotification {
-    pub thread_id: String,
-    pub turn_id: String,
-    pub item_id: String,
-    pub delta: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-/// EXPERIMENTAL - proposed plan streaming deltas for plan items. Clients should
-/// not assume concatenated deltas match the completed plan item content.
-pub struct PlanDeltaNotification {
     pub thread_id: String,
     pub turn_id: String,
     pub item_id: String,

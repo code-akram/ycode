@@ -81,26 +81,6 @@ impl ChatWidget {
         self.bottom_pane.record_pending_slash_command_history();
     }
 
-    fn apply_plan_slash_command(&mut self) -> bool {
-        if !self.collaboration_modes_enabled() {
-            self.add_info_message(
-                "Collaboration modes are disabled.".to_string(),
-                Some("Enable collaboration modes to use /plan.".to_string()),
-            );
-            return false;
-        }
-        if let Some(mask) = collaboration_modes::plan_mask(self.model_catalog.as_ref()) {
-            self.set_collaboration_mask_from_user_action(mask);
-            true
-        } else {
-            self.add_info_message(
-                "Plan mode unavailable right now.".to_string(),
-                /*hint*/ None,
-            );
-            false
-        }
-    }
-
     fn request_side_conversation(
         &mut self,
         parent_thread_id: ThreadId,
@@ -133,9 +113,7 @@ impl ChatWidget {
 
     fn slash_command_blocked_by_active_task(&self, cmd: SlashCommand) -> bool {
         (!cmd.available_during_task()
-            && (self.turn_lifecycle.agent_turn_running
-                || self.review.is_review_mode
-                || self.bottom_pane.is_task_running()))
+            && (self.turn_lifecycle.agent_turn_running || self.bottom_pane.is_task_running()))
             || (cmd == SlashCommand::Resume
                 && (self.input_queue.user_turn_pending_start
                     || self.turn_lifecycle.agent_turn_running))
@@ -143,9 +121,6 @@ impl ChatWidget {
 
     pub(super) fn dispatch_command(&mut self, cmd: SlashCommand) {
         if !self.ensure_slash_command_allowed_in_side_conversation(cmd) {
-            return;
-        }
-        if !self.ensure_side_command_allowed_outside_review(cmd) {
             return;
         }
         if self.slash_command_blocked_by_active_task(cmd) {
@@ -269,9 +244,6 @@ impl ChatWidget {
                 self.input_queue.user_turn_pending_start = true;
                 self.app_event_tx.compact();
             }
-            SlashCommand::Review => {
-                self.open_review_popup();
-            }
             SlashCommand::Rename => {
                 self.session_telemetry
                     .counter("codex.thread.rename", /*inc*/ 1, &[]);
@@ -284,9 +256,6 @@ impl ChatWidget {
             SlashCommand::Personality => {
                 self.open_personality_popup();
                 self.defer_input_until_settings_applied();
-            }
-            SlashCommand::Plan => {
-                self.apply_plan_slash_command();
             }
             SlashCommand::Goal => {
                 if !self.config.features.enabled(Feature::Goals) {
@@ -451,9 +420,6 @@ impl ChatWidget {
         text_elements: Vec<TextElement>,
     ) {
         if !self.ensure_slash_command_allowed_in_side_conversation(cmd) {
-            return;
-        }
-        if !self.ensure_side_command_allowed_outside_review(cmd) {
             return;
         }
         if !cmd.supports_inline_args() {
@@ -637,28 +603,6 @@ impl ChatWidget {
                     name: Some(trimmed.to_string()),
                 });
             }
-            SlashCommand::Plan if !trimmed.is_empty() => {
-                if !self.apply_plan_slash_command() {
-                    return;
-                }
-                let user_message = self.prepared_inline_user_message(
-                    args,
-                    text_elements,
-                    local_images,
-                    remote_image_urls,
-                    mention_bindings,
-                    source,
-                );
-                if self.is_session_configured() {
-                    self.reasoning_buffer.clear();
-                    self.reasoning_header = None;
-                    self.reasoning_summary_parts.clear();
-                    self.set_status_header(String::from("Working"));
-                    self.submit_user_message(user_message);
-                } else {
-                    self.queue_user_message(user_message);
-                }
-            }
             SlashCommand::Goal if !trimmed.is_empty() => {
                 if !self.config.features.enabled(Feature::Goals) {
                     if source == SlashCommandDispatchSource::Live {
@@ -782,11 +726,6 @@ impl ChatWidget {
                     source,
                 );
                 self.request_side_conversation(parent_thread_id, Some(user_message));
-            }
-            SlashCommand::Review if !trimmed.is_empty() => {
-                self.submit_op(AppCommand::review(ReviewTarget::Custom {
-                    instructions: args,
-                }));
             }
             SlashCommand::Resume if !trimmed.is_empty() => {
                 self.app_event_tx
@@ -920,7 +859,6 @@ impl ChatWidget {
 
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
-            collaboration_modes_enabled: self.collaboration_modes_enabled(),
             plugins_command_enabled: self.config.features.enabled(Feature::Plugins),
             token_activity_command_enabled: self.has_codex_backend_auth,
             goal_command_enabled: self.config.features.enabled(Feature::Goals),
@@ -967,10 +905,8 @@ impl ChatWidget {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
-            | SlashCommand::Review
             | SlashCommand::Model
             | SlashCommand::Personality
-            | SlashCommand::Plan
             | SlashCommand::Goal
             | SlashCommand::Side
             | SlashCommand::Btw
@@ -1025,19 +961,6 @@ impl ChatWidget {
         self.add_error_message(format!(
             "'/{}' is unavailable in side conversations. {SIDE_SLASH_COMMAND_UNAVAILABLE_HINT}",
             cmd.command()
-        ));
-        self.bottom_pane.drain_pending_submission_state();
-        false
-    }
-
-    fn ensure_side_command_allowed_outside_review(&mut self, cmd: SlashCommand) -> bool {
-        if !matches!(cmd, SlashCommand::Side | SlashCommand::Btw) || !self.review.is_review_mode {
-            return true;
-        }
-
-        let command = cmd.command();
-        self.add_error_message(format!(
-            "'/{command}' is unavailable while code review is running."
         ));
         self.bottom_pane.drain_pending_submission_state();
         false

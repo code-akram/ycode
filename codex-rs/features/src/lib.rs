@@ -219,8 +219,6 @@ pub enum Feature {
     SkillEnvVarDependencyPrompt,
     /// Enable the unified mention popup used by default in the TUI.
     MentionsV2,
-    /// Allow request_user_input in Default collaboration mode.
-    DefaultModeRequestUserInput,
     /// Enable automatic review for approval prompts.
     GuardianApproval,
     /// Enable Guardian V2 automatic approval reviews.
@@ -279,9 +277,6 @@ pub enum Feature {
     /// Steer feature flag - when enabled, Enter submits immediately instead of queuing.
     /// Kept for config backward compatibility; behavior is always steer-enabled.
     Steer,
-    /// Enable collaboration modes (Plan, Default).
-    /// Kept for config backward compatibility; behavior is always collaboration-modes-enabled.
-    CollaborationModes,
     /// Removed compatibility flag retained as a no-op so old wrappers can
     /// still pass `--enable image_detail_original`.
     ImageDetailOriginal,
@@ -1186,12 +1181,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::DefaultModeRequestUserInput,
-        key: "default_mode_request_user_input",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::TerminalVisualizationInstructions,
         key: "terminal_visualization_instructions",
         stage: Stage::UnderDevelopment,
@@ -1232,12 +1221,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "current_time_reminder",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CollaborationModes,
-        key: "collaboration_modes",
-        stage: Stage::Removed,
-        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::Personality,

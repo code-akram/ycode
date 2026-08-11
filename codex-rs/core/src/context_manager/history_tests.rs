@@ -259,7 +259,7 @@ fn reference_context_item() -> TurnContextItem {
         model: "gpt-test".to_string(),
         comp_hash: None,
         personality: None,
-        collaboration_mode: None,
+        agent_settings: None,
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: Some(false),
@@ -1072,7 +1072,7 @@ fn drop_last_n_user_turns_trims_context_updates_above_rolled_back_turn() {
         developer_msg(&format!(
             "{ENVIRONMENTS_INSTRUCTIONS_OPEN_TAG}\nROLLED_BACK_ENVIRONMENT_INSTRUCTIONS"
         )),
-        developer_msg("<collaboration_mode>ROLLED_BACK_DEV_INSTRUCTIONS</collaboration_mode>"),
+        developer_msg("<agent_settings>ROLLED_BACK_DEV_INSTRUCTIONS</agent_settings>"),
         developer_msg("<multi_agent_mode>ROLLED_BACK_MULTI_AGENT_MODE</multi_agent_mode>"),
         user_input_text_msg(
             "<environment_context><cwd>PRETURN_CONTEXT_DIFF_CWD</cwd></environment_context>",

@@ -1,5 +1,4 @@
 mod agents_md;
-mod collaboration_mode;
 mod context_window_guidance;
 mod environment;
 mod environments_instructions;
@@ -30,7 +29,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 pub(crate) use agents_md::AgentsMdState;
-pub(crate) use collaboration_mode::CollaborationModeState;
 pub(crate) use context_window_guidance::ContextWindowGuidanceState;
 pub(crate) use environment::EnvironmentsState;
 pub(crate) use environments_instructions::EnvironmentsInstructionsState;

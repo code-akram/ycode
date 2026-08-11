@@ -14,8 +14,7 @@ use codex_core::ThreadManager;
 use codex_core::compact::SUMMARIZATION_PROMPT;
 use codex_core::config::Config;
 use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Settings;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
@@ -551,8 +550,7 @@ async fn snapshot_rollback_followup_turn_trims_context_updates() -> Result<()> {
         &conversation,
         codex_protocol::protocol::ThreadSettingsOverrides {
             environments: Some(local_selections(override_cwd.clone())),
-            collaboration_mode: Some(CollaborationMode {
-                mode: ModeKind::Default,
+            agent_settings: Some(AgentSettings {
                 settings: Settings {
                     model: MODEL.to_string(),
                     reasoning_effort: None,

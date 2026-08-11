@@ -869,7 +869,6 @@ pub(crate) struct CodexTurnEventParams {
     pub(crate) approval_policy: String,
     pub(crate) approvals_reviewer: String,
     pub(crate) sandbox_network_access: bool,
-    pub(crate) collaboration_mode: Option<&'static str>,
     pub(crate) personality: Option<String>,
     pub(crate) workspace_kind: Option<String>,
     pub(crate) num_input_images: usize,

@@ -111,8 +111,7 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
                 approval_policy: Some(codex_protocol::protocol::AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
+                agent_settings: Some(codex_protocol::config_types::AgentSettings {
                     settings: codex_protocol::config_types::Settings {
                         model: test.session_configured.model.clone(),
                         reasoning_effort: None,
@@ -506,7 +505,6 @@ fn test_remote_model(slug: &str, priority: i32) -> ModelInfo {
             instructions_template: Some("base instructions".to_string()),
             instructions_variables: None,
             approvals: None,
-            collaboration_modes: None,
             auto_review: None,
             permissions: None,
             token_budget: None,

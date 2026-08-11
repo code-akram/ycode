@@ -4,7 +4,6 @@ use std::time::Instant;
 
 use ratatui::text::Line;
 
-use crate::bottom_pane::footer::CollaborationModeIndicator;
 use crate::bottom_pane::footer::FooterMode;
 use crate::bottom_pane::footer::GoalStatusIndicator;
 use crate::key_hint::KeyBinding;
@@ -19,12 +18,10 @@ pub(super) struct FooterState {
     pub(super) use_shift_enter_hint: bool,
     pub(super) mode: FooterMode,
     pub(super) hint_override: Option<Vec<(String, String)>>,
-    pub(super) plan_mode_nudge_visible: bool,
     pub(super) flash: Option<FooterFlash>,
     pub(super) context_window_percent: Option<i64>,
     pub(super) context_window_used_tokens: Option<i64>,
     pub(super) context_window_pending: bool,
-    pub(super) collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     pub(super) goal_status_indicator: Option<GoalStatusIndicator>,
     pub(super) ide_context_active: bool,
     pub(super) status_line_value: Option<Line<'static>>,

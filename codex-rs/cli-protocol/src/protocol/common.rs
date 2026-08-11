@@ -833,12 +833,6 @@ client_request_definitions! {
         serialization: None,
         response: v2::ThreadRealtimeListVoicesResponse,
     },
-    ReviewStart => "review/start" {
-        params: v2::ReviewStartParams,
-        serialization: thread_id(params.thread_id),
-        response: v2::ReviewStartResponse,
-    },
-
     ModelList => "model/list" {
         params: v2::ModelListParams,
         serialization: None,
@@ -863,13 +857,6 @@ client_request_definitions! {
         params: v2::ExperimentalFeatureEnablementSetParams,
         serialization: global("config"),
         response: v2::ExperimentalFeatureEnablementSetResponse,
-    },
-    #[experimental("collaborationMode/list")]
-    /// Lists collaboration mode presets.
-    CollaborationModeList => "collaborationMode/list" {
-        params: v2::CollaborationModeListParams,
-        serialization: None,
-        response: v2::CollaborationModeListResponse,
     },
     #[experimental("mock/experimentalMethod")]
     /// Test-only method used to validate experimental gating.
@@ -1451,7 +1438,6 @@ server_notification_definitions! {
     RawResponseCompleted => "rawResponse/completed" (v2::RawResponseCompletedNotification),
     AgentMessageDelta => "item/agentMessage/delta" (v2::AgentMessageDeltaNotification),
     /// EXPERIMENTAL - proposed plan streaming deltas for plan items.
-    PlanDelta => "item/plan/delta" (v2::PlanDeltaNotification),
     /// Stream base64-encoded stdout/stderr chunks for a running `command/exec` session.
     CommandExecOutputDelta => "command/exec/outputDelta" (v2::CommandExecOutputDeltaNotification),
     /// Stream base64-encoded stdout/stderr chunks for a running `process/spawn` session.
@@ -2871,23 +2857,6 @@ mod tests {
     }
 
     #[test]
-    fn serialize_list_collaboration_modes() -> Result<()> {
-        let request = ClientRequest::CollaborationModeList {
-            request_id: RequestId::Integer(7),
-            params: v2::CollaborationModeListParams::default(),
-        };
-        assert_eq!(
-            json!({
-                "method": "collaborationMode/list",
-                "id": 7,
-                "params": {}
-            }),
-            serde_json::to_value(&request)?,
-        );
-        Ok(())
-    }
-
-    #[test]
     fn serialize_environment_add() -> Result<()> {
         let request = ClientRequest::EnvironmentAdd {
             request_id: RequestId::Integer(9),
@@ -3576,8 +3545,7 @@ mod tests {
                     service_tier: None,
                     effort: None,
                     summary: None,
-                    collaboration_mode: codex_protocol::config_types::CollaborationMode {
-                        mode: codex_protocol::config_types::ModeKind::Default,
+                    agent_settings: codex_protocol::config_types::AgentSettings {
                         settings: codex_protocol::config_types::Settings {
                             model: "gpt-5.4".to_string(),
                             reasoning_effort: None,

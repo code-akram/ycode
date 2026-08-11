@@ -118,8 +118,7 @@ fn disabled_permission_user_turn(text: impl Into<String>, cwd: PathBuf, model: S
             approval_policy: Some(AskForApproval::Never),
             sandbox_policy: Some(sandbox_policy),
             permission_profile,
-            collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                mode: codex_protocol::config_types::ModeKind::Default,
+            agent_settings: Some(codex_protocol::config_types::AgentSettings {
                 settings: codex_protocol::config_types::Settings {
                     model,
                     reasoning_effort: None,

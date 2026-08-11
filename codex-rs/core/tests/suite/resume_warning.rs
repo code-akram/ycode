@@ -5,7 +5,6 @@ use std::sync::Arc;
 use codex_core::NewThread;
 use codex_login::CodexAuth;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InitialHistory;
@@ -42,7 +41,7 @@ fn resume_history(
         model: previous_model.to_string(),
         comp_hash: None,
         personality: None,
-        collaboration_mode: None,
+        agent_settings: None,
         multi_agent_version: None,
         multi_agent_mode: None,
         realtime_active: None,
@@ -60,7 +59,6 @@ fn resume_history(
                 trace_id: None,
                 started_at: None,
                 model_context_window: None,
-                collaboration_mode_kind: ModeKind::Default,
             })),
             RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
                 client_id: None,

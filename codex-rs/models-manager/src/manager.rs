@@ -1,14 +1,12 @@
 use super::cache::FileModelsCache;
 use crate::cache::ModelsCache;
 use crate::cache::ModelsCacheEntry;
-use crate::collaboration_mode_presets::builtin_collaboration_mode_presets;
 use crate::config::ModelsManagerConfig;
 use crate::model_info;
 use chrono::Utc;
 use codex_http_client::HttpClientFactory;
 use codex_login::AuthManager;
 use codex_protocol::auth::AuthMode;
-use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::error::Result as CoreResult;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
@@ -136,11 +134,6 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
 
         presets
     }
-
-    /// List collaboration mode presets.
-    ///
-    /// Returns a static set of presets seeded with the configured model.
-    fn list_collaboration_modes(&self) -> Vec<CollaborationModeMask>;
 
     /// Attempt to list models without blocking, using the current cached state.
     ///
@@ -317,10 +310,6 @@ impl ModelsManager for OpenAiModelsManager {
 
     fn auth_manager(&self) -> Option<&AuthManager> {
         self.auth_manager.as_deref()
-    }
-
-    fn list_collaboration_modes(&self) -> Vec<CollaborationModeMask> {
-        builtin_collaboration_mode_presets()
     }
 
     fn refresh_if_new_etag(
@@ -575,10 +564,6 @@ impl ModelsManager for StaticModelsManager {
 
     fn auth_manager(&self) -> Option<&AuthManager> {
         self.auth_manager.as_deref()
-    }
-
-    fn list_collaboration_modes(&self) -> Vec<CollaborationModeMask> {
-        builtin_collaboration_mode_presets()
     }
 
     fn refresh_if_new_etag(

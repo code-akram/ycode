@@ -411,9 +411,6 @@
             "collab": {
               "type": "boolean"
             },
-            "collaboration_modes": {
-              "type": "boolean"
-            },
             "computer_use": {
               "type": "boolean"
             },
@@ -422,9 +419,6 @@
             },
             "current_time_reminder": {
               "$ref": "#/definitions/FeatureToml_for_CurrentTimeReminderConfigToml"
-            },
-            "default_mode_request_user_input": {
-              "type": "boolean"
             },
             "deferred_executor": {
               "type": "boolean"
@@ -678,9 +672,6 @@
         "include_apps_instructions": {
           "type": "boolean"
         },
-        "include_collaboration_mode_instructions": {
-          "type": "boolean"
-        },
         "include_environment_context": {
           "type": "boolean"
         },
@@ -721,9 +712,6 @@
         },
         "personality": {
           "$ref": "#/definitions/Personality"
-        },
-        "plan_mode_reasoning_effort": {
-          "$ref": "#/definitions/ReasoningEffort"
         },
         "service_tier": {
           "description": "Optional explicit service tier request id for new turns (for example `default`, `priority`, or `flex`; legacy `fast` also works).",
@@ -4171,9 +4159,6 @@
         "collab": {
           "type": "boolean"
         },
-        "collaboration_modes": {
-          "type": "boolean"
-        },
         "computer_use": {
           "type": "boolean"
         },
@@ -4182,9 +4167,6 @@
         },
         "current_time_reminder": {
           "$ref": "#/definitions/FeatureToml_for_CurrentTimeReminderConfigToml"
-        },
-        "default_mode_request_user_input": {
-          "type": "boolean"
         },
         "deferred_executor": {
           "type": "boolean"
@@ -4507,10 +4489,6 @@
       "description": "Whether to inject the `<apps_instructions>` developer block.",
       "type": "boolean"
     },
-    "include_collaboration_mode_instructions": {
-      "description": "Whether to inject the `<collaboration_mode>` developer block.",
-      "type": "boolean"
-    },
     "include_environment_context": {
       "description": "Whether to inject the `<environment_context>` user block.",
       "type": "boolean"
@@ -4654,9 +4632,6 @@
         }
       ],
       "description": "Optionally specify a personality for the model"
-    },
-    "plan_mode_reasoning_effort": {
-      "$ref": "#/definitions/ReasoningEffort"
     },
     "plugins": {
       "additionalProperties": {

@@ -126,11 +126,7 @@ impl ConfigRequestProcessor {
             && params.edits.iter().all(|edit| {
                 matches!(
                     edit.key_path.as_str(),
-                    "model"
-                        | "model_reasoning_effort"
-                        | "plan_mode_reasoning_effort"
-                        | "service_tier"
-                        | "personality"
+                    "model" | "model_reasoning_effort" | "service_tier" | "personality"
                 )
             });
         let reload_user_config = params.reload_user_config;

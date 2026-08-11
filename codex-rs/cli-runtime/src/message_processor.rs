@@ -1046,9 +1046,6 @@ impl MessageProcessor {
             ClientRequest::PermissionProfileList { params, .. } => {
                 self.catalog_processor.permission_profile_list(params).await
             }
-            ClientRequest::CollaborationModeList { params, .. } => {
-                self.catalog_processor.collaboration_mode_list(params).await
-            }
             ClientRequest::MockExperimentalMethod { params, .. } => {
                 self.catalog_processor
                     .mock_experimental_method(params)
@@ -1102,9 +1099,6 @@ impl MessageProcessor {
             }
             ClientRequest::ThreadRealtimeListVoices { params: _, .. } => {
                 self.turn_processor.thread_realtime_list_voices().await
-            }
-            ClientRequest::ReviewStart { params, .. } => {
-                self.turn_processor.review_start(&request_id, params).await
             }
             ClientRequest::LoginAccount { params, .. } => {
                 self.account_processor
