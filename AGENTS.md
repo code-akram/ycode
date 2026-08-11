@@ -2,9 +2,18 @@
 
 ## Product boundaries
 
-- ycode is a terminal product for macOS and Linux. Preserve both the interactive
-  TUI and non-interactive exec mode, including machine-readable output for
-  scripts and CI. Do not add or maintain Windows support.
+- ycode's initial product is a Rust CLI for `aarch64-apple-darwin` only. Preserve
+  the interactive TUI and non-interactive exec mode, including machine-readable
+  output. Linux and Intel macOS support are later subtraction targets; other
+  targets should eventually fail with a simple unsupported-target message.
+- Initial user workflows are interactive CLI, non-interactive exec, login,
+  logout, resume, fork, help, and version, plus the core primitives they need.
+- Build and installation surfaces are Cargo/source and a POSIX curl installer
+  for native binaries. Do not distribute ycode through npm.
+- Product code and substantial development tooling should be Rust. POSIX shell
+  is allowed for bootstrap and installation. Python and Node tooling are
+  subtraction targets. Keep `just` temporarily; simplify or remove it later.
+- Do not add CI or release workflows until ycode begins publishing releases.
 - Preserve local conversation history, persistent terminal-agent sessions, and
   resume behavior.
 - Preserve local `AGENTS.md` instructions, filesystem skills, and ordinary local
@@ -30,6 +39,19 @@
   deprecated CLI aliases, or migration code. Temporarily preserve the existing
   authentication credential location and format. Preserve other configuration
   until its dedicated cleanup.
+- Plan mode and dedicated code-review mode are later subtraction targets. Main
+  and sub-agents will ultimately run with full access; native multi-agent
+  collaboration remains protected.
+- Existing plugins and hooks are later subtraction targets. Preserve
+  `AGENTS.md` instructions and filesystem-backed skills. Do not design or
+  describe a replacement extension system yet.
+- Updates are manual through Cargo or the curl installer. Automatic update
+  checks and notices are later subtraction targets.
+- Only ordinary local logs and explicit OpenAI or web requests may remain.
+  Feedback upload, crash upload, analytics, experiments, and remote feature
+  flags are later subtraction targets.
+- TUI and theme preference machinery is a later subtraction target. Preserve
+  the current functional interactive TUI until its dedicated redesign.
 
 ## Protected first-party authentication and backend boundary
 
@@ -44,6 +66,12 @@ following without direct user approval for the specific change:
 - the existing ChatGPT credential location and format; or
 - official OpenAI backend/client bindings required by either protected
   first-party authentication path.
+
+Authentication should ultimately be file-only. Temporarily preserve the
+existing Codex credential path and JSON format and the working ChatGPT login;
+migrate deliberately later to `~/.ycode/auth.json`. Keychain and keyring storage
+are later subtraction targets. OpenAI API keys must come only from the
+environment and must not be persisted.
 
 Third-party login methods, alternate-provider authentication, Azure/compatible
 endpoints, arbitrary proxies, and custom API base URLs are not protected by
