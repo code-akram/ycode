@@ -42,7 +42,6 @@ use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::enforce_login_restrictions;
 use codex_protocol::ThreadId;
 use codex_protocol::auth::AuthMode;
-use codex_protocol::config_types::AltScreenMode;
 use codex_rollout::StateDbHandle;
 use codex_rollout::state_db;
 use codex_state::log_db;
@@ -87,7 +86,6 @@ mod clipboard_paste;
 mod color;
 mod config_update;
 pub(crate) mod custom_terminal;
-mod pets;
 mod runtime_approval_conversions;
 mod runtime_session;
 pub use custom_terminal::Terminal;
@@ -152,17 +150,14 @@ mod terminal_probe;
 mod terminal_title;
 mod terminal_visualization_instructions;
 mod text_formatting;
-mod theme_picker;
 mod thread_transcript;
 mod token_usage;
-mod tooltips;
 mod transcript_reflow;
 mod tui;
 mod ui_consts;
 mod version;
 mod width;
 mod workspace_command;
-mod workspace_messages;
 
 mod wrapping;
 
@@ -1155,28 +1150,11 @@ async fn run_ratatui_app(
         _ => config,
     };
 
-    // Configure syntax highlighting theme from the final config — onboarding
-    // and resume/fork can both reload config with a different tui_theme, so
-    // this must happen after the last possible reload.
-    if let Some(w) = crate::render::highlight::set_theme_override(
-        config.tui_theme.clone(),
-        find_codex_home().ok().map(AbsolutePathBuf::into_path_buf),
-    ) {
-        config.startup_warnings.push(w);
-    }
-
     set_default_client_residency_requirement(config.enforce_residency.value());
     let should_show_trust_screen = should_show_trust_screen(&config);
-    let Cli {
-        prompt,
-        shared,
-        no_alt_screen,
-        ..
-    } = cli;
+    let Cli { prompt, shared, .. } = cli;
     let images = shared.into_inner().images;
 
-    let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
-    tui.set_alt_screen_enabled(use_alt_screen);
     let mut cli_runtime = match cli_runtime {
         Some(cli_runtime) => cli_runtime,
         None => match start_cli_runtime(
@@ -1279,21 +1257,6 @@ impl Drop for TerminalRestoreGuard {
     fn drop(&mut self) {
         self.restore_silently();
     }
-}
-
-/// Determine whether to use the terminal's alternate screen buffer.
-///
-/// - If `--no-alt-screen` is explicitly passed, always disable alternate screen
-/// - Otherwise, respect the `tui.alternate_screen` config setting:
-///   - `always`: Use alternate screen
-///   - `never`: Inline mode only, preserves scrollback
-///   - `auto` (default): Use alternate screen
-fn determine_alt_screen_mode(no_alt_screen: bool, tui_alternate_screen: AltScreenMode) -> bool {
-    if no_alt_screen {
-        return false;
-    }
-
-    tui_alternate_screen != AltScreenMode::Never
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1773,26 +1736,6 @@ mod tests {
             "failed to determine the working directory recorded for the selected session"
         );
         Ok(())
-    }
-
-    #[test]
-    fn alternate_screen_auto_uses_alt_screen() {
-        assert!(determine_alt_screen_mode(
-            /*no_alt_screen*/ false,
-            AltScreenMode::Auto,
-        ));
-        assert!(determine_alt_screen_mode(
-            /*no_alt_screen*/ false,
-            AltScreenMode::Always,
-        ));
-        assert!(!determine_alt_screen_mode(
-            /*no_alt_screen*/ false,
-            AltScreenMode::Never,
-        ));
-        assert!(!determine_alt_screen_mode(
-            /*no_alt_screen*/ true,
-            AltScreenMode::Auto,
-        ));
     }
 
     #[test]
@@ -2355,50 +2298,6 @@ trust_level = "untrusted"
         assert_eq!(
             AskForApproval::from(untrusted_config.permissions.approval_policy.value()),
             AskForApproval::UnlessTrusted
-        );
-        Ok(())
-    }
-
-    /// Regression: theme must be configured from the *final* config.
-    ///
-    /// `run_ratatui_app` can reload config during onboarding and again
-    /// during session resume/fork.  The syntax theme override (stored in
-    /// a `OnceLock`) must use the final config's `tui_theme`, not the
-    /// initial one — otherwise users resuming a thread in a project with
-    /// a different theme get the wrong highlighting.
-    ///
-    /// We verify the invariant indirectly: `validate_theme_name` (the
-    /// pure validation core of `set_theme_override`) must be called with
-    /// the *final* config's theme, and its warning must land in the
-    /// final config's `startup_warnings`.
-    #[tokio::test]
-    async fn theme_warning_uses_final_config() -> std::io::Result<()> {
-        use crate::render::highlight::validate_theme_name;
-
-        let temp_dir = TempDir::new()?;
-
-        // initial_config has a valid theme — no warning.
-        let initial_config = build_config(&temp_dir).await?;
-        assert!(initial_config.tui_theme.is_none());
-
-        // Simulate resume/fork reload: the final config has an invalid theme.
-        let mut config = build_config(&temp_dir).await?;
-        config.tui_theme = Some("bogus-theme".into());
-
-        // Theme override must use the final config (not initial_config).
-        // This mirrors the real call site in run_ratatui_app.
-        if let Some(w) = validate_theme_name(config.tui_theme.as_deref(), Some(temp_dir.path())) {
-            config.startup_warnings.push(w);
-        }
-
-        assert_eq!(
-            config.startup_warnings.len(),
-            1,
-            "warning from final config's invalid theme should be present"
-        );
-        assert!(
-            config.startup_warnings[0].contains("bogus-theme"),
-            "warning should reference the final config's theme name"
         );
         Ok(())
     }

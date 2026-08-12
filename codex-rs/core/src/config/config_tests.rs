@@ -35,21 +35,14 @@ use codex_config::types::BundledSkillsConfig;
 use codex_config::types::HistoryPersistence;
 use codex_config::types::MemoriesConfig;
 use codex_config::types::MemoriesToml;
-use codex_config::types::ModelAvailabilityNuxConfig;
 use codex_config::types::Notice;
-use codex_config::types::NotificationCondition;
-use codex_config::types::NotificationMethod;
-use codex_config::types::Notifications;
 use codex_config::types::ResumeCwdMode;
 use codex_config::types::SandboxWorkspaceWrite;
-use codex_config::types::SessionPickerViewMode;
 use codex_config::types::SkillsConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverableType;
 use codex_config::types::Tui;
 use codex_config::types::TuiKeymap;
-use codex_config::types::TuiNotificationSettings;
-use codex_config::types::TuiPetAnchor;
 use codex_config::types::WindowsSandboxModeToml;
 use codex_config::types::WindowsToml;
 use codex_exec_server::LOCAL_FS;
@@ -718,76 +711,6 @@ async fn load_current_time_reminder_config(config_toml: &str) -> std::io::Result
 }
 
 #[test]
-fn config_toml_deserializes_model_availability_nux() {
-    let toml = r#"
-[tui.model_availability_nux]
-"gpt-foo" = 2
-"gpt-bar" = 4
-"#;
-    let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for TUI NUX");
-
-    assert_eq!(
-        cfg.tui.expect("tui config should deserialize"),
-        Tui {
-            notification_settings: TuiNotificationSettings::default(),
-            animations: true,
-            show_tooltips: true,
-            vim_mode_default: false,
-            raw_output_mode: false,
-            alternate_screen: AltScreenMode::default(),
-            status_line: None,
-            status_line_use_colors: true,
-            terminal_title: None,
-            theme: None,
-            pet: None,
-            pet_anchor: TuiPetAnchor::Composer,
-            session_picker_view: None,
-            resume_cwd: None,
-            keymap: TuiKeymap::default(),
-            model_availability_nux: ModelAvailabilityNuxConfig {
-                shown_count: HashMap::from([
-                    ("gpt-bar".to_string(), 4),
-                    ("gpt-foo".to_string(), 2),
-                ]),
-            },
-            terminal_resize_reflow_max_rows: None,
-        }
-    );
-}
-
-#[test]
-fn config_toml_status_line_use_colors_defaults_to_enabled() {
-    let toml = r#"
-[tui]
-"#;
-    let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for TUI config");
-
-    assert!(
-        cfg.tui
-            .expect("tui config should deserialize")
-            .status_line_use_colors
-    );
-}
-
-#[test]
-fn config_toml_deserializes_status_line_use_colors_disabled() {
-    let toml = r#"
-[tui]
-status_line_use_colors = false
-"#;
-    let cfg: ConfigToml =
-        toml::from_str(toml).expect("TOML deserialization should succeed for TUI config");
-
-    assert!(
-        !cfg.tui
-            .expect("tui config should deserialize")
-            .status_line_use_colors
-    );
-}
-
-#[test]
 fn config_toml_deserializes_terminal_resize_reflow_config() {
     let toml = r#"
 [tui]
@@ -801,22 +724,6 @@ terminal_resize_reflow_max_rows = 9000
             .expect("tui config should deserialize")
             .terminal_resize_reflow_max_rows,
         Some(9000)
-    );
-}
-
-#[tokio::test]
-async fn runtime_config_defaults_model_availability_nux() {
-    let cfg = Config::load_from_base_config_with_overrides(
-        ConfigToml::default(),
-        ConfigOverrides::default(),
-        tempdir().expect("tempdir").abs(),
-    )
-    .await
-    .expect("load config");
-
-    assert_eq!(
-        cfg.model_availability_nux,
-        ModelAvailabilityNuxConfig::default()
     );
 }
 
@@ -847,6 +754,28 @@ fn test_tui_vim_mode_default_true() {
             .expect("config should include tui section")
             .vim_mode_default
     );
+}
+
+#[test]
+fn removed_tui_presentation_preferences_are_rejected() {
+    for key_value in [
+        "animations = false",
+        "alternate_screen = \"never\"",
+        "notifications = false",
+        "pet = \"none\"",
+        "session_picker_view = \"dense\"",
+        "show_tooltips = false",
+        "status_line = [\"model\"]",
+        "terminal_title = [\"project\"]",
+        "theme = \"dark\"",
+    ] {
+        let toml = format!("[tui]\n{key_value}\n");
+        let error = toml::from_str::<ConfigToml>(&toml).expect_err("removed key must be rejected");
+        assert!(
+            error.to_string().contains("unknown field"),
+            "{key_value}: {error}"
+        );
+    }
 }
 
 #[test]
@@ -3474,41 +3403,6 @@ async fn permissions_profiles_allow_network_enablement() -> std::io::Result<()> 
 }
 
 #[test]
-fn tui_theme_deserializes_from_toml() {
-    let cfg = r#"
-[tui]
-theme = "dracula"
-"#;
-    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
-    assert_eq!(
-        parsed.tui.as_ref().and_then(|t| t.theme.as_deref()),
-        Some("dracula"),
-    );
-}
-
-#[test]
-fn tui_theme_defaults_to_none() {
-    let cfg = r#"
-[tui]
-"#;
-    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
-    assert_eq!(parsed.tui.as_ref().and_then(|t| t.theme.as_deref()), None);
-}
-
-#[test]
-fn tui_session_picker_view_deserializes_from_toml() {
-    let cfg = r#"
-[tui]
-session_picker_view = "dense"
-"#;
-    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
-    assert_eq!(
-        parsed.tui.as_ref().and_then(|t| t.session_picker_view),
-        Some(SessionPickerViewMode::Dense),
-    );
-}
-
-#[test]
 fn tui_resume_cwd_deserializes_from_toml() {
     let cfg = r#"
 [tui]
@@ -3518,115 +3412,6 @@ resume_cwd = "current"
     assert_eq!(
         parsed.tui.as_ref().and_then(|t| t.resume_cwd),
         Some(ResumeCwdMode::Current),
-    );
-}
-
-#[test]
-fn tui_pet_deserializes_from_toml() {
-    let cfg = r#"
-[tui]
-pet = "chefito"
-"#;
-    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
-    assert_eq!(
-        parsed.tui.as_ref().and_then(|t| t.pet.as_deref()),
-        Some("chefito"),
-    );
-}
-
-#[test]
-fn tui_session_picker_view_defaults_to_none() {
-    let cfg = r#"
-[tui]
-"#;
-    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
-    assert_eq!(
-        parsed.tui.as_ref().and_then(|t| t.session_picker_view),
-        None,
-    );
-}
-
-#[test]
-fn tui_pet_defaults_to_none() {
-    let cfg = r#"
-[tui]
-"#;
-    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
-    assert_eq!(parsed.tui.as_ref().and_then(|t| t.pet.as_deref()), None);
-}
-
-#[test]
-fn tui_pet_anchor_deserializes_from_toml() {
-    let cfg = r#"
-[tui]
-pet_anchor = "screen-bottom"
-"#;
-    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
-    assert_eq!(
-        parsed.tui.as_ref().map(|t| t.pet_anchor),
-        Some(TuiPetAnchor::ScreenBottom),
-    );
-}
-
-#[test]
-fn tui_pet_anchor_defaults_to_composer() {
-    let cfg = r#"
-[tui]
-"#;
-    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
-    assert_eq!(
-        parsed.tui.as_ref().map(|t| t.pet_anchor),
-        Some(TuiPetAnchor::Composer),
-    );
-}
-
-#[test]
-fn tui_pet_anchor_rejects_unknown_value() {
-    let cfg = r#"
-[tui]
-pet_anchor = "bottom"
-"#;
-    let err = toml::from_str::<ConfigToml>(cfg).expect_err("reject unknown pet anchor");
-    let err = err.to_string();
-    assert!(
-        err.contains("unknown variant `bottom`")
-            && err.contains("composer")
-            && err.contains("screen-bottom"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn tui_config_missing_notifications_field_defaults_to_enabled() {
-    let cfg = r#"
-[tui]
-"#;
-
-    let parsed =
-        toml::from_str::<ConfigToml>(cfg).expect("TUI config without notifications should succeed");
-    let tui = parsed.tui.expect("config should include tui section");
-
-    assert_eq!(
-        tui,
-        Tui {
-            notification_settings: TuiNotificationSettings::default(),
-            animations: true,
-            show_tooltips: true,
-            vim_mode_default: false,
-            raw_output_mode: false,
-            alternate_screen: AltScreenMode::Auto,
-            status_line: None,
-            status_line_use_colors: true,
-            terminal_title: None,
-            theme: None,
-            pet: None,
-            pet_anchor: TuiPetAnchor::Composer,
-            session_picker_view: None,
-            resume_cwd: None,
-            keymap: TuiKeymap::default(),
-            model_availability_nux: ModelAvailabilityNuxConfig::default(),
-            terminal_resize_reflow_max_rows: None,
-        }
     );
 }
 
@@ -3735,38 +3520,6 @@ async fn forced_chatgpt_workspace_id_empty_values_disable_runtime_restriction()
     }
 
     Ok(())
-}
-
-#[tokio::test]
-async fn runtime_config_resolves_session_picker_view_default_and_override() {
-    let cfg = Config::load_from_base_config_with_overrides(
-        ConfigToml::default(),
-        ConfigOverrides::default(),
-        tempdir().expect("tempdir").abs(),
-    )
-    .await
-    .expect("load default config");
-
-    assert_eq!(cfg.tui_session_picker_view, SessionPickerViewMode::Dense);
-
-    let cfg = Config::load_from_base_config_with_overrides(
-        ConfigToml {
-            tui: Some(Tui {
-                session_picker_view: Some(SessionPickerViewMode::Comfortable),
-                ..Default::default()
-            }),
-            ..Default::default()
-        },
-        ConfigOverrides::default(),
-        tempdir().expect("tempdir").abs(),
-    )
-    .await
-    .expect("load root override config");
-
-    assert_eq!(
-        cfg.tui_session_picker_view,
-        SessionPickerViewMode::Comfortable
-    );
 }
 
 #[tokio::test]
@@ -8417,97 +8170,6 @@ speaker = "Desk Speakers"
         Some("Desk Speakers")
     );
     Ok(())
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct TuiTomlTest {
-    #[serde(default, flatten)]
-    notifications: TuiNotificationSettings,
-}
-
-#[derive(Deserialize, Debug, PartialEq)]
-struct RootTomlTest {
-    tui: TuiTomlTest,
-}
-
-#[test]
-fn test_tui_notifications_true() {
-    let toml = r#"
-            [tui]
-            notifications = true
-        "#;
-    let parsed: RootTomlTest = toml::from_str(toml).expect("deserialize notifications=true");
-    assert_matches!(
-        parsed.tui.notifications.notifications,
-        Notifications::Enabled(true)
-    );
-}
-
-#[test]
-fn test_tui_notifications_custom_array() {
-    let toml = r#"
-            [tui]
-            notifications = ["foo"]
-        "#;
-    let parsed: RootTomlTest = toml::from_str(toml).expect("deserialize notifications=[\"foo\"]");
-    assert_matches!(
-        parsed.tui.notifications.notifications,
-        Notifications::Custom(ref v) if v == &vec!["foo".to_string()]
-    );
-}
-
-#[test]
-fn test_tui_notification_method() {
-    let toml = r#"
-            [tui]
-            notification_method = "bel"
-        "#;
-    let parsed: RootTomlTest =
-        toml::from_str(toml).expect("deserialize notification_method=\"bel\"");
-    assert_eq!(parsed.tui.notifications.method, NotificationMethod::Bel);
-}
-
-#[test]
-fn test_tui_notification_condition_defaults_to_unfocused() {
-    let toml = r#"
-            [tui]
-        "#;
-    let parsed: RootTomlTest =
-        toml::from_str(toml).expect("deserialize default notification condition");
-    assert_eq!(
-        parsed.tui.notifications.condition,
-        NotificationCondition::Unfocused
-    );
-}
-
-#[test]
-fn test_tui_notification_condition_always() {
-    let toml = r#"
-            [tui]
-            notification_condition = "always"
-        "#;
-    let parsed: RootTomlTest =
-        toml::from_str(toml).expect("deserialize notification_condition=\"always\"");
-    assert_eq!(
-        parsed.tui.notifications.condition,
-        NotificationCondition::Always
-    );
-}
-
-#[test]
-fn test_tui_notification_condition_rejects_unknown_value() {
-    let toml = r#"
-            [tui]
-            notification_condition = "background"
-        "#;
-    let err = toml::from_str::<RootTomlTest>(toml).expect_err("reject unknown condition");
-    let err = err.to_string();
-    assert!(
-        err.contains("unknown variant `background`")
-            && err.contains("unfocused")
-            && err.contains("always"),
-        "unexpected error: {err}"
-    );
 }
 
 async fn load_with_enterprise_requirement(

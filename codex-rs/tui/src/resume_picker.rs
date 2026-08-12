@@ -17,7 +17,6 @@ use crate::keymap::PagerKeymap;
 use crate::keymap::RuntimeChordKeymap;
 use crate::keymap::RuntimeKeymap;
 use crate::legacy_core::config::Config;
-use crate::legacy_core::config::edit::ConfigEditsBuilder;
 use crate::markdown::append_markdown;
 use crate::pager_overlay::Overlay;
 use crate::runtime_session::CliRuntimeSession;
@@ -44,7 +43,6 @@ use codex_cli_protocol::ThreadItem;
 use codex_cli_protocol::ThreadListCwdFilter;
 use codex_cli_protocol::ThreadListParams;
 use codex_cli_protocol::ThreadSortKey;
-use codex_config::types::SessionPickerViewMode;
 use codex_protocol::ThreadId;
 use codex_utils_path as path_utils;
 use color_eyre::eyre::Result;
@@ -78,13 +76,8 @@ use page_loading::PaginationState;
 
 const PAGE_SIZE: usize = 25;
 const LOAD_NEAR_THRESHOLD: usize = 5;
-const SESSION_META_INDENT_WIDTH: usize = 2;
 const SESSION_META_DATE_WIDTH: usize = 12;
-const SESSION_META_FIELD_GAP_WIDTH: usize = 2;
-const SESSION_META_MIN_CWD_WIDTH: usize = 30;
-const SESSION_META_MAX_CWD_WIDTH: usize = 72;
 const SESSION_META_BRANCH_ICON: &str = "";
-const SESSION_META_CWD_ICON: &str = "⌁";
 const FOOTER_COMPACT_BREAKPOINT: u16 = 120;
 const FOOTER_HINT_LEFT_PADDING: usize = 1;
 const FOOTER_HINT_GAP: usize = 3;
@@ -224,39 +217,6 @@ impl ToolbarControl {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SessionListDensity {
-    Comfortable,
-    Dense,
-}
-
-impl SessionListDensity {
-    fn toggle(self) -> Self {
-        match self {
-            Self::Comfortable => Self::Dense,
-            Self::Dense => Self::Comfortable,
-        }
-    }
-}
-
-impl From<SessionPickerViewMode> for SessionListDensity {
-    fn from(mode: SessionPickerViewMode) -> Self {
-        match mode {
-            SessionPickerViewMode::Comfortable => Self::Comfortable,
-            SessionPickerViewMode::Dense => Self::Dense,
-        }
-    }
-}
-
-impl From<SessionListDensity> for SessionPickerViewMode {
-    fn from(density: SessionListDensity) -> Self {
-        match density {
-            SessionListDensity::Comfortable => Self::Comfortable,
-            SessionListDensity::Dense => Self::Dense,
-        }
-    }
-}
-
 type PickerLoader = Arc<dyn Fn(PickerLoadRequest) + Send + Sync>;
 enum BackgroundEvent {
     Page {
@@ -286,11 +246,6 @@ struct PickerPage {
     reached_scan_cap: bool,
 }
 
-#[derive(Clone)]
-struct SessionPickerViewPersistence {
-    codex_home: PathBuf,
-}
-
 struct SessionPickerRunOptions {
     show_all: bool,
     filter_cwd: Option<PathBuf>,
@@ -298,8 +253,6 @@ struct SessionPickerRunOptions {
     action: SessionPickerAction,
     launch_context: SessionPickerLaunchContext,
     provider_filter: ProviderFilter,
-    initial_density: SessionListDensity,
-    view_persistence: Option<SessionPickerViewPersistence>,
     pager_keymap: PagerKeymap,
     list_keymap: ListKeymap,
     initial_page_mode: PageLoadMode,
@@ -384,10 +337,6 @@ async fn run_resume_picker_with_launch_context(
         action: SessionPickerAction::Resume,
         launch_context,
         provider_filter,
-        initial_density: SessionListDensity::from(config.tui_session_picker_view),
-        view_persistence: Some(SessionPickerViewPersistence {
-            codex_home: config.codex_home.to_path_buf(),
-        }),
         pager_keymap: runtime_keymap.pager,
         list_keymap: runtime_keymap.list,
         initial_page_mode: if uses_remote_workspace {
@@ -436,10 +385,6 @@ pub async fn run_fork_picker_with_cli_runtime(
         action: SessionPickerAction::Fork,
         launch_context: SessionPickerLaunchContext::Startup,
         provider_filter,
-        initial_density: SessionListDensity::from(config.tui_session_picker_view),
-        view_persistence: Some(SessionPickerViewPersistence {
-            codex_home: config.codex_home.to_path_buf(),
-        }),
         pager_keymap: runtime_keymap.pager,
         list_keymap: runtime_keymap.list,
         initial_page_mode: if uses_remote_workspace {
@@ -480,8 +425,6 @@ async fn run_session_picker_with_loader(
         options.action,
     );
     state.local_filter_cwd = options.local_filter_cwd;
-    state.density = options.initial_density;
-    state.view_persistence = options.view_persistence;
     state.pager_keymap = options.pager_keymap;
     state.list_keymap = options.list_keymap;
     state.chord_keymap = options.chord_keymap;
@@ -711,9 +654,7 @@ struct PickerState {
     filter_cwd: Option<PathBuf>,
     local_filter_cwd: Option<PathBuf>,
     toolbar_focus: ToolbarControl,
-    density: SessionListDensity,
     launch_context: SessionPickerLaunchContext,
-    view_persistence: Option<SessionPickerViewPersistence>,
     action: SessionPickerAction,
     sort_key: ThreadSortKey,
     inline_error: Option<String>,
@@ -1048,9 +989,7 @@ impl PickerState {
             local_filter_cwd: filter_cwd.clone(),
             filter_cwd,
             toolbar_focus: ToolbarControl::Filter,
-            density: SessionListDensity::Comfortable,
             launch_context: SessionPickerLaunchContext::Startup,
-            view_persistence: None,
             action,
             sort_key: ThreadSortKey::UpdatedAt,
             inline_error: None,
@@ -1255,20 +1194,6 @@ impl PickerState {
                 ..
             } /* ^E */ => {
                 self.toggle_selected_expansion();
-            }
-            KeyEvent {
-                code: KeyCode::Char('o'),
-                modifiers,
-                ..
-            } if modifiers.contains(KeyModifiers::CONTROL) => {
-                self.toggle_density().await;
-            }
-            KeyEvent {
-                code: KeyCode::Char('\u{000f}'),
-                modifiers: KeyModifiers::NONE,
-                ..
-            } /* ^O */ => {
-                self.toggle_density().await;
             }
             _ if self.list_keymap.accept.is_pressed(key) => {
                 if let Some(row) = self.filtered_rows.get(self.selected) {
@@ -1827,30 +1752,6 @@ impl PickerState {
         }
     }
 
-    async fn toggle_density(&mut self) {
-        self.density = self.density.toggle();
-        self.ensure_selected_visible();
-        if let Err(err) = self.persist_density().await {
-            warn!(error = %err, "failed to persist session picker view mode");
-            self.inline_error = Some(format!("Failed to save view mode: {err}"));
-        }
-        self.request_frame();
-    }
-
-    async fn persist_density(&self) -> Result<()> {
-        let Some(persistence) = &self.view_persistence else {
-            return Ok(());
-        };
-
-        ConfigEditsBuilder::new(&persistence.codex_home)
-            .set_session_picker_view(SessionPickerViewMode::from(self.density))
-            .apply()
-            .await
-            .map_err(|err| color_eyre::eyre::eyre!("failed to write config.toml: {err}"))?;
-
-        Ok(())
-    }
-
     fn toggle_selected_expansion(&mut self) {
         let Some(row) = self.filtered_rows.get(self.selected) else {
             return;
@@ -1946,10 +1847,7 @@ impl PickerState {
     }
 
     fn row_separator_height(&self) -> usize {
-        match self.density {
-            SessionListDensity::Comfortable => 1,
-            SessionListDensity::Dense => 0,
-        }
+        0
     }
 }
 
@@ -2350,14 +2248,6 @@ fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
         SessionPickerLaunchContext::Startup => "quit",
         SessionPickerLaunchContext::ExistingSession => "exit",
     };
-    let density_label = match state.density {
-        SessionListDensity::Comfortable => "dense view",
-        SessionListDensity::Dense => "comfortable view",
-    };
-    let density_compact_label = match state.density {
-        SessionListDensity::Comfortable => "dense",
-        SessionListDensity::Dense => "comfy",
-    };
     let mut first_row_hints = Vec::new();
     if let Some(accept) = state.list_keymap.primary_hint(ListAction::Accept) {
         first_row_hints.push(PickerFooterHint {
@@ -2404,12 +2294,6 @@ fn footer_hint_lines(state: &PickerState, width: u16) -> Vec<Line<'static>> {
         });
     }
     let mut second_row_hints = vec![
-        PickerFooterHint {
-            key: "ctrl+o".to_string(),
-            wide_label: density_label.to_string(),
-            compact_label: density_compact_label.to_string(),
-            priority: 3,
-        },
         PickerFooterHint {
             key: "ctrl+t".to_string(),
             wide_label: String::from("transcript"),
@@ -2664,12 +2548,6 @@ fn render_list(frame: &mut crate::custom_terminal::Frame, area: Rect, state: &Pi
             frame.render_widget_ref(&line, Rect::new(area.x, y, area.width, 1));
             y = y.saturating_add(1);
         }
-        if state.density == SessionListDensity::Comfortable
-            && y < content_area.y.saturating_add(content_area.height)
-            && start + idx + 1 < rows.len()
-        {
-            y = y.saturating_add(1);
-        }
     }
 
     if state.pagination.is_loading() && y < content_area.y.saturating_add(content_area.height) {
@@ -2707,94 +2585,7 @@ fn render_session_lines(
     is_zebra: bool,
     width: u16,
 ) -> Vec<Line<'static>> {
-    match state.density {
-        SessionListDensity::Comfortable => {
-            render_comfortable_session_lines(row, state, is_selected, is_expanded, is_zebra, width)
-        }
-        SessionListDensity::Dense => {
-            render_dense_session_lines(row, state, is_selected, is_expanded, is_zebra, width)
-        }
-    }
-}
-
-fn render_comfortable_session_lines(
-    row: &Row,
-    state: &PickerState,
-    is_selected: bool,
-    is_expanded: bool,
-    is_zebra: bool,
-    width: u16,
-) -> Vec<Line<'static>> {
-    let marker = selection_marker(is_selected, is_expanded);
-    let title = truncate_text(row.display_preview(), width.saturating_sub(2) as usize);
-    let title = if is_selected {
-        selected_session_title_span(title)
-    } else {
-        title.into()
-    };
-    let title_line = Line::from(vec![marker, title]);
-    let mut lines = vec![title_line];
-    let row_style = if is_selected {
-        Some(dense_selected_style())
-    } else if is_zebra {
-        Some(dense_zebra_style())
-    } else {
-        None
-    };
-    if let Some(style) = row_style {
-        lines = apply_session_row_background(lines, style, width);
-    }
-    if is_expanded {
-        lines.extend(render_transcript_preview_lines(row, state, width));
-        return lines;
-    }
-
-    let reference = state.relative_time_reference.unwrap_or_else(Utc::now);
-    let created = format_relative_time(reference, row.created_at);
-    let updated = format_relative_time(reference, row.updated_at.or(row.created_at));
-    let branch = row.git_branch.as_deref();
-    let cwd = row
-        .cwd
-        .as_ref()
-        .map(|path| format_directory_display(path, /*max_width*/ None));
-    let footer_lines = render_footer_lines(
-        state.sort_key,
-        &created,
-        &updated,
-        branch,
-        cwd.as_deref(),
-        state.filter_mode == SessionFilterMode::All,
-        width,
-    );
-    if let Some(style) = row_style {
-        lines.extend(apply_session_row_background(footer_lines, style, width));
-    } else {
-        lines.extend(footer_lines);
-    }
-    lines
-}
-
-fn apply_session_row_background(
-    lines: Vec<Line<'static>>,
-    style: Style,
-    width: u16,
-) -> Vec<Line<'static>> {
-    lines
-        .into_iter()
-        .map(|line| apply_line_background(line, style, width))
-        .collect()
-}
-
-fn apply_line_background(mut line: Line<'static>, style: Style, width: u16) -> Line<'static> {
-    let padding = (width as usize).saturating_sub(line.width());
-    if padding > 0 {
-        line.spans.push(" ".repeat(padding).set_style(style));
-    }
-    line.style = line.style.patch(style);
-    for span in &mut line.spans {
-        span.style = span.style.patch(style);
-    }
-    line
+    render_dense_session_lines(row, state, is_selected, is_expanded, is_zebra, width)
 }
 
 fn render_dense_session_lines(
@@ -2929,186 +2720,6 @@ fn selected_session_style() -> Style {
 
 fn selected_session_title_span(title: String) -> Span<'static> {
     title.set_style(selected_session_style())
-}
-
-fn render_footer_lines(
-    sort_key: ThreadSortKey,
-    created: &str,
-    updated: &str,
-    branch: Option<&str>,
-    cwd: Option<&str>,
-    show_cwd: bool,
-    width: u16,
-) -> Vec<Line<'static>> {
-    let date = match sort_key {
-        ThreadSortKey::CreatedAt => created,
-        ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt | ThreadSortKey::SectionPosition => {
-            updated
-        }
-    };
-    let mut parts = vec![FooterPart::Date(date.to_string())];
-    if show_cwd {
-        parts.push(FooterPart::Cwd(cwd.map(str::to_string)));
-    }
-    parts.push(FooterPart::Branch(branch.map(str::to_string)));
-    pack_footer_parts(parts, width)
-}
-
-enum FooterPart {
-    Date(String),
-    Branch(Option<String>),
-    Cwd(Option<String>),
-}
-
-impl FooterPart {
-    fn text(&self) -> &str {
-        match self {
-            FooterPart::Date(text) => text,
-            FooterPart::Branch(Some(text)) | FooterPart::Cwd(Some(text)) => text,
-            FooterPart::Branch(None) => "no branch",
-            FooterPart::Cwd(None) => "no cwd",
-        }
-    }
-
-    fn prefix(&self) -> Option<&'static str> {
-        match self {
-            FooterPart::Date(_) => None,
-            FooterPart::Branch(_) => Some(SESSION_META_BRANCH_ICON),
-            FooterPart::Cwd(_) => Some(SESSION_META_CWD_ICON),
-        }
-    }
-}
-
-fn pack_footer_parts(parts: Vec<FooterPart>, width: u16) -> Vec<Line<'static>> {
-    let available_width = width as usize;
-    if available_width <= SESSION_META_INDENT_WIDTH {
-        return Vec::new();
-    }
-    let cwd_width = cwd_column_width(available_width);
-    let all_parts_width = footer_parts_width(&parts, cwd_width);
-    if all_parts_width <= available_width {
-        return vec![footer_line(parts, available_width, cwd_width)];
-    }
-
-    let mut lines = Vec::with_capacity(parts.len());
-    let mut current_parts = Vec::new();
-    for part in parts {
-        let mut candidate_parts = std::mem::take(&mut current_parts);
-        candidate_parts.push(part);
-        if candidate_parts.len() > 1
-            && footer_parts_width(&candidate_parts, cwd_width) > available_width
-        {
-            let previous_parts = candidate_parts
-                .drain(..candidate_parts.len().saturating_sub(1))
-                .collect();
-            lines.push(footer_line(previous_parts, available_width, cwd_width));
-        }
-        current_parts = candidate_parts;
-    }
-    if !current_parts.is_empty() {
-        lines.push(footer_line(current_parts, available_width, cwd_width));
-    }
-    lines
-}
-
-fn cwd_column_width(width: usize) -> usize {
-    let available = width.saturating_sub(
-        SESSION_META_INDENT_WIDTH + SESSION_META_DATE_WIDTH + 2 * SESSION_META_FIELD_GAP_WIDTH,
-    );
-    (available / 2).clamp(SESSION_META_MIN_CWD_WIDTH, SESSION_META_MAX_CWD_WIDTH)
-}
-
-fn footer_parts_width(parts: &[FooterPart], cwd_width: usize) -> usize {
-    let content_width: usize = parts
-        .iter()
-        .enumerate()
-        .map(|(idx, part)| footer_part_width(part, idx + 1 < parts.len(), cwd_width))
-        .sum();
-    SESSION_META_INDENT_WIDTH + content_width
-}
-
-fn footer_part_width(part: &FooterPart, padded: bool, cwd_width: usize) -> usize {
-    let prefix_width = part.prefix().map_or(0, UnicodeWidthStr::width);
-    let prefix_gap_width = usize::from(part.prefix().is_some() && !part.text().is_empty());
-    let text_width = UnicodeWidthStr::width(part.text());
-    let actual_width = prefix_width + prefix_gap_width + text_width;
-    match part {
-        FooterPart::Date(_) if padded => SESSION_META_DATE_WIDTH.max(actual_width),
-        FooterPart::Cwd(_) if padded => cwd_width,
-        _ => actual_width,
-    }
-}
-
-fn footer_line(parts: Vec<FooterPart>, width: usize, cwd_width: usize) -> Line<'static> {
-    let mut spans: Vec<Span<'static>> = vec!["  ".into()];
-    let mut remaining_width = width.saturating_sub(SESSION_META_INDENT_WIDTH);
-    let part_count = parts.len();
-    for (idx, part) in parts.into_iter().enumerate() {
-        if idx > 0 {
-            let gap_width = SESSION_META_FIELD_GAP_WIDTH.min(remaining_width);
-            if gap_width > 0 {
-                spans.push(" ".repeat(gap_width).dim());
-                remaining_width = remaining_width.saturating_sub(gap_width);
-            }
-        }
-        let padded = idx + 1 < part_count;
-        let target_width = match part {
-            FooterPart::Date(_) if padded => Some(SESSION_META_DATE_WIDTH),
-            FooterPart::Cwd(_) if padded => Some(cwd_width),
-            FooterPart::Date(_) | FooterPart::Branch(_) | FooterPart::Cwd(_) => None,
-        };
-        let used_width = push_footer_part(&mut spans, part, target_width, remaining_width);
-        remaining_width = remaining_width.saturating_sub(used_width);
-        if let Some(target_width) = target_width {
-            let padding = target_width.saturating_sub(used_width);
-            if padding > 0 {
-                spans.push(" ".repeat(padding).dim());
-                remaining_width = remaining_width.saturating_sub(padding);
-            }
-        }
-    }
-    spans.into()
-}
-
-fn push_footer_part(
-    spans: &mut Vec<Span<'static>>,
-    part: FooterPart,
-    target_width: Option<usize>,
-    available_width: usize,
-) -> usize {
-    let text = part.text().to_string();
-    let Some(prefix) = part.prefix() else {
-        let text = truncate_text(&text, available_width);
-        let width = UnicodeWidthStr::width(text.as_str());
-        spans.push(text.dim());
-        return width;
-    };
-
-    let prefix_width = UnicodeWidthStr::width(prefix);
-    if available_width <= prefix_width {
-        let prefix = truncate_text(prefix, available_width);
-        let width = UnicodeWidthStr::width(prefix.as_str());
-        spans.push(prefix.dim());
-        return width;
-    }
-
-    spans.push(prefix.dim());
-    let mut used_width = prefix_width;
-    if !text.is_empty() && used_width < available_width {
-        spans.push(" ".dim());
-        used_width += 1;
-    }
-    let text_width = target_width
-        .unwrap_or(available_width)
-        .saturating_sub(used_width)
-        .min(available_width.saturating_sub(used_width));
-    let text = truncate_text(&text, text_width);
-    let rendered_text_width = UnicodeWidthStr::width(text.as_str());
-    match part {
-        FooterPart::Branch(None) | FooterPart::Cwd(None) => spans.push(text.dim().italic()),
-        _ => spans.push(text.dim()),
-    }
-    used_width + rendered_text_width
 }
 
 fn render_transcript_preview_lines(
@@ -3400,7 +3011,6 @@ mod tests {
     use super::*;
     use chrono::Duration;
     use codex_cli_protocol::ThreadSourceKind;
-    use codex_config::CONFIG_TOML_FILE;
     use codex_protocol::ThreadId;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
@@ -3414,7 +3024,6 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::Mutex;
-    use tempfile::tempdir;
 
     fn page(
         rows: Vec<Row>,
@@ -3807,122 +3416,6 @@ mod tests {
     }
 
     #[test]
-    fn footer_prioritizes_active_sort_timestamp() {
-        let updated = render_footer_lines(
-            ThreadSortKey::UpdatedAt,
-            "5h ago",
-            "3h ago",
-            Some("main"),
-            Some("tmp/codex"),
-            /*show_cwd*/ true,
-            /*width*/ 80,
-        );
-        let created = render_footer_lines(
-            ThreadSortKey::CreatedAt,
-            "5h ago",
-            "3h ago",
-            Some("main"),
-            Some("tmp/codex"),
-            /*show_cwd*/ true,
-            /*width*/ 80,
-        );
-
-        assert_eq!(updated.len(), 1);
-        assert_eq!(created.len(), 1);
-        assert!(updated[0].to_string().starts_with("  3h ago"));
-        assert!(created[0].to_string().starts_with("  5h ago"));
-        assert!(!updated[0].to_string().contains("created 5h ago"));
-        assert!(!created[0].to_string().contains("updated 3h ago"));
-        assert_metadata_order(&updated[0], "⌁ tmp/codex", " main");
-        assert_metadata_order(&created[0], "⌁ tmp/codex", " main");
-    }
-
-    #[test]
-    fn footer_marks_missing_branch() {
-        let footer = render_footer_lines(
-            ThreadSortKey::UpdatedAt,
-            "5h ago",
-            "3h ago",
-            /*branch*/ None,
-            Some("/tmp/codex"),
-            /*show_cwd*/ true,
-            /*width*/ 80,
-        );
-
-        assert_eq!(footer.len(), 1);
-        let rendered = footer[0].to_string();
-        assert!(rendered.contains("⌁ /tmp/codex"));
-        assert!(rendered.contains(" no branch"));
-        assert_metadata_order(&footer[0], "⌁ /tmp/codex", " no branch");
-    }
-
-    #[test]
-    fn footer_branch_expands_when_line_has_room() {
-        let branch = "etraut/animations-false-improvements";
-        let footer = render_footer_lines(
-            ThreadSortKey::UpdatedAt,
-            "5h ago",
-            "4h ago",
-            Some(branch),
-            Some("~/code/codex.etraut-animations-false-improvements/codex-rs"),
-            /*show_cwd*/ true,
-            /*width*/ 140,
-        );
-
-        assert_eq!(footer.len(), 1);
-        assert!(footer[0].to_string().contains(branch));
-    }
-
-    #[test]
-    fn footer_cwd_truncates_to_responsive_column() {
-        let cwd = "~/code/codex.owner-extremely-long-worktree-name-that-needs-truncating/codex-rs";
-        let branch = "owner/branch";
-        let footer = render_footer_lines(
-            ThreadSortKey::UpdatedAt,
-            "5h ago",
-            "4h ago",
-            Some(branch),
-            Some(cwd),
-            /*show_cwd*/ true,
-            /*width*/ 80,
-        );
-
-        assert_eq!(footer.len(), 1);
-        let footer = footer[0].to_string();
-        assert!(!footer.contains(cwd));
-        assert!(footer.contains("⌁ ~/code/codex."));
-        assert!(footer.contains("..."));
-        assert!(footer.contains(" owner/branch"));
-    }
-
-    #[test]
-    fn footer_omits_cwd_when_hidden() {
-        let footer = render_footer_lines(
-            ThreadSortKey::UpdatedAt,
-            "5h ago",
-            "4h ago",
-            Some("owner/branch"),
-            Some("~/code/codex.owner-worktree/codex-rs"),
-            /*show_cwd*/ false,
-            /*width*/ 80,
-        );
-
-        assert_eq!(footer.len(), 1);
-        let footer = footer[0].to_string();
-        assert!(footer.contains("4h ago"));
-        assert!(footer.contains(" owner/branch"));
-        assert!(!footer.contains("⌁"));
-        assert!(!footer.contains("~/code"));
-    }
-
-    fn assert_metadata_order(line: &Line<'_>, first: &str, second: &str) {
-        let rendered = line.to_string();
-        let first_index = rendered.find(first).expect("first metadata item");
-        let second_index = rendered.find(second).expect("second metadata item");
-        assert!(first_index < second_index);
-    }
-
-    #[test]
     fn remote_thread_list_params_omit_provider_filter() {
         let params = thread_list_params(
             Some(String::from("cursor-1")),
@@ -4182,7 +3675,7 @@ mod tests {
     }
 
     #[test]
-    fn hint_line_switches_density_label() {
+    fn hint_line_shows_current_picker_actions() {
         let loader = page_only_loader(|_| {});
         let mut state = PickerState::new(
             FrameRequester::test_dummy(),
@@ -4193,7 +3686,6 @@ mod tests {
             SessionPickerAction::Resume,
         );
 
-        assert!(footer_lines_text(&state, /*width*/ 220).contains("ctrl+o dense view"));
         assert!(footer_lines_text(&state, /*width*/ 220).contains("ctrl+t transcript"));
         assert!(footer_lines_text(&state, /*width*/ 220).contains("ctrl+e expand"));
         state.list_keymap.move_left = vec![crate::key_hint::ctrl(KeyCode::Char('h'))];
@@ -4206,10 +3698,6 @@ mod tests {
         state.list_keymap.move_left.clear();
         state.list_keymap.move_right.clear();
         assert!(!footer_lines_text(&state, /*width*/ 220).contains("change option"));
-
-        state.density = SessionListDensity::Dense;
-
-        assert!(footer_lines_text(&state, /*width*/ 220).contains("ctrl+o comfortable view"));
     }
 
     #[test]
@@ -4229,7 +3717,6 @@ mod tests {
         assert!(rendered.contains("esc new"));
         assert!(rendered.contains("tab focus"));
         assert!(rendered.contains("←/→ option"));
-        assert!(rendered.contains("ctrl+o dense"));
         assert!(rendered.contains("ctrl+t preview"));
         assert!(rendered.contains("ctrl+e exp"));
         assert!(!rendered.contains("focus sort/filter"));
@@ -4265,7 +3752,6 @@ mod tests {
             SessionPickerAction::Resume,
         );
         state.query = String::from("picker");
-        state.density = SessionListDensity::Dense;
 
         assert_snapshot!(
             "resume_picker_footer_compact",
@@ -4284,7 +3770,6 @@ mod tests {
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.density = SessionListDensity::Dense;
 
         let width = 38;
         let lines = footer_hint_lines(&state, width);
@@ -4298,7 +3783,6 @@ mod tests {
         assert!(rendered.contains("enter"));
         assert!(rendered.contains("esc"));
         assert!(rendered.contains("ctrl+c"));
-        assert!(rendered.contains("ctrl+o"));
         assert!(rendered.contains("ctrl+t"));
         assert!(rendered.contains("ctrl+e"));
         assert!(rendered.contains("↑/↓"));
@@ -4466,28 +3950,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ctrl_o_toggles_density_without_typing_into_search() {
-        let loader = page_only_loader(|_| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            ProviderFilter::MatchDefault(String::from("openai")),
-            /*show_all*/ true,
-            /*filter_cwd*/ None,
-            SessionPickerAction::Resume,
-        );
-        state.query = String::from("pick");
-
-        state
-            .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL))
-            .await
-            .unwrap();
-
-        assert_eq!(state.density, SessionListDensity::Dense);
-        assert_eq!(state.query, "pick");
-    }
-
-    #[tokio::test]
     async fn ctrl_t_requests_selected_session_transcript() {
         let thread_id = ThreadId::new();
         let recorded_requests: Arc<Mutex<Vec<ThreadId>>> = Arc::new(Mutex::new(Vec::new()));
@@ -4521,7 +3983,6 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(state.density, SessionListDensity::Comfortable);
         assert_eq!(*recorded_requests.lock().unwrap(), vec![thread_id]);
         assert_eq!(state.pending_transcript_open, Some(thread_id));
         assert!(matches!(
@@ -4881,94 +4342,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ctrl_o_persists_density_preference() {
-        let tmp = tempdir().expect("tmpdir");
-        let loader = page_only_loader(|_| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            ProviderFilter::MatchDefault(String::from("openai")),
-            /*show_all*/ true,
-            /*filter_cwd*/ None,
-            SessionPickerAction::Resume,
-        );
-        state.view_persistence = Some(SessionPickerViewPersistence {
-            codex_home: tmp.path().to_path_buf(),
-        });
-
-        state
-            .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL))
-            .await
-            .unwrap();
-
-        assert_eq!(state.density, SessionListDensity::Dense);
-        let contents =
-            std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
-        assert_eq!(
-            contents,
-            r#"[tui]
-session_picker_view = "dense"
-"#
-        );
-    }
-
-    #[tokio::test]
-    async fn ctrl_o_keeps_toggled_density_when_persistence_fails() {
-        let tmp = tempdir().expect("tmpdir");
-        let codex_home_file = tmp.path().join("codex-home-file");
-        std::fs::write(&codex_home_file, "not a directory").expect("write codex home file");
-        let loader = page_only_loader(|_| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            ProviderFilter::MatchDefault(String::from("openai")),
-            /*show_all*/ true,
-            /*filter_cwd*/ None,
-            SessionPickerAction::Resume,
-        );
-        state.view_persistence = Some(SessionPickerViewPersistence {
-            codex_home: codex_home_file,
-        });
-
-        state
-            .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL))
-            .await
-            .unwrap();
-
-        assert_eq!(state.density, SessionListDensity::Dense);
-        assert!(
-            state
-                .inline_error
-                .as_deref()
-                .is_some_and(|error| error.contains("Failed to save view mode")),
-            "expected persistence error, got {:?}",
-            state.inline_error
-        );
-    }
-
-    #[tokio::test]
-    async fn raw_ctrl_o_toggles_density_without_typing_into_search() {
-        let loader = page_only_loader(|_| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            ProviderFilter::MatchDefault(String::from("openai")),
-            /*show_all*/ true,
-            /*filter_cwd*/ None,
-            SessionPickerAction::Resume,
-        );
-        state.query = String::from("pick");
-
-        state
-            .handle_key(KeyEvent::new(KeyCode::Char('\u{000f}'), KeyModifiers::NONE))
-            .await
-            .unwrap();
-
-        assert_eq!(state.density, SessionListDensity::Dense);
-        assert_eq!(state.query, "pick");
-    }
-
-    #[tokio::test]
     async fn space_appends_to_search_query() {
         let loader = page_only_loader(|_| {});
         let mut state = PickerState::new(
@@ -5159,7 +4532,6 @@ session_picker_view = "dense"
             filter_cwd,
             SessionPickerAction::Resume,
         );
-        state.density = SessionListDensity::Dense;
         state.all_rows = vec![row.clone()];
         state.filtered_rows = vec![row];
         state.relative_time_reference =
@@ -5296,39 +4668,6 @@ session_picker_view = "dense"
     }
 
     #[test]
-    fn comfortable_zebra_lines_use_full_width_background() {
-        let loader = page_only_loader(|_| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            ProviderFilter::MatchDefault(String::from("openai")),
-            /*show_all*/ true,
-            /*filter_cwd*/ None,
-            SessionPickerAction::Resume,
-        );
-        state.relative_time_reference =
-            Some(parse_timestamp_str("2026-05-02T12:00:00Z").expect("timestamp"));
-        let row = make_row(
-            "/tmp/a.jsonl",
-            "2026-05-02T11:45:00Z",
-            "Zebra comfortable row",
-        );
-
-        let lines = render_comfortable_session_lines(
-            &row, &state, /*is_selected*/ false, /*is_expanded*/ false,
-            /*is_zebra*/ true, /*width*/ 100,
-        );
-
-        assert_eq!(lines.len(), 2);
-        assert!(lines.iter().all(|line| line.width() == 100));
-        assert!(
-            lines
-                .iter()
-                .all(|line| line.style.bg == dense_zebra_style().bg)
-        );
-    }
-
-    #[test]
     fn dense_session_snapshot_uses_no_blank_lines_between_rows() {
         use crate::custom_terminal::Terminal;
         use crate::test_backend::VT100Backend;
@@ -5349,7 +4688,6 @@ session_picker_view = "dense"
             )),
             SessionPickerAction::Resume,
         );
-        state.density = SessionListDensity::Dense;
         state.all_rows = vec![first.clone(), second.clone()];
         state.filtered_rows = vec![first, second];
         state.selected = 1;
@@ -5545,63 +4883,6 @@ session_picker_view = "dense"
     }
 
     #[test]
-    fn density_toggle_clears_stale_more_indicator() {
-        use crate::custom_terminal::Terminal;
-        use crate::test_backend::VT100Backend;
-
-        let loader = page_only_loader(|_| {});
-        let mut state = PickerState::new(
-            FrameRequester::test_dummy(),
-            loader,
-            ProviderFilter::MatchDefault(String::from("openai")),
-            /*show_all*/ true,
-            /*filter_cwd*/ None,
-            SessionPickerAction::Resume,
-        );
-        let now = parse_timestamp_str("2026-04-28T16:30:00Z").expect("timestamp");
-        state.all_rows = (0..4)
-            .map(|idx| Row {
-                path: Some(PathBuf::from(format!("/tmp/{idx}.jsonl"))),
-                preview: format!("item-{idx}"),
-                thread_id: None,
-                thread_name: None,
-                created_at: Some(now - Duration::hours(idx)),
-                updated_at: Some(now - Duration::minutes(idx * 5)),
-                cwd: None,
-                git_branch: None,
-            })
-            .collect();
-        state.filtered_rows = state.all_rows.clone();
-        state.relative_time_reference = Some(now);
-
-        let width: u16 = 80;
-        let height: u16 = 6;
-        let backend = VT100Backend::new(width, height);
-        let mut terminal = Terminal::with_options(backend).expect("terminal");
-        terminal.set_viewport_area(Rect::new(0, 0, width, height));
-
-        state.update_viewport(height as usize, width);
-        {
-            let mut frame = terminal.get_frame();
-            let area = frame.area();
-            render_list(&mut frame, area, &state);
-        }
-        terminal.flush().expect("flush");
-        assert!(terminal.backend().to_string().contains("↓ more"));
-
-        state.density = SessionListDensity::Dense;
-        state.update_viewport(height as usize, width);
-        {
-            let mut frame = terminal.get_frame();
-            let area = frame.area();
-            render_list(&mut frame, area, &state);
-        }
-        terminal.flush().expect("flush");
-
-        assert!(!terminal.backend().to_string().contains("↓ more"));
-    }
-
-    #[test]
     fn pageless_scrolling_deduplicates_and_keeps_order() {
         let loader = page_only_loader(|_| {});
         let mut state = PickerState::new(
@@ -5741,7 +5022,6 @@ session_picker_view = "dense"
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.density = SessionListDensity::Dense;
         state.reset_pagination();
         state.ingest_page(page(
             vec![

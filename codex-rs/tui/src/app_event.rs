@@ -30,8 +30,6 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use uuid::Uuid;
 
 use crate::app_command::AppCommand;
-use crate::bottom_pane::StatusLineItem;
-use crate::bottom_pane::TerminalTitleItem;
 use crate::chatwidget::UserMessage;
 use crate::goal_files::GoalDraft;
 use crate::runtime_session::CliRuntimeStartedThread;
@@ -377,11 +375,6 @@ pub(crate) enum AppEvent {
         result: Result<GetAccountTokenUsageResponse, String>,
     },
 
-    /// Fetch workspace messages for the status-line headline item.
-    RefreshStatusLineWorkspaceHeadline {
-        request_id: u64,
-    },
-
     /// Commit settled asynchronous usage output after active-output barriers clear.
     CommitPendingUsageOutput,
 
@@ -409,38 +402,6 @@ pub(crate) enum AppEvent {
     /// Open the current thread in Codex Desktop.
     OpenDesktopThread {
         thread_id: ThreadId,
-    },
-
-    /// Persist a pet selection and reload the ambient pet.
-    PetSelected {
-        pet_id: String,
-    },
-
-    /// Persist terminal pets as disabled and remove the ambient pet.
-    PetDisabled,
-
-    /// Start loading the side preview for the pet picker.
-    PetPreviewRequested {
-        pet_id: String,
-    },
-
-    /// Result of loading the side preview for the pet picker.
-    PetPreviewLoaded {
-        request_id: u64,
-        result: Result<crate::pets::AmbientPet, String>,
-    },
-
-    /// Result of loading the selected ambient pet before config persistence.
-    PetSelectionLoaded {
-        request_id: u64,
-        pet_id: String,
-        result: Result<Option<crate::pets::AmbientPet>, String>,
-    },
-
-    /// Result of restoring the configured ambient pet during startup.
-    ConfiguredPetLoaded {
-        pet_id: String,
-        result: Result<Option<crate::pets::AmbientPet>, String>,
     },
 
     /// Result of the startup skills refresh that runs after the first frame is scheduled.
@@ -586,48 +547,6 @@ pub(crate) enum AppEvent {
 
     /// Launch the external editor after a normal draw has completed.
     LaunchExternalEditor,
-
-    /// Async update of the current git branch for status line rendering.
-    StatusLineBranchUpdated {
-        cwd: PathBuf,
-        branch: Option<String>,
-    },
-    /// Async update of Git summary fields for status line rendering.
-    StatusLineGitSummaryUpdated {
-        cwd: PathBuf,
-        summary: crate::chatwidget::StatusLineGitSummary,
-    },
-    /// Async update of the workspace notification headline for status line rendering.
-    StatusLineWorkspaceHeadlineUpdated {
-        request_id: u64,
-        result: Result<crate::workspace_messages::WorkspaceHeadlineFetchResult, String>,
-    },
-    /// Apply a user-confirmed status-line item ordering/selection.
-    StatusLineSetup {
-        items: Vec<StatusLineItem>,
-        use_theme_colors: bool,
-    },
-    /// Dismiss the status-line setup UI without changing config.
-    StatusLineSetupCancelled,
-
-    /// Apply a user-confirmed terminal-title item ordering/selection.
-    TerminalTitleSetup {
-        items: Vec<TerminalTitleItem>,
-    },
-    /// Apply a temporary terminal-title preview while the setup UI is open.
-    TerminalTitleSetupPreview {
-        items: Vec<TerminalTitleItem>,
-    },
-    /// Dismiss the terminal-title setup UI without changing config.
-    TerminalTitleSetupCancelled,
-
-    /// Apply a user-confirmed syntax theme selection.
-    SyntaxThemeSelected {
-        name: String,
-    },
-
-    /// Runtime syntax theme preview changed; refresh theme-derived UI colors.
-    SyntaxThemePreviewed,
 
     /// Open set/remove actions for the selected keymap action.
     OpenKeymapActionMenu {

@@ -213,7 +213,7 @@ fn resolve_diff_backgrounds(
 ///
 /// Call this at the top of each render frame — not per line — so the diff
 /// palette stays consistent within a frame even if the user swaps themes
-/// mid-render (theme picker live preview).
+/// mid-render.
 pub(crate) fn current_diff_render_style_context() -> DiffRenderStyleContext {
     let theme = diff_theme();
     let color_level = diff_color_level();
@@ -789,7 +789,7 @@ pub(crate) fn calculate_add_remove_from_diff(diff: &str) -> (usize, usize) {
 /// Render a single plain-text (non-syntax-highlighted) diff line, wrapped to
 /// `width` columns, using a pre-computed [`DiffRenderStyleContext`].
 ///
-/// This is the convenience entry point used by the theme picker preview and
+/// This is the convenience entry point used by preview surfaces and
 /// any caller that does not have syntax spans.  Delegates to the inner
 /// rendering core with `syntax_spans = None`.
 pub(crate) fn push_wrapped_diff_line_with_style_context(

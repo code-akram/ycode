@@ -42,11 +42,6 @@ fn finalized_markdown_cache_misses_when_width_or_render_style_changes() {
     assert_eq!(cell.display_lines(width), expected);
 
     replace_cached_lines(&cell, |key| {
-        key.syntax_theme_revision = key.syntax_theme_revision.wrapping_sub(1);
-    });
-    assert_eq!(cell.display_lines(width), expected);
-
-    replace_cached_lines(&cell, |key| {
         key.terminal_fg = key
             .terminal_fg
             .map_or(Some((1, 2, 3)), |(r, g, b)| Some((r ^ 1, g, b)));

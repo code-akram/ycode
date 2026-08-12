@@ -86,3 +86,42 @@ fn config_schema_omits_removed_compatibility_fields() {
     assert!(!agent_properties.contains_key("max_threads"));
     assert!(!agent_properties.contains_key("job_max_runtime_seconds"));
 }
+
+#[test]
+fn config_schema_omits_tui_presentation_preferences() {
+    let schema_json = config_schema_json().expect("serialize config schema");
+    let schema_value: serde_json::Value =
+        serde_json::from_slice(&schema_json).expect("decode schema json");
+    let properties = schema_value
+        .pointer("/definitions/Tui/properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("TUI config properties should be an object");
+
+    assert!(properties.contains_key("vim_mode_default"));
+    assert!(properties.contains_key("resume_cwd"));
+    for removed in [
+        "animations",
+        "alternate_screen",
+        "model_availability_nux",
+        "notification_event",
+        "notification_method",
+        "notifications",
+        "pet",
+        "pet_anchor",
+        "session_picker_view",
+        "show_tooltips",
+        "status_line",
+        "status_line_use_colors",
+        "terminal_title",
+        "theme",
+    ] {
+        assert!(
+            !properties.contains_key(removed),
+            "found removed key {removed}"
+        );
+    }
+    assert_eq!(
+        schema_value.pointer("/definitions/Tui/additionalProperties"),
+        Some(&serde_json::Value::Bool(false))
+    );
+}

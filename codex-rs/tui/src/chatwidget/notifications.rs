@@ -4,9 +4,6 @@ use super::*;
 
 impl ChatWidget {
     pub(super) fn notify(&mut self, notification: Notification) {
-        if !notification.allowed_for(&self.config.tui_notifications.notifications) {
-            return;
-        }
         if let Some(existing) = self.pending_notification.as_ref()
             && existing.priority() > notification.priority()
         {
@@ -40,24 +37,10 @@ impl Notification {
         }
     }
 
-    fn type_name(&self) -> &str {
-        match self {
-            Notification::AgentTurnComplete { .. } => "agent-turn-complete",
-            Notification::UserInputPrompt { .. } => "user-input-prompt",
-        }
-    }
-
     fn priority(&self) -> u8 {
         match self {
             Notification::AgentTurnComplete { .. } => 0,
             Notification::UserInputPrompt { .. } => 1,
-        }
-    }
-
-    pub(super) fn allowed_for(&self, settings: &Notifications) -> bool {
-        match settings {
-            Notifications::Enabled(enabled) => *enabled,
-            Notifications::Custom(allowed) => allowed.iter().any(|a| a == self.type_name()),
         }
     }
 

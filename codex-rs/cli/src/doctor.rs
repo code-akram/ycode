@@ -65,7 +65,6 @@ mod progress;
 mod runtime;
 mod system;
 mod thread_inventory;
-mod title;
 
 use git::git_check;
 use output::HumanOutputOptions;
@@ -77,7 +76,6 @@ use runtime::runtime_check;
 use runtime::search_check;
 use system::system_check;
 use thread_inventory::thread_inventory_check;
-use title::terminal_title_check;
 
 const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
@@ -343,7 +341,6 @@ async fn build_report(
                 websocket_check,
                 terminal_check,
                 git_check,
-                terminal_title_check,
                 state_check,
                 thread_inventory_check,
                 reachability_check,
@@ -362,11 +359,6 @@ async fn build_report(
                     })
                 },
                 run_async_check("git", progress.clone(), git_check(config.cwd.as_path())),
-                async {
-                    run_sync_check("terminal title", progress.clone(), || {
-                        terminal_title_check(config)
-                    })
-                },
                 run_async_check("state", progress.clone(), state_check(config)),
                 run_async_check(
                     "thread inventory",
@@ -386,7 +378,6 @@ async fn build_report(
                 websocket_check,
                 terminal_check,
                 git_check,
-                terminal_title_check,
                 state_check,
                 thread_inventory_check,
                 reachability_check,

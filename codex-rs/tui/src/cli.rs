@@ -64,12 +64,6 @@ pub struct Cli {
     #[arg(long = "search", default_value_t = false)]
     pub web_search: bool,
 
-    /// Disable alternate screen mode
-    ///
-    /// Runs the TUI in inline mode, preserving terminal scrollback history.
-    #[arg(long = "no-alt-screen", default_value_t = false)]
-    pub no_alt_screen: bool,
-
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 }

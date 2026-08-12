@@ -115,12 +115,12 @@ pub(crate) struct SelectionToggle {
 
 /// Callback invoked whenever the highlighted item changes (arrow keys, search
 /// filter, number-key jump).  Receives the *actual* index into the unfiltered
-/// `items` list and the event sender.  Used by the theme picker for live preview.
+/// `items` list and the event sender.
 pub(crate) type OnSelectionChangedCallback =
     Option<Box<dyn Fn(usize, &AppEventSender) + Send + Sync>>;
 
 /// Callback invoked when the picker is dismissed without accepting (Esc or
-/// Ctrl+C).  Used by the theme picker to restore the pre-open theme.
+/// Ctrl+C).
 pub(crate) type OnCancelCallback = Option<Box<dyn Fn(&AppEventSender) + Send + Sync>>;
 
 /// One row in a [`ListSelectionView`] selection list.
@@ -184,7 +184,7 @@ pub(crate) struct SelectionViewParams {
     pub initial_selected_idx: Option<usize>,
 
     /// Rich content rendered beside (wide terminals) or below (narrow terminals)
-    /// the list items, inside the bordered menu surface. Used by the theme picker
+    /// the list items, inside the bordered menu surface.
     /// to show a syntax-highlighted preview.
     pub side_content: Box<dyn Renderable>,
 
@@ -547,7 +547,7 @@ impl ListSelectionView {
         self.state.ensure_visible(len, visible);
 
         // Notify the callback when filtering changes the selected actual item
-        // so live preview stays in sync (e.g. typing in the theme picker).
+        // so live preview stays in sync while filtering.
         let new_actual = self.selected_actual_idx();
         if new_actual != previously_selected {
             self.fire_selection_changed();
@@ -1603,36 +1603,6 @@ mod tests {
     fn renders_blank_line_between_subtitle_and_items() {
         let view = make_selection_view(Some("Switch between Codex approval presets"));
         assert_snapshot!("list_selection_spacing_with_subtitle", render_lines(&view));
-    }
-
-    #[test]
-    fn theme_picker_subtitle_uses_fallback_text_in_94x35_terminal() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let home = dirs::home_dir().expect("home directory should be available");
-        let codex_home = home.join(".codex");
-        let params = crate::theme_picker::build_theme_picker_params(
-            /*current_name*/ None,
-            Some(&codex_home),
-            Some(94),
-        );
-        let view = new_view(params, tx);
-
-        let rendered = render_lines_in_area(&view, /*width*/ 94, /*height*/ 35);
-        assert!(rendered.contains("Move up/down to live preview themes"));
-    }
-
-    #[test]
-    fn theme_picker_enables_side_content_background_preservation() {
-        let params = crate::theme_picker::build_theme_picker_params(
-            /*current_name*/ None,
-            /*codex_home*/ None,
-            Some(120),
-        );
-        assert!(
-            params.preserve_side_content_bg,
-            "theme picker should preserve side-content backgrounds to keep diff preview styling",
-        );
     }
 
     #[test]

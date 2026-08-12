@@ -537,28 +537,6 @@ pub enum TrustLevel {
     Untrusted,
 }
 
-/// Controls whether the TUI uses the terminal's alternate screen buffer.
-///
-/// - `auto` (default): Use alternate screen mode.
-/// - `always`: Always use alternate screen mode.
-/// - `never`: Never use alternate screen mode. Runs in inline mode, preserving scrollback.
-///
-/// The CLI flag `--no-alt-screen` can override this setting at runtime.
-#[derive(
-    Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Display, JsonSchema, TS,
-)]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum AltScreenMode {
-    /// Use alternate screen mode.
-    #[default]
-    Auto,
-    /// Always use alternate screen mode.
-    Always,
-    /// Never use alternate screen (inline mode only).
-    Never,
-}
-
 /// Model settings for a Codex session.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema, TS)]
 pub struct AgentSettings {

@@ -1,25 +1,11 @@
 //! Settings-adjacent popup surfaces for `ChatWidget`.
 //!
-//! This keeps theme, personality, and experimental-feature UI out of the main
+//! This keeps personality and experimental-feature UI out of the main
 //! orchestration module without changing their event wiring.
 
 use super::*;
 
 impl ChatWidget {
-    pub(super) fn open_theme_picker(&mut self) {
-        let codex_home = codex_utils_home_dir::find_codex_home().ok();
-        let terminal_width = self
-            .last_rendered_width
-            .get()
-            .and_then(|width| u16::try_from(width).ok());
-        let params = crate::theme_picker::build_theme_picker_params(
-            self.config.tui_theme.as_deref(),
-            codex_home.as_deref(),
-            terminal_width,
-        );
-        self.bottom_pane.show_selection_view(params);
-    }
-
     pub(crate) fn open_personality_popup(&mut self) {
         if !self.is_session_configured() {
             self.add_info_message(

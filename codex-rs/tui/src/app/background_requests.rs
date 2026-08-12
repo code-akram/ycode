@@ -10,14 +10,10 @@ use codex_cli_protocol::ConsumeAccountRateLimitResetCreditResponse;
 
 use codex_cli_protocol::RequestId;
 
-use codex_utils_absolute_path::AbsolutePathBuf;
-
 const TOKEN_ACTIVITY_FETCH_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(/*secs*/ 15);
 const RATE_LIMIT_RESET_REQUEST_TIMEOUT: std::time::Duration =
     std::time::Duration::from_secs(/*secs*/ 15);
-const WORKSPACE_HEADLINE_FETCH_TIMEOUT: std::time::Duration =
-    std::time::Duration::from_millis(/*millis*/ 2000);
 
 impl App {
     /// Spawns a background task to fetch account rate limits and deliver the
@@ -108,29 +104,6 @@ impl App {
         });
     }
 
-    pub(super) fn refresh_status_line_workspace_headline(
-        &mut self,
-        cli_runtime: &CliRuntimeSession,
-        request_id: u64,
-    ) {
-        let request_handle = cli_runtime.request_handle();
-        let app_event_tx = self.app_event_tx.clone();
-        tokio::spawn(async move {
-            let result = tokio::time::timeout(
-                WORKSPACE_HEADLINE_FETCH_TIMEOUT,
-                fetch_workspace_messages(request_handle),
-            )
-            .await
-            .map_err(|_| "account/workspaceMessages/read timed out in TUI".to_string())
-            .and_then(|result| {
-                result
-                    .map(crate::workspace_messages::workspace_headline_from_response)
-                    .map_err(|err| err.to_string())
-            });
-            app_event_tx.send(AppEvent::StatusLineWorkspaceHeadlineUpdated { request_id, result });
-        });
-    }
-
     pub(super) fn send_add_credits_nudge_email(
         &mut self,
         cli_runtime: &CliRuntimeSession,
@@ -208,19 +181,6 @@ pub(super) async fn consume_rate_limit_reset_credit_request(
         })
         .await
         .wrap_err("account/rateLimitResetCredit/consume failed in TUI")
-}
-
-pub(super) async fn fetch_workspace_messages(
-    request_handle: CliRuntimeRequestHandle,
-) -> Result<codex_cli_protocol::GetWorkspaceMessagesResponse> {
-    let request_id = RequestId::String(format!("workspace-messages-{}", Uuid::new_v4()));
-    request_handle
-        .request_typed(ClientRequest::GetWorkspaceMessages {
-            request_id,
-            params: None,
-        })
-        .await
-        .wrap_err("account/workspaceMessages/read failed in TUI")
 }
 
 pub(super) async fn send_add_credits_nudge_email(

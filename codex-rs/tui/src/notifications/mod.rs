@@ -4,7 +4,6 @@ mod osc9;
 use std::io;
 
 use bel::BelBackend;
-use codex_config::types::NotificationMethod;
 use codex_terminal_detection::TerminalInfo;
 use codex_terminal_detection::TerminalName;
 use codex_terminal_detection::terminal_info;
@@ -17,24 +16,18 @@ pub enum DesktopNotificationBackend {
 }
 
 impl DesktopNotificationBackend {
-    pub fn for_method(method: NotificationMethod) -> Self {
-        match method {
-            NotificationMethod::Auto => {
-                if supports_osc9(&terminal_info()) {
-                    Self::Osc9(Osc9Backend::new())
-                } else {
-                    Self::Bel(BelBackend)
-                }
-            }
-            NotificationMethod::Osc9 => Self::Osc9(Osc9Backend::new()),
-            NotificationMethod::Bel => Self::Bel(BelBackend),
+    fn detect() -> Self {
+        if supports_osc9(&terminal_info()) {
+            Self::Osc9(Osc9Backend::new())
+        } else {
+            Self::Bel(BelBackend)
         }
     }
 
-    pub fn method(&self) -> NotificationMethod {
+    pub fn method(&self) -> &'static str {
         match self {
-            DesktopNotificationBackend::Osc9(_) => NotificationMethod::Osc9,
-            DesktopNotificationBackend::Bel(_) => NotificationMethod::Bel,
+            DesktopNotificationBackend::Osc9(_) => "osc9",
+            DesktopNotificationBackend::Bel(_) => "bel",
         }
     }
 
@@ -46,8 +39,8 @@ impl DesktopNotificationBackend {
     }
 }
 
-pub fn detect_backend(method: NotificationMethod) -> DesktopNotificationBackend {
-    DesktopNotificationBackend::for_method(method)
+pub fn detect_backend() -> DesktopNotificationBackend {
+    DesktopNotificationBackend::detect()
 }
 
 fn supports_osc9(terminal: &TerminalInfo) -> bool {
@@ -63,9 +56,7 @@ fn supports_osc9(terminal: &TerminalInfo) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::detect_backend;
     use super::supports_osc9;
-    use codex_config::types::NotificationMethod;
     use codex_terminal_detection::TerminalInfo;
     use codex_terminal_detection::TerminalName;
     use pretty_assertions::assert_eq;
@@ -78,22 +69,6 @@ mod tests {
             term: None,
             multiplexer: None,
         }
-    }
-
-    #[test]
-    fn selects_osc9_method() {
-        assert!(matches!(
-            detect_backend(NotificationMethod::Osc9),
-            super::DesktopNotificationBackend::Osc9(_)
-        ));
-    }
-
-    #[test]
-    fn selects_bel_method() {
-        assert!(matches!(
-            detect_backend(NotificationMethod::Bel),
-            super::DesktopNotificationBackend::Bel(_)
-        ));
     }
 
     #[test]

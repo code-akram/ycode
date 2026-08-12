@@ -8,7 +8,6 @@ use anyhow::Context;
 use anyhow::bail;
 use clap::Parser;
 use codex_core_api::AbsolutePathBuf;
-use codex_core_api::AltScreenMode;
 use codex_core_api::ApprovalsReviewer;
 use codex_core_api::Arg0DispatchPaths;
 use codex_core_api::AskForApproval;
@@ -26,7 +25,6 @@ use codex_core_api::ExtensionRegistryBuilder;
 use codex_core_api::Features;
 use codex_core_api::History;
 use codex_core_api::MemoriesConfig;
-use codex_core_api::ModelAvailabilityNuxConfig;
 use codex_core_api::MultiAgentV2Config;
 use codex_core_api::NewThread;
 use codex_core_api::Notice;
@@ -37,7 +35,6 @@ use codex_core_api::Permissions;
 use codex_core_api::ProjectConfig;
 use codex_core_api::RealtimeAudioConfig;
 use codex_core_api::RealtimeConfig;
-use codex_core_api::SessionPickerViewMode;
 use codex_core_api::SessionSource;
 use codex_core_api::SqliteConfig;
 use codex_core_api::StartThreadOptions;
@@ -46,8 +43,6 @@ use codex_core_api::ThreadManager;
 use codex_core_api::ThreadStoreConfig;
 use codex_core_api::ToolSuggestConfig;
 use codex_core_api::TuiKeymap;
-use codex_core_api::TuiNotificationSettings;
-use codex_core_api::TuiPetAnchor;
 use codex_core_api::UriBasedFileOpener;
 use codex_core_api::UserInput;
 use codex_core_api::WebSearchMode;
@@ -205,21 +200,9 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         include_environment_context: false,
         compact_prompt: None,
         notify: None,
-        tui_notifications: TuiNotificationSettings::default(),
-        animations: true,
-        show_tooltips: true,
-        model_availability_nux: ModelAvailabilityNuxConfig::default(),
-        tui_alternate_screen: AltScreenMode::Auto,
-        tui_status_line: None,
-        tui_status_line_use_colors: true,
-        tui_terminal_title: None,
-        tui_theme: None,
         tui_raw_output_mode: false,
-        tui_pet: None,
-        tui_pet_anchor: TuiPetAnchor::Composer,
         terminal_resize_reflow: TerminalResizeReflowConfig::default(),
         tui_keymap: TuiKeymap::default(),
-        tui_session_picker_view: SessionPickerViewMode::Dense,
         tui_resume_cwd: None,
         tui_vim_mode_default: false,
         cwd: cwd.clone(),

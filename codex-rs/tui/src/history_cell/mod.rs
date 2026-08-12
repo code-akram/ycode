@@ -39,7 +39,6 @@ use crate::terminal_hyperlinks::visible_lines_ref;
 use crate::test_support::PathBufExt;
 #[cfg(test)]
 use crate::test_support::test_path_buf;
-use crate::tooltips;
 use crate::ui_consts::LIVE_PREFIX_COLS;
 use crate::version::CODEX_CLI_VERSION;
 use crate::wrapping::RtOptions;

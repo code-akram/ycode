@@ -98,7 +98,7 @@ impl OnboardingScreen {
         steps.push(Step::Welcome(WelcomeWidget::new(
             !matches!(login_status, LoginStatus::NotAuthenticated),
             tui.frame_requester(),
-            config.animations,
+            false,
         )));
         if show_login_screen {
             if let Some(cli_runtime_request_handle) = cli_runtime_request_handle {
@@ -110,7 +110,7 @@ impl OnboardingScreen {
                     login_status,
                     cli_runtime_request_handle,
                     auth_config,
-                    animations_enabled: config.animations,
+                    animations_enabled: false,
                     animations_suppressed: std::cell::Cell::new(false),
                 }));
             } else {

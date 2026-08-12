@@ -60,7 +60,7 @@ impl App {
     }
 
     pub(super) async fn refresh_in_memory_config_from_disk(&mut self) -> Result<()> {
-        let mut config = self
+        let config = self
             .rebuild_config_for_cwd(self.chat_widget.config_ref().cwd.to_path_buf())
             .await?;
         self.config = config;
@@ -138,7 +138,6 @@ impl App {
 
         for (feature, enabled) in updates {
             let feature_key = feature.key();
-            let mut feature_edits = Vec::new();
             let mut feature_config = next_config.clone();
             if let Err(err) = feature_config.features.set_enabled(feature, enabled) {
                 tracing::error!(
@@ -154,7 +153,6 @@ impl App {
             let effective_enabled = feature_config.features.enabled(feature);
             next_config = feature_config;
             feature_updates_to_apply.push((feature, effective_enabled));
-            config_edits.extend(feature_edits);
             config_edits.push(crate::config_update::build_feature_enabled_edit(
                 feature_key,
                 effective_enabled,
@@ -395,41 +393,6 @@ impl App {
     pub(super) fn on_update_personality(&mut self, personality: Personality) {
         self.config.personality = Some(personality);
         self.chat_widget.set_personality(personality);
-    }
-
-    pub(super) fn sync_tui_theme_selection(&mut self, name: String) {
-        self.config.tui_theme = Some(name.clone());
-        self.chat_widget.set_tui_theme(Some(name));
-    }
-
-    #[cfg(test)]
-    pub(super) fn sync_tui_pet_selection(&mut self, pet: String) {
-        self.config.tui_pet = Some(pet.clone());
-        self.chat_widget.set_tui_pet(Some(pet));
-    }
-
-    pub(super) fn sync_tui_pet_disabled(&mut self) {
-        let pet = crate::pets::DISABLED_PET_ID.to_string();
-        self.config.tui_pet = Some(pet.clone());
-        self.chat_widget.set_tui_pet(Some(pet));
-    }
-
-    pub(super) fn restore_runtime_theme_from_config(&self) {
-        if let Some(name) = self.config.tui_theme.as_deref()
-            && let Some(theme) =
-                crate::render::highlight::resolve_theme_by_name(name, Some(&self.config.codex_home))
-        {
-            crate::render::highlight::set_syntax_theme(theme);
-            return;
-        }
-
-        let auto_theme_name = crate::render::highlight::adaptive_default_theme_name();
-        if let Some(theme) = crate::render::highlight::resolve_theme_by_name(
-            auto_theme_name,
-            Some(&self.config.codex_home),
-        ) {
-            crate::render::highlight::set_syntax_theme(theme);
-        }
     }
 
     pub(super) fn personality_label(personality: Personality) -> &'static str {
@@ -834,47 +797,5 @@ terminal_resize_reflow_max_rows = 9000
 
         assert!(result.is_err());
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn sync_tui_theme_selection_updates_chat_widget_config_copy() {
-        let mut app = make_test_app().await;
-
-        app.sync_tui_theme_selection("dracula".to_string());
-
-        assert_eq!(app.config.tui_theme.as_deref(), Some("dracula"));
-        assert_eq!(
-            app.chat_widget.config_ref().tui_theme.as_deref(),
-            Some("dracula")
-        );
-    }
-
-    #[tokio::test]
-    async fn sync_tui_pet_selection_updates_chat_widget_config_copy() {
-        let mut app = make_test_app().await;
-
-        app.sync_tui_pet_selection("chefito".to_string());
-
-        assert_eq!(app.config.tui_pet.as_deref(), Some("chefito"));
-        assert_eq!(
-            app.chat_widget.config_ref().tui_pet.as_deref(),
-            Some("chefito")
-        );
-    }
-
-    #[tokio::test]
-    async fn sync_tui_pet_disabled_updates_chat_widget_config_copy() {
-        let mut app = make_test_app().await;
-
-        app.sync_tui_pet_disabled();
-
-        assert_eq!(
-            app.config.tui_pet.as_deref(),
-            Some(crate::pets::DISABLED_PET_ID)
-        );
-        assert_eq!(
-            app.chat_widget.config_ref().tui_pet.as_deref(),
-            Some(crate::pets::DISABLED_PET_ID)
-        );
     }
 }

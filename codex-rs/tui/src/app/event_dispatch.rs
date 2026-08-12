@@ -515,30 +515,6 @@ impl App {
             AppEvent::OpenDesktopThread { thread_id } => {
                 self.open_desktop_thread(thread_id);
             }
-            AppEvent::PetSelected { pet_id } => {
-                self.handle_pet_selected(tui, pet_id);
-            }
-            AppEvent::PetDisabled => {
-                self.handle_pet_disabled(tui).await;
-            }
-            AppEvent::PetPreviewRequested { pet_id } => {
-                self.chat_widget.start_pet_picker_preview(pet_id);
-            }
-            AppEvent::PetPreviewLoaded { request_id, result } => {
-                self.handle_pet_preview_loaded(tui, request_id, result);
-            }
-            AppEvent::PetSelectionLoaded {
-                request_id,
-                pet_id,
-                result,
-            } => {
-                return self
-                    .handle_pet_selection_loaded(tui, request_id, pet_id, result)
-                    .await;
-            }
-            AppEvent::ConfiguredPetLoaded { pet_id, result } => {
-                self.handle_configured_pet_loaded(tui, pet_id, result);
-            }
             AppEvent::SkillsListLoaded { result } => {
                 self.handle_skills_list_result(
                     result.map_err(|err| color_eyre::eyre::eyre!(err)),
@@ -556,9 +532,6 @@ impl App {
             }
             AppEvent::RefreshTokenActivity { request_id } => {
                 self.refresh_token_activity(cli_runtime, request_id);
-            }
-            AppEvent::RefreshStatusLineWorkspaceHeadline { request_id } => {
-                self.refresh_status_line_workspace_headline(cli_runtime, request_id);
             }
             AppEvent::OpenThreadGoalMenu { thread_id } => {
                 self.open_thread_goal_menu(cli_runtime, thread_id).await;
@@ -1064,114 +1037,6 @@ impl App {
             }
             AppEvent::ManageSkillsClosed => {
                 self.chat_widget.handle_manage_skills_closed();
-            }
-            AppEvent::StatusLineSetup {
-                items,
-                use_theme_colors,
-            } => {
-                let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let items_edit = crate::legacy_core::config::edit::status_line_items_edit(&ids);
-                let colors_edit =
-                    crate::legacy_core::config::edit::status_line_use_colors_edit(use_theme_colors);
-                let apply_result = ConfigEditsBuilder::for_config(&self.config)
-                    .with_edits([items_edit, colors_edit])
-                    .apply()
-                    .await;
-                match apply_result {
-                    Ok(()) => {
-                        self.config.tui_status_line = Some(ids.clone());
-                        self.config.tui_status_line_use_colors = use_theme_colors;
-                        self.chat_widget.setup_status_line(items, use_theme_colors);
-                    }
-                    Err(err) => {
-                        let error = format_config_error(&err);
-                        tracing::error!(error = %error, "failed to persist status line settings; keeping previous selection");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save status line settings: {error}"
-                        ));
-                    }
-                }
-            }
-            AppEvent::StatusLineBranchUpdated { cwd, branch } => {
-                self.chat_widget.set_status_line_branch(cwd, branch);
-                self.refresh_status_line();
-            }
-            AppEvent::StatusLineGitSummaryUpdated { cwd, summary } => {
-                self.chat_widget.set_status_line_git_summary(cwd, summary);
-                self.refresh_status_line();
-            }
-            AppEvent::StatusLineWorkspaceHeadlineUpdated { request_id, result } => {
-                if self
-                    .chat_widget
-                    .set_status_line_workspace_headline(request_id, result)
-                {
-                    tui.frame_requester().schedule_frame();
-                }
-            }
-            AppEvent::StatusLineSetupCancelled => {
-                self.chat_widget.cancel_status_line_setup();
-            }
-            AppEvent::TerminalTitleSetup { items } => {
-                let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let edit = crate::legacy_core::config::edit::terminal_title_items_edit(&ids);
-                let apply_result = ConfigEditsBuilder::for_config(&self.config)
-                    .with_edits([edit])
-                    .apply()
-                    .await;
-                match apply_result {
-                    Ok(()) => {
-                        self.config.tui_terminal_title = Some(ids.clone());
-                        self.chat_widget.setup_terminal_title(items);
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist terminal title items; keeping previous selection");
-                        self.chat_widget.revert_terminal_title_setup_preview();
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save terminal title items: {err}"
-                        ));
-                    }
-                }
-            }
-            AppEvent::TerminalTitleSetupPreview { items } => {
-                self.chat_widget.preview_terminal_title(items);
-            }
-            AppEvent::TerminalTitleSetupCancelled => {
-                self.chat_widget.cancel_terminal_title_setup();
-            }
-            AppEvent::SyntaxThemeSelected { name } => {
-                let edit = crate::legacy_core::config::edit::syntax_theme_edit(&name);
-                let apply_result = ConfigEditsBuilder::for_config(&self.config)
-                    .with_edits([edit])
-                    .apply()
-                    .await;
-                match apply_result {
-                    Ok(()) => {
-                        // Ensure the selected theme is active in the current
-                        // session.  The preview callback covers arrow-key
-                        // navigation, but if the user presses Enter without
-                        // navigating, the runtime theme must still be applied.
-                        if let Some(theme) = crate::render::highlight::resolve_theme_by_name(
-                            &name,
-                            Some(&self.config.codex_home),
-                        ) {
-                            crate::render::highlight::set_syntax_theme(theme);
-                        }
-                        self.sync_tui_theme_selection(name);
-                        self.refresh_status_line();
-                        tui.frame_requester().schedule_frame();
-                    }
-                    Err(err) => {
-                        self.restore_runtime_theme_from_config();
-                        self.refresh_status_line();
-                        tracing::error!(error = %err, "failed to persist theme selection");
-                        self.chat_widget
-                            .add_error_message(format!("Failed to save theme: {err}"));
-                    }
-                }
-            }
-            AppEvent::SyntaxThemePreviewed => {
-                self.refresh_status_line();
-                tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenKeymapActionMenu { context, action } => {
                 self.chat_widget

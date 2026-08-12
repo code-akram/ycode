@@ -33,20 +33,12 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
 
 use crate::app::runtime_requests::ResolvedCliRuntimeRequest;
 use crate::app_command::AppCommand;
 use crate::app_event::HistoryLookupResponse;
-use crate::bottom_pane::StatusLineItem;
-use crate::bottom_pane::StatusLineSetupView;
-use crate::bottom_pane::StatusSurfacePreviewData;
-use crate::bottom_pane::StatusSurfacePreviewItem;
-use crate::bottom_pane::TerminalTitleItem;
-use crate::bottom_pane::TerminalTitleSetupView;
 use crate::diff_model::FileChange;
 use crate::git_action_directives::parse_assistant_markdown;
 use crate::legacy_core::config::Config;
@@ -57,7 +49,6 @@ use crate::multi_agents;
 use crate::multi_agents::AgentMetadata;
 use crate::runtime_approval_conversions::file_update_changes_to_display;
 use crate::session_state::ThreadSessionState;
-use crate::status::RateLimitWindowDisplay;
 use crate::status::StatusAccountDisplay;
 use crate::status::StatusHistoryHandle;
 use crate::status::format_directory_display;
@@ -66,7 +57,6 @@ use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_title::SetTerminalTitleResult;
 use crate::terminal_title::clear_terminal_title;
 use crate::terminal_title::set_terminal_title;
-use crate::text_formatting::proper_join;
 use crate::token_usage::TokenUsage;
 use crate::token_usage::TokenUsageInfo;
 use crate::version::CODEX_CLI_VERSION;
@@ -105,11 +95,8 @@ use codex_cli_protocol::UserInput;
 use codex_config::Constrained;
 use codex_config::ConstraintResult;
 use codex_config::types::ApprovalsReviewer;
-use codex_config::types::Notifications;
 use codex_features::FEATURES;
 use codex_features::Feature;
-#[cfg(test)]
-use codex_git_utils::CommitLogEntry;
 use codex_git_utils::get_git_repo_root;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
@@ -166,8 +153,6 @@ const MEMORIES_ENABLE_TITLE: &str = "Enable memories?";
 const MEMORIES_ENABLE_YES: &str = "Yes, enable";
 const MEMORIES_ENABLE_NO: &str = "Not now";
 const MEMORIES_ENABLE_NOTICE: &str = "Memories will be enabled in the next session.";
-const PET_SELECTION_LOADING_VIEW_ID: &str = "pet-selection-loading";
-const AMBIENT_PET_WRAP_GAP_COLUMNS: u16 = 2;
 const TUI_STUB_MESSAGE: &str = "Not available in TUI yet.";
 const PARENT_OWNED_INPUT_MESSAGE: &str =
     "This sub-agent is controlled by its parent. Direct input is disabled.";
@@ -311,7 +296,6 @@ mod input_submission;
 mod interrupts;
 use self::interrupts::InterruptManager;
 mod keymap_picker;
-mod pets;
 mod session_flow;
 mod session_header;
 use self::session_header::SessionHeader;
@@ -387,7 +371,6 @@ use self::user_messages::user_message_for_restore;
 use self::user_messages::user_message_preview_text;
 mod warnings;
 use self::warnings::WarningDisplayState;
-pub(crate) use crate::branch_summary::StatusLineGitSummary;
 use crate::streaming::chunking::AdaptiveChunkingPolicy;
 use crate::streaming::commit_tick::CommitTickScope;
 use crate::streaming::commit_tick::run_commit_tick;
@@ -404,12 +387,10 @@ use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::plan_tool::StepStatus;
 use codex_protocol::plan_tool::UpdatePlanArgs;
-use strum::IntoEnumIterator;
 use unicode_segmentation::UnicodeSegmentation;
 
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
-const DEFAULT_STATUS_LINE_ITEMS: [&str; 2] = ["model-with-reasoning", "current-dir"];
 
 /// Common initialization parameters shared by all `ChatWidget` constructors.
 pub(crate) struct ChatWidgetInit {
@@ -431,11 +412,6 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) runtime_model_provider_base_url: Option<String>,
     pub(crate) initial_plan_type: Option<PlanType>,
     pub(crate) model: Option<String>,
-    pub(crate) startup_tooltip_override: Option<String>,
-    // Shared latch so we only warn once about invalid status-line item IDs.
-    pub(crate) status_line_invalid_items_warned: Arc<AtomicBool>,
-    // Shared latch so we only warn once about invalid terminal-title item IDs.
-    pub(crate) terminal_title_invalid_items_warned: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -529,17 +505,6 @@ pub(crate) struct ChatWidget {
     // Preserves reasoning-summary part boundaries for transcript-only recording.
     reasoning_summary_parts: Vec<String>,
     status_state: StatusState,
-    // Reused for built-in pet CDN requests so redirects remain route-aware.
-    pub(crate) pet_http_client: codex_http_client::RouteAwareClientPool,
-    // Ambient companion rendered over the transcript area, never inside the footer rows.
-    ambient_pet: Option<crate::pets::AmbientPet>,
-    pet_picker_preview_state: crate::pets::PetPickerPreviewState,
-    pet_picker_preview_pet: Option<crate::pets::AmbientPet>,
-    pet_picker_preview_request_id: u64,
-    pet_picker_preview_image_visible: std::cell::Cell<bool>,
-    pet_selection_load_request_id: u64,
-    #[cfg(test)]
-    pet_image_support_override: Option<crate::pets::PetImageSupport>,
     thread_id: Option<ThreadId>,
     thread_name: Option<String>,
     thread_rename_block_message: Option<String>,
@@ -552,8 +517,6 @@ pub(crate) struct ChatWidget {
     frame_requester: FrameRequester,
     // Whether to include the initial welcome banner on session configured
     show_welcome_banner: bool,
-    // One-shot tooltip override for the primary startup session.
-    startup_tooltip_override: Option<String>,
     // When resuming an existing session (selected via resume picker), avoid an
     // immediate redraw on SessionConfigured to prevent a gratuitous UI flicker.
     suppress_session_configured_redraw: bool,
@@ -589,52 +552,12 @@ pub(crate) struct ChatWidget {
     // Instruction source files loaded for the current session, supplied by cli-runtime.
     instruction_source_paths: Vec<PathUri>,
     // Runtime network proxy bind addresses from SessionConfigured.
-    // Shared latch so we only warn once about invalid status-line item IDs.
-    status_line_invalid_items_warned: Arc<AtomicBool>,
-    // Shared latch so we only warn once about invalid terminal-title item IDs.
-    terminal_title_invalid_items_warned: Arc<AtomicBool>,
     // Last terminal title emitted, to avoid writing duplicate OSC updates.
     pub(crate) last_terminal_title: Option<String>,
     // Last visible "action required" state observed by the terminal-title renderer.
     last_terminal_title_requires_action: bool,
-    // Original terminal-title config captured when the setup UI opens.
-    //
-    // The outer `Option` tracks whether a setup session is active (`Some`)
-    // or not (`None`). The inner `Option<Vec<String>>` mirrors the shape
-    // of `config.tui_terminal_title` (which is `None` when using defaults).
-    // On cancel or persist-failure the inner value is restored to config;
-    // on confirm the outer is set to `None` to end the session.
-    terminal_title_setup_original_items: Option<Option<Vec<String>>>,
-    // Baseline instant used to animate spinner-prefixed title statuses.
-    terminal_title_animation_origin: Instant,
     // Cached project-root display name keyed by cwd for status/title rendering.
     status_line_project_root_name_cache: Option<CachedProjectRootName>,
-    // Cached git branch name for the status line (None if unknown).
-    status_line_branch: Option<String>,
-    // CWD used to resolve the cached branch; change resets branch state.
-    status_line_branch_cwd: Option<PathBuf>,
-    // True while an async branch lookup is in flight.
-    status_line_branch_pending: bool,
-    // True once we've attempted a branch lookup for the current CWD.
-    status_line_branch_lookup_complete: bool,
-    // Cached PR and branch-change summary for the active status-line cwd.
-    status_line_git_summary: Option<StatusLineGitSummary>,
-    // CWD used to resolve the cached Git summary; change resets summary state.
-    status_line_git_summary_cwd: Option<PathBuf>,
-    // True while an async Git summary lookup is in flight.
-    status_line_git_summary_pending: bool,
-    // True once we've attempted a Git summary lookup for the current CWD.
-    status_line_git_summary_lookup_complete: bool,
-    // Cached workspace notification headline for the status line.
-    status_line_workspace_headline: Option<String>,
-    // Request ID for the async workspace headline fetch currently in flight.
-    status_line_workspace_headline_pending_request_id: Option<u64>,
-    // Request ID to assign to the next workspace headline fetch.
-    next_status_line_workspace_headline_request_id: u64,
-    // Last time a workspace headline fetch was requested.
-    status_line_workspace_headline_last_requested_at: Option<Instant>,
-    // Set after the backend reports the workspace-message feature gate is disabled.
-    status_line_workspace_messages_disabled: bool,
     // Current thread-goal status shown in the status line when plan mode is inactive.
     current_goal_status_indicator: Option<GoalStatusIndicator>,
     current_goal_status: Option<GoalStatusState>,
@@ -746,6 +669,10 @@ fn token_usage_info_from_cli_runtime(token_usage: ThreadTokenUsage) -> TokenUsag
 }
 
 impl ChatWidget {
+    pub(crate) fn history_wrap_width(&self, width: u16) -> u16 {
+        width.max(1)
+    }
+
     /// Stores or overwrites the cached nickname and role for a collab agent thread.
     ///
     /// Called by `App::upsert_agent_picker_thread` and `App::replace_chat_widget` to keep the
@@ -934,19 +861,10 @@ impl ChatWidget {
 
     pub(crate) fn pre_draw_tick(&mut self) {
         self.bottom_pane.pre_draw_tick();
-        if let Some(pet) = self.ambient_pet.as_ref() {
-            pet.schedule_next_frame();
-        }
         self.refresh_goal_status_indicator_for_time_tick();
         if self.terminal_title_shows_action_required() != self.last_terminal_title_requires_action {
             self.refresh_terminal_title();
         }
-        if self.should_animate_terminal_title_spinner()
-            || self.should_animate_terminal_title_action_required()
-        {
-            self.refresh_terminal_title();
-        }
-        self.refresh_status_line_if_workspace_headline_due();
     }
 
     fn flush_active_cell(&mut self) {

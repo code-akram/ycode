@@ -24,10 +24,6 @@ impl ChatWidget {
         };
         self.notify(Notification::UserInputPrompt { title });
         self.bottom_pane.push_user_input_request(ev);
-        self.set_ambient_pet_notification(
-            crate::pets::PetNotificationKind::Waiting,
-            /*body*/ None,
-        );
         self.request_redraw();
     }
 }

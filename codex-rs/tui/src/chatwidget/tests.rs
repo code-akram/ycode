@@ -71,7 +71,6 @@ pub(super) use codex_config::ConfigLayerStack;
 pub(super) use codex_config::Constrained;
 pub(super) use codex_config::ConstraintError;
 pub(super) use codex_config::RequirementSource;
-pub(super) use codex_config::types::Notifications;
 pub(super) use codex_features::FEATURES;
 pub(super) use codex_features::Feature;
 pub(super) use codex_git_utils::CommitLogEntry;
@@ -176,7 +175,6 @@ mod side;
 mod slash_commands;
 mod status_and_layout;
 mod status_command_tests;
-mod status_surface_previews;
 mod usage;
 
 pub(crate) use helpers::make_chatwidget_manual_with_sender;

@@ -70,32 +70,6 @@
       },
       "type": "object"
     },
-    "AltScreenMode": {
-      "description": "Controls whether the TUI uses the terminal's alternate screen buffer.\n\n- `auto` (default): Use alternate screen mode. - `always`: Always use alternate screen mode. - `never`: Never use alternate screen mode. Runs in inline mode, preserving scrollback.\n\nThe CLI flag `--no-alt-screen` can override this setting at runtime.",
-      "oneOf": [
-        {
-          "description": "Use alternate screen mode.",
-          "enum": [
-            "auto"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Always use alternate screen mode.",
-          "enum": [
-            "always"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Never use alternate screen (inline mode only).",
-          "enum": [
-            "never"
-          ],
-          "type": "string"
-        }
-      ]
-    },
     "AppConfig": {
       "additionalProperties": false,
       "description": "Config values for a single app/connector.",
@@ -619,14 +593,6 @@
       },
       "type": "object"
     },
-    "ModelAvailabilityNuxConfig": {
-      "additionalProperties": {
-        "format": "uint32",
-        "minimum": 0.0,
-        "type": "integer"
-      },
-      "type": "object"
-    },
     "MultiAgentV2ConfigToml": {
       "additionalProperties": false,
       "properties": {
@@ -802,45 +768,6 @@
         }
       },
       "type": "object"
-    },
-    "NotificationCondition": {
-      "oneOf": [
-        {
-          "description": "Emit TUI notifications only while the terminal is unfocused.",
-          "enum": [
-            "unfocused"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Emit TUI notifications regardless of terminal focus.",
-          "enum": [
-            "always"
-          ],
-          "type": "string"
-        }
-      ]
-    },
-    "NotificationMethod": {
-      "enum": [
-        "auto",
-        "osc9",
-        "bel"
-      ],
-      "type": "string"
-    },
-    "Notifications": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      ]
     },
     "OrchestratorFeatureToml": {
       "additionalProperties": false,
@@ -1030,14 +957,6 @@
         }
       },
       "type": "object"
-    },
-    "SessionPickerViewMode": {
-      "description": "Preferred layout for the resume/fork session picker.",
-      "enum": [
-        "comfortable",
-        "dense"
-      ],
-      "type": "string"
     },
     "ShellEnvironmentPolicyFilter": {
       "description": "Assigns a shell environment variable pattern to the include-only or exclude set. Includes do not re-add variables removed by another exclude pattern.",
@@ -1315,20 +1234,6 @@
       "additionalProperties": false,
       "description": "Collection of settings that are specific to the TUI.",
       "properties": {
-        "alternate_screen": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AltScreenMode"
-            }
-          ],
-          "default": "auto",
-          "description": "Controls whether the TUI uses the terminal's alternate screen buffer.\n\n- `auto` (default): Use alternate screen. - `always`: Always use alternate screen. - `never`: Never use alternate screen (inline mode only, preserves scrollback)."
-        },
-        "animations": {
-          "default": true,
-          "description": "Enable animations (welcome screen, shimmer effects, spinners). Defaults to `true`.",
-          "type": "boolean"
-        },
         "keymap": {
           "allOf": [
             {
@@ -1462,56 +1367,6 @@
           },
           "description": "Keybinding overrides for the TUI.\n\nThis supports rebinding selected actions globally and by context. Context bindings take precedence over `global` bindings."
         },
-        "model_availability_nux": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelAvailabilityNuxConfig"
-            }
-          ],
-          "default": {},
-          "description": "Startup tooltip availability NUX state persisted by the TUI."
-        },
-        "notification_condition": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/NotificationCondition"
-            }
-          ],
-          "default": "unfocused",
-          "description": "Controls whether TUI notifications are delivered only when the terminal is unfocused or regardless of focus. Defaults to `unfocused`."
-        },
-        "notification_method": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/NotificationMethod"
-            }
-          ],
-          "default": "auto",
-          "description": "Notification method to use for terminal notifications. Defaults to `auto`."
-        },
-        "notifications": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/Notifications"
-            }
-          ],
-          "default": true,
-          "description": "Enable desktop notifications from the TUI. Defaults to `true`."
-        },
-        "pet": {
-          "default": null,
-          "description": "Pet id to preselect in the terminal pet picker.\n\nCustom pet ids resolve against CODEX_HOME/pets/<pet-id>/pet.json.",
-          "type": "string"
-        },
-        "pet_anchor": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/TuiPetAnchor"
-            }
-          ],
-          "default": "composer",
-          "description": "Where the terminal pet should anchor vertically.\n\nDefaults to `composer`, which follows the current TUI composer viewport."
-        },
         "raw_output_mode": {
           "default": false,
           "description": "Start the TUI in raw scrollback mode for copy-friendly transcript output. Defaults to `false`.",
@@ -1526,52 +1381,12 @@
           "default": null,
           "description": "Working directory to use when resuming or forking a session. When unset, prompt if the current and session directories differ."
         },
-        "session_picker_view": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/SessionPickerViewMode"
-            }
-          ],
-          "default": null,
-          "description": "Preferred layout for resume/fork session picker results."
-        },
-        "show_tooltips": {
-          "default": true,
-          "description": "Show startup tooltips in the TUI welcome screen. Defaults to `true`.",
-          "type": "boolean"
-        },
-        "status_line": {
-          "default": null,
-          "description": "Ordered list of status line item identifiers.\n\nWhen set, the TUI renders the selected items as the status line. When unset, the TUI defaults to: `model-with-reasoning` and `current-dir`.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "status_line_use_colors": {
-          "default": true,
-          "description": "Color status line items with colors derived from the active syntax theme. Defaults to `true`.",
-          "type": "boolean"
-        },
         "terminal_resize_reflow_max_rows": {
           "default": null,
           "description": "Trim terminal resize-reflow replay to the most recent rendered terminal rows when the transcript exceeds this cap. Omit to use Codex's terminal-specific default. Set to `0` to keep all rendered rows.",
           "format": "uint",
           "minimum": 0.0,
           "type": "integer"
-        },
-        "terminal_title": {
-          "default": null,
-          "description": "Ordered list of terminal title item identifiers.\n\nWhen set, the TUI renders the selected items into the terminal window/tab title. When unset, the TUI defaults to: `activity` and `project`. The `activity` item spins while working and shows an action-required message when blocked on the user.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "theme": {
-          "default": null,
-          "description": "Syntax highlighting theme name (kebab-case).\n\nWhen set, overrides automatic light/dark theme detection. Use `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes.",
-          "type": "string"
         },
         "vim_mode_default": {
           "default": false,
@@ -2271,24 +2086,6 @@
         }
       },
       "type": "object"
-    },
-    "TuiPetAnchor": {
-      "oneOf": [
-        {
-          "description": "Anchor the pet to the bottom of the current TUI composer viewport.",
-          "enum": [
-            "composer"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Anchor the pet to the physical bottom of the terminal screen.",
-          "enum": [
-            "screen-bottom"
-          ],
-          "type": "string"
-        }
-      ]
     },
     "TuiVimNormalKeymap": {
       "additionalProperties": false,

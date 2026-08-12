@@ -91,7 +91,6 @@ impl PtyCodex {
         let codex = codex_utils_cargo_bin::cargo_bin("codex")
             .or_else(|_| codex_utils_cargo_bin::cargo_bin("codex-tui"))?;
         let child = Command::new(codex)
-            .arg("--no-alt-screen")
             .arg("-C")
             .arg(repo_root)
             .env("TERM", "xterm-256color")

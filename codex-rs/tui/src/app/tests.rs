@@ -226,9 +226,6 @@ async fn enqueue_primary_thread_session_replays_turns_before_initial_prompt_subm
         runtime_model_provider_base_url: None,
         initial_plan_type: None,
         model: Some(model),
-        startup_tooltip_override: None,
-        status_line_invalid_items_warned: app.status_line_invalid_items_warned.clone(),
-        terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
     });
 
     app.enqueue_primary_thread_session(
@@ -986,26 +983,6 @@ async fn replayed_interrupted_turn_restores_queued_input_to_composer() {
     assert!(
         new_op_rx.try_recv().is_err(),
         "replayed interrupted turns should restore queued input for editing, not submit it"
-    );
-}
-
-#[tokio::test]
-async fn token_usage_update_refreshes_status_line_with_runtime_context_window() {
-    let mut app = make_test_app().await;
-    app.chat_widget.setup_status_line(
-        vec![crate::bottom_pane::StatusLineItem::ContextWindowSize],
-        /*use_theme_colors*/ true,
-    );
-
-    assert_eq!(app.chat_widget.status_line_text(), None);
-
-    app.handle_thread_event_now(ThreadBufferedEvent::Notification(Box::new(
-        token_usage_notification(ThreadId::new(), "turn-1", Some(950_000)),
-    )));
-
-    assert_eq!(
-        app.chat_widget.status_line_text(),
-        Some("950K window".into())
     );
 }
 
@@ -2730,7 +2707,6 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             app.chat_widget.current_model(),
             &session,
             is_first,
-            /*tooltip_override*/ None,
             /*auth_plan*/ None,
             /*show_fast_status*/ false,
         )) as Arc<dyn HistoryCell>
@@ -2847,8 +2823,6 @@ async fn make_test_app() -> App {
         keymap: crate::keymap::RuntimeKeymap::defaults(),
         key_chord_matcher: crate::keymap::KeyChordMatcher::default(),
         commit_anim_running: Arc::new(AtomicBool::new(false)),
-        status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
-        terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         skill_load_warnings: SkillLoadWarningState::default(),
         backtrack: BacktrackState::default(),
         backtrack_render_pending: false,
@@ -2907,8 +2881,6 @@ async fn make_test_app_with_channels() -> (
             keymap: crate::keymap::RuntimeKeymap::defaults(),
             key_chord_matcher: crate::keymap::KeyChordMatcher::default(),
             commit_anim_running: Arc::new(AtomicBool::new(false)),
-            status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
-            terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
             skill_load_warnings: SkillLoadWarningState::default(),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
@@ -3229,32 +3201,6 @@ async fn uncapped_resize_reflow_renders_all_cells_when_row_cap_absent() {
     assert_eq!(rendered.lines.len(), 39);
     assert_eq!(rendered_line_text(&rendered.lines[0]), "cell 0");
     assert_eq!(rendered_line_text(&rendered.lines[38]), "cell 19");
-}
-
-#[tokio::test]
-async fn resize_reflow_wraps_transcript_early_when_pet_is_enabled() {
-    let (mut app, _rx, _op_rx) = make_test_app_with_channels().await;
-    app.config.terminal_resize_reflow.max_rows = TerminalResizeReflowMaxRows::Disabled;
-    app.transcript_cells = vec![Arc::new(AgentMarkdownCell::new(
-        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda".to_string(),
-        Path::new("/tmp"),
-    ))];
-
-    let without_pet = app.render_transcript_lines_for_reflow(/*width*/ 40);
-    app.chat_widget
-        .set_pet_image_support_for_tests(crate::pets::PetImageSupport::Supported(
-            crate::pets::ImageProtocol::Kitty,
-        ));
-    app.chat_widget
-        .install_test_ambient_pet_for_tests(/*animations_enabled*/ false);
-    let width = app.chat_widget.history_wrap_width(/*width*/ 40);
-    assert!(width < 40);
-    let with_pet = app.render_transcript_lines_for_reflow(width);
-
-    assert!(
-        with_pet.lines.len() > without_pet.lines.len(),
-        "expected pet-enabled transcript reflow to wrap earlier"
-    );
 }
 
 #[tokio::test]
@@ -3806,7 +3752,6 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
             app.chat_widget.current_model(),
             &session,
             is_first,
-            /*tooltip_override*/ None,
             /*auth_plan*/ None,
             /*show_fast_status*/ false,
         )) as Arc<dyn HistoryCell>
@@ -4563,9 +4508,6 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
             .map(str::to_string),
         initial_plan_type: app.chat_widget.current_plan_type(),
         model: Some(app.chat_widget.current_model().to_string()),
-        startup_tooltip_override: None,
-        status_line_invalid_items_warned: app.status_line_invalid_items_warned.clone(),
-        terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
     });
     app.replace_chat_widget(replacement);
 

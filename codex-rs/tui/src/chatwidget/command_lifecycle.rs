@@ -297,12 +297,7 @@ impl ChatWidget {
             self.flush_active_cell();
 
             self.transcript.active_cell = Some(Box::new(new_active_exec_command(
-                id,
-                command,
-                parsed_cmd,
-                source,
-                /*interaction_input*/ None,
-                self.config.animations,
+                id, command, parsed_cmd, source, /*interaction_input*/ None, false,
             )));
             self.bump_active_cell_revision();
         }
@@ -410,7 +405,7 @@ impl ChatWidget {
                     parsed,
                     source,
                     /*interaction_input*/ None,
-                    self.config.animations,
+                    false,
                 );
                 let completed = orphan.complete_call(&id, output, duration);
                 debug_assert!(completed, "new orphan exec cell should contain {id}");
@@ -427,7 +422,7 @@ impl ChatWidget {
                     parsed,
                     source,
                     /*interaction_input*/ None,
-                    self.config.animations,
+                    false,
                 );
                 let completed = cell.complete_call(&id, output, duration);
                 debug_assert!(completed, "new exec cell should contain {id}");

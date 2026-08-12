@@ -9,6 +9,7 @@ use codex_cli_protocol::RateLimitResetCreditStatus;
 use codex_cli_protocol::RateLimitResetCreditsSummary;
 use codex_cli_protocol::RateLimitResetType;
 use pretty_assertions::assert_eq;
+use std::sync::atomic::AtomicBool;
 use uuid::Uuid;
 
 const TEST_OVERLAY_VIEW_ID: &str = "usage-test-overlay";

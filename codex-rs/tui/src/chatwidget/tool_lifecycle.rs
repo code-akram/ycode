@@ -58,7 +58,7 @@ impl ChatWidget {
         self.transcript.active_cell = Some(Box::new(history_cell::new_active_web_search_call(
             call_id,
             String::new(),
-            self.config.animations,
+            false,
         )));
         self.bump_active_cell_revision();
         self.request_redraw();

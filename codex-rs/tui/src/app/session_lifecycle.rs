@@ -1009,10 +1009,6 @@ impl App {
                 let resumed_thread_id = resumed.session.thread_id;
                 self.shutdown_current_thread(cli_runtime).await;
                 self.config = resume_config;
-                tui.set_notification_settings(
-                    self.config.tui_notifications.method,
-                    self.config.tui_notifications.condition,
-                );
                 self.file_search
                     .update_search_dir(self.config.cwd.to_path_buf());
                 match self

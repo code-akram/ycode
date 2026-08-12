@@ -1,5 +1,4 @@
 use super::*;
-use codex_config::types::SessionPickerViewMode;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -211,23 +210,6 @@ fn multi_agent_v2_nested_edit_preserves_boolean_toggle() {
 }
 
 #[test]
-fn session_picker_view_edit_writes_root_tui_setting() {
-    let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-
-    ConfigEditsBuilder::new(codex_home)
-        .with_edits([session_picker_view_edit(SessionPickerViewMode::Dense)])
-        .apply_blocking()
-        .expect("persist");
-
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[tui]
-session_picker_view = "dense"
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
 fn keymap_binding_edit_writes_root_action_binding() {
     let tmp = tempdir().expect("tmpdir");
     let codex_home = tmp.path();
@@ -297,24 +279,6 @@ fn keymap_bindings_edit_writes_multiple_bindings_as_array() {
             }),
         Some(vec!["enter", "ctrl-enter"])
     );
-}
-
-#[test]
-fn set_model_availability_nux_count_writes_shown_count() {
-    let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-    let shown_count = HashMap::from([("gpt-foo".to_string(), 4)]);
-
-    ConfigEditsBuilder::new(codex_home)
-        .set_model_availability_nux_count(&shown_count)
-        .apply_blocking()
-        .expect("persist");
-
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"[tui.model_availability_nux]
-gpt-foo = 4
-"#;
-    assert_eq!(contents, expected);
 }
 
 #[test]
@@ -608,31 +572,6 @@ fn blocking_clear_path_noop_when_missing() {
         !codex_home.join(CONFIG_TOML_FILE).exists(),
         "config.toml should not be created on noop"
     );
-}
-
-#[test]
-fn blocking_set_path_updates_notifications() {
-    let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-
-    let item = value(false);
-    apply_blocking(
-        codex_home,
-        &[ConfigEdit::SetPath {
-            segments: vec!["tui".to_string(), "notifications".to_string()],
-            value: item,
-        }],
-    )
-    .expect("apply");
-
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let config: TomlValue = toml::from_str(&raw).expect("parse config");
-    let notifications = config
-        .get("tui")
-        .and_then(|item| item.as_table())
-        .and_then(|tbl| tbl.get("notifications"))
-        .and_then(toml::Value::as_bool);
-    assert_eq!(notifications, Some(false));
 }
 
 #[tokio::test]

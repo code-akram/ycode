@@ -4,7 +4,6 @@
 // definitions that do not contain business logic.
 
 pub use crate::shell_environment_policy::ShellEnvironmentPolicyToml;
-pub use codex_protocol::config_types::AltScreenMode;
 pub use codex_protocol::config_types::ApprovalsReviewer;
 pub use codex_protocol::config_types::Personality;
 pub use codex_protocol::config_types::ServiceTier;
@@ -12,7 +11,6 @@ pub use codex_protocol::config_types::WebSearchMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::fmt;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -55,30 +53,6 @@ pub enum AppToolApproval {
     Prompt,
     Writes,
     Approve,
-}
-
-/// Preferred layout for the resume/fork session picker.
-#[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum SessionPickerViewMode {
-    Comfortable,
-    #[default]
-    Dense,
-}
-
-impl SessionPickerViewMode {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Comfortable => "comfortable",
-            Self::Dense => "dense",
-        }
-    }
-}
-
-impl fmt::Display for SessionPickerViewMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
 }
 
 /// Working directory to use when resuming or forking a session.
@@ -420,114 +394,14 @@ pub struct AppsConfigToml {
     pub apps: HashMap<String, AppConfig>,
 }
 
-#[derive(Serialize, Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
-#[serde(untagged)]
-pub enum Notifications {
-    Enabled(bool),
-    Custom(Vec<String>),
-}
-
-impl Default for Notifications {
-    fn default() -> Self {
-        Self::Enabled(true)
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum NotificationMethod {
-    #[default]
-    Auto,
-    Osc9,
-    Bel,
-}
-
-impl fmt::Display for NotificationMethod {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NotificationMethod::Auto => write!(f, "auto"),
-            NotificationMethod::Osc9 => write!(f, "osc9"),
-            NotificationMethod::Bel => write!(f, "bel"),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum NotificationCondition {
-    /// Emit TUI notifications only while the terminal is unfocused.
-    #[default]
-    Unfocused,
-    /// Emit TUI notifications regardless of terminal focus.
-    Always,
-}
-
-impl fmt::Display for NotificationCondition {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NotificationCondition::Unfocused => write!(f, "unfocused"),
-            NotificationCondition::Always => write!(f, "always"),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, Default)]
-#[serde(rename_all = "kebab-case")]
-pub enum TuiPetAnchor {
-    /// Anchor the pet to the bottom of the current TUI composer viewport.
-    #[default]
-    Composer,
-    /// Anchor the pet to the physical bottom of the terminal screen.
-    ScreenBottom,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct TuiNotificationSettings {
-    /// Enable desktop notifications from the TUI.
-    /// Defaults to `true`.
-    #[serde(default, rename = "notifications")]
-    pub notifications: Notifications,
-
-    /// Notification method to use for terminal notifications.
-    /// Defaults to `auto`.
-    #[serde(default, rename = "notification_method")]
-    pub method: NotificationMethod,
-
-    /// Controls whether TUI notifications are delivered only when the terminal is unfocused or
-    /// regardless of focus. Defaults to `unfocused`.
-    #[serde(default, rename = "notification_condition")]
-    pub condition: NotificationCondition,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct ModelAvailabilityNuxConfig {
-    /// Number of times a startup availability NUX has been shown per model slug.
-    #[serde(default, flatten)]
-    pub shown_count: HashMap<String, u32>,
-}
-
 /// Fallback resize-reflow row cap when Codex cannot identify a terminal-specific scrollback size.
 pub const DEFAULT_TERMINAL_RESIZE_REFLOW_FALLBACK_MAX_ROWS: usize = 1_000;
 
 /// Collection of settings that are specific to the TUI.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct Tui {
-    #[serde(default, flatten)]
-    pub notification_settings: TuiNotificationSettings,
-
-    /// Enable animations (welcome screen, shimmer effects, spinners).
-    /// Defaults to `true`.
-    #[serde(default = "default_true")]
-    pub animations: bool,
-
-    /// Show startup tooltips in the TUI welcome screen.
-    /// Defaults to `true`.
-    #[serde(default = "default_true")]
-    pub show_tooltips: bool,
-
     /// Start the composer in Vim mode (`Normal`) by default.
     /// Defaults to `false`.
     #[serde(default)]
@@ -537,58 +411,6 @@ pub struct Tui {
     /// Defaults to `false`.
     #[serde(default)]
     pub raw_output_mode: bool,
-
-    /// Controls whether the TUI uses the terminal's alternate screen buffer.
-    ///
-    /// - `auto` (default): Use alternate screen.
-    /// - `always`: Always use alternate screen.
-    /// - `never`: Never use alternate screen (inline mode only, preserves scrollback).
-    #[serde(default)]
-    pub alternate_screen: AltScreenMode,
-
-    /// Ordered list of status line item identifiers.
-    ///
-    /// When set, the TUI renders the selected items as the status line.
-    /// When unset, the TUI defaults to: `model-with-reasoning` and `current-dir`.
-    #[serde(default)]
-    pub status_line: Option<Vec<String>>,
-
-    /// Color status line items with colors derived from the active syntax theme.
-    /// Defaults to `true`.
-    #[serde(default = "default_true")]
-    pub status_line_use_colors: bool,
-
-    /// Ordered list of terminal title item identifiers.
-    ///
-    /// When set, the TUI renders the selected items into the terminal window/tab title.
-    /// When unset, the TUI defaults to: `activity` and `project`.
-    /// The `activity` item spins while working and shows an action-required
-    /// message when blocked on the user.
-    #[serde(default)]
-    pub terminal_title: Option<Vec<String>>,
-
-    /// Syntax highlighting theme name (kebab-case).
-    ///
-    /// When set, overrides automatic light/dark theme detection.
-    /// Use `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes.
-    #[serde(default)]
-    pub theme: Option<String>,
-
-    /// Pet id to preselect in the terminal pet picker.
-    ///
-    /// Custom pet ids resolve against CODEX_HOME/pets/<pet-id>/pet.json.
-    #[serde(default)]
-    pub pet: Option<String>,
-
-    /// Where the terminal pet should anchor vertically.
-    ///
-    /// Defaults to `composer`, which follows the current TUI composer viewport.
-    #[serde(default)]
-    pub pet_anchor: TuiPetAnchor,
-
-    /// Preferred layout for resume/fork session picker results.
-    #[serde(default)]
-    pub session_picker_view: Option<SessionPickerViewMode>,
 
     /// Working directory to use when resuming or forking a session.
     /// When unset, prompt if the current and session directories differ.
@@ -602,20 +424,12 @@ pub struct Tui {
     #[serde(default)]
     pub keymap: TuiKeymap,
 
-    /// Startup tooltip availability NUX state persisted by the TUI.
-    #[serde(default)]
-    pub model_availability_nux: ModelAvailabilityNuxConfig,
-
     /// Trim terminal resize-reflow replay to the most recent rendered terminal rows when the
     /// transcript exceeds this cap. Omit to use Codex's terminal-specific default. Set to `0` to
     /// keep all rendered rows.
     #[serde(default)]
     #[schemars(range(min = 0))]
     pub terminal_resize_reflow_max_rows: Option<usize>,
-}
-
-const fn default_true() -> bool {
-    true
 }
 
 /// Settings for notices we display to users via the tui and app-server clients

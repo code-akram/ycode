@@ -12,7 +12,6 @@ pub(super) struct MarkdownRenderCache {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct MarkdownRenderCacheKey {
     pub(super) width: u16,
-    pub(super) syntax_theme_revision: u64,
     pub(super) terminal_fg: Option<(u8, u8, u8)>,
     pub(super) terminal_bg: Option<(u8, u8, u8)>,
     pub(super) color_level: crate::terminal_palette::StdoutColorLevel,
@@ -21,7 +20,7 @@ pub(super) struct MarkdownRenderCacheKey {
 impl MarkdownRenderCache {
     /// Return lines cached for this width and terminal render state, rendering on a cache miss.
     ///
-    /// Only the most recent entry is retained, so changing width, syntax theme, or terminal colors
+    /// Only the most recent entry is retained, so changing width or terminal colors
     /// replaces the cached render.
     pub(super) fn render(
         &self,
@@ -30,7 +29,6 @@ impl MarkdownRenderCache {
     ) -> Vec<HyperlinkLine> {
         let key = MarkdownRenderCacheKey {
             width,
-            syntax_theme_revision: crate::render::highlight::syntax_theme_revision(),
             terminal_fg: crate::terminal_palette::default_fg(),
             terminal_bg: crate::terminal_palette::default_bg(),
             color_level: crate::terminal_palette::stdout_color_level(),

@@ -47,10 +47,6 @@ impl ChatWidget {
         self.reasoning_summary_parts.clear();
         self.reasoning_buffer.clear();
         self.reasoning_header = None;
-        self.set_ambient_pet_notification(
-            crate::pets::PetNotificationKind::Running,
-            /*body*/ None,
-        );
         self.request_redraw();
     }
 
@@ -98,8 +94,6 @@ impl ChatWidget {
             }
             self.transcript.needs_final_message_separator = false;
             self.transcript.had_work_activity = false;
-            self.request_status_line_branch_refresh();
-            self.request_status_line_git_summary_refresh();
         }
         // Mark task stopped and request redraw now that all content is in history.
         self.status_state.pending_status_indicator_restore = false;
@@ -111,10 +105,6 @@ impl ChatWidget {
         self.suppressed_exec_calls.clear();
         self.last_unified_wait = None;
         self.unified_exec_wait_streak = None;
-        if !from_replay {
-            let body = Notification::agent_turn_preview(&notification_response);
-            self.set_ambient_pet_notification(crate::pets::PetNotificationKind::Review, body);
-        }
         self.request_redraw();
 
         let had_pending_steers = !self.input_queue.pending_steers.is_empty();
@@ -177,8 +167,6 @@ impl ChatWidget {
         self.request_pending_usage_output_insertion_after_stream_shutdown();
         self.status_state.pending_status_indicator_restore = false;
         self.safety_buffering_prompt = None;
-        self.request_status_line_branch_refresh();
-        self.request_status_line_git_summary_refresh();
         self.maybe_show_pending_rate_limit_prompt();
     }
 
@@ -202,10 +190,6 @@ impl ChatWidget {
         self.flush_answer_stream_with_separator();
         self.finalize_turn();
         self.add_to_history(history_cell::new_error_event(message));
-        self.set_ambient_pet_notification(
-            crate::pets::PetNotificationKind::Failed,
-            /*body*/ None,
-        );
         self.request_redraw();
 
         // After an error ends the turn, try sending the next queued input.

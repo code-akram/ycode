@@ -51,8 +51,6 @@ use crate::tui::event_stream::TuiEventStream;
 #[cfg(unix)]
 use crate::tui::job_control::SuspendContext;
 use crate::tui::screen_size::ScreenSizePolicy;
-use codex_config::types::NotificationCondition;
-use codex_config::types::NotificationMethod;
 
 mod event_stream;
 mod frame_rate_limiter;
@@ -81,19 +79,8 @@ pub(crate) fn running_in_vscode_terminal() -> bool {
     keyboard_modes::running_in_vscode_terminal()
 }
 
-fn should_emit_notification(condition: NotificationCondition, terminal_focused: bool) -> bool {
-    match condition {
-        NotificationCondition::Unfocused => !terminal_focused,
-        NotificationCondition::Always => true,
-    }
-}
-
-impl Drop for Tui {
-    fn drop(&mut self) {
-        if let Err(err) = self.clear_ambient_pet_image() {
-            tracing::debug!(error = %err, "failed to clear ambient pet image on TUI drop");
-        }
-    }
+fn should_emit_notification(terminal_focused: bool) -> bool {
+    !terminal_focused
 }
 
 #[cfg(test)]
@@ -104,33 +91,18 @@ mod tests {
     use super::should_emit_notification;
     use crate::custom_terminal::Terminal as CustomTerminal;
     use crate::test_backend::VT100Backend;
-    use codex_config::types::NotificationCondition;
     use ratatui::layout::Position;
     use ratatui::layout::Rect;
     use ratatui::text::Line;
 
     #[test]
     fn unfocused_notification_condition_is_suppressed_when_focused() {
-        assert!(!should_emit_notification(
-            NotificationCondition::Unfocused,
-            /*terminal_focused*/ true
-        ));
-    }
-
-    #[test]
-    fn always_notification_condition_emits_when_focused() {
-        assert!(should_emit_notification(
-            NotificationCondition::Always,
-            /*terminal_focused*/ true
-        ));
+        assert!(!should_emit_notification(/*terminal_focused*/ true));
     }
 
     #[test]
     fn unfocused_notification_condition_emits_when_unfocused() {
-        assert!(should_emit_notification(
-            NotificationCondition::Unfocused,
-            /*terminal_focused*/ false
-        ));
+        assert!(should_emit_notification(/*terminal_focused*/ false));
     }
 
     #[test]
@@ -434,8 +406,6 @@ pub struct Tui {
     pub(crate) terminal: Terminal,
     pending_history_lines: Vec<PendingHistoryLines>,
     screen_size: ScreenSizePolicy,
-    ambient_pet_image_state: crate::pets::PetImageRenderState,
-    pet_picker_preview_image_state: crate::pets::PetImageRenderState,
     alt_saved_viewport: Option<ratatui::layout::Rect>,
     #[cfg(unix)]
     suspend_context: SuspendContext,
@@ -445,11 +415,8 @@ pub struct Tui {
     terminal_focused: Arc<AtomicBool>,
     enhanced_keys_supported: bool,
     notification_backend: Option<DesktopNotificationBackend>,
-    notification_condition: NotificationCondition,
     // Raw terminal-wrapped history needs a non-scroll-region insertion path in Zellij.
     is_zellij: bool,
-    // When false, enter_alt_screen() becomes a no-op.
-    alt_screen_enabled: bool,
     // Keeps unmanaged process stderr writes out of the inline viewport.
     _stderr_guard: terminal_stderr::TerminalStderrGuard,
 }
@@ -492,34 +459,16 @@ impl Tui {
             terminal,
             pending_history_lines: vec![],
             screen_size: ScreenSizePolicy::default(),
-            ambient_pet_image_state: crate::pets::PetImageRenderState::default(),
-            pet_picker_preview_image_state: crate::pets::PetImageRenderState::default(),
             alt_saved_viewport: None,
             #[cfg(unix)]
             suspend_context: SuspendContext::new(),
             alt_screen_active: Arc::new(AtomicBool::new(false)),
             terminal_focused: Arc::new(AtomicBool::new(true)),
             enhanced_keys_supported,
-            notification_backend: Some(detect_backend(NotificationMethod::default())),
-            notification_condition: NotificationCondition::default(),
+            notification_backend: Some(detect_backend()),
             is_zellij,
-            alt_screen_enabled: true,
             _stderr_guard: stderr_guard,
         }
-    }
-
-    /// Set whether alternate screen is enabled. When false, enter_alt_screen() becomes a no-op.
-    pub fn set_alt_screen_enabled(&mut self, enabled: bool) {
-        self.alt_screen_enabled = enabled;
-    }
-
-    pub fn set_notification_settings(
-        &mut self,
-        method: NotificationMethod,
-        condition: NotificationCondition,
-    ) {
-        self.notification_backend = Some(detect_backend(method));
-        self.notification_condition = condition;
     }
 
     pub fn frame_requester(&self) -> FrameRequester {
@@ -595,7 +544,7 @@ impl Tui {
     /// Returns true if a notification was posted.
     pub fn notify(&mut self, message: impl AsRef<str>) -> bool {
         let terminal_focused = self.terminal_focused.load(Ordering::Relaxed);
-        if !should_emit_notification(self.notification_condition, terminal_focused) {
+        if !should_emit_notification(terminal_focused) {
             return false;
         }
 
@@ -640,9 +589,6 @@ impl Tui {
     /// Enter alternate screen and expand the viewport to full terminal size, saving the current
     /// inline viewport for restoration when leaving.
     pub fn enter_alt_screen(&mut self) -> Result<()> {
-        if !self.alt_screen_enabled {
-            return Ok(());
-        }
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
         // Enable "alternate scroll" so terminals may translate wheel to arrows
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
@@ -663,9 +609,6 @@ impl Tui {
 
     /// Leave alternate screen and restore the previously saved inline viewport, if any.
     pub fn leave_alt_screen(&mut self) -> Result<()> {
-        if !self.alt_screen_enabled {
-            return Ok(());
-        }
         // Disable alternate scroll when leaving alt-screen
         let _ = execute!(self.terminal.backend_mut(), DisableAlternateScroll);
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
@@ -856,62 +799,6 @@ impl Tui {
                 draw_fn(frame);
             })
         })?
-    }
-
-    pub fn draw_ambient_pet_image(
-        &mut self,
-        request: Option<crate::pets::AmbientPetDraw>,
-    ) -> std::result::Result<(), crate::pets::PetImageRenderError> {
-        if let Err(err) = ensure_virtual_terminal_processing() {
-            return Err(crate::pets::PetImageRenderError::Terminal(err));
-        }
-
-        let terminal = &mut self.terminal;
-        let state = &mut self.ambient_pet_image_state;
-        stdout().sync_update(|_| {
-            match crate::pets::render_ambient_pet_image(terminal.backend_mut(), state, request) {
-                Ok(()) => Ok(Ok(())),
-                Err(crate::pets::PetImageRenderError::Terminal(err)) => Err(err),
-                Err(err @ crate::pets::PetImageRenderError::Asset(_)) => Ok(Err(err)),
-            }
-        })??
-    }
-
-    pub fn draw_pet_picker_preview_image(
-        &mut self,
-        request: Option<crate::pets::AmbientPetDraw>,
-    ) -> std::result::Result<(), crate::pets::PetImageRenderError> {
-        if let Err(err) = ensure_virtual_terminal_processing() {
-            return Err(crate::pets::PetImageRenderError::Terminal(err));
-        }
-
-        let terminal = &mut self.terminal;
-        let state = &mut self.pet_picker_preview_image_state;
-        stdout().sync_update(|_| {
-            match crate::pets::render_pet_picker_preview_image(
-                terminal.backend_mut(),
-                state,
-                request,
-            ) {
-                Ok(()) => Ok(Ok(())),
-                Err(crate::pets::PetImageRenderError::Terminal(err)) => Err(err),
-                Err(err @ crate::pets::PetImageRenderError::Asset(_)) => Ok(Err(err)),
-            }
-        })??
-    }
-
-    pub fn clear_ambient_pet_image(
-        &mut self,
-    ) -> std::result::Result<(), crate::pets::PetImageRenderError> {
-        if let Err(err) = ensure_virtual_terminal_processing() {
-            return Err(crate::pets::PetImageRenderError::Terminal(err));
-        }
-
-        crate::pets::render_ambient_pet_image(
-            self.terminal.backend_mut(),
-            &mut self.ambient_pet_image_state,
-            /*request*/ None,
-        )
     }
 
     /// Draw a frame using the resize-reflow viewport and history insertion rules.

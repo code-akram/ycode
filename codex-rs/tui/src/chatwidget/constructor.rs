@@ -26,9 +26,6 @@ impl ChatWidget {
             runtime_model_provider_base_url,
             initial_plan_type,
             model,
-            startup_tooltip_override,
-            status_line_invalid_items_warned,
-            terminal_title_invalid_items_warned,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -75,17 +72,6 @@ impl ChatWidget {
             runtime_keymap.as_ref().unwrap_or(&default_keymap),
             current_terminal_info,
         );
-        let pet_http_client = codex_http_client::RouteAwareClientPool::new(
-            config.http_client_factory(),
-            codex_http_client::ClientRouteClass::Other,
-        );
-        pets::start_configured_pet_load_if_needed(
-            &config,
-            /*ambient_pet_missing*/ true,
-            frame_requester.clone(),
-            app_event_tx.clone(),
-            pet_http_client.clone(),
-        );
         let mut widget = Self {
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
@@ -97,7 +83,7 @@ impl ChatWidget {
                 enhanced_keys_supported,
                 placeholder_text: placeholder.clone(),
                 disable_paste_burst: config.disable_paste_burst,
-                animations_enabled: config.animations,
+                animations_enabled: false,
                 skills: None,
             }),
             transcript: TranscriptState::new(active_cell),
@@ -159,15 +145,6 @@ impl ChatWidget {
             reasoning_header: None,
             reasoning_summary_parts: Vec::new(),
             status_state: StatusState::default(),
-            pet_http_client,
-            ambient_pet: None,
-            pet_picker_preview_state: crate::pets::PetPickerPreviewState::default(),
-            pet_picker_preview_pet: None,
-            pet_picker_preview_request_id: 0,
-            pet_picker_preview_image_visible: std::cell::Cell::new(/*value*/ false),
-            pet_selection_load_request_id: 0,
-            #[cfg(test)]
-            pet_image_support_override: None,
             thread_id: None,
             thread_name: None,
             thread_rename_block_message: None,
@@ -182,7 +159,6 @@ impl ChatWidget {
             chat_keymap,
             queued_message_edit_hint_binding,
             show_welcome_banner: is_first_run,
-            startup_tooltip_override,
             suppress_session_configured_redraw: false,
             suppress_initial_user_message_submit: false,
             pending_notification: None,
@@ -193,26 +169,9 @@ impl ChatWidget {
             current_cwd,
             workspace_command_runner,
             instruction_source_paths: Vec::new(),
-            status_line_invalid_items_warned,
-            terminal_title_invalid_items_warned,
             last_terminal_title: None,
             last_terminal_title_requires_action: false,
-            terminal_title_setup_original_items: None,
-            terminal_title_animation_origin: Instant::now(),
             status_line_project_root_name_cache: None,
-            status_line_branch: None,
-            status_line_branch_cwd: None,
-            status_line_branch_pending: false,
-            status_line_branch_lookup_complete: false,
-            status_line_git_summary: None,
-            status_line_git_summary_cwd: None,
-            status_line_git_summary_pending: false,
-            status_line_git_summary_lookup_complete: false,
-            status_line_workspace_headline: None,
-            status_line_workspace_headline_pending_request_id: None,
-            next_status_line_workspace_headline_request_id: 0,
-            status_line_workspace_headline_last_requested_at: None,
-            status_line_workspace_messages_disabled: false,
             current_goal_status_indicator: None,
             current_goal_status: None,
             external_editor_state: ExternalEditorState::Closed,
@@ -227,9 +186,7 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_vim_enabled(widget.config.tui_vim_mode_default);
-        widget
-            .bottom_pane
-            .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
+        widget.bottom_pane.set_status_line_enabled(true);
         widget.sync_service_tier_commands();
         widget.sync_personality_command_enabled();
         widget.sync_goal_command_enabled();

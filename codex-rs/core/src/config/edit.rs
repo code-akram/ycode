@@ -3,7 +3,6 @@ use crate::path_utils::write_atomically;
 use anyhow::Context;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::types::ResumeCwdMode;
-use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_features::FEATURES;
 use codex_protocol::config_types::Personality;
@@ -71,64 +70,6 @@ enum SkillConfigSelector {
     Path(PathBuf),
 }
 
-/// Produces a config edit that sets `[tui].theme = "<name>"`.
-pub fn syntax_theme_edit(name: &str) -> ConfigEdit {
-    ConfigEdit::SetPath {
-        segments: vec!["tui".to_string(), "theme".to_string()],
-        value: value(name.to_string()),
-    }
-}
-
-/// Produces a config edit that sets [tui].pet = "<name>".
-pub fn tui_pet_edit(name: &str) -> ConfigEdit {
-    ConfigEdit::SetPath {
-        segments: vec!["tui".to_string(), "pet".to_string()],
-        value: value(name.to_string()),
-    }
-}
-
-/// Produces a config edit that sets `[tui].session_picker_view = "<mode>"`.
-pub fn session_picker_view_edit(mode: SessionPickerViewMode) -> ConfigEdit {
-    ConfigEdit::SetPath {
-        segments: vec!["tui".to_string(), "session_picker_view".to_string()],
-        value: value(mode.to_string()),
-    }
-}
-
-/// Produces a config edit that sets `[tui].status_line` to an explicit ordered list.
-///
-/// The array is written even when it is empty so "hide the status line" stays
-/// distinct from "unset, so use defaults".
-pub fn status_line_items_edit(items: &[String]) -> ConfigEdit {
-    let array = items.iter().cloned().collect::<toml_edit::Array>();
-
-    ConfigEdit::SetPath {
-        segments: vec!["tui".to_string(), "status_line".to_string()],
-        value: TomlItem::Value(array.into()),
-    }
-}
-
-/// Produces a config edit that sets `[tui].status_line_use_colors`.
-pub fn status_line_use_colors_edit(enabled: bool) -> ConfigEdit {
-    ConfigEdit::SetPath {
-        segments: vec!["tui".to_string(), "status_line_use_colors".to_string()],
-        value: value(enabled),
-    }
-}
-
-/// Produces a config edit that sets `[tui].terminal_title` to an explicit ordered list.
-///
-/// The array is written even when it is empty so "disabled title updates" stays
-/// distinct from "unset, so use defaults".
-pub fn terminal_title_items_edit(items: &[String]) -> ConfigEdit {
-    let array = items.iter().cloned().collect::<toml_edit::Array>();
-
-    ConfigEdit::SetPath {
-        segments: vec!["tui".to_string(), "terminal_title".to_string()],
-        value: TomlItem::Value(array.into()),
-    }
-}
-
 fn keymap_binding_value(keys: &[String]) -> TomlItem {
     if let [key] = keys {
         value(key.to_string())
@@ -166,27 +107,6 @@ pub fn keymap_binding_clear_edit(context: &str, action: &str) -> ConfigEdit {
             action.to_string(),
         ],
     }
-}
-
-pub fn model_availability_nux_count_edits(shown_count: &HashMap<String, u32>) -> Vec<ConfigEdit> {
-    let mut shown_count_entries: Vec<_> = shown_count.iter().collect();
-    shown_count_entries.sort_unstable_by_key(|(left, _)| *left);
-
-    let mut edits = vec![ConfigEdit::ClearPath {
-        segments: vec!["tui".to_string(), "model_availability_nux".to_string()],
-    }];
-    for (model_slug, count) in shown_count_entries {
-        edits.push(ConfigEdit::SetPath {
-            segments: vec![
-                "tui".to_string(),
-                "model_availability_nux".to_string(),
-                model_slug.clone(),
-            ],
-            value: value(i64::from(*count)),
-        });
-    }
-
-    edits
 }
 
 struct ConfigDocument {
@@ -724,12 +644,6 @@ impl ConfigEditsBuilder {
         self
     }
 
-    pub fn set_model_availability_nux_count(mut self, shown_count: &HashMap<String, u32>) -> Self {
-        self.edits
-            .extend(model_availability_nux_count_edits(shown_count));
-        self
-    }
-
     pub fn set_project_trust_level<P: Into<PathBuf>>(
         mut self,
         project_path: P,
@@ -826,14 +740,6 @@ impl ConfigEditsBuilder {
             let segments = vec!["features".to_string(), key.to_string()];
             self.edits.push(ConfigEdit::ClearPath { segments });
         }
-        self
-    }
-
-    pub fn set_session_picker_view(mut self, mode: SessionPickerViewMode) -> Self {
-        self.edits.push(ConfigEdit::SetPath {
-            segments: vec!["tui".to_string(), "session_picker_view".to_string()],
-            value: value(mode.to_string()),
-        });
         self
     }
 
