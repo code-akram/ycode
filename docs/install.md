@@ -1,61 +1,76 @@
-## Installing & building
+# Apple Silicon development baseline
 
-### System requirements
+The only supported target is `aarch64-apple-darwin`. Rust 1.95.0, `cargo`,
+`rustfmt`, and POSIX shell are sufficient; the workspace configuration fixes
+Cargo to four jobs with incremental compilation disabled.
 
-| Requirement                 | Details                                                         |
-| --------------------------- | --------------------------------------------------------------- |
-| Supported target            | `aarch64-apple-darwin` (Apple Silicon macOS)                    |
-| Git (optional, recommended) | 2.23+ for built-in PR helpers                                   |
-| RAM                         | 4-GB minimum (8-GB recommended)                                 |
+The distributed product binary is `codex`, built by `codex-cli`. Its primary
+workflows are interactive launch, `exec`, `login`, `logout`, `resume`, `fork`,
+`help`, and `version`. The current parser also exposes `completion`, `doctor`,
+`debug`, `apply`, `archive`, `delete`, `unarchive`, experimental `cloud`, and
+`features`; this list is intentionally explicit so retained surface is visible.
+Other workspace binaries are internal helpers, focused test fixtures, local
+diagnostics, or the config-schema generator, not separate distribution products.
 
-### Build from source
+## Build and run
 
-```bash
-# Clone the repository and navigate to the root of the Cargo workspace.
+```sh
 git clone https://github.com/code-akram/ycode.git
 cd ycode/codex-rs
-
-# Install the Rust toolchain, if necessary.
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source "$HOME/.cargo/env"
-rustup component add rustfmt
-rustup component add clippy
-# Install helper tools used by the workspace justfile:
-cargo install --locked just
-# Install nextest for the `just test` helper.
-cargo install --locked cargo-nextest
-
-# Build Codex.
-cargo build
-
-# Launch the TUI with a sample prompt.
-cargo run --bin codex -- "explain this codebase to me"
-
-# After making changes, use the root justfile helpers (they default to codex-rs):
-just fmt
-just fix -p <crate-you-touched>
-
-# During subtraction work, check and test only the package being changed:
-cargo check -p <crate-you-touched>
-just test -p <crate-you-touched>
+cargo metadata --locked --no-deps
+cargo build -p codex-cli
+cargo run -p codex-cli --bin codex -- --version
+cargo run -p codex-cli --bin codex -- --help
+cargo run -p codex-cli --bin codex -- exec --help
 ```
 
-Do not run broad workspace or TUI suites by default during subtraction. They
-compile additional artifact families and can make `target/` unexpectedly large.
-When release builds begin, they must use a separate disposable target directory
-rather than sharing the local development target directory.
+Run the TUI with `cargo run -p codex-cli --bin codex`. Set `CODEX_API_KEY` for
+OpenAI API-key authentication, or use `codex login` for ChatGPT subscription
+authentication. The API key is environment-only; ChatGPT credentials retain the
+existing `CODEX_HOME/auth.json` path and format.
 
-## Tracing / verbose logging
+## Focused validation matrix
 
-Codex is written in Rust, so it honors the `RUST_LOG` environment variable to configure its logging behavior.
+Run only the affected rows. Do not use a full-workspace, release, TUI, or
+nextest sweep as the default development check.
 
-The TUI records diagnostics in bounded local stores by default. Set `log_dir` explicitly to enable a plaintext TUI log for a run:
+| Surface | Command |
+| --- | --- |
+| Dependency graph | `cargo metadata --locked --no-deps` |
+| Current config schema | `cargo run -p codex-core --bin codex-write-config-schema` |
+| Production CLI graph | `cargo check -p codex-cli` |
+| Core test harness | `cargo test -p codex-core --lib --no-run` |
+| Runtime test harness | `cargo test -p codex-cli-runtime --lib --no-run` |
+| CLI parser harness | `cargo test -p codex-cli --bin codex --no-run` |
+| TUI test harness | `cargo test -p codex-tui --lib --no-run` |
+| Formatting | `cargo fmt --all --check` |
+| Installer | `sh -n ../scripts/install/install.sh` |
 
-```bash
+Select exact tests inside those packages for authentication, Responses,
+session/history, execution, skills, web/image, collaboration, and TUI behavior.
+Set `RUST_MIN_STACK=8388608` for focused `codex-core` integration-test selectors;
+their default test-thread stack is too small for the current debug harness.
+The repository `justfile` contains only shortcuts for the same focused Cargo
+operations.
+
+## Manual installation
+
+The retained POSIX installer supports Apple Silicon macOS native release archives
+only. When a release exists, run it explicitly:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/code-akram/ycode/main/scripts/install/install.sh | sh
+```
+
+Set `YCODE_RELEASE` to an explicit release name or `YCODE_INSTALL_DIR` to change
+the destination. The installer performs release resolution only while it is
+being run; the CLI has no updater.
+
+## Local logs
+
+The TUI keeps bounded local diagnostics. To enable a plaintext log for a run:
+
+```sh
 codex -c log_dir=./.codex-log
 tail -F ./.codex-log/codex-tui.log
 ```
-
-The non-interactive mode (`codex exec`) defaults to `RUST_LOG=error`, but messages are printed inline, so there is no need to monitor a separate file.
-
-See the Rust documentation on [`RUST_LOG`](https://docs.rs/env_logger/latest/env_logger/#enabling-logging) for more information on the configuration options.

@@ -1,11 +1,9 @@
-//! Terminal history, desktop handoff, and clear-screen UI helpers for the TUI app.
+//! Terminal history and clear-screen UI helpers for the TUI app.
 //!
 //! This module owns rendering the fresh session header, clearing inline or alternate-screen UI
 //! state, and resetting transcript-related app state after `/clear` or Ctrl-L.
 
 use super::*;
-
-const DESKTOP_THREAD_OPENED_MESSAGE: &str = "Opened this session in the Desktop app.";
 
 impl App {
     pub(super) fn insert_history_cell(&mut self, tui: &mut tui::Tui, cell: Box<dyn HistoryCell>) {
@@ -75,20 +73,6 @@ impl App {
 
         self.chat_widget
             .add_info_message(format!("Opened {url} in your browser."), /*hint*/ None);
-    }
-
-    pub(super) fn open_desktop_thread(&mut self, thread_id: ThreadId) {
-        let url = format!("codex://threads/{thread_id}");
-        if let Err(err) = open_desktop_thread_url(&url) {
-            self.chat_widget
-                .add_error_message(desktop_thread_open_error_message(&err));
-            return;
-        }
-
-        self.chat_widget.add_info_message(
-            DESKTOP_THREAD_OPENED_MESSAGE.to_string(),
-            /*hint*/ None,
-        );
     }
 
     pub(super) fn clear_ui_header_lines_with_version(
@@ -176,26 +160,3 @@ impl App {
         self.skill_load_warnings.clear();
     }
 }
-
-fn desktop_thread_open_error_message(err: &str) -> String {
-    format!(
-        "Failed to open this session in the Desktop app: {err}. Install or launch the Desktop app and try again."
-    )
-}
-
-fn open_desktop_thread_url(url: &str) -> Result<(), String> {
-    let status = std::process::Command::new("open")
-        .arg(url)
-        .status()
-        .map_err(|err| format!("failed to invoke `open`: {err}"))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("`open {url}` exited with {status}"))
-    }
-}
-
-#[cfg(test)]
-#[path = "history_ui_tests.rs"]
-mod tests;

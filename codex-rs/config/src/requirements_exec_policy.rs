@@ -120,8 +120,7 @@ pub enum RequirementsExecPolicyParseError {
 }
 
 impl RequirementsExecPolicyToml {
-    /// Convert requirements TOML rules into the internal `.rules`
-    /// representation used by `codex-execpolicy`.
+    /// Convert requirements TOML rules into the internal policy representation.
     pub fn to_policy(&self) -> Result<Policy, RequirementsExecPolicyParseError> {
         if self.prefix_rules.is_empty() {
             return Err(RequirementsExecPolicyParseError::EmptyPrefixRules);

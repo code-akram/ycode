@@ -8,9 +8,6 @@ mod model_context;
 mod move_thread_to_section;
 mod paginated_fork;
 mod read_thread;
-mod rollout_migration;
-// This lands before the reader PRs that consume the shared lineage resolver.
-#[allow(dead_code)]
 mod rollout_lineage;
 mod search_threads;
 mod thread_history;
@@ -78,12 +75,6 @@ use crate::TurnPage;
 use crate::UpdateThreadMetadataParams;
 use crate::local::writer_lock::WriterLockCoordinator;
 use crate::local::writer_lock::WriterLockGuard;
-
-pub use rollout_migration::RolloutMigrationMode;
-pub use rollout_migration::RolloutMigrationOptions;
-pub use rollout_migration::RolloutMigrationOutcome;
-pub use rollout_migration::RolloutMigrationReport;
-pub use rollout_migration::RolloutMigrationStatus;
 
 /// Local filesystem/SQLite-backed implementation of [`ThreadStore`].
 ///

@@ -9,10 +9,6 @@ autobins = false
 name = "codex-tui"
 path = "src/main.rs"
 
-[[bin]]
-name = "md-events"
-path = "src/bin/md-events.rs"
-
 [lib]
 name = "codex_tui"
 path = "src/lib.rs"

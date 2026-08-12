@@ -30,10 +30,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use supports_color::Stream;
 
-#[cfg(target_os = "macos")]
-mod app_cmd;
-#[cfg(target_os = "macos")]
-mod desktop_app;
 mod doctor;
 mod state_db_recovery;
 
@@ -100,10 +96,6 @@ enum Subcommand {
 
     /// Remove stored authentication credentials.
     Logout(LogoutCommand),
-
-    /// Launch the Desktop app (opens the app installer if missing).
-    #[cfg(target_os = "macos")]
-    App(app_cmd::AppCommand),
 
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
@@ -519,10 +511,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_config_overrides.clone(),
             );
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
-        }
-        #[cfg(target_os = "macos")]
-        Some(Subcommand::App(app_cli)) => {
-            app_cmd::run_app(app_cli).await?;
         }
         Some(Subcommand::Resume(ResumeCommand {
             session_id,
@@ -1007,8 +995,6 @@ fn unsupported_subcommand_name_for_strict_config(
         | Some(Subcommand::Unarchive(_))
         | Some(Subcommand::Fork(_))
         | Some(Subcommand::Doctor(_)) => None,
-        #[cfg(target_os = "macos")]
-        Some(Subcommand::App(_)) => Some("app"),
         Some(Subcommand::Login(_)) => Some("login"),
         Some(Subcommand::Logout(_)) => Some("logout"),
         Some(Subcommand::Completion(_)) => Some("completion"),
@@ -1489,7 +1475,7 @@ mod tests {
     }
 
     #[test]
-    fn current_subcommands_have_no_removed_aliases() {
+    fn current_subcommands_have_no_removed_commands_or_aliases() {
         let command = MultitoolCli::command();
         for current in ["exec", "apply", "cloud"] {
             assert!(
@@ -1497,10 +1483,10 @@ mod tests {
                 "missing {current}"
             );
         }
-        for removed in ["e", "a", "cloud-tasks"] {
+        for removed in ["app", "e", "a", "cloud-tasks"] {
             assert!(
                 command.find_subcommand(removed).is_none(),
-                "removed alias {removed} is still registered"
+                "removed command or alias {removed} is still registered"
             );
         }
     }

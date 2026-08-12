@@ -827,7 +827,6 @@ async fn environment_count_controls_environment_backed_tools() {
     let no_environment = probe(|turn| {
         turn.environments.environments.clear();
         set_feature(turn, Feature::ShellTool, /*enabled*/ true);
-        set_feature(turn, Feature::RequestPermissionsTool, /*enabled*/ true);
         turn.model_info.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
     })
     .await;
@@ -836,30 +835,22 @@ async fn environment_count_controls_environment_backed_tools() {
         "exec_command",
         "apply_patch",
         "view_image",
-        "request_permissions",
     ]);
     no_environment.assert_registered_lacks(&[
         "shell_command",
         "exec_command",
         "apply_patch",
         "view_image",
-        "request_permissions",
     ]);
 
     let multiple_environments = probe(|turn| {
         duplicate_primary_environment(turn);
         set_feature(turn, Feature::ShellTool, /*enabled*/ true);
         set_feature(turn, Feature::UnifiedExec, /*enabled*/ true);
-        set_feature(turn, Feature::RequestPermissionsTool, /*enabled*/ true);
         turn.model_info.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
     })
     .await;
-    multiple_environments.assert_visible_contains(&[
-        "exec_command",
-        "apply_patch",
-        "view_image",
-        "request_permissions",
-    ]);
+    multiple_environments.assert_visible_contains(&["exec_command", "apply_patch", "view_image"]);
     multiple_environments.assert_visible_lacks(&["shell_command"]);
     multiple_environments.assert_registered_lacks(&["shell_command"]);
     assert!(has_parameter(

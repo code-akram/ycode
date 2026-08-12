@@ -1,94 +1,26 @@
-# deps
-# Node.js dependencies
-node_modules
-.pnpm-store
-.pnpm-debug.log
+# Rust build output
+/codex-rs/target/
+/codex-rs/target-*/
 
-# Keep pnpm-lock.yaml
-!pnpm-lock.yaml
-
-# build
-dist/
-build/
-out/
-storybook-static/
-
-# ignore README for publishing
-codex-cli/README.md
-
-# ignore Nix derivation results
-result
-
-# editor
+# Editors and local overrides
 .vscode/
 .idea/
-.history/
-.zed/
 *.swp
 *~
-
-# cli tools
-CLAUDE.md
-.claude/
 AGENTS.override.md
-
-# caches
-.cache/
-.turbo/
-.parcel-cache/
-.eslintcache
-.nyc_output/
-.jest/
-*.tsbuildinfo
 
 # logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# env
+# local environment
 .env*
 !.env.example
-.venv/
 
-# package
-*.tgz
-
-# ci
-.vercel/
-.netlify/
-/.tmp/sdk-ci/
-/upstream-rusty-v8/
-
-# patches
-apply_patch/
-
-# coverage
-coverage/
-
-# personal files
-personal/
-
-# os
-.DS_Store
-Thumbs.db
-Icon?
-.Spotlight-V100/
-
-# Unwanted package managers
-.yarn/
-yarn.lock
-
-# release
-package.json-e
-session.ts-e
-CHANGELOG.ignore.md
-
-# nix related
-.direnv
-.envrc
-
-# Python bytecode files
+# Embedded filesystem skills include Python helpers.
 __pycache__/
 *.pyc
+
+# macOS metadata
+.DS_Store
+Icon?
+.Spotlight-V100/

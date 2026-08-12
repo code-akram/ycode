@@ -384,25 +384,6 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn app_command_popup_snapshot() {
-        let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
-        popup.on_composer_text_change("/app".to_string());
-
-        let width = 72;
-        let area = Rect::new(
-            /*x*/ 0,
-            /*y*/ 0,
-            width,
-            popup.calculate_required_height(width),
-        );
-        let mut buf = Buffer::empty(area);
-        popup.render_ref(area, &mut buf);
-
-        insta::assert_snapshot!("command_popup_app", format!("{buf:?}"));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
     fn default_command_popup_items_snapshot() {
         let mut popup = CommandPopup::new(CommandPopupFlags::default(), Vec::new());
         popup.on_composer_text_change("/".to_string());
