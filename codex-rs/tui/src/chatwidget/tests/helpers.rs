@@ -1,6 +1,5 @@
 use super::*;
 use codex_cli_protocol::ImageGenerationItem;
-use codex_cli_protocol::PluginAvailability;
 use codex_utils_absolute_path::test_support::PathExt;
 use pretty_assertions::assert_eq;
 
@@ -531,22 +530,6 @@ pub(super) fn handle_agent_reasoning_final(chat: &mut ChatWidget) {
     );
 }
 
-pub(super) fn handle_exec_approval_request(
-    chat: &mut ChatWidget,
-    id: impl Into<String>,
-    event: ExecApprovalRequestEvent,
-) {
-    chat.on_exec_approval_request(id.into(), event);
-}
-
-pub(super) fn handle_apply_patch_approval_request(
-    chat: &mut ChatWidget,
-    id: impl Into<String>,
-    event: ApplyPatchApprovalRequestEvent,
-) {
-    chat.on_apply_patch_approval_request(id.into(), event);
-}
-
 fn file_update_changes_from_tui(changes: HashMap<PathBuf, FileChange>) -> Vec<FileUpdateChange> {
     changes
         .into_iter()
@@ -757,8 +740,6 @@ pub(super) fn begin_exec_with_source(
         command: codex_shell_command::parse_command::shlex_join(&command),
         cwd: chat.config.cwd.clone().into(),
         process_id: None,
-        plugin_id: None,
-        script_path: None,
         source,
         status: CliRuntimeCommandExecutionStatus::InProgress,
         command_actions,
@@ -782,8 +763,6 @@ pub(super) fn begin_unified_exec_startup(
         command: codex_shell_command::parse_command::shlex_join(&command),
         cwd: chat.config.cwd.clone().into(),
         process_id: Some(process_id.to_string()),
-        plugin_id: None,
-        script_path: None,
         source: ExecCommandSource::UnifiedExecStartup,
         status: CliRuntimeCommandExecutionStatus::InProgress,
         command_actions: Vec::new(),
@@ -996,8 +975,6 @@ pub(super) fn end_exec(
         command,
         cwd,
         process_id,
-        plugin_id,
-        script_path,
         source,
         command_actions,
         ..
@@ -1012,8 +989,6 @@ pub(super) fn end_exec(
             command,
             cwd,
             process_id,
-            plugin_id,
-            script_path,
             source,
             status: if exit_code == 0 {
                 CliRuntimeCommandExecutionStatus::Completed
@@ -1188,63 +1163,4 @@ pub(super) fn strip_osc8_for_snapshot(text: &str) -> String {
     }
 
     stripped
-}
-
-pub(super) async fn assert_hook_events_snapshot(
-    event_name: codex_cli_protocol::HookEventName,
-    run_id: &str,
-    status_message: &str,
-    snapshot_name: &str,
-) {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    handle_hook_started(
-        &mut chat,
-        hook_run(
-            run_id,
-            event_name,
-            codex_cli_protocol::HookRunStatus::Running,
-            status_message,
-            Vec::new(),
-        ),
-    );
-    assert!(
-        drain_insert_history(&mut rx).is_empty(),
-        "hook start should update the live hook cell instead of writing history"
-    );
-    reveal_running_hooks(&mut chat);
-    assert!(
-        active_hook_blob(&chat).contains(&format!(
-            "Running {} hook: {status_message}",
-            hook_event_label(event_name)
-        )),
-        "hook start should render in the live hook cell"
-    );
-
-    handle_hook_completed(
-        &mut chat,
-        hook_run(
-            run_id,
-            event_name,
-            codex_cli_protocol::HookRunStatus::Completed,
-            status_message,
-            vec![
-                codex_cli_protocol::HookOutputEntry {
-                    kind: codex_cli_protocol::HookOutputEntryKind::Warning,
-                    text: "Heads up from the hook".to_string(),
-                },
-                codex_cli_protocol::HookOutputEntry {
-                    kind: codex_cli_protocol::HookOutputEntryKind::Context,
-                    text: "Remember the startup checklist.".to_string(),
-                },
-            ],
-        ),
-    );
-
-    let cells = drain_insert_history(&mut rx);
-    let combined = cells
-        .iter()
-        .map(|lines| lines_to_single_string(lines))
-        .collect::<String>();
-    assert_chatwidget_snapshot!(snapshot_name, combined);
 }

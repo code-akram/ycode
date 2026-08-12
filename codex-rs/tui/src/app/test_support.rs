@@ -26,8 +26,6 @@ pub(super) async fn make_test_app() -> App {
         harness_overrides: ConfigOverrides::default(),
         loader_overrides: LoaderOverrides::without_managed_config_for_tests(),
         cloud_config_bundle: CloudConfigBundleLoader::default(),
-        runtime_approval_policy_override: None,
-        runtime_permission_profile_override: None,
         file_search,
         transcript_cells: Vec::new(),
         overlay: None,
@@ -62,8 +60,6 @@ pub(super) async fn make_test_app() -> App {
         pending_runtime_requests: PendingCliRuntimeRequests::default(),
         pending_startup_thread_start: false,
         rate_limit_hard_stop_generation: 0,
-        pending_plugin_enabled_writes: HashMap::new(),
-        pending_hook_enabled_writes: HashMap::new(),
     }
 }
 

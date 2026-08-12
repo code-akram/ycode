@@ -1085,7 +1085,6 @@ fn render_offset_content(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::history_cell::ReviewDecision;
     use codex_cli_protocol::CommandExecutionSource as ExecCommandSource;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
@@ -1473,12 +1472,9 @@ mod tests {
         let apply_begin_cell: Arc<dyn HistoryCell> = Arc::new(new_patch_event(apply_changes, &cwd));
         cells.push(apply_begin_cell);
 
-        let apply_end_cell: Arc<dyn HistoryCell> = history_cell::new_approval_decision_cell(
-            history_cell::ApprovalDecisionSubject::Command(vec!["ls".into()]),
-            ReviewDecision::Approved,
-            history_cell::ApprovalDecisionActor::User,
-        )
-        .into();
+        let apply_end_cell: Arc<dyn HistoryCell> = Arc::new(TestCell {
+            lines: vec![Line::from("• Applied changes")],
+        });
         cells.push(apply_end_cell);
 
         let mut exec_cell = crate::exec_cell::new_active_exec_command(

@@ -5084,142 +5084,6 @@ mod tests {
         );
     }
 
-    fn plugin_mention_foreground_color(composer: &ChatComposer) -> Option<Color> {
-        let area = Rect::new(0, 0, 40, 5);
-        let mut buf = Buffer::empty(area);
-        composer.render(area, &mut buf);
-
-        let textarea_row = 1;
-        let row_text = (0..area.width)
-            .map(|x| {
-                buf[(x, textarea_row)]
-                    .symbol()
-                    .chars()
-                    .next()
-                    .unwrap_or(' ')
-            })
-            .collect::<String>();
-        let mention_x = row_text
-            .find("@sample")
-            .expect("expected plugin mention in composer row");
-        buf[(mention_x as u16, textarea_row)].style().fg
-    }
-
-    #[test]
-    fn plugin_at_mentions_use_plugin_accent_style() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ true,
-            "Ask Codex to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        composer.set_text_content_with_mention_bindings(
-            "@sample plugin".to_string(),
-            Vec::new(),
-            Vec::new(),
-            vec![MentionBinding {
-                sigil: '@',
-                mention: "sample".to_string(),
-                path: "/tmp/sample/SKILL.md".to_string(),
-            }],
-        );
-
-        assert_eq!(
-            plugin_mention_foreground_color(&composer),
-            Some(Color::Magenta)
-        );
-    }
-
-    #[test]
-    fn plugin_at_mentions_render_with_plugin_accent_snapshot() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ true,
-            "Ask Codex to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        composer.set_text_content_with_mention_bindings(
-            "@sample plugin".to_string(),
-            Vec::new(),
-            Vec::new(),
-            vec![MentionBinding {
-                sigil: '@',
-                mention: "sample".to_string(),
-                path: "/tmp/sample/SKILL.md".to_string(),
-            }],
-        );
-
-        let area = Rect::new(0, 0, 40, 5);
-        let mut buf = Buffer::empty(area);
-        composer.render(area, &mut buf);
-
-        let textarea_row = 1;
-        let mut text = String::new();
-        let mut magenta = String::new();
-        for x in 0..area.width {
-            let cell = &buf[(x, textarea_row)];
-            text.push(cell.symbol().chars().next().unwrap_or(' '));
-            magenta.push(if cell.style().fg == Some(Color::Magenta) {
-                '^'
-            } else {
-                ' '
-            });
-        }
-        while text.ends_with(' ') {
-            text.pop();
-        }
-        while magenta.ends_with(' ') {
-            magenta.pop();
-        }
-
-        insta::assert_snapshot!(
-            "plugin_at_mentions_render_with_plugin_accent",
-            format!("text:    {text}\nmagenta: {magenta}")
-        );
-    }
-
-    #[test]
-    fn recalled_plugin_at_mentions_keep_plugin_accent_style() {
-        let (tx, _rx) = unbounded_channel::<AppEvent>();
-        let sender = AppEventSender::new(tx);
-        let mut composer = ChatComposer::new(
-            /*has_input_focus*/ true,
-            sender,
-            /*enhanced_keys_supported*/ true,
-            "Ask Codex to do anything".to_string(),
-            /*disable_paste_burst*/ false,
-        );
-        composer.set_text_content_with_mention_bindings(
-            "@sample plugin".to_string(),
-            Vec::new(),
-            Vec::new(),
-            vec![MentionBinding {
-                sigil: '@',
-                mention: "sample".to_string(),
-                path: "/tmp/sample/SKILL.md".to_string(),
-            }],
-        );
-        let (result, _) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(matches!(result, InputResult::Submitted { .. }));
-
-        composer.set_text_content(String::new(), Vec::new(), Vec::new());
-        let (_, needs_redraw) =
-            composer.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
-        assert!(needs_redraw);
-
-        assert_eq!(
-            plugin_mention_foreground_color(&composer),
-            Some(Color::Magenta)
-        );
-    }
-
     #[test]
     fn status_line_hyperlink_marks_pr_number_cells() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
@@ -6174,24 +6038,6 @@ mod tests {
         }
     }
 
-    fn test_plugin_binding(name: &str) -> MentionBinding {
-        MentionBinding {
-            sigil: '@',
-            mention: name.to_string(),
-            path: format!("/tmp/{name}/SKILL.md"),
-        }
-    }
-
-    fn test_plugin_summary(name: &str, description: &str) -> PluginCapabilitySummary {
-        PluginCapabilitySummary {
-            config_name: format!("{name}@test"),
-            display_name: name.to_string(),
-            plugin_namespace: None,
-            description: Some(description.to_string()),
-            has_skills: false,
-        }
-    }
-
     fn configure_partially_bound_skill_mentions(composer: &mut ChatComposer) {
         composer.set_skill_mentions(Some(vec![test_skill_metadata("unbound-skill")]));
 
@@ -6242,62 +6088,6 @@ mod tests {
         let text = "$figma ";
         composer.set_text_content(text.to_string(), Vec::new(), Vec::new());
         composer.draft.textarea.set_cursor(text.len());
-        composer.sync_popups();
-    }
-
-    fn configure_bound_plugin_left_of_unbound_plugin(composer: &mut ChatComposer) {
-        composer.set_mentions_v2_enabled(/*enabled*/ true);
-        composer.set_plugin_mentions(Some(vec![test_plugin_summary(
-            "other",
-            "Plugin used to test adjacent mention targeting.",
-        )]));
-        composer.set_text_content_with_mention_bindings(
-            "@sample@other".to_string(),
-            Vec::new(),
-            Vec::new(),
-            vec![test_plugin_binding("sample")],
-        );
-        composer.draft.textarea.set_cursor("@sample".len());
-        composer.sync_popups();
-    }
-
-    fn configure_unbound_plugin_left_of_bound_plugin(composer: &mut ChatComposer) {
-        composer.set_mentions_v2_enabled(/*enabled*/ true);
-        composer.set_plugin_mentions(Some(vec![test_plugin_summary(
-            "left",
-            "Plugin used to test bound mention fallback.",
-        )]));
-        composer.set_text_content_with_mention_bindings(
-            "@left  @bound".to_string(),
-            Vec::new(),
-            Vec::new(),
-            vec![test_plugin_binding("bound")],
-        );
-        composer.draft.textarea.set_cursor("@left ".len());
-        composer.sync_popups();
-    }
-
-    fn configure_plugin_target_between_bound_mentions(composer: &mut ChatComposer) {
-        composer.set_mentions_v2_enabled(/*enabled*/ true);
-        composer.set_plugin_mentions(Some(vec![test_plugin_summary(
-            "other",
-            "Plugin used to test middle mention targeting.",
-        )]));
-        composer.set_text_content_with_mention_bindings(
-            "@bound1 @oth @bound2".to_string(),
-            Vec::new(),
-            Vec::new(),
-            vec![test_plugin_binding("bound1"), test_plugin_binding("bound2")],
-        );
-        composer
-            .draft
-            .textarea
-            .replace_range("@bound1".len().."@bound1 ".len(), "");
-        composer
-            .draft
-            .textarea
-            .replace_range("@bound1@oth".len().."@bound1@oth ".len(), "");
-        composer.draft.textarea.set_cursor("@bound1@o".len());
         composer.sync_popups();
     }
 
@@ -6373,28 +6163,6 @@ mod tests {
     }
 
     #[test]
-    fn unified_mention_popup_falls_back_from_bound_plugin_on_right_snapshot() {
-        snapshot_composer_state(
-            "unified_mention_popup_falls_back_from_bound_plugin_on_right",
-            /*enhanced_keys_supported*/ false,
-            configure_unbound_plugin_left_of_bound_plugin,
-        );
-    }
-
-    #[test]
-    fn adjacent_plugin_completion_inserts_separator_snapshot() {
-        snapshot_composer_state(
-            "adjacent_plugin_completion_inserts_separator",
-            /*enhanced_keys_supported*/ false,
-            |composer| {
-                configure_bound_plugin_left_of_unbound_plugin(composer);
-                let _ =
-                    composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-            },
-        );
-    }
-
-    #[test]
     fn skill_completion_replaces_only_middle_adjacent_target() {
         let (mut composer, _rx) = new_test_composer();
         configure_skill_target_between_bound_mentions(&mut composer);
@@ -6408,24 +6176,6 @@ mod tests {
                 test_skill_binding("bound1"),
                 test_skill_binding("other"),
                 test_skill_binding("bound2"),
-            ]
-        );
-    }
-
-    #[test]
-    fn unified_completion_replaces_only_middle_adjacent_target() {
-        let (mut composer, _rx) = new_test_composer();
-        configure_plugin_target_between_bound_mentions(&mut composer);
-
-        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-        assert_eq!(composer.current_text(), "@bound1 @other @bound2");
-        assert_eq!(
-            composer.mention_bindings(),
-            vec![
-                test_plugin_binding("bound1"),
-                test_plugin_binding("other"),
-                test_plugin_binding("bound2"),
             ]
         );
     }
@@ -9400,34 +9150,6 @@ mod tests {
         composer.sync_popups();
 
         assert!(matches!(composer.popups.active, ActivePopup::MentionV2(_)));
-    }
-
-    #[test]
-    fn adjacent_file_completion_inserts_leading_separator() {
-        let (mut composer, _rx) = new_test_composer();
-        configure_bound_plugin_left_of_unbound_plugin(&mut composer);
-        composer.insert_selected_file_path("@sample".len().."@sample@other".len(), "src/main.rs");
-
-        assert_eq!(composer.current_text(), "@sample src/main.rs ");
-    }
-
-    #[test]
-    fn adjacent_image_completion_inserts_leading_separator() {
-        let tmp = tempdir().expect("create TempDir");
-        let image_path = tmp.path().join("image.png");
-        let image: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::from_fn(3, 2, |_x, _y| Rgba([1, 2, 3, 255]));
-        image.save(&image_path).expect("write temp png");
-
-        let (mut composer, _rx) = new_test_composer();
-        configure_bound_plugin_left_of_unbound_plugin(&mut composer);
-        composer.insert_selected_file_path(
-            "@sample".len().."@sample@other".len(),
-            image_path.to_str().expect("UTF-8 path"),
-        );
-
-        assert_eq!(composer.current_text(), "@sample [Image #1] ");
-        assert_eq!(composer.local_image_paths(), vec![image_path]);
     }
 
     #[test]

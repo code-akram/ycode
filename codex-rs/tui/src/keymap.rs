@@ -2146,16 +2146,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_shadowing_approval_binding_in_app_scope() {
-        let mut keymap = TuiKeymap::default();
-        keymap.global.open_transcript = Some(one("y"));
-
-        let err = RuntimeKeymap::from_config(&keymap).expect_err("expected shadowing conflict");
-        assert!(err.contains("approval.approve"));
-        assert!(err.contains("open_transcript"));
-    }
-
-    #[test]
     fn rejects_shadowing_list_binding_in_app_scope() {
         let mut keymap = TuiKeymap::default();
         keymap.global.copy = Some(one("down"));
@@ -2438,29 +2428,6 @@ mod tests {
     }
 
     #[test]
-    fn configured_approval_bindings_prune_new_list_default_overlaps() {
-        let mut keymap = TuiKeymap::default();
-        keymap.approval.approve = Some(one("home"));
-
-        let runtime = RuntimeKeymap::from_config(&keymap).expect("config should parse");
-
-        assert_eq!(
-            runtime.approval.approve,
-            vec![key_hint::plain(KeyCode::Home)]
-        );
-        assert_eq!(runtime.list.jump_top, Vec::new());
-    }
-
-    #[test]
-    fn explicit_new_list_bindings_still_conflict_with_configured_approval_bindings() {
-        let mut keymap = TuiKeymap::default();
-        keymap.approval.approve = Some(one("home"));
-        keymap.list.jump_top = Some(one("home"));
-
-        expect_conflict(&keymap, "list.jump_top", "approval.approve");
-    }
-
-    #[test]
     fn configured_legacy_vim_normal_bindings_prune_new_change_operator_default() {
         let mut keymap = TuiKeymap::default();
         keymap.vim_normal.move_left = Some(one("c"));
@@ -2625,40 +2592,6 @@ mod tests {
         keymap.list.jump_top = Some(one("home"));
 
         expect_conflict(&keymap, "page_up", "jump_top");
-    }
-
-    #[test]
-    fn rejects_conflicting_approval_bindings() {
-        let mut keymap = TuiKeymap::default();
-        keymap.approval.approve = Some(one("y"));
-        keymap.approval.decline = Some(one("y"));
-
-        expect_conflict(&keymap, "approve", "decline");
-    }
-
-    #[test]
-    fn rejects_conflicting_approval_deny_binding() {
-        let mut keymap = TuiKeymap::default();
-        keymap.approval.approve = Some(one("y"));
-        keymap.approval.deny = Some(one("y"));
-
-        expect_conflict(&keymap, "approve", "deny");
-    }
-
-    #[test]
-    fn rejects_conflicting_approval_overlay_accept_binding() {
-        let mut keymap = TuiKeymap::default();
-        keymap.list.accept = Some(one("y"));
-
-        expect_conflict(&keymap, "list.accept", "approval.approve");
-    }
-
-    #[test]
-    fn rejects_conflicting_approval_overlay_cancel_binding() {
-        let mut keymap = TuiKeymap::default();
-        keymap.list.cancel = Some(one("c"));
-
-        expect_conflict(&keymap, "list.cancel", "approval.cancel");
     }
 
     #[test]
@@ -3007,15 +2940,6 @@ mod tests {
                 .toggle_shortcuts
                 .contains(&key_hint::shift(KeyCode::Char('?')))
         );
-    }
-
-    #[test]
-    fn default_approval_open_fullscreen_includes_ctrl_shift_a() {
-        let runtime = RuntimeKeymap::defaults();
-        assert!(runtime.approval.open_fullscreen.contains(&KeyBinding::new(
-            KeyCode::Char('a'),
-            KeyModifiers::CONTROL | KeyModifiers::SHIFT
-        )));
     }
 
     #[test]

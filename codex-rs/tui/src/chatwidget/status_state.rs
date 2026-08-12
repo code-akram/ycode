@@ -74,22 +74,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn guardian_status_aggregates_parallel_reviews() {
-        let mut state = PendingGuardianReviewStatus::default();
-        state.start_or_update("a".to_string(), "first".to_string());
-        state.start_or_update("b".to_string(), "second".to_string());
-
-        assert_eq!(
-            state.status_indicator_state(),
-            Some(StatusIndicatorState {
-                header: "Reviewing 2 approval requests".to_string(),
-                details: Some("• first\n• second".to_string()),
-                details_max_lines: 4,
-            })
-        );
-    }
-
-    #[test]
     fn retry_status_header_is_taken_once() {
         let mut state = StatusState::default();
         state.current_status.header = "Thinking".to_string();

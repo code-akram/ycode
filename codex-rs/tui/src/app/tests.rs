@@ -201,147 +201,6 @@ async fn next_thread_settings_updated(
 }
 
 #[tokio::test]
-async fn cyber_model_auto_review_notice_snapshot() -> Result<()> {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let mut cli_runtime =
-        crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref()).await?;
-    let mut tui = crate::tui::test_support::make_test_tui()?;
-
-    app.handle_event(
-        &mut tui,
-        &mut cli_runtime,
-        AppEvent::CyberModelAutoReviewNotice,
-    )
-    .await?;
-
-    let cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected InsertHistoryCell event, got {other:?}"),
-    };
-    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-    assert_app_snapshot!("cyber_model_auto_review_notice", rendered);
-    Ok(())
-}
-
-#[tokio::test]
-async fn enqueue_primary_thread_session_replays_buffered_approval_after_attach() -> Result<()> {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let thread_id = ThreadId::new();
-    let approval_request =
-        exec_approval_request(thread_id, "turn-1", "call-1", /*approval_id*/ None);
-
-    assert_eq!(
-        app.pending_runtime_requests
-            .note_server_request(&approval_request),
-        None
-    );
-    app.enqueue_primary_thread_request(approval_request).await?;
-    app.enqueue_primary_thread_session(
-        test_thread_session(thread_id, test_path_buf("/tmp/project")),
-        Vec::new(),
-    )
-    .await?;
-
-    let rx = app
-        .active_thread_rx
-        .as_mut()
-        .expect("primary thread receiver should be active");
-    let event = time::timeout(Duration::from_millis(50), rx.recv())
-        .await
-        .expect("timed out waiting for buffered approval event")
-        .expect("channel closed unexpectedly");
-
-    assert!(matches!(
-        &event,
-        ThreadBufferedEvent::Request(request)
-            if matches!(
-                request.as_ref(),
-                ServerRequest::CommandExecutionRequestApproval { params, .. }
-                    if params.turn_id == "turn-1"
-            )
-    ));
-
-    app.handle_thread_event_now(event);
-    app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
-
-    while let Ok(app_event) = app_event_rx.try_recv() {
-        if let AppEvent::SubmitThreadOp {
-            thread_id: op_thread_id,
-            ..
-        } = app_event
-        {
-            assert_eq!(op_thread_id, thread_id);
-            return Ok(());
-        }
-    }
-
-    panic!("expected approval action to submit a thread-scoped op");
-}
-
-#[tokio::test]
-async fn resolved_buffered_approval_does_not_become_actionable_after_drain() -> Result<()> {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let thread_id = ThreadId::new();
-    let approval_request =
-        exec_approval_request(thread_id, "turn-1", "call-1", /*approval_id*/ None);
-
-    app.enqueue_primary_thread_session(
-        test_thread_session(thread_id, test_path_buf("/tmp/project")),
-        Vec::new(),
-    )
-    .await?;
-    while app_event_rx.try_recv().is_ok() {}
-
-    assert_eq!(
-        app.pending_runtime_requests
-            .note_server_request(&approval_request),
-        None
-    );
-    app.enqueue_thread_request(thread_id, approval_request)
-        .await?;
-
-    let resolved = app
-        .pending_runtime_requests
-        .resolve_notification(&CliRuntimeRequestId::Integer(1))
-        .expect("matching cli-runtime request should resolve");
-    app.chat_widget.dismiss_cli_runtime_request(&resolved);
-    while app_event_rx.try_recv().is_ok() {}
-
-    let rx = app
-        .active_thread_rx
-        .as_mut()
-        .expect("primary thread receiver should be active");
-    let event = time::timeout(Duration::from_millis(50), rx.recv())
-        .await
-        .expect("timed out waiting for buffered approval event")
-        .expect("channel closed unexpectedly");
-
-    assert!(matches!(
-        &event,
-        ThreadBufferedEvent::Request(request)
-            if matches!(
-                request.as_ref(),
-                ServerRequest::CommandExecutionRequestApproval { params, .. }
-                    if params.turn_id == "turn-1"
-            )
-    ));
-
-    app.handle_thread_event_now(event);
-    app.chat_widget
-        .handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
-
-    while let Ok(app_event) = app_event_rx.try_recv() {
-        assert!(
-            !matches!(app_event, AppEvent::SubmitThreadOp { .. }),
-            "resolved buffered approval should not become actionable"
-        );
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn enqueue_primary_thread_session_replays_turns_before_initial_prompt_submit() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let thread_id = ThreadId::new();
@@ -616,9 +475,11 @@ async fn replay_thread_snapshot_restores_draft_and_queued_input() {
     app.chat_widget.handle_thread_session(session.clone());
 
     app.chat_widget
-        .apply_external_edit("draft prompt".to_string());
+        .apply_external_edit("queued follow-up".to_string());
     app.chat_widget
-        .submit_user_message(UserMessage::from("queued follow-up"));
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.chat_widget
+        .apply_external_edit("draft prompt".to_string());
     let expected_input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -668,7 +529,9 @@ async fn replay_thread_snapshot_restores_the_matching_safety_buffer_prompt() {
     app.activate_thread_channel(thread_id).await;
     app.chat_widget.handle_thread_session(session);
     app.chat_widget
-        .submit_user_message(UserMessage::from("buffered prompt A"));
+        .apply_external_edit("buffered prompt A".to_string());
+    app.chat_widget
+        .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let expected_input_state = app
         .chat_widget
         .capture_thread_input_state()
@@ -690,7 +553,8 @@ async fn replay_thread_snapshot_restores_the_matching_safety_buffer_prompt() {
         ThreadId::new(),
         test_path_buf("/tmp/other-project"),
     ));
-    chat_widget.submit_user_message(UserMessage::from("buffered prompt B"));
+    chat_widget.apply_external_edit("buffered prompt B".to_string());
+    chat_widget.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     app.chat_widget = chat_widget;
     app.replay_thread_snapshot(snapshot, /*resume_restored_queue*/ false);
 
@@ -2083,419 +1947,6 @@ async fn reset_memories_clears_local_memory_directories() -> Result<()> {
 }
 
 #[tokio::test]
-async fn apply_permission_profile_selection_preserves_loader_overrides() -> Result<()> {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let codex_home = tempdir()?;
-    let selected_config = codex_home.path().join("work.config.toml");
-    std::fs::write(
-        &selected_config,
-        r#"
-default_permissions = "locked-down"
-
-[permissions.locked-down.filesystem]
-":minimal" = "read"
-"#,
-    )?;
-    app.config.codex_home = codex_home.path().to_path_buf().abs();
-    app.loader_overrides.user_config_path = Some(selected_config.abs());
-    app.harness_overrides.sandbox_mode = Some(SandboxMode::WorkspaceWrite);
-    app.harness_overrides.permission_profile = Some(PermissionProfile::workspace_write());
-
-    assert!(
-        app.apply_permission_profile_selection(PermissionProfileSelection {
-            profile_id: "locked-down".to_string(),
-            approval_policy: None,
-            approvals_reviewer: None,
-            display_label: "locked-down".to_string(),
-        })
-        .await
-    );
-
-    assert_eq!(
-        app.config
-            .permissions
-            .active_permission_profile()
-            .as_ref()
-            .map(|profile| profile.id.as_str()),
-        Some("locked-down")
-    );
-    assert_eq!(
-        app.chat_widget
-            .config_ref()
-            .permissions
-            .active_permission_profile()
-            .as_ref()
-            .map(|profile| profile.id.as_str()),
-        Some("locked-down")
-    );
-    assert_eq!(
-        app.runtime_permission_profile_override,
-        Some(RuntimePermissionProfileOverride::from_config(&app.config))
-    );
-    let op = match app_event_rx.try_recv() {
-        Ok(AppEvent::CodexOp(op)) => op,
-        other => panic!("expected CodexOp event, got {other:?}"),
-    };
-    assert_eq!(
-        op,
-        Op::OverrideTurnContext {
-            cwd: None,
-            approval_policy: None,
-            approvals_reviewer: None,
-            permission_profile: Some(app.config.permissions.permission_profile().clone()),
-            active_permission_profile: app.config.permissions.active_permission_profile(),
-            windows_sandbox_level: None,
-            model: None,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            agent_settings: None,
-            personality: None,
-        }
-    );
-    let cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected InsertHistoryCell event, got {other:?}"),
-    };
-    let rendered = cell
-        .display_lines(/*width*/ 120)
-        .into_iter()
-        .map(|line| line.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(rendered.contains("Permissions updated to locked-down"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn update_feature_flags_enabling_guardian_selects_auto_review() -> Result<()> {
-    let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-    let codex_home = tempdir()?;
-    app.config.codex_home = codex_home.path().to_path_buf().abs();
-    let auto_review = auto_review_mode();
-    let mut cli_runtime = start_config_write_test_cli_runtime(&app).await?;
-
-    app.update_feature_flags(&mut cli_runtime, vec![(Feature::GuardianApproval, true)])
-        .await;
-
-    assert!(app.config.features.enabled(Feature::GuardianApproval));
-    assert!(
-        app.chat_widget
-            .config_ref()
-            .features
-            .enabled(Feature::GuardianApproval)
-    );
-    assert_eq!(
-        app.config.approvals_reviewer,
-        auto_review.approvals_reviewer
-    );
-    assert_eq!(
-        AskForApproval::from(app.config.permissions.approval_policy.value()),
-        auto_review.approval_policy
-    );
-    assert_eq!(
-        AskForApproval::from(
-            app.chat_widget
-                .config_ref()
-                .permissions
-                .approval_policy
-                .value(),
-        ),
-        auto_review.approval_policy
-    );
-    assert_eq!(
-        app.chat_widget
-            .config_ref()
-            .permissions
-            .permission_profile(),
-        &auto_review.permission_profile()
-    );
-    assert_eq!(
-        app.config.permissions.active_permission_profile(),
-        Some(auto_review.active_permission_profile.clone())
-    );
-    assert_eq!(
-        app.chat_widget
-            .config_ref()
-            .permissions
-            .active_permission_profile(),
-        Some(auto_review.active_permission_profile.clone())
-    );
-    assert_eq!(
-        app.chat_widget.config_ref().approvals_reviewer,
-        auto_review.approvals_reviewer
-    );
-    assert_eq!(app.runtime_approval_policy_override, None);
-    assert_eq!(
-        app.runtime_permission_profile_override,
-        Some(RuntimePermissionProfileOverride::from_config(&app.config))
-    );
-    assert_eq!(
-        op_rx.try_recv(),
-        Ok(Op::OverrideTurnContext {
-            cwd: None,
-            approval_policy: Some(auto_review.approval_policy),
-            approvals_reviewer: Some(auto_review.approvals_reviewer),
-            permission_profile: Some(auto_review.permission_profile()),
-            active_permission_profile: Some(auto_review.active_permission_profile.clone()),
-            windows_sandbox_level: None,
-            model: None,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            agent_settings: None,
-            personality: None,
-        })
-    );
-    let cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected InsertHistoryCell event, got {other:?}"),
-    };
-    let rendered = cell
-        .display_lines(/*width*/ 120)
-        .into_iter()
-        .map(|line| line.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(rendered.contains("Permissions updated to Approve for me"));
-
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
-    assert!(config.contains("guardian_approval = true"));
-    assert!(config.contains("approvals_reviewer = \"auto_review\""));
-    assert!(config.contains("approval_policy = \"on-request\""));
-    assert!(config.contains("sandbox_mode = \"workspace-write\""));
-    cli_runtime.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn update_feature_flags_disabling_guardian_clears_review_policy_and_restores_default()
--> Result<()> {
-    let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-    let codex_home = tempdir()?;
-    app.config.codex_home = codex_home.path().to_path_buf().abs();
-    let config_toml_path = codex_home.path().join("config.toml").abs();
-    let config_toml = "approvals_reviewer = \"guardian_subagent\"\napproval_policy = \"on-request\"\nsandbox_mode = \"workspace-write\"\n\n[features]\nguardian_approval = true\n";
-    std::fs::write(config_toml_path.as_path(), config_toml)?;
-    let user_config = toml::from_str::<TomlValue>(config_toml)?;
-    app.config.config_layer_stack = app
-        .config
-        .config_layer_stack
-        .with_user_config(&config_toml_path, user_config)?;
-    app.config
-        .features
-        .set_enabled(Feature::GuardianApproval, /*enabled*/ true)?;
-    app.chat_widget
-        .set_feature_enabled(Feature::GuardianApproval, /*enabled*/ true);
-    app.config.approvals_reviewer = ApprovalsReviewer::AutoReview;
-    app.chat_widget
-        .set_approvals_reviewer(ApprovalsReviewer::AutoReview);
-    app.config
-        .permissions
-        .approval_policy
-        .set(AskForApproval::OnRequest.to_core())?;
-    app.config
-        .permissions
-        .set_permission_profile(PermissionProfile::workspace_write())?;
-    app.chat_widget
-        .set_approval_policy(AskForApproval::OnRequest);
-    app.chat_widget
-        .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
-            PermissionProfile::workspace_write(),
-        ))?;
-    let mut cli_runtime = start_config_write_test_cli_runtime(&app).await?;
-
-    app.update_feature_flags(&mut cli_runtime, vec![(Feature::GuardianApproval, false)])
-        .await;
-
-    assert!(!app.config.features.enabled(Feature::GuardianApproval));
-    assert!(
-        !app.chat_widget
-            .config_ref()
-            .features
-            .enabled(Feature::GuardianApproval)
-    );
-    assert_eq!(app.config.approvals_reviewer, ApprovalsReviewer::User);
-    assert_eq!(
-        AskForApproval::from(app.config.permissions.approval_policy.value()),
-        AskForApproval::OnRequest
-    );
-    assert_eq!(
-        app.chat_widget.config_ref().approvals_reviewer,
-        ApprovalsReviewer::User
-    );
-    assert_eq!(app.runtime_approval_policy_override, None);
-    assert_eq!(
-        op_rx.try_recv(),
-        Ok(Op::OverrideTurnContext {
-            cwd: None,
-            approval_policy: None,
-            approvals_reviewer: Some(ApprovalsReviewer::User),
-            permission_profile: None,
-            active_permission_profile: None,
-            windows_sandbox_level: None,
-            model: None,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            agent_settings: None,
-            personality: None,
-        })
-    );
-    let cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected InsertHistoryCell event, got {other:?}"),
-    };
-    let rendered = cell
-        .display_lines(/*width*/ 120)
-        .into_iter()
-        .map(|line| line.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(rendered.contains("Permissions updated to Ask for approval"));
-
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
-    assert!(!config.contains("guardian_approval = true"));
-    assert!(!config.contains("approvals_reviewer ="));
-    assert!(config.contains("approval_policy = \"on-request\""));
-    assert!(config.contains("sandbox_mode = \"workspace-write\""));
-    cli_runtime.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn update_feature_flags_enabling_guardian_overrides_explicit_manual_review_policy()
--> Result<()> {
-    let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-    let codex_home = tempdir()?;
-    app.config.codex_home = codex_home.path().to_path_buf().abs();
-    let auto_review = auto_review_mode();
-    let config_toml_path = codex_home.path().join("config.toml").abs();
-    let config_toml = "approvals_reviewer = \"user\"\n";
-    std::fs::write(config_toml_path.as_path(), config_toml)?;
-    let user_config = toml::from_str::<TomlValue>(config_toml)?;
-    app.config.config_layer_stack = app
-        .config
-        .config_layer_stack
-        .with_user_config(&config_toml_path, user_config)?;
-    app.config.approvals_reviewer = ApprovalsReviewer::User;
-    app.chat_widget
-        .set_approvals_reviewer(ApprovalsReviewer::User);
-    let mut cli_runtime = start_config_write_test_cli_runtime(&app).await?;
-
-    app.update_feature_flags(&mut cli_runtime, vec![(Feature::GuardianApproval, true)])
-        .await;
-
-    assert!(app.config.features.enabled(Feature::GuardianApproval));
-    assert_eq!(
-        app.config.approvals_reviewer,
-        auto_review.approvals_reviewer
-    );
-    assert_eq!(
-        app.chat_widget.config_ref().approvals_reviewer,
-        auto_review.approvals_reviewer
-    );
-    assert_eq!(
-        AskForApproval::from(app.config.permissions.approval_policy.value()),
-        auto_review.approval_policy
-    );
-    assert_eq!(
-        app.chat_widget
-            .config_ref()
-            .permissions
-            .permission_profile(),
-        &auto_review.permission_profile()
-    );
-    assert_eq!(
-        op_rx.try_recv(),
-        Ok(Op::OverrideTurnContext {
-            cwd: None,
-            approval_policy: Some(auto_review.approval_policy),
-            approvals_reviewer: Some(auto_review.approvals_reviewer),
-            permission_profile: Some(auto_review.permission_profile()),
-            active_permission_profile: Some(auto_review.active_permission_profile.clone()),
-            windows_sandbox_level: None,
-            model: None,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            agent_settings: None,
-            personality: None,
-        })
-    );
-
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
-    assert!(config.contains("approvals_reviewer = \"auto_review\""));
-    assert!(config.contains("guardian_approval = true"));
-    assert!(config.contains("approval_policy = \"on-request\""));
-    assert!(config.contains("sandbox_mode = \"workspace-write\""));
-    cli_runtime.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn update_feature_flags_disabling_guardian_clears_manual_review_policy_without_history()
--> Result<()> {
-    let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-    let codex_home = tempdir()?;
-    app.config.codex_home = codex_home.path().to_path_buf().abs();
-    let config_toml_path = codex_home.path().join("config.toml").abs();
-    let config_toml = "approvals_reviewer = \"user\"\napproval_policy = \"on-request\"\nsandbox_mode = \"workspace-write\"\n\n[features]\nguardian_approval = true\n";
-    std::fs::write(config_toml_path.as_path(), config_toml)?;
-    let user_config = toml::from_str::<TomlValue>(config_toml)?;
-    app.config.config_layer_stack = app
-        .config
-        .config_layer_stack
-        .with_user_config(&config_toml_path, user_config)?;
-    app.config
-        .features
-        .set_enabled(Feature::GuardianApproval, /*enabled*/ true)?;
-    app.chat_widget
-        .set_feature_enabled(Feature::GuardianApproval, /*enabled*/ true);
-    app.config.approvals_reviewer = ApprovalsReviewer::User;
-    app.chat_widget
-        .set_approvals_reviewer(ApprovalsReviewer::User);
-    let mut cli_runtime = start_config_write_test_cli_runtime(&app).await?;
-
-    app.update_feature_flags(&mut cli_runtime, vec![(Feature::GuardianApproval, false)])
-        .await;
-
-    assert!(!app.config.features.enabled(Feature::GuardianApproval));
-    assert_eq!(app.config.approvals_reviewer, ApprovalsReviewer::User);
-    assert_eq!(
-        app.chat_widget.config_ref().approvals_reviewer,
-        ApprovalsReviewer::User
-    );
-    assert_eq!(
-        op_rx.try_recv(),
-        Ok(Op::OverrideTurnContext {
-            cwd: None,
-            approval_policy: None,
-            approvals_reviewer: Some(ApprovalsReviewer::User),
-            permission_profile: None,
-            active_permission_profile: None,
-            windows_sandbox_level: None,
-            model: None,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            agent_settings: None,
-            personality: None,
-        })
-    );
-    assert!(
-        app_event_rx.try_recv().is_err(),
-        "manual review should not emit a permissions history update when the effective state stays default"
-    );
-
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
-    assert!(!config.contains("guardian_approval = true"));
-    assert!(!config.contains("approvals_reviewer ="));
-    cli_runtime.shutdown().await?;
-    Ok(())
-}
-
-#[tokio::test]
 async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disabled() -> Result<()> {
     let (mut app, mut app_event_rx, _op_rx) = Box::pin(make_test_app_with_channels()).await;
     let mut cli_runtime = Box::pin(crate::start_embedded_cli_runtime_for_picker(
@@ -2519,580 +1970,6 @@ async fn open_agent_picker_allows_existing_agent_threads_when_feature_is_disable
 }
 
 #[tokio::test]
-async fn refresh_pending_thread_approvals_only_lists_inactive_threads() {
-    let mut app = make_test_app().await;
-    let main_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
-    let agent_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000002").expect("valid thread");
-
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
-    app.thread_event_channels
-        .insert(main_thread_id, ThreadEventChannel::new(/*capacity*/ 1));
-
-    let agent_channel = ThreadEventChannel::new(/*capacity*/ 1);
-    {
-        let mut store = agent_channel.store.lock().await;
-        store.push_request(exec_approval_request(
-            agent_thread_id,
-            "turn-1",
-            "call-1",
-            /*approval_id*/ None,
-        ));
-    }
-    app.thread_event_channels
-        .insert(agent_thread_id, agent_channel);
-    app.agent_navigation.upsert(
-        agent_thread_id,
-        Some("Robie".to_string()),
-        Some("explorer".to_string()),
-        /*is_closed*/ false,
-    );
-
-    app.refresh_pending_thread_approvals().await;
-    assert_eq!(
-        app.chat_widget.pending_thread_approvals(),
-        &["Robie [explorer]".to_string()]
-    );
-
-    app.active_thread_id = Some(agent_thread_id);
-    app.refresh_pending_thread_approvals().await;
-    assert!(app.chat_widget.pending_thread_approvals().is_empty());
-}
-
-#[tokio::test]
-async fn inactive_thread_approval_bubbles_into_active_view() -> Result<()> {
-    let mut app = make_test_app().await;
-    let main_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
-    let agent_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000022").expect("valid thread");
-
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
-    app.thread_event_channels
-        .insert(main_thread_id, ThreadEventChannel::new(/*capacity*/ 1));
-    app.thread_event_channels.insert(
-        agent_thread_id,
-        ThreadEventChannel::new_with_session(
-            /*capacity*/ 1,
-            ThreadSessionState {
-                approval_policy: AskForApproval::OnRequest,
-                permission_profile: PermissionProfile::workspace_write(),
-                rollout_path: Some(test_path_buf("/tmp/agent-rollout.jsonl")),
-                ..test_thread_session(agent_thread_id, test_path_buf("/tmp/agent"))
-            },
-            Vec::new(),
-        ),
-    );
-    app.agent_navigation.upsert(
-        agent_thread_id,
-        Some("Robie".to_string()),
-        Some("explorer".to_string()),
-        /*is_closed*/ false,
-    );
-
-    app.enqueue_thread_request(
-        agent_thread_id,
-        exec_approval_request(
-            agent_thread_id,
-            "turn-approval",
-            "call-approval",
-            /*approval_id*/ None,
-        ),
-    )
-    .await?;
-
-    assert_eq!(app.chat_widget.has_active_view(), true);
-    assert_eq!(
-        app.chat_widget.pending_thread_approvals(),
-        &["Robie [explorer]".to_string()]
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn side_defers_parent_approval_overlay_until_parent_replay() -> Result<()> {
-    let mut app = make_test_app().await;
-    let parent_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
-    let side_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000022").expect("valid thread");
-
-    app.primary_thread_id = Some(parent_thread_id);
-    app.active_thread_id = Some(side_thread_id);
-    app.side_threads
-        .insert(side_thread_id, SideThreadState::new(parent_thread_id));
-    app.thread_event_channels.insert(
-        parent_thread_id,
-        ThreadEventChannel::new_with_session(
-            /*capacity*/ 4,
-            test_thread_session(parent_thread_id, test_path_buf("/tmp/main")),
-            Vec::new(),
-        ),
-    );
-
-    app.enqueue_thread_request(
-        parent_thread_id,
-        exec_approval_request(
-            parent_thread_id,
-            "turn-approval",
-            "call-approval",
-            /*approval_id*/ None,
-        ),
-    )
-    .await?;
-
-    assert_eq!(app.chat_widget.has_active_view(), false);
-    assert!(app.chat_widget.pending_thread_approvals().is_empty());
-    assert_eq!(
-        app.side_threads
-            .get(&side_thread_id)
-            .and_then(|state| state.parent_status),
-        Some(SideParentStatus::NeedsApproval)
-    );
-
-    let snapshot = {
-        let channel = app
-            .thread_event_channels
-            .get(&parent_thread_id)
-            .expect("parent thread channel");
-        let store = channel.store.lock().await;
-        store.snapshot()
-    };
-    app.side_threads.remove(&side_thread_id);
-    app.active_thread_id = Some(parent_thread_id);
-    app.replay_thread_snapshot(snapshot, /*resume_restored_queue*/ false);
-
-    assert_eq!(app.chat_widget.has_active_view(), true);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn replay_snapshot_with_pending_request_suppresses_replay_notices() {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
-    let stale_warning = "stale startup warning that should not cover the approval";
-
-    app.replay_thread_snapshot(
-        ThreadEventSnapshot {
-            session: Some(test_thread_session(thread_id, test_path_buf("/tmp/main"))),
-            turns: Vec::new(),
-            events: vec![
-                ThreadBufferedEvent::Notification(Box::new(ServerNotification::Warning(
-                    WarningNotification {
-                        thread_id: Some(thread_id.to_string()),
-                        message: stale_warning.to_string(),
-                    },
-                ))),
-                ThreadBufferedEvent::Request(Box::new(exec_approval_request(
-                    thread_id,
-                    "turn-approval",
-                    "call-approval",
-                    /*approval_id*/ None,
-                ))),
-            ],
-            input_state: None,
-        },
-        /*resume_restored_queue*/ false,
-    );
-
-    assert_eq!(app.chat_widget.has_active_view(), true);
-
-    let mut replayed_history = String::new();
-    while let Ok(event) = app_event_rx.try_recv() {
-        if let AppEvent::InsertHistoryCell(cell) = event {
-            replayed_history.push_str(&lines_to_single_string(
-                &cell.transcript_lines(/*width*/ 80),
-            ));
-        }
-    }
-
-    assert!(
-        replayed_history.is_empty(),
-        "expected pending approval replay to suppress session notices, got {replayed_history:?}"
-    );
-}
-
-#[tokio::test]
-async fn side_defers_subagent_approval_overlay_until_side_exits() -> Result<()> {
-    let mut app = make_test_app().await;
-    let main_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
-    let side_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000022").expect("valid thread");
-    let agent_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000033").expect("valid thread");
-    let quiet_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000044").expect("valid thread");
-
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(side_thread_id);
-    app.side_threads
-        .insert(side_thread_id, SideThreadState::new(main_thread_id));
-    app.thread_event_channels.insert(
-        agent_thread_id,
-        ThreadEventChannel::new_with_session(
-            /*capacity*/ 4,
-            ThreadSessionState {
-                approval_policy: AskForApproval::OnRequest,
-                permission_profile: PermissionProfile::workspace_write(),
-                rollout_path: Some(test_path_buf("/tmp/agent-rollout.jsonl")),
-                ..test_thread_session(agent_thread_id, test_path_buf("/tmp/agent"))
-            },
-            Vec::new(),
-        ),
-    );
-    app.agent_navigation.upsert(
-        agent_thread_id,
-        Some("Robie".to_string()),
-        Some("explorer".to_string()),
-        /*is_closed*/ false,
-    );
-
-    let pending_approval = exec_approval_request(
-        agent_thread_id,
-        "turn-approval",
-        "call-approval",
-        /*approval_id*/ None,
-    );
-    app.enqueue_thread_request(agent_thread_id, pending_approval.clone())
-        .await?;
-    app.enqueue_thread_request(
-        quiet_thread_id,
-        ServerRequest::DynamicToolCall {
-            request_id: CliRuntimeRequestId::Integer(99),
-            params: codex_cli_protocol::DynamicToolCallParams {
-                thread_id: quiet_thread_id.to_string(),
-                turn_id: "turn-quiet".to_string(),
-                call_id: "call-quiet".to_string(),
-                namespace: None,
-                tool: "ignored-tool".to_string(),
-                arguments: serde_json::json!({}),
-            },
-        },
-    )
-    .await?;
-
-    assert_eq!(app.chat_widget.has_active_view(), false);
-    assert_eq!(
-        app.chat_widget.pending_thread_approvals(),
-        &["Robie [explorer]".to_string()]
-    );
-
-    app.side_threads.remove(&side_thread_id);
-    app.active_thread_id = Some(main_thread_id);
-    assert_eq!(
-        app.pending_inactive_thread_requests().await,
-        vec![(agent_thread_id, pending_approval)]
-    );
-    app.surface_pending_inactive_thread_interactive_requests()
-        .await?;
-
-    assert_eq!(app.chat_widget.has_active_view(), true);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn inactive_thread_exec_approval_preserves_context() {
-    let app = make_test_app().await;
-    let thread_id = ThreadId::new();
-    let mut request = exec_approval_request(
-        thread_id,
-        "turn-approval",
-        "call-approval",
-        /*approval_id*/ None,
-    );
-    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
-        panic!("expected exec approval request");
-    };
-    params.network_approval_context = Some(CliRuntimeNetworkApprovalContext {
-        host: "example.com".to_string(),
-        protocol: CliRuntimeNetworkApprovalProtocol::Socks5Tcp,
-    });
-    params.additional_permissions = Some(AdditionalPermissionProfile {
-        network: Some(AdditionalNetworkPermissions {
-            enabled: Some(true),
-        }),
-        file_system: Some(AdditionalFileSystemPermissions {
-            read: Some(vec![test_absolute_path("/tmp/read-only").into()]),
-            write: Some(vec![test_absolute_path("/tmp/write").into()]),
-            glob_scan_max_depth: None,
-            entries: None,
-        }),
-    });
-    params.proposed_network_policy_amendments = Some(vec![CliRuntimeNetworkPolicyAmendment {
-        host: "example.com".to_string(),
-        action: CliRuntimeNetworkPolicyRuleAction::Allow,
-    }]);
-
-    let Some(ThreadInteractiveRequest::Approval(ApprovalRequest::Exec(approval))) = app
-        .interactive_request_for_thread_request(thread_id, &request)
-        .await
-        .expect("valid localized paths")
-    else {
-        panic!("expected exec approval request");
-    };
-
-    assert_eq!(
-        approval.network_approval_context,
-        Some(CliRuntimeNetworkApprovalContext {
-            host: "example.com".to_string(),
-            protocol: CliRuntimeNetworkApprovalProtocol::Socks5Tcp,
-        })
-    );
-    assert_eq!(
-        approval.additional_permissions,
-        Some(AdditionalPermissionProfile {
-            network: Some(AdditionalNetworkPermissions {
-                enabled: Some(true),
-            }),
-            file_system: Some(AdditionalFileSystemPermissions {
-                read: Some(vec![test_absolute_path("/tmp/read-only").into()]),
-                write: Some(vec![test_absolute_path("/tmp/write").into()]),
-                glob_scan_max_depth: None,
-                entries: None,
-            }),
-        })
-    );
-    assert_eq!(
-        approval.available_decisions,
-        vec![
-            codex_cli_protocol::CommandExecutionApprovalDecision::Accept,
-            codex_cli_protocol::CommandExecutionApprovalDecision::AcceptForSession,
-            codex_cli_protocol::CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
-                network_policy_amendment: CliRuntimeNetworkPolicyAmendment {
-                    host: "example.com".to_string(),
-                    action: CliRuntimeNetworkPolicyRuleAction::Allow,
-                },
-            },
-            codex_cli_protocol::CommandExecutionApprovalDecision::Cancel,
-        ]
-    );
-}
-
-#[tokio::test]
-async fn inactive_thread_exec_approval_splits_shell_wrapped_command() {
-    let app = make_test_app().await;
-    let thread_id = ThreadId::new();
-    let script = r#"python3 -c 'print("Hello, world!")'"#;
-    let mut request = exec_approval_request(
-        thread_id,
-        "turn-approval",
-        "call-approval",
-        /*approval_id*/ None,
-    );
-    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
-        panic!("expected exec approval request");
-    };
-    params.command =
-        Some(shlex::try_join(["/bin/zsh", "-lc", script]).expect("round-trippable shell wrapper"));
-
-    let Some(ThreadInteractiveRequest::Approval(ApprovalRequest::Exec(approval))) = app
-        .interactive_request_for_thread_request(thread_id, &request)
-        .await
-        .expect("valid localized paths")
-    else {
-        panic!("expected exec approval request");
-    };
-
-    assert_eq!(
-        approval.command,
-        vec![
-            "/bin/zsh".to_string(),
-            "-lc".to_string(),
-            script.to_string(),
-        ]
-    );
-}
-
-#[tokio::test]
-async fn inactive_thread_file_change_approval_recovers_buffered_changes() {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-    let thread_id = ThreadId::new();
-    app.enqueue_thread_notification(
-        thread_id,
-        ServerNotification::ItemStarted(ItemStartedNotification {
-            thread_id: thread_id.to_string(),
-            turn_id: "turn-approval".to_string(),
-            started_at_ms: 0,
-            item: ThreadItem::FileChange {
-                id: "patch-approval".to_string(),
-                changes: vec![FileUpdateChange {
-                    path: "README.md".to_string(),
-                    kind: PatchChangeKind::Add,
-                    diff: "hello\n".to_string(),
-                }],
-                status: codex_cli_protocol::PatchApplyStatus::InProgress,
-            },
-        }),
-    )
-    .await
-    .expect("enqueue file change item");
-
-    let request = ServerRequest::FileChangeRequestApproval {
-        request_id: CliRuntimeRequestId::Integer(9),
-        params: FileChangeRequestApprovalParams {
-            thread_id: thread_id.to_string(),
-            turn_id: "turn-approval".to_string(),
-            item_id: "patch-approval".to_string(),
-            started_at_ms: 0,
-            reason: Some("command failed; retry without sandbox?".to_string()),
-            grant_root: None,
-        },
-    };
-
-    let request = app
-        .interactive_request_for_thread_request(thread_id, &request)
-        .await
-        .expect("valid localized paths")
-        .expect("expected file change approval request");
-
-    let ThreadInteractiveRequest::Approval(ApprovalRequest::ApplyPatch(approval)) = &request else {
-        panic!("expected apply-patch approval request");
-    };
-    assert_eq!(
-        &approval.changes,
-        &HashMap::from([(
-            PathBuf::from("README.md"),
-            FileChange::Add {
-                content: "hello\n".to_string(),
-            },
-        )])
-    );
-    assert_eq!(
-        &approval.reason,
-        &Some("command failed; retry without sandbox?".to_string())
-    );
-
-    app.push_thread_interactive_request(request);
-    let cell = match app_event_rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-        other => panic!("expected patch preview history cell, saw {other:?}"),
-    };
-    let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-    assert!(rendered.contains("• Added README.md (+1 -0)"));
-    assert!(rendered.contains("1 +hello"));
-}
-
-#[tokio::test]
-async fn inactive_thread_permissions_approval_preserves_file_system_permissions() {
-    let app = make_test_app().await;
-    let thread_id = ThreadId::new();
-    let request = ServerRequest::PermissionsRequestApproval {
-        request_id: CliRuntimeRequestId::Integer(7),
-        params: PermissionsRequestApprovalParams {
-            thread_id: thread_id.to_string(),
-            turn_id: "turn-approval".to_string(),
-            item_id: "call-approval".to_string(),
-            environment_id: Some("remote".to_string()),
-            started_at_ms: 0,
-            cwd: test_absolute_path("/tmp"),
-            reason: Some("Need access to .git".to_string()),
-            permissions: codex_cli_protocol::RequestPermissionProfile {
-                network: Some(AdditionalNetworkPermissions {
-                    enabled: Some(true),
-                }),
-                file_system: Some(AdditionalFileSystemPermissions {
-                    read: Some(vec![test_absolute_path("/tmp/read-only").into()]),
-                    write: Some(vec![test_absolute_path("/tmp/write").into()]),
-                    glob_scan_max_depth: None,
-                    entries: None,
-                }),
-            },
-        },
-    };
-
-    let Some(ThreadInteractiveRequest::Approval(ApprovalRequest::Permissions(approval))) = app
-        .interactive_request_for_thread_request(thread_id, &request)
-        .await
-        .expect("valid localized paths")
-    else {
-        panic!("expected permissions approval request");
-    };
-
-    assert_eq!(approval.environment_id.as_deref(), Some("remote"));
-    assert_eq!(
-        approval.permissions,
-        RequestPermissionProfile {
-            network: Some(NetworkPermissions {
-                enabled: Some(true),
-            }),
-            file_system: Some(FileSystemPermissions::from_read_write_roots(
-                Some(vec![test_absolute_path("/tmp/read-only")]),
-                Some(vec![test_absolute_path("/tmp/write")]),
-            )),
-        }
-    );
-}
-
-#[tokio::test]
-async fn inactive_thread_approval_badge_clears_after_turn_completion_notification() -> Result<()> {
-    let mut app = make_test_app().await;
-    let main_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000101").expect("valid thread");
-    let agent_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000202").expect("valid thread");
-
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
-    app.thread_event_channels
-        .insert(main_thread_id, ThreadEventChannel::new(/*capacity*/ 1));
-    app.thread_event_channels.insert(
-        agent_thread_id,
-        ThreadEventChannel::new_with_session(
-            /*capacity*/ 4,
-            ThreadSessionState {
-                approval_policy: AskForApproval::OnRequest,
-                permission_profile: PermissionProfile::workspace_write(),
-                rollout_path: Some(test_path_buf("/tmp/agent-rollout.jsonl")),
-                ..test_thread_session(agent_thread_id, test_path_buf("/tmp/agent"))
-            },
-            Vec::new(),
-        ),
-    );
-    app.agent_navigation.upsert(
-        agent_thread_id,
-        Some("Robie".to_string()),
-        Some("explorer".to_string()),
-        /*is_closed*/ false,
-    );
-
-    app.enqueue_thread_request(
-        agent_thread_id,
-        exec_approval_request(
-            agent_thread_id,
-            "turn-approval",
-            "call-approval",
-            /*approval_id*/ None,
-        ),
-    )
-    .await?;
-    assert_eq!(
-        app.chat_widget.pending_thread_approvals(),
-        &["Robie [explorer]".to_string()]
-    );
-
-    app.enqueue_thread_notification(
-        agent_thread_id,
-        turn_completed_notification(agent_thread_id, "turn-approval", TurnStatus::Completed),
-    )
-    .await?;
-
-    assert!(
-        app.chat_widget.pending_thread_approvals().is_empty(),
-        "turn completion should clear inactive-thread approval badge immediately"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn inactive_thread_started_notification_initializes_replay_session() -> Result<()> {
     let mut app = make_test_app().await;
     let temp_dir = tempdir()?;
@@ -3103,8 +1980,6 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
     let primary_cwd = test_path_buf("/tmp/main").abs();
     let shared_root = test_path_buf("/tmp/shared").abs();
     let primary_session = ThreadSessionState {
-        approval_policy: AskForApproval::OnRequest,
-        permission_profile: PermissionProfile::workspace_write(),
         runtime_workspace_roots: vec![primary_cwd.clone(), shared_root.clone()],
         ..test_thread_session(main_thread_id, primary_cwd.to_path_buf())
     };
@@ -3183,7 +2058,6 @@ async fn inactive_thread_started_notification_initializes_replay_session() -> Re
     assert_eq!(session.thread_name, Some("agent thread".to_string()));
     assert_eq!(session.model, "gpt-agent");
     assert_eq!(session.model_provider_id, "agent-provider");
-    assert_eq!(session.approval_policy, primary_session.approval_policy);
     assert_eq!(session.cwd.as_path(), test_path_buf("/tmp/agent").as_path());
     assert_eq!(
         session.runtime_workspace_roots,
@@ -3214,8 +2088,6 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
         ThreadId::from_string("00000000-0000-0000-0000-000000000302").expect("valid thread");
     let primary_cwd = test_path_buf("/tmp/main").abs();
     let primary_session = ThreadSessionState {
-        approval_policy: AskForApproval::OnRequest,
-        permission_profile: PermissionProfile::workspace_write(),
         runtime_workspace_roots: vec![primary_cwd.clone()],
         ..test_thread_session(main_thread_id, primary_cwd.to_path_buf())
     };
@@ -3284,74 +2156,6 @@ async fn inactive_thread_started_notification_preserves_primary_model_when_path_
 /// `thread/read` is metadata/replay hydration and does not return a fresh
 /// server-authored `PermissionProfile`, so it must not reuse the cached primary
 /// session profile after swapping in the read thread's cwd.
-#[tokio::test]
-async fn thread_read_session_state_does_not_reuse_primary_permission_profile() {
-    let mut app = make_test_app().await;
-    let main_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000401").expect("valid thread");
-    let read_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000402").expect("valid thread");
-    let primary_cwd = test_path_buf("/tmp/main").abs();
-    let primary_session = ThreadSessionState {
-        approval_policy: AskForApproval::OnRequest,
-        permission_profile: PermissionProfile::workspace_write(),
-        runtime_workspace_roots: vec![primary_cwd.clone()],
-        ..test_thread_session(main_thread_id, primary_cwd.to_path_buf())
-    };
-    app.primary_session_configured = Some(primary_session);
-
-    let thread = Thread {
-        id: read_thread_id.to_string(),
-        extra: None,
-        session_id: read_thread_id.to_string(),
-        forked_from_id: None,
-        parent_thread_id: None,
-        preview: "read thread".to_string(),
-        ephemeral: false,
-        section: None,
-        section_entered_at: None,
-        history_mode: Default::default(),
-        model_provider: "read-provider".to_string(),
-        created_at: 1,
-        updated_at: 2,
-        recency_at: Some(2),
-        status: codex_cli_protocol::ThreadStatus::Idle,
-        path: None,
-        cwd: test_path_buf("/tmp/read").abs(),
-        cli_version: "0.0.0".to_string(),
-        source: codex_cli_protocol::SessionSource::Unknown,
-        can_accept_direct_input: None,
-        thread_source: None,
-        agent_nickname: None,
-        agent_role: None,
-        git_info: None,
-        name: Some("read thread".to_string()),
-        turns: Vec::new(),
-    };
-
-    let session = app
-        .session_state_for_thread_read(read_thread_id, &thread)
-        .await;
-
-    assert_eq!(session.thread_id, read_thread_id);
-    assert_eq!(session.cwd.as_path(), test_path_buf("/tmp/read").as_path());
-    assert_eq!(
-        session.runtime_workspace_roots,
-        vec![test_path_buf("/tmp/read").abs()]
-    );
-    let expected_permission_profile = app
-        .chat_widget
-        .config_ref()
-        .permissions
-        .permission_profile()
-        .clone();
-    assert_eq!(
-        session.permission_profile, expected_permission_profile,
-        "thread/read does not return fresh server permissions; the fallback profile must use the \
-         active widget permissions rather than reusing the cached primary session profile"
-    );
-}
-
 #[test]
 fn agent_picker_item_name_snapshot() {
     let thread_id =
@@ -3412,21 +2216,11 @@ async fn side_fork_config_inherits_parent_thread_runtime_settings() {
     app.config.model_reasoning_effort = Some(ReasoningEffortConfig::Low);
 
     let parent_service_tier = ServiceTier::Fast.request_value();
-    let parent_permission_profile = PermissionProfile::workspace_write();
     app.chat_widget.set_model("parent-thread-model");
     app.chat_widget
         .set_reasoning_effort(Some(ReasoningEffortConfig::High));
     app.chat_widget
         .set_service_tier(Some(parent_service_tier.to_string()));
-    app.chat_widget
-        .set_approval_policy(AskForApproval::OnRequest);
-    app.chat_widget
-        .set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
-            parent_permission_profile.clone(),
-        ))
-        .expect("test permission profile should be accepted");
-    app.chat_widget
-        .set_approvals_reviewer(ApprovalsReviewer::AutoReview);
 
     let fork_config = app.side_fork_config();
 
@@ -3435,19 +2229,14 @@ async fn side_fork_config_inherits_parent_thread_runtime_settings() {
             fork_config.model.as_deref(),
             fork_config.model_reasoning_effort,
             fork_config.service_tier.as_deref(),
-            fork_config.permissions.approval_policy.value(),
-            fork_config.permissions.permission_profile(),
-            fork_config.approvals_reviewer,
         ),
         (
             Some("parent-thread-model"),
             Some(ReasoningEffortConfig::High),
             Some(parent_service_tier),
-            AskForApproval::OnRequest.to_core(),
-            &parent_permission_profile,
-            ApprovalsReviewer::AutoReview,
         )
     );
+    assert!(fork_config.ephemeral);
 }
 
 #[tokio::test]
@@ -3525,82 +2314,6 @@ async fn side_parent_status_tracks_parent_turn_lifecycle() -> Result<()> {
             .get(&side_thread_id)
             .and_then(|state| state.parent_status),
         Some(SideParentStatus::Failed)
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn side_parent_status_prioritizes_input_over_approval() -> Result<()> {
-    let mut app = make_test_app().await;
-    let parent_thread_id = ThreadId::new();
-    let side_thread_id = ThreadId::new();
-    app.primary_thread_id = Some(parent_thread_id);
-    app.active_thread_id = Some(side_thread_id);
-    app.side_threads
-        .insert(side_thread_id, SideThreadState::new(parent_thread_id));
-
-    app.enqueue_thread_request(
-        parent_thread_id,
-        exec_approval_request(
-            parent_thread_id,
-            "turn-approval",
-            "call-approval",
-            /*approval_id*/ None,
-        ),
-    )
-    .await?;
-    assert_eq!(
-        app.side_threads
-            .get(&side_thread_id)
-            .and_then(|state| state.parent_status),
-        Some(SideParentStatus::NeedsApproval)
-    );
-
-    app.enqueue_thread_request(
-        parent_thread_id,
-        request_user_input_request(parent_thread_id, "turn-input", "call-input"),
-    )
-    .await?;
-    assert_eq!(
-        app.side_threads
-            .get(&side_thread_id)
-            .and_then(|state| state.parent_status),
-        Some(SideParentStatus::NeedsInput)
-    );
-
-    app.enqueue_thread_notification(
-        parent_thread_id,
-        ServerNotification::ServerRequestResolved(
-            codex_cli_protocol::ServerRequestResolvedNotification {
-                thread_id: parent_thread_id.to_string(),
-                request_id: CliRuntimeRequestId::Integer(2),
-            },
-        ),
-    )
-    .await?;
-    assert_eq!(
-        app.side_threads
-            .get(&side_thread_id)
-            .and_then(|state| state.parent_status),
-        Some(SideParentStatus::NeedsApproval)
-    );
-
-    app.enqueue_thread_notification(
-        parent_thread_id,
-        ServerNotification::ServerRequestResolved(
-            codex_cli_protocol::ServerRequestResolvedNotification {
-                thread_id: parent_thread_id.to_string(),
-                request_id: CliRuntimeRequestId::Integer(1),
-            },
-        ),
-    )
-    .await?;
-    assert_eq!(
-        app.side_threads
-            .get(&side_thread_id)
-            .and_then(|state| state.parent_status),
-        None
     );
 
     Ok(())
@@ -3843,26 +2556,6 @@ async fn background_side_cleanup_removes_local_state_and_ignores_late_events() -
     )
     .await?;
     assert!(!app.thread_event_channels.contains_key(&side_thread_id));
-
-    app.handle_cli_runtime_event(
-        &cli_runtime,
-        codex_cli_runtime_client::CliRuntimeEvent::ServerRequest(Box::new(exec_approval_request(
-            side_thread_id,
-            "turn-1",
-            "item-1",
-            Some("approval-1"),
-        ))),
-    )
-    .await;
-    let resolution = app
-        .pending_runtime_requests
-        .take_resolution(Op::ExecApproval {
-            id: "approval-1".to_string(),
-            turn_id: None,
-            decision: codex_cli_protocol::CommandExecutionApprovalDecision::Accept,
-        })
-        .expect("approval resolution should serialize");
-    assert_eq!(resolution, None);
     Ok(())
 }
 
@@ -4023,10 +2716,6 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: ApprovalsReviewer::User,
-            permission_profile: PermissionProfile::read_only(),
-            active_permission_profile: None,
             cwd: test_path_buf("/tmp/project").abs(),
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
@@ -4034,7 +2723,6 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             agent_settings: None,
             personality: None,
             message_history: None,
-            network_proxy: None,
             rollout_path: Some(PathBuf::new()),
         };
         Arc::new(new_session_info(
@@ -4147,8 +2835,6 @@ async fn make_test_app() -> App {
         harness_overrides: ConfigOverrides::default(),
         loader_overrides: LoaderOverrides::without_managed_config_for_tests(),
         cloud_config_bundle: CloudConfigBundleLoader::default(),
-        runtime_approval_policy_override: None,
-        runtime_permission_profile_override: None,
         file_search,
         transcript_cells: Vec::new(),
         overlay: None,
@@ -4183,8 +2869,6 @@ async fn make_test_app() -> App {
         pending_runtime_requests: PendingCliRuntimeRequests::default(),
         pending_startup_thread_start: false,
         rate_limit_hard_stop_generation: 0,
-        pending_plugin_enabled_writes: HashMap::new(),
-        pending_hook_enabled_writes: HashMap::new(),
     }
 }
 
@@ -4211,8 +2895,6 @@ async fn make_test_app_with_channels() -> (
             harness_overrides: ConfigOverrides::default(),
             loader_overrides: LoaderOverrides::without_managed_config_for_tests(),
             cloud_config_bundle: CloudConfigBundleLoader::default(),
-            runtime_approval_policy_override: None,
-            runtime_permission_profile_override: None,
             file_search,
             transcript_cells: Vec::new(),
             overlay: None,
@@ -4247,8 +2929,6 @@ async fn make_test_app_with_channels() -> (
             pending_runtime_requests: PendingCliRuntimeRequests::default(),
             pending_startup_thread_start: false,
             rate_limit_hard_stop_generation: 0,
-            pending_plugin_enabled_writes: HashMap::new(),
-            pending_hook_enabled_writes: HashMap::new(),
         },
         rx,
         op_rx,
@@ -4485,10 +3165,6 @@ fn test_thread_session(thread_id: ThreadId, cwd: PathBuf) -> ThreadSessionState 
         model: "gpt-test".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: cwd.abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -4496,7 +3172,6 @@ fn test_thread_session(thread_id: ThreadId, cwd: PathBuf) -> ThreadSessionState 
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(PathBuf::new()),
     }
 }
@@ -4946,34 +3621,6 @@ fn agent_message_delta_notification(
     })
 }
 
-fn exec_approval_request(
-    thread_id: ThreadId,
-    turn_id: &str,
-    item_id: &str,
-    approval_id: Option<&str>,
-) -> ServerRequest {
-    ServerRequest::CommandExecutionRequestApproval {
-        request_id: CliRuntimeRequestId::Integer(1),
-        params: CommandExecutionRequestApprovalParams {
-            thread_id: thread_id.to_string(),
-            turn_id: turn_id.to_string(),
-            item_id: item_id.to_string(),
-            started_at_ms: 0,
-            approval_id: approval_id.map(str::to_string),
-            environment_id: None,
-            reason: Some("needs approval".to_string()),
-            network_approval_context: None,
-            command: Some("echo hello".to_string()),
-            cwd: Some(test_path_buf("/tmp/project").abs().into()),
-            command_actions: None,
-            additional_permissions: None,
-            proposed_execpolicy_amendment: None,
-            proposed_network_policy_amendments: None,
-            available_decisions: None,
-        },
-    }
-}
-
 fn request_user_input_request(thread_id: ThreadId, turn_id: &str, item_id: &str) -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
         request_id: CliRuntimeRequestId::Integer(2),
@@ -5010,30 +3657,6 @@ fn lines_to_single_string(lines: &[Line<'_>]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-#[test]
-fn active_turn_not_steerable_turn_error_extracts_structured_server_error() {
-    let turn_error = CliRuntimeTurnError {
-        message: "cannot steer a review turn".to_string(),
-        codex_error_info: Some(CliRuntimeCodexErrorInfo::ActiveTurnNotSteerable {
-            turn_kind: CliRuntimeNonSteerableTurnKind::Review,
-        }),
-        additional_details: None,
-    };
-    let error = TypedRequestError::Server {
-        method: "turn/steer".to_string(),
-        source: JSONRPCErrorError {
-            code: -32602,
-            message: turn_error.message.clone(),
-            data: Some(serde_json::to_value(&turn_error).expect("turn error should serialize")),
-        },
-    };
-
-    assert_eq!(
-        active_turn_not_steerable_turn_error(&error),
-        Some(turn_error)
-    );
 }
 
 #[test]
@@ -5169,10 +3792,6 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: ApprovalsReviewer::User,
-            permission_profile: PermissionProfile::read_only(),
-            active_permission_profile: None,
             cwd: test_path_buf("/home/user/project").abs(),
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
@@ -5180,7 +3799,6 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
             agent_settings: None,
             personality: None,
             message_history: None,
-            network_proxy: None,
             rollout_path: Some(PathBuf::new()),
         };
         Arc::new(new_session_info(
@@ -5240,10 +3858,6 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: ApprovalsReviewer::User,
-            permission_profile: PermissionProfile::read_only(),
-            active_permission_profile: None,
             cwd: test_path_buf("/home/user/project").abs(),
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
@@ -5251,7 +3865,6 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
             agent_settings: None,
             personality: None,
             message_history: None,
-            network_proxy: None,
             rollout_path: Some(PathBuf::new()),
         });
 
@@ -6076,10 +4689,6 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: ApprovalsReviewer::User,
-            permission_profile: PermissionProfile::read_only(),
-            active_permission_profile: None,
             cwd: test_path_buf("/home/user/project").abs(),
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
@@ -6087,7 +4696,6 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
             agent_settings: None,
             personality: None,
             message_history: None,
-            network_proxy: None,
             rollout_path: Some(PathBuf::new()),
         };
 
@@ -6217,13 +4825,6 @@ async fn override_turn_context_sends_thread_settings_update() {
         };
         let op = AppCommand::override_turn_context(
             /*cwd*/ None,
-            Some(AskForApproval::OnRequest),
-            Some(ApprovalsReviewer::AutoReview),
-            /*permission_profile*/ None,
-            Some(ActivePermissionProfile::new(
-                codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
-            )),
-            /*windows_sandbox_level*/ None,
             Some("gpt-5.4".to_string()),
             Some(Some(ReasoningEffortConfig::High)),
             /*summary*/ None,
@@ -6257,16 +4858,7 @@ async fn override_turn_context_sends_thread_settings_update() {
             notification.thread_settings.service_tier,
             Some(service_tier.clone())
         );
-        assert_eq!(
-            notification.thread_settings.approval_policy,
-            AskForApproval::OnRequest
-        );
-        assert_eq!(
-            notification.thread_settings.approvals_reviewer.to_core(),
-            ApprovalsReviewer::AutoReview
-        );
         let notified_mode = &notification.thread_settings.agent_settings;
-        assert_eq!(notified_mode.mode, agent_settings.mode);
         assert_eq!(notified_mode.settings.model, agent_settings.settings.model);
         assert_eq!(
             notified_mode.settings.reasoning_effort,
@@ -6294,7 +4886,6 @@ async fn override_turn_context_sends_thread_settings_update() {
             .agent_settings
             .as_deref()
             .expect("agent settings should be cached");
-        assert_eq!(updated_mode.mode, agent_settings.mode);
         assert_eq!(updated_mode.settings.model, agent_settings.settings.model);
         assert_eq!(
             updated_mode.settings.reasoning_effort,
@@ -6302,294 +4893,6 @@ async fn override_turn_context_sends_thread_settings_update() {
         );
         assert_eq!(updated_session.personality, Some(Personality::Pragmatic));
         assert_eq!(updated_session.service_tier, Some(service_tier));
-        assert_eq!(updated_session.approval_policy, AskForApproval::OnRequest);
-        assert_eq!(
-            updated_session.approvals_reviewer,
-            ApprovalsReviewer::AutoReview
-        );
-        assert_eq!(
-            updated_session
-                .active_permission_profile
-                .as_ref()
-                .expect("active profile")
-                .id,
-            codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE
-        );
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn selecting_cyber_model_defaults_active_thread_to_auto_review() {
-    Box::pin(async {
-        let mut app = make_test_app().await;
-        app.config
-            .permissions
-            .approval_policy
-            .set(AskForApproval::UnlessTrusted.to_core())
-            .expect("set approval policy");
-        app.chat_widget
-            .set_approval_policy(AskForApproval::UnlessTrusted);
-        let mut model = app
-            .model_catalog
-            .try_list_models()
-            .expect("model catalog")
-            .into_iter()
-            .find(|model| model.model == "gpt-5.4")
-            .expect("gpt-5.4 model");
-        model.model_specialty = Some("cyber".to_string());
-        app.model_catalog = Arc::new(ModelCatalog::new(vec![model]));
-
-        let mut cli_runtime =
-            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref())
-                .await
-                .expect("embedded app server");
-        let started = cli_runtime
-            .start_thread(app.chat_widget.config_ref())
-            .await
-            .expect("thread/start should succeed");
-        assert_eq!(
-            started.session.approval_policy,
-            AskForApproval::UnlessTrusted
-        );
-        assert_eq!(started.session.approvals_reviewer, ApprovalsReviewer::User);
-        let thread_id = started.session.thread_id;
-        app.enqueue_primary_thread_session(started.session, started.turns)
-            .await
-            .expect("primary thread should be registered");
-
-        let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
-        app.handle_event(
-            &mut tui,
-            &mut cli_runtime,
-            AppEvent::UpdateModel("gpt-5.4".to_string()),
-        )
-        .await
-        .expect("model selection should succeed");
-
-        let notification = next_thread_settings_updated(&mut cli_runtime, thread_id).await;
-        assert_eq!(
-            notification.thread_settings.approval_policy,
-            AskForApproval::OnRequest
-        );
-        assert_eq!(
-            notification.thread_settings.approvals_reviewer.to_core(),
-            ApprovalsReviewer::AutoReview
-        );
-        assert_eq!(
-            notification
-                .thread_settings
-                .active_permission_profile
-                .expect("active permission profile")
-                .id,
-            codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE
-        );
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn changing_cyber_model_reasoning_preserves_selected_permissions() {
-    Box::pin(async {
-        let mut app = make_test_app().await;
-        let model_name = app.chat_widget.current_model().to_string();
-        let mut model = app
-            .model_catalog
-            .try_list_models()
-            .expect("model catalog")
-            .into_iter()
-            .find(|model| model.model == model_name)
-            .expect("current model");
-        model.model_specialty = Some("cyber".to_string());
-        app.model_catalog = Arc::new(ModelCatalog::new(vec![model]));
-
-        assert!(
-            app.apply_permission_profile_selection(PermissionProfileSelection {
-                profile_id: codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY
-                    .to_string(),
-                approval_policy: Some(AskForApproval::OnRequest),
-                approvals_reviewer: Some(ApprovalsReviewer::User),
-                display_label: "Read Only".to_string(),
-            })
-            .await
-        );
-
-        let mut cli_runtime =
-            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref())
-                .await
-                .expect("embedded app server");
-        let started = cli_runtime
-            .start_thread(app.chat_widget.config_ref())
-            .await
-            .expect("thread/start should succeed");
-        let thread_id = started.session.thread_id;
-        app.enqueue_primary_thread_session(started.session, started.turns)
-            .await
-            .expect("primary thread should be registered");
-
-        let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
-        for effort in [ReasoningEffortConfig::High, ReasoningEffortConfig::Ultra] {
-            if effort == ReasoningEffortConfig::Ultra {
-                app.handle_event(
-                    &mut tui,
-                    &mut cli_runtime,
-                    AppEvent::ApplyAdvancedReasoning {
-                        model: model_name.clone(),
-                        effort: effort.clone(),
-                    },
-                )
-                .await
-                .expect("advanced reasoning selection should succeed");
-            } else {
-                app.handle_event(
-                    &mut tui,
-                    &mut cli_runtime,
-                    AppEvent::UpdateModel(model_name.clone()),
-                )
-                .await
-                .expect("same-model selection should succeed");
-                app.handle_event(
-                    &mut tui,
-                    &mut cli_runtime,
-                    AppEvent::UpdateReasoningEffort(Some(effort.clone())),
-                )
-                .await
-                .expect("reasoning selection should succeed");
-            }
-
-            let settings = next_thread_settings_updated(&mut cli_runtime, thread_id)
-                .await
-                .thread_settings;
-            assert_eq!(settings.effort, Some(effort));
-            assert_eq!(settings.approval_policy, AskForApproval::OnRequest);
-            assert_eq!(
-                settings.approvals_reviewer.to_core(),
-                ApprovalsReviewer::User
-            );
-            assert_eq!(
-                settings
-                    .active_permission_profile
-                    .expect("active permission profile")
-                    .id,
-                codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY
-            );
-            assert_eq!(
-                settings.agent_settings.mode,
-                app.chat_widget.effective_agent_settings().mode
-            );
-            assert_eq!(settings.agent_settings.settings.model, model_name);
-        }
-    })
-    .await;
-}
-
-#[tokio::test]
-async fn selecting_cyber_model_falls_back_to_user_when_auto_review_is_unavailable() {
-    let mut app = make_test_app().await;
-    let mut model = app
-        .model_catalog
-        .try_list_models()
-        .expect("model catalog")
-        .into_iter()
-        .find(|model| model.model == "gpt-5.4")
-        .expect("gpt-5.4 model");
-    model.model_specialty = Some("cyber".to_string());
-    app.model_catalog = Arc::new(ModelCatalog::new(vec![model]));
-    let _ = app.config.features.disable(Feature::GuardianApproval);
-    app.chat_widget
-        .set_feature_enabled(Feature::GuardianApproval, /*enabled*/ false);
-    app.active_thread_id = Some(ThreadId::new());
-
-    let params = app
-        .active_thread_model_setting_update_params("gpt-5.4".to_string())
-        .expect("active thread should produce update params");
-
-    assert_eq!(
-        params.approval_policy,
-        Some(codex_cli_protocol::AskForApproval::OnRequest)
-    );
-    assert_eq!(
-        params.approvals_reviewer,
-        Some(codex_cli_protocol::ApprovalsReviewer::User)
-    );
-}
-
-#[tokio::test]
-async fn selecting_cyber_model_respects_auto_review_requirements() {
-    Box::pin(async {
-        let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
-        let requirements_toml = codex_config::ConfigRequirementsToml {
-            allowed_approval_policies: Some(vec![AskForApproval::UnlessTrusted.to_core()]),
-            ..Default::default()
-        };
-        let mut requirements_with_sources = codex_config::ConfigRequirementsWithSources::default();
-        requirements_with_sources.merge_unset_fields(
-            codex_config::RequirementSource::Unknown,
-            requirements_toml.clone(),
-        );
-        let requirements = codex_config::ConfigRequirements::try_from(requirements_with_sources)
-            .expect("reviewer requirements");
-        app.config.config_layer_stack =
-            codex_config::ConfigLayerStack::new(Vec::new(), requirements, requirements_toml)
-                .expect("auto-review requirements stack");
-        app.config
-            .permissions
-            .approval_policy
-            .set(AskForApproval::UnlessTrusted.to_core())
-            .expect("set approval policy");
-        app.chat_widget
-            .set_approval_policy(AskForApproval::UnlessTrusted);
-        app.chat_widget.sync_plugin_mentions_config(&app.config);
-
-        let mut model = app
-            .model_catalog
-            .try_list_models()
-            .expect("model catalog")
-            .into_iter()
-            .find(|model| model.model == "gpt-5.4")
-            .expect("gpt-5.4 model");
-        model.model_specialty = Some("cyber".to_string());
-        app.model_catalog = Arc::new(ModelCatalog::new(vec![model]));
-
-        let mut cli_runtime =
-            crate::start_embedded_cli_runtime_for_picker(app.chat_widget.config_ref())
-                .await
-                .expect("embedded app server");
-        let started = cli_runtime
-            .start_thread(app.chat_widget.config_ref())
-            .await
-            .expect("thread/start should succeed");
-        assert_eq!(
-            started.session.approval_policy,
-            AskForApproval::UnlessTrusted
-        );
-        let thread_id = started.session.thread_id;
-        app.enqueue_primary_thread_session(started.session, started.turns)
-            .await
-            .expect("primary thread should be registered");
-
-        let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
-        app.handle_event(
-            &mut tui,
-            &mut cli_runtime,
-            AppEvent::UpdateModel("gpt-5.4".to_string()),
-        )
-        .await
-        .expect("model selection should succeed");
-
-        let notification = next_thread_settings_updated(&mut cli_runtime, thread_id).await;
-        assert_eq!(
-            notification.thread_settings.approval_policy,
-            AskForApproval::UnlessTrusted
-        );
-        assert_eq!(
-            notification.thread_settings.approvals_reviewer.to_core(),
-            ApprovalsReviewer::User
-        );
-        assert!(
-            std::iter::from_fn(|| app_event_rx.try_recv().ok())
-                .all(|event| !matches!(event, AppEvent::CyberModelAutoReviewNotice))
-        );
     })
     .await;
 }
@@ -6675,14 +4978,6 @@ async fn inactive_thread_settings_notification_updates_cached_agent_settings() {
         thread_id: inactive_thread_id.to_string(),
         thread_settings: ThreadSettings {
             cwd: test_absolute_path("/tmp/thread-settings"),
-            approval_policy: AskForApproval::OnRequest,
-            approvals_reviewer: codex_cli_protocol::ApprovalsReviewer::AutoReview,
-            sandbox_policy: codex_cli_protocol::SandboxPolicy::ReadOnly {
-                network_access: false,
-            },
-            active_permission_profile: Some(
-                codex_cli_protocol::ActivePermissionProfile::read_only(),
-            ),
             model: "gpt-plan".to_string(),
             model_provider: "openai".to_string(),
             service_tier: None,
@@ -6743,10 +5038,6 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: ApprovalsReviewer::User,
-            permission_profile: PermissionProfile::read_only(),
-            active_permission_profile: None,
             cwd: test_path_buf("/tmp/project").abs(),
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
@@ -6754,7 +5045,6 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
             agent_settings: None,
             personality: None,
             message_history: None,
-            network_proxy: None,
             rollout_path: Some(PathBuf::new()),
         });
     app.chat_widget

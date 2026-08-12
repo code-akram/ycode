@@ -1875,15 +1875,6 @@ mod tests {
             params.runtime_workspace_roots,
             Some(config.workspace_roots.clone())
         );
-        assert_eq!(params.sandbox, None);
-        assert_eq!(
-            params.permissions,
-            config
-                .permissions
-                .active_permission_profile()
-                .map(permission_profile_id_from_active_profile)
-        );
-        assert_eq!(params.model_provider, Some(config.model_provider_id));
         assert_eq!(params.thread_source, Some(ThreadSource::User));
     }
 
@@ -1900,70 +1891,6 @@ mod tests {
         );
 
         assert_eq!(params.session_start_source, Some(ThreadStartSource::Clear));
-    }
-
-    #[test]
-    fn embedded_turn_permissions_use_active_profile_selection() {
-        let cwd = test_path_buf("/workspace/project").abs();
-        let active_permission_profile =
-            ActivePermissionProfile::new(BUILT_IN_PERMISSION_PROFILE_WORKSPACE);
-        let expected_permissions =
-            permission_profile_id_from_active_profile(active_permission_profile.clone());
-
-        let (sandbox_policy, permissions) = turn_permissions_overrides(
-            TurnPermissionsOverride::ActiveProfile(active_permission_profile),
-            cwd.as_path(),
-        );
-
-        assert_eq!(sandbox_policy, None);
-        assert_eq!(permissions, Some(expected_permissions));
-    }
-
-    #[test]
-    fn embedded_turn_permissions_select_profile_id_only() {
-        let cwd = test_path_buf("/workspace/project").abs();
-        let active_permission_profile =
-            ActivePermissionProfile::new(BUILT_IN_PERMISSION_PROFILE_WORKSPACE);
-
-        let (sandbox_policy, permissions) = turn_permissions_overrides(
-            TurnPermissionsOverride::ActiveProfile(active_permission_profile),
-            cwd.as_path(),
-        );
-
-        assert_eq!(sandbox_policy, None);
-        assert_eq!(
-            permissions,
-            Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string())
-        );
-    }
-
-    #[test]
-    fn turn_permissions_preserve_thread_permissions_without_override() {
-        let cwd = test_path_buf("/workspace/project").abs();
-
-        let (sandbox_policy, permissions) =
-            turn_permissions_overrides(TurnPermissionsOverride::Preserve, cwd.as_path());
-
-        assert_eq!(sandbox_policy, None);
-        assert_eq!(permissions, None);
-    }
-
-    #[test]
-    fn legacy_turn_permissions_project_to_sandbox_when_explicitly_overridden() {
-        let cwd = test_path_buf("/workspace/project").abs();
-
-        let (sandbox_policy, permissions) = turn_permissions_overrides(
-            TurnPermissionsOverride::LegacySandbox(PermissionProfile::read_only()),
-            cwd.as_path(),
-        );
-
-        assert_eq!(
-            sandbox_policy,
-            Some(codex_cli_protocol::SandboxPolicy::ReadOnly {
-                network_access: false
-            })
-        );
-        assert_eq!(permissions, None);
     }
 
     #[tokio::test]
@@ -2023,7 +1950,6 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let mut config = build_config(&temp_dir).await;
         config.model = Some("configured-model".to_string());
-        config.model_provider_id = "configured-provider".to_string();
         config.model_reasoning_effort = Some(ReasoningEffort::Ultra);
         config.model_reasoning_summary = Some(ReasoningSummary::Detailed);
 
@@ -2036,7 +1962,6 @@ mod tests {
         );
 
         assert_eq!(params.model, None);
-        assert_eq!(params.model_provider, None);
         assert_eq!(
             params.config,
             Some(HashMap::from([
@@ -2427,7 +2352,6 @@ mod tests {
         let config = build_config(&temp_dir).await;
         let thread_id = ThreadId::new();
         let forked_from_id = ThreadId::new();
-        let read_only_profile = PermissionProfile::read_only();
         let response = ThreadResumeResponse {
             thread: codex_cli_protocol::Thread {
                 id: thread_id.to_string(),
@@ -2492,13 +2416,6 @@ mod tests {
             instruction_sources: vec![LegacyAppPathString::from_abs_path(
                 &test_path_buf("/tmp/project/AGENTS.md").abs(),
             )],
-            approval_policy: codex_cli_protocol::AskForApproval::Never,
-            approvals_reviewer: codex_cli_protocol::ApprovalsReviewer::User,
-            sandbox: read_only_profile
-                .to_legacy_sandbox_policy(test_path_buf("/tmp/project").as_path())
-                .expect("read-only profile must be legacy-compatible")
-                .into(),
-            active_permission_profile: None,
             reasoning_effort: None,
             multi_agent_mode: Default::default(),
             initial_turns_page: None,
@@ -2522,31 +2439,9 @@ mod tests {
             started.session.instruction_source_paths,
             response.instruction_source_path_uris()
         );
-        assert_eq!(
-            started.session.permission_profile,
-            config.permissions.effective_permission_profile()
-        );
         assert_eq!(started.turns.len(), 1);
         assert_eq!(started.turns[0], response.thread.turns[0]);
         assert!(!started.blocks_direct_input);
-
-        let embedded_config = ConfigBuilder::default()
-            .codex_home(temp_dir.path().join("embedded-codex-home"))
-            .harness_overrides(ConfigOverrides {
-                default_permissions: Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string()),
-                ..ConfigOverrides::default()
-            })
-            .build()
-            .await
-            .expect("config should build");
-        let started = started_thread_from_resume_response(
-            response.clone(),
-            &embedded_config,
-            ThreadParamsMode::Embedded,
-        )
-        .await
-        .expect("embedded resume response should map");
-        assert_eq!(started.session.permission_profile, read_only_profile);
 
         let mut empty_roots_response = response;
         empty_roots_response.runtime_workspace_roots = Vec::new();
@@ -2558,31 +2453,6 @@ mod tests {
         .await
         .expect("resume response should map");
         assert_eq!(started.session.runtime_workspace_roots, Vec::new());
-    }
-
-    #[tokio::test]
-    async fn embedded_thread_response_uses_local_config_profile() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
-        let config = ConfigBuilder::default()
-            .codex_home(temp_dir.path().to_path_buf())
-            .harness_overrides(ConfigOverrides {
-                default_permissions: Some(BUILT_IN_PERMISSION_PROFILE_READ_ONLY.to_string()),
-                ..ConfigOverrides::default()
-            })
-            .build()
-            .await
-            .expect("config should build");
-        let cwd = test_path_buf("/tmp/project").abs();
-
-        assert_eq!(
-            display_permission_profile_from_thread_response(
-                &codex_cli_protocol::SandboxPolicy::DangerFullAccess,
-                cwd.as_path(),
-                &config,
-                ThreadParamsMode::Embedded,
-            ),
-            PermissionProfile::read_only()
-        );
     }
 
     #[tokio::test]
@@ -2609,10 +2479,6 @@ mod tests {
             "gpt-5.4".to_string(),
             "openai".to_string(),
             /*service_tier*/ None,
-            AskForApproval::Never,
-            codex_protocol::config_types::ApprovalsReviewer::User,
-            PermissionProfile::read_only(),
-            /*active_permission_profile*/ None,
             test_path_buf("/tmp/project").abs(),
             Vec::new(),
             Vec::new(),
@@ -2644,10 +2510,6 @@ mod tests {
             "gpt-5.4".to_string(),
             "openai".to_string(),
             /*service_tier*/ None,
-            AskForApproval::Never,
-            codex_protocol::config_types::ApprovalsReviewer::User,
-            PermissionProfile::read_only(),
-            /*active_permission_profile*/ None,
             test_path_buf("/tmp/project").abs(),
             Vec::new(),
             Vec::new(),

@@ -1582,7 +1582,6 @@ mod tests {
     use crate::status_indicator_widget::StatusDetailsCapitalization;
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
-    use codex_cli_protocol::CommandExecutionApprovalDecision;
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyEventKind;
@@ -1593,7 +1592,6 @@ mod tests {
     use ratatui::layout::Rect;
     use std::cell::Cell;
     use std::rc::Rc;
-    use std::time::Instant;
     use tokio::sync::mpsc::unbounded_channel;
 
     fn snapshot_buffer(buf: &Buffer) -> String {
@@ -1634,27 +1632,10 @@ mod tests {
         })
     }
 
-    fn exec_request() -> ApprovalRequest {
-        ApprovalRequest::Exec(ExecApprovalRequest {
-            thread_id: codex_protocol::ThreadId::new(),
-            thread_label: None,
-            id: "1".to_string(),
-            environment_id: None,
-            command: vec!["echo".into(), "ok".into()],
-            reason: None,
-            available_decisions: vec![
-                CommandExecutionApprovalDecision::Accept,
-                CommandExecutionApprovalDecision::Cancel,
-            ],
-            network_approval_context: None,
-            additional_permissions: None,
-        })
-    }
-
     #[derive(Default)]
     struct DismissibleView {
         id: Option<&'static str>,
-        dismiss_exec_id: Option<&'static str>,
+        dismiss_call_id: Option<&'static str>,
         complete: bool,
     }
 
@@ -1676,10 +1657,8 @@ mod tests {
         }
 
         fn dismiss_cli_runtime_request(&mut self, request: &ResolvedCliRuntimeRequest) -> bool {
-            let ResolvedCliRuntimeRequest::ExecApproval { id } = request else {
-                return false;
-            };
-            if self.dismiss_exec_id != Some(id.as_str()) {
+            let ResolvedCliRuntimeRequest::UserInput { call_id } = request;
+            if self.dismiss_call_id != Some(call_id.as_str()) {
                 return false;
             }
 
@@ -1719,27 +1698,6 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_c_on_modal_consumes_without_showing_quit_hint() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: "Ask Codex to do anything".to_string(),
-            disable_paste_burst: true,
-            animations_enabled: true,
-            skills: Some(Vec::new()),
-        });
-        pane.push_approval_request(exec_request(), &features);
-        assert_eq!(CancellationEvent::Handled, pane.on_ctrl_c());
-        assert!(!pane.quit_shortcut_hint_visible());
-        assert_eq!(CancellationEvent::NotHandled, pane.on_ctrl_c());
-    }
-
-    #[test]
     fn ctrl_c_cancels_history_search_without_clearing_draft_or_showing_quit_hint() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
@@ -1767,173 +1725,6 @@ mod tests {
     // live ring removed; related tests deleted.
 
     #[test]
-    fn overlay_not_shown_above_approval_modal() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: "Ask Codex to do anything".to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-            skills: Some(Vec::new()),
-        });
-
-        // Create an approval modal (active view).
-        pane.push_approval_request(exec_request(), &features);
-
-        // Render and verify the top row does not include an overlay.
-        let area = Rect::new(0, 0, 60, 6);
-        let mut buf = Buffer::empty(area);
-        pane.render(area, &mut buf);
-
-        let mut r0 = String::new();
-        for x in 0..area.width {
-            r0.push(buf[(x, 0)].symbol().chars().next().unwrap_or(' '));
-        }
-        assert!(
-            !r0.contains("Working"),
-            "overlay should not render above modal"
-        );
-    }
-
-    #[test]
-    fn approval_request_shows_immediately_without_recent_typing() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = test_pane(tx);
-
-        pane.push_approval_request(exec_request(), &features);
-
-        assert_eq!(pane.view_stack.len(), 1);
-        assert!(pane.delayed_approval_requests.is_empty());
-    }
-
-    #[test]
-    fn approval_request_is_delayed_after_recent_typing() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = test_pane(tx);
-        let now = Instant::now();
-        pane.last_composer_activity_at = Some(now);
-
-        pane.push_approval_request(exec_request(), &features);
-
-        assert!(pane.view_stack.is_empty());
-        assert_eq!(pane.delayed_approval_requests.len(), 1);
-
-        pane.pre_draw_tick_at(
-            now + APPROVAL_PROMPT_TYPING_IDLE_DELAY - Duration::from_millis(/*millis*/ 1),
-        );
-        assert!(pane.view_stack.is_empty());
-        assert_eq!(pane.delayed_approval_requests.len(), 1);
-
-        pane.pre_draw_tick_at(now + APPROVAL_PROMPT_TYPING_IDLE_DELAY);
-        assert_eq!(pane.view_stack.len(), 1);
-        assert!(pane.delayed_approval_requests.is_empty());
-    }
-
-    #[test]
-    fn continued_typing_resets_delayed_approval_idle_deadline() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = test_pane(tx);
-        let first_activity = Instant::now();
-        pane.last_composer_activity_at = Some(first_activity);
-        pane.push_approval_request(exec_request(), &features);
-
-        let continued_activity = first_activity + Duration::from_millis(/*millis*/ 750);
-        pane.record_composer_activity_at(continued_activity);
-
-        pane.pre_draw_tick_at(first_activity + APPROVAL_PROMPT_TYPING_IDLE_DELAY);
-        assert!(pane.view_stack.is_empty());
-        assert_eq!(pane.delayed_approval_requests.len(), 1);
-
-        pane.pre_draw_tick_at(continued_activity + APPROVAL_PROMPT_TYPING_IDLE_DELAY);
-        assert_eq!(pane.view_stack.len(), 1);
-        assert!(pane.delayed_approval_requests.is_empty());
-    }
-
-    #[test]
-    fn typed_approval_shortcuts_during_delay_stay_in_composer() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = test_pane_with_disable_paste_burst(tx, /*disable_paste_burst*/ true);
-        pane.last_composer_activity_at = Some(Instant::now());
-        pane.push_approval_request(exec_request(), &features);
-
-        pane.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
-        pane.handle_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
-
-        assert_eq!(pane.composer_text(), "ya");
-        assert!(pane.view_stack.is_empty());
-        assert_eq!(pane.delayed_approval_requests.len(), 1);
-        while let Ok(event) = rx.try_recv() {
-            assert!(
-                !matches!(event, AppEvent::SubmitThreadOp { .. }),
-                "delayed approval shortcut should not submit an approval: {event:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn delayed_approval_shortcut_works_after_idle_deadline() {
-        let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = test_pane(tx);
-        let now = Instant::now();
-        pane.last_composer_activity_at = Some(now);
-        pane.push_approval_request(exec_request(), &features);
-
-        pane.pre_draw_tick_at(now + APPROVAL_PROMPT_TYPING_IDLE_DELAY);
-        pane.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
-
-        let mut approval_decision = None;
-        while let Ok(event) = rx.try_recv() {
-            if let AppEvent::SubmitThreadOp {
-                op: Op::ExecApproval { decision, .. },
-                ..
-            } = event
-            {
-                approval_decision = Some(decision);
-            }
-        }
-        assert_eq!(
-            approval_decision,
-            Some(CommandExecutionApprovalDecision::Accept)
-        );
-    }
-
-    #[test]
-    fn dismiss_cli_runtime_request_prunes_delayed_approval() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = test_pane(tx);
-        let now = Instant::now();
-        pane.last_composer_activity_at = Some(now);
-        pane.push_approval_request(exec_request(), &features);
-
-        assert!(
-            pane.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::ExecApproval {
-                id: "1".to_string(),
-            })
-        );
-        assert!(pane.delayed_approval_requests.is_empty());
-
-        pane.pre_draw_tick_at(now + APPROVAL_PROMPT_TYPING_IDLE_DELAY);
-        assert!(pane.view_stack.is_empty());
-    }
-
-    #[test]
     fn dismiss_cli_runtime_request_removes_matching_buried_view() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
@@ -1941,18 +1732,18 @@ mod tests {
 
         pane.push_view(Box::new(DismissibleView {
             id: Some("buried"),
-            dismiss_exec_id: Some("request-1"),
+            dismiss_call_id: Some("request-1"),
             complete: false,
         }));
         pane.push_view(Box::new(DismissibleView {
             id: Some("top"),
-            dismiss_exec_id: None,
+            dismiss_call_id: None,
             complete: false,
         }));
 
         assert!(
-            pane.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::ExecApproval {
-                id: "request-1".to_string(),
+            pane.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::UserInput {
+                call_id: "request-1".to_string(),
             })
         );
         assert_eq!(pane.view_stack.len(), 1);
@@ -1970,18 +1761,18 @@ mod tests {
 
         pane.push_view(Box::new(DismissibleView {
             id: Some("first"),
-            dismiss_exec_id: Some("other-request"),
+            dismiss_call_id: Some("other-request"),
             complete: false,
         }));
         pane.push_view(Box::new(DismissibleView {
             id: Some("second"),
-            dismiss_exec_id: None,
+            dismiss_call_id: None,
             complete: false,
         }));
 
         assert!(
-            !pane.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::ExecApproval {
-                id: "request-1".to_string(),
+            !pane.dismiss_cli_runtime_request(&ResolvedCliRuntimeRequest::UserInput {
+                call_id: "request-1".to_string(),
             })
         );
         assert_eq!(pane.view_stack.len(), 2);
@@ -1999,7 +1790,7 @@ mod tests {
 
         pane.push_view(Box::new(DismissibleView {
             id: Some("underlying"),
-            dismiss_exec_id: None,
+            dismiss_call_id: None,
             complete: false,
         }));
         pane.push_view(Box::new(CompletingView {
@@ -2013,74 +1804,6 @@ mod tests {
         assert_eq!(
             pane.view_stack.last().and_then(|view| view.view_id()),
             Some("underlying")
-        );
-    }
-
-    #[test]
-    fn composer_shown_after_denied_while_task_running() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let features = Features::with_defaults();
-        let mut pane = BottomPane::new(BottomPaneParams {
-            app_event_tx: tx,
-            frame_requester: FrameRequester::test_dummy(),
-            has_input_focus: true,
-            enhanced_keys_supported: false,
-            placeholder_text: "Ask Codex to do anything".to_string(),
-            disable_paste_burst: false,
-            animations_enabled: true,
-            skills: Some(Vec::new()),
-        });
-
-        // Start a running task so the status indicator is active above the composer.
-        pane.set_task_running(/*running*/ true);
-
-        // Push an approval modal (e.g., command approval) which should hide the status view.
-        pane.push_approval_request(exec_request(), &features);
-
-        // Simulate pressing 'n' (No) on the modal.
-        use crossterm::event::KeyCode;
-        use crossterm::event::KeyEvent;
-        use crossterm::event::KeyModifiers;
-        pane.handle_key_event(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
-
-        // After denial, since the task is still running, the status indicator should be
-        // visible above the composer. The modal should be gone.
-        assert!(
-            pane.view_stack.is_empty(),
-            "no active modal view after denial"
-        );
-
-        // Render and ensure the top row includes the Working header and a composer line below.
-        // Give the animation thread a moment to tick.
-        std::thread::sleep(Duration::from_millis(120));
-        let area = Rect::new(0, 0, 40, 6);
-        let mut buf = Buffer::empty(area);
-        pane.render(area, &mut buf);
-        let mut row0 = String::new();
-        for x in 0..area.width {
-            row0.push(buf[(x, 0)].symbol().chars().next().unwrap_or(' '));
-        }
-        assert!(
-            row0.contains("Working"),
-            "expected Working header after denial on row 0: {row0:?}"
-        );
-
-        // Composer placeholder should be visible somewhere below.
-        let mut found_composer = false;
-        for y in 1..area.height {
-            let mut row = String::new();
-            for x in 0..area.width {
-                row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
-            }
-            if row.contains("Ask Codex") {
-                found_composer = true;
-                break;
-            }
-        }
-        assert!(
-            found_composer,
-            "expected composer visible under status line"
         );
     }
 
@@ -2587,9 +2310,7 @@ mod tests {
                 name: "Main".to_string(),
                 ..Default::default()
             }],
-            on_cancel: Some(Box::new(|tx: &_| {
-                tx.send(AppEvent::OpenApprovalsPopup);
-            })),
+            on_cancel: Some(Box::new(|_tx: &_| {})),
             ..Default::default()
         });
 
@@ -2601,7 +2322,7 @@ mod tests {
         pane.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE));
 
         assert!(pane.no_modal_or_popup_active());
-        assert!(matches!(rx.try_recv(), Ok(AppEvent::OpenApprovalsPopup)));
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]

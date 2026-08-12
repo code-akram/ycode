@@ -225,9 +225,6 @@ mod tests {
     use super::super::ThreadBufferedEvent;
     use super::super::ThreadEventStore;
     use crate::app_command::AppCommand as Op;
-    use codex_cli_protocol::CommandExecutionApprovalDecision;
-    use codex_cli_protocol::CommandExecutionRequestApprovalParams;
-    use codex_cli_protocol::FileChangeRequestApprovalParams;
     use codex_cli_protocol::RequestId as CliRuntimeRequestId;
     use codex_cli_protocol::ServerNotification;
     use codex_cli_protocol::ServerRequest;
@@ -238,8 +235,6 @@ mod tests {
     use codex_cli_protocol::Turn;
     use codex_cli_protocol::TurnCompletedNotification;
     use codex_cli_protocol::TurnStatus;
-    use codex_utils_absolute_path::test_support::PathBufExt;
-    use codex_utils_absolute_path::test_support::test_path_buf;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
 
@@ -253,47 +248,6 @@ mod tests {
                 questions: Vec::new(),
                 is_blocking: true,
                 auto_resolution_ms: None,
-            },
-        }
-    }
-
-    fn exec_approval_request(
-        call_id: &str,
-        approval_id: Option<&str>,
-        turn_id: &str,
-    ) -> ServerRequest {
-        ServerRequest::CommandExecutionRequestApproval {
-            request_id: CliRuntimeRequestId::Integer(2),
-            params: CommandExecutionRequestApprovalParams {
-                thread_id: "thread-1".to_string(),
-                turn_id: turn_id.to_string(),
-                item_id: call_id.to_string(),
-                started_at_ms: 0,
-                approval_id: approval_id.map(str::to_string),
-                environment_id: None,
-                reason: None,
-                network_approval_context: None,
-                command: Some("echo hi".to_string()),
-                cwd: Some(test_path_buf("/tmp").abs().into()),
-                command_actions: None,
-                additional_permissions: None,
-                proposed_execpolicy_amendment: None,
-                proposed_network_policy_amendments: None,
-                available_decisions: None,
-            },
-        }
-    }
-
-    fn patch_approval_request(call_id: &str, turn_id: &str) -> ServerRequest {
-        ServerRequest::FileChangeRequestApproval {
-            request_id: CliRuntimeRequestId::Integer(3),
-            params: FileChangeRequestApprovalParams {
-                thread_id: "thread-1".to_string(),
-                turn_id: turn_id.to_string(),
-                item_id: call_id.to_string(),
-                started_at_ms: 0,
-                reason: None,
-                grant_root: None,
             },
         }
     }
@@ -390,55 +344,6 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_drops_resolved_exec_approval_after_outbound_approval_id() {
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_request(exec_approval_request(
-            "call-1",
-            Some("approval-1"),
-            "turn-1",
-        ));
-
-        store.note_outbound_op(&Op::ExecApproval {
-            id: "approval-1".to_string(),
-            turn_id: Some("turn-1".to_string()),
-            decision: CommandExecutionApprovalDecision::Accept,
-        });
-
-        let snapshot = store.snapshot();
-        assert!(
-            snapshot.events.is_empty(),
-            "resolved exec approval prompt should not replay on thread switch"
-        );
-    }
-
-    #[test]
-    fn thread_event_snapshot_drops_resolved_exec_approval_after_server_resolution() {
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_request(exec_approval_request(
-            "call-1",
-            Some("approval-1"),
-            "turn-1",
-        ));
-
-        store.push_notification(request_resolved(CliRuntimeRequestId::Integer(2)));
-
-        let snapshot = store.snapshot();
-        assert!(
-            snapshot.events.iter().all(|event| {
-                !matches!(
-                    event,
-                    ThreadBufferedEvent::Request(request)
-                        if matches!(
-                            request.as_ref(),
-                            ServerRequest::CommandExecutionRequestApproval { .. }
-                        )
-                )
-            }),
-            "server-resolved exec approval prompt should not replay on thread switch"
-        );
-    }
-
-    #[test]
     fn thread_event_snapshot_drops_answered_request_user_input_for_multi_prompt_turn() {
         let mut store = ThreadEventStore::new(/*capacity*/ 8);
         store.push_request(request_user_input_request("call-1", "turn-1"));
@@ -492,81 +397,9 @@ mod tests {
     }
 
     #[test]
-    fn thread_event_snapshot_drops_resolved_patch_approval_after_outbound_approval() {
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_request(patch_approval_request("call-1", "turn-1"));
-
-        store.note_outbound_op(&Op::PatchApproval {
-            id: "call-1".to_string(),
-            decision: codex_cli_protocol::FileChangeApprovalDecision::Accept,
-        });
-
-        let snapshot = store.snapshot();
-        assert!(
-            snapshot.events.is_empty(),
-            "resolved patch approval prompt should not replay on thread switch"
-        );
-    }
-
-    #[test]
-    fn thread_event_snapshot_drops_pending_approvals_when_turn_completes() {
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_request(exec_approval_request(
-            "exec-call-1",
-            Some("approval-1"),
-            "turn-1",
-        ));
-        store.push_request(patch_approval_request("patch-call-1", "turn-1"));
-        store.push_notification(turn_completed("turn-1"));
-
-        let snapshot = store.snapshot();
-        assert!(snapshot.events.iter().all(|event| {
-            !matches!(
-                event,
-                ThreadBufferedEvent::Request(request)
-                    if matches!(
-                        request.as_ref(),
-                        ServerRequest::CommandExecutionRequestApproval { .. }
-                            | ServerRequest::FileChangeRequestApproval { .. }
-                    )
-            )
-        }));
-    }
-
-    #[test]
-    fn thread_event_store_reports_pending_thread_approvals() {
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        assert_eq!(store.has_pending_thread_approvals(), false);
-
-        store.push_request(exec_approval_request(
-            "call-1", /*approval_id*/ None, "turn-1",
-        ));
-
-        assert_eq!(store.has_pending_thread_approvals(), true);
-
-        store.note_outbound_op(&Op::ExecApproval {
-            id: "call-1".to_string(),
-            turn_id: Some("turn-1".to_string()),
-            decision: CommandExecutionApprovalDecision::Accept,
-        });
-
-        assert_eq!(store.has_pending_thread_approvals(), false);
-    }
-
-    #[test]
-    fn request_user_input_does_not_count_as_pending_thread_approval() {
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_request(request_user_input_request("call-1", "turn-1"));
-
-        assert_eq!(store.has_pending_thread_approvals(), false);
-    }
-
-    #[test]
     fn thread_event_snapshot_drops_pending_requests_when_thread_closes() {
         let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_request(exec_approval_request(
-            "call-1", /*approval_id*/ None, "turn-1",
-        ));
+        store.push_request(request_user_input_request("call-1", "turn-1"));
         store.push_notification(thread_closed());
 
         assert!(store.snapshot().events.iter().all(|event| {
@@ -575,7 +408,7 @@ mod tests {
                 ThreadBufferedEvent::Request(request)
                     if matches!(
                         request.as_ref(),
-                        ServerRequest::CommandExecutionRequestApproval { .. }
+                        ServerRequest::ToolRequestUserInput { .. }
                     )
             )
         }));

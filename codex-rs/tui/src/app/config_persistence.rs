@@ -529,7 +529,6 @@ mod tests {
     use crate::test_support::PathBufExt;
     use codex_config::ConfigLayerEntry;
     use codex_config::ConfigLayerStack;
-    use codex_protocol::models::PermissionProfile;
     use codex_protocol::openai_models::ReasoningEffortPreset;
     use crossterm::event::KeyCode;
     use crossterm::event::KeyEvent;
@@ -647,16 +646,8 @@ mod tests {
                 crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig,
             ),
             (
-                "model_provider",
-                crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig,
-            ),
-            (
                 "model_reasoning_effort",
                 crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig,
-            ),
-            (
-                "sandbox_mode",
-                crate::runtime_session::ResumeModelSettings::RestoreFromThread,
             ),
         ] {
             let config = TomlValue::Table(toml::map::Map::from_iter([(
@@ -692,12 +683,6 @@ mod tests {
         assert_eq!(
             app.resume_model_settings(),
             crate::runtime_session::ResumeModelSettings::RestoreFromThread
-        );
-
-        app.harness_overrides.model_provider = Some("custom-provider".to_string());
-        assert_eq!(
-            app.resume_model_settings(),
-            crate::runtime_session::ResumeModelSettings::OverrideFromCurrentConfig
         );
     }
 
@@ -743,64 +728,6 @@ mod tests {
     // Regression coverage for `/new` and `/clear`: cloud requirements
     // must survive the config refresh that runs before thread transitions.
     #[tokio::test]
-    async fn refresh_in_memory_config_from_disk_keeps_cloud_requirements_for_thread_transitions()
-    -> Result<()> {
-        let mut app = make_test_app().await;
-        let codex_home = tempdir()?;
-        let required_policy = codex_protocol::protocol::AskForApproval::Never;
-        let cloud_config_bundle =
-            codex_config::test_support::CloudConfigBundleFixture::loader_with_enterprise_requirement(
-                r#"allowed_approval_policies = ["never"]"#,
-            );
-
-        let config = ConfigBuilder::default()
-            .codex_home(codex_home.path().to_path_buf())
-            .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
-            .cloud_config_bundle(cloud_config_bundle.clone())
-            .build()
-            .await?;
-        app.config = config;
-        app.cloud_config_bundle = cloud_config_bundle;
-        let app_id = "unit_test_cloud_requirements_reload_marker";
-        std::fs::write(
-            codex_home.path().join("config.toml"),
-            format!(
-                r#"
-[apps.{app_id}]
-enabled = false
-"#
-            ),
-        )?;
-
-        let assert_cloud_requirements = |app: &App| {
-            let config = app.fresh_session_config();
-            assert_eq!(
-                config
-                    .config_layer_stack
-                    .requirements_toml()
-                    .allowed_approval_policies
-                    .clone(),
-                Some(vec![required_policy])
-            );
-            assert_eq!(config.permissions.approval_policy.value(), required_policy);
-        };
-
-        assert_cloud_requirements(&app);
-        assert_eq!(app_enabled_in_effective_config(&app.config, app_id), None);
-
-        // This is the fallible reload that the best-effort `/new`, `/clear`,
-        // `/fork`, side-conversation, and session-picker paths wrap.
-        app.refresh_in_memory_config_from_disk().await?;
-
-        assert_eq!(
-            app_enabled_in_effective_config(&app.config, app_id),
-            Some(false)
-        );
-        assert_cloud_requirements(&app);
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error()
     -> Result<()> {
         let mut app = make_test_app().await;
@@ -832,10 +759,6 @@ enabled = false
                 model: "gpt-test".to_string(),
                 model_provider_id: "test-provider".to_string(),
                 service_tier: None,
-                approval_policy: AskForApproval::Never,
-                approvals_reviewer: ApprovalsReviewer::User,
-                permission_profile: PermissionProfile::read_only(),
-                active_permission_profile: None,
                 cwd: next_cwd.clone().abs(),
                 runtime_workspace_roots: Vec::new(),
                 instruction_source_paths: Vec::new(),
@@ -843,7 +766,6 @@ enabled = false
                 agent_settings: None,
                 personality: None,
                 message_history: None,
-                network_proxy: None,
                 rollout_path: Some(PathBuf::new()),
             });
 
@@ -874,46 +796,6 @@ terminal_resize_reflow_max_rows = 9000
         assert_eq!(
             app.config.terminal_resize_reflow.max_rows,
             crate::legacy_core::config::TerminalResizeReflowMaxRows::Limit(9000)
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn overridden_disabled_guardian_does_not_apply_auto_review_companions() -> Result<()> {
-        let mut app = make_test_app().await;
-        let original_policy = app.config.permissions.approval_policy.value();
-        let effective_config: ConfigReadResponse = serde_json::from_value(serde_json::json!({
-            "config": {
-                "approval_policy": AskForApproval::OnRequest,
-                "approvals_reviewer": codex_cli_protocol::ApprovalsReviewer::AutoReview,
-                "sandbox_mode": CliRuntimeSandboxMode::WorkspaceWrite,
-                "features": {
-                    "guardian_approval": false,
-                },
-            },
-            "origins": {},
-        }))?;
-
-        app.sync_feature_state_from_effective_config(
-            &effective_config,
-            &[(Feature::GuardianApproval, /*enabled*/ true)],
-        );
-
-        assert!(!app.config.features.enabled(Feature::GuardianApproval));
-        assert!(
-            !app.chat_widget
-                .config_ref()
-                .features
-                .enabled(Feature::GuardianApproval)
-        );
-        assert_eq!(app.config.approvals_reviewer, ApprovalsReviewer::User);
-        assert_eq!(
-            app.chat_widget.config_ref().approvals_reviewer,
-            ApprovalsReviewer::User
-        );
-        assert_eq!(
-            app.config.permissions.approval_policy.value(),
-            original_policy
         );
         Ok(())
     }

@@ -24,10 +24,6 @@ async fn resumed_initial_messages_render_history() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -35,7 +31,6 @@ async fn resumed_initial_messages_render_history() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
@@ -230,10 +225,6 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -241,7 +232,6 @@ async fn replayed_user_message_preserves_text_elements_and_local_images() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
@@ -302,10 +292,6 @@ async fn replayed_user_message_preserves_remote_image_urls() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -313,7 +299,6 @@ async fn replayed_user_message_preserves_remote_image_urls() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
@@ -356,48 +341,11 @@ async fn replayed_user_message_preserves_remote_image_urls() {
 }
 
 #[tokio::test]
-async fn session_configured_syncs_widget_config_permissions_and_cwd() {
+async fn session_configured_syncs_widget_cwd() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.config
-        .permissions
-        .approval_policy
-        .set(AskForApproval::OnRequest.to_core())
-        .expect("set approval policy");
-    chat.config
-        .permissions
-        .set_permission_profile(PermissionProfile::workspace_write())
-        .expect("set permission profile");
     chat.config.cwd = test_path_buf("/home/user/main").abs();
 
     let expected_cwd = test_path_buf("/home/user/sub-agent").abs();
-    let expected_cli_runtime_permission_profile = PermissionProfile::Managed {
-        network: NetworkSandboxPolicy::Restricted,
-        file_system: ManagedFileSystemPermissions::Restricted {
-            entries: vec![
-                FileSystemSandboxEntry {
-                    path: FileSystemPath::Special {
-                        value: FileSystemSpecialPath::Root,
-                    },
-                    access: FileSystemAccessMode::Read,
-                    missing_path_behavior: None,
-                },
-                FileSystemSandboxEntry {
-                    path: FileSystemPath::GlobPattern {
-                        pattern: "**/.secret".to_string(),
-                    },
-                    access: FileSystemAccessMode::Deny,
-                    missing_path_behavior: None,
-                },
-            ],
-            glob_scan_max_depth: None,
-        },
-    };
-    let expected_permission_profile = expected_cli_runtime_permission_profile.clone();
-    let expected_core_sandbox = expected_permission_profile
-        .to_legacy_sandbox_policy(expected_cwd.as_path())
-        .expect("permission profile should project to legacy sandbox policy");
-    let expected_sandbox = SandboxPolicy::from(expected_core_sandbox);
     let configured = crate::session_state::ThreadSessionState {
         thread_id: ThreadId::new(),
         forked_from_id: None,
@@ -406,10 +354,6 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: expected_permission_profile,
-        active_permission_profile: None,
         cwd: expected_cwd.clone(),
         runtime_workspace_roots: vec![expected_cwd.clone()],
         instruction_source_paths: Vec::new(),
@@ -417,138 +361,12 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: None,
     };
 
     chat.handle_thread_session(configured);
 
-    assert_eq!(
-        AskForApproval::from(chat.config_ref().permissions.approval_policy.value()),
-        AskForApproval::Never
-    );
-    let actual_sandbox = SandboxPolicy::from(chat.config_ref().legacy_sandbox_policy());
-    assert_eq!(&actual_sandbox, &expected_sandbox);
-    assert_eq!(
-        chat.config_ref().permissions.effective_permission_profile(),
-        expected_cli_runtime_permission_profile
-    );
     assert_eq!(&chat.config_ref().cwd, &expected_cwd);
-
-    let updated_profile = PermissionProfile::workspace_write();
-    chat.set_permission_profile_from_session_snapshot(PermissionProfileSnapshot::legacy(
-        updated_profile.clone(),
-    ))
-    .expect("set permission profile");
-    assert_eq!(
-        chat.config_ref().permissions.permission_profile(),
-        &updated_profile,
-        "local permission changes should replace SessionConfigured canonical permissions"
-    );
-    assert_eq!(
-        chat.config_ref().permissions.effective_permission_profile(),
-        updated_profile
-            .materialize_project_roots_with_workspace_roots(std::slice::from_ref(&expected_cwd,)),
-        "effective permissions should still use the current thread runtime workspace roots"
-    );
-}
-
-#[tokio::test]
-async fn session_configured_preserves_profile_workspace_roots() {
-    let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    let previous_cwd = test_path_buf("/home/user/main").abs();
-    let profile_root = test_path_buf("/home/user/shared").abs();
-    chat.config.cwd = previous_cwd.clone();
-    chat.config.workspace_roots = vec![previous_cwd, profile_root.clone()];
-    chat.config.workspace_roots_explicit = false;
-    chat.config
-        .permissions
-        .set_workspace_roots(chat.config.workspace_roots.clone());
-
-    let session_cwd = test_path_buf("/home/user/sub-agent").abs();
-    let session_runtime_workspace_roots = vec![session_cwd.clone()];
-    let session_effective_workspace_roots = vec![session_cwd.clone(), profile_root];
-    let session_permission_profile = PermissionProfile::workspace_write()
-        .materialize_project_roots_with_workspace_roots(&session_effective_workspace_roots);
-    let configured = crate::session_state::ThreadSessionState {
-        thread_id: ThreadId::new(),
-        forked_from_id: None,
-        fork_parent_title: None,
-        thread_name: None,
-        model: "test-model".to_string(),
-        model_provider_id: "test-provider".to_string(),
-        service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: session_permission_profile.clone(),
-        active_permission_profile: None,
-        cwd: session_cwd.clone(),
-        runtime_workspace_roots: session_runtime_workspace_roots.clone(),
-        instruction_source_paths: Vec::new(),
-        reasoning_effort: Some(ReasoningEffortConfig::default()),
-        agent_settings: None,
-        personality: None,
-        message_history: None,
-        network_proxy: None,
-        rollout_path: None,
-    };
-
-    chat.handle_thread_session(configured);
-
-    assert_eq!(&chat.config_ref().cwd, &session_cwd);
-    assert_eq!(
-        chat.config_ref().permissions.user_visible_workspace_roots(),
-        session_runtime_workspace_roots.as_slice()
-    );
-    assert_eq!(
-        chat.config_ref().permissions.effective_permission_profile(),
-        session_permission_profile
-    );
-}
-
-#[tokio::test]
-async fn session_configured_external_sandbox_keeps_external_runtime_policy() {
-    let (mut chat, _rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    let expected_cli_runtime_permission_profile = PermissionProfile::External {
-        network: NetworkSandboxPolicy::Restricted,
-    };
-    let expected_permission_profile = expected_cli_runtime_permission_profile.clone();
-    let expected_sandbox = SandboxPolicy::ExternalSandbox {
-        network_access: NetworkAccess::Restricted,
-    };
-    let configured = crate::session_state::ThreadSessionState {
-        thread_id: ThreadId::new(),
-        forked_from_id: None,
-        fork_parent_title: None,
-        thread_name: None,
-        model: "test-model".to_string(),
-        model_provider_id: "test-provider".to_string(),
-        service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: expected_permission_profile,
-        active_permission_profile: None,
-        cwd: test_path_buf("/home/user/external").abs(),
-        runtime_workspace_roots: Vec::new(),
-        instruction_source_paths: Vec::new(),
-        reasoning_effort: Some(ReasoningEffortConfig::default()),
-        agent_settings: None,
-        personality: None,
-        message_history: None,
-        network_proxy: None,
-        rollout_path: None,
-    };
-
-    chat.handle_thread_session(configured);
-
-    let actual_sandbox = SandboxPolicy::from(chat.config_ref().legacy_sandbox_policy());
-    assert_eq!(&actual_sandbox, &expected_sandbox);
-    assert_eq!(
-        chat.config_ref().permissions.effective_permission_profile(),
-        expected_cli_runtime_permission_profile
-    );
 }
 
 #[tokio::test]
@@ -567,10 +385,6 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -578,7 +392,6 @@ async fn replayed_user_message_with_only_remote_images_renders_history_cell() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
@@ -625,10 +438,6 @@ async fn replayed_user_message_with_only_local_images_renders_history_cell() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -636,7 +445,6 @@ async fn replayed_user_message_with_only_local_images_renders_history_cell() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
 
@@ -905,10 +713,6 @@ async fn replayed_reasoning_item_preserves_summary_parts_and_hides_raw_reasoning
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_project_path().abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -916,7 +720,6 @@ async fn replayed_reasoning_item_preserves_summary_parts_and_hides_raw_reasoning
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: None,
     });
     let _ = drain_insert_history(&mut rx);
@@ -956,10 +759,6 @@ async fn replayed_reasoning_item_shows_raw_reasoning_when_enabled() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_project_path().abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -967,7 +766,6 @@ async fn replayed_reasoning_item_shows_raw_reasoning_when_enabled() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: None,
     });
     let _ = drain_insert_history(&mut rx);

@@ -1938,12 +1938,10 @@ mod tests {
         let mut view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
-                    name: "Plugin".to_string(),
+                    name: "Option".to_string(),
                     toggle: Some(SelectionToggle {
                         is_on: false,
-                        action: Box::new(|_enabled, tx: &_| {
-                            tx.send(AppEvent::OpenApprovalsPopup);
-                        }),
+                        action: Box::new(|_enabled, _tx: &_| {}),
                     }),
                     ..Default::default()
                 }],
@@ -1953,11 +1951,11 @@ mod tests {
             tx,
             crate::keymap::RuntimeKeymap::defaults().list,
         );
-        view.set_search_query("plugin".to_string());
+        view.set_search_query("option".to_string());
 
         view.handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
 
-        assert_eq!(view.search_query, "plugin ");
+        assert_eq!(view.search_query, "option ");
         assert!(
             !view.active_items()[0]
                 .toggle
@@ -1979,7 +1977,7 @@ mod tests {
             SelectionViewParams {
                 title: Some("Debug".to_string()),
                 items: vec![SelectionItem {
-                    name: "A very long plugin name".to_string(),
+                    name: "A very long option name".to_string(),
                     description: Some(
                         "A very long description that would normally wrap onto another line."
                             .to_string(),
@@ -1999,7 +1997,7 @@ mod tests {
             SelectionViewParams {
                 title: Some("Debug".to_string()),
                 items: vec![SelectionItem {
-                    name: "A very long plugin name".to_string(),
+                    name: "A very long option name".to_string(),
                     description: Some(
                         "A very long description that would normally wrap onto another line."
                             .to_string(),
@@ -2105,9 +2103,7 @@ mod tests {
                     ..Default::default()
                 }],
                 is_searchable: true,
-                on_cancel: Some(Box::new(|tx: &_| {
-                    tx.send(AppEvent::OpenApprovalsPopup);
-                })),
+                on_cancel: Some(Box::new(|_tx: &_| {})),
                 ..Default::default()
             },
             tx,
@@ -2117,11 +2113,7 @@ mod tests {
         view.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
         assert!(view.is_complete());
-        match rx.try_recv() {
-            Ok(AppEvent::OpenApprovalsPopup) => {}
-            Ok(other) => panic!("expected OpenApprovalsPopup cancel event, got {other:?}"),
-            Err(err) => panic!("expected cancel callback event, got {err}"),
-        }
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]
@@ -2135,9 +2127,7 @@ mod tests {
                     dismiss_on_select: true,
                     ..Default::default()
                 }],
-                on_selection_changed: Some(Box::new(|_idx, tx: &_| {
-                    tx.send(AppEvent::OpenApprovalsPopup);
-                })),
+                on_selection_changed: Some(Box::new(|_idx, _tx: &_| {})),
                 ..Default::default()
             },
             tx,

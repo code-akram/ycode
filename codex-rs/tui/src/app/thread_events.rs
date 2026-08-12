@@ -346,14 +346,8 @@ mod tests {
     use super::*;
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
-    use codex_cli_protocol::AskForApproval;
-    use codex_cli_protocol::CommandExecutionRequestApprovalParams;
-    use codex_cli_protocol::RequestId as CliRuntimeRequestId;
-
     use codex_cli_protocol::TurnCompletedNotification;
     use codex_cli_protocol::TurnStartedNotification;
-    use codex_config::types::ApprovalsReviewer;
-    use codex_protocol::models::PermissionProfile;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
@@ -366,10 +360,6 @@ mod tests {
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
             service_tier: None,
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: ApprovalsReviewer::User,
-            permission_profile: PermissionProfile::read_only(),
-            active_permission_profile: None,
             cwd: cwd.abs(),
             runtime_workspace_roots: Vec::new(),
             instruction_source_paths: Vec::new(),
@@ -377,7 +367,6 @@ mod tests {
             agent_settings: None,
             personality: None,
             message_history: None,
-            network_proxy: None,
             rollout_path: Some(PathBuf::new()),
         }
     }
@@ -418,34 +407,6 @@ mod tests {
                 ..test_turn(turn_id, status, Vec::new())
             },
         })
-    }
-
-    fn exec_approval_request(
-        thread_id: ThreadId,
-        turn_id: &str,
-        item_id: &str,
-        approval_id: Option<&str>,
-    ) -> ServerRequest {
-        ServerRequest::CommandExecutionRequestApproval {
-            request_id: CliRuntimeRequestId::Integer(1),
-            params: CommandExecutionRequestApprovalParams {
-                thread_id: thread_id.to_string(),
-                turn_id: turn_id.to_string(),
-                item_id: item_id.to_string(),
-                started_at_ms: 0,
-                approval_id: approval_id.map(str::to_string),
-                environment_id: None,
-                reason: Some("needs approval".to_string()),
-                network_approval_context: None,
-                command: Some("echo hello".to_string()),
-                cwd: Some(test_path_buf("/tmp/project").abs().into()),
-                command_actions: None,
-                additional_permissions: None,
-                proposed_execpolicy_amendment: None,
-                proposed_network_policy_amendments: None,
-                available_decisions: None,
-            },
-        }
     }
 
     #[test]
@@ -499,29 +460,5 @@ mod tests {
         store.clear_active_turn_id();
 
         assert_eq!(store.active_turn_id(), None);
-    }
-
-    #[test]
-    fn thread_event_store_rebase_preserves_resolved_request_state() {
-        let thread_id = ThreadId::new();
-        let mut store = ThreadEventStore::new(/*capacity*/ 8);
-        store.push_request(exec_approval_request(
-            thread_id,
-            "turn-approval",
-            "call-approval",
-            /*approval_id*/ None,
-        ));
-        store.push_notification(ServerNotification::ServerRequestResolved(
-            codex_cli_protocol::ServerRequestResolvedNotification {
-                request_id: CliRuntimeRequestId::Integer(1),
-                thread_id: thread_id.to_string(),
-            },
-        ));
-
-        store.rebase_buffer_after_session_refresh();
-
-        let snapshot = store.snapshot();
-        assert!(snapshot.events.is_empty());
-        assert_eq!(store.has_pending_thread_approvals(), false);
     }
 }

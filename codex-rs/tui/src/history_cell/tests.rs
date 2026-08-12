@@ -10,7 +10,6 @@ use crate::line_truncation::line_width;
 use crate::render::highlight::MAX_HIGHLIGHT_LINE_BYTES;
 use crate::session_state::ThreadSessionState;
 use crate::wrapping::word_wrap_lines;
-use codex_cli_protocol::AskForApproval;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
 use codex_protocol::error::UnexpectedResponseError;
@@ -120,11 +119,6 @@ fn source_backed_cells_render_raw_source_without_prefix_or_style() {
         &test_cwd(),
         /*transcript_only*/ false,
     );
-    let plan = new_proposed_plan(
-        "1. Inspect\n\n```sh\ncargo test\n```".to_string(),
-        &test_cwd(),
-    );
-
     let user_lines = user.raw_lines();
     assert_eq!(
         render_lines(&user_lines),
@@ -155,68 +149,6 @@ fn source_backed_cells_render_raw_source_without_prefix_or_style() {
         ]
     );
     assert_unstyled_lines(&reasoning_lines);
-
-    let plan_lines = plan.raw_lines();
-    assert_eq!(
-        render_lines(&plan_lines),
-        vec![
-            "1. Inspect".to_string(),
-            String::new(),
-            "```sh".to_string(),
-            "cargo test".to_string(),
-            "```".to_string(),
-        ]
-    );
-    assert_unstyled_lines(&plan_lines);
-}
-
-#[test]
-fn proposed_plan_cell_renders_markdown_table() {
-    let plan = new_proposed_plan(
-        "## Plan\n\n| Step | Owner |\n| --- | --- |\n| Verify | Codex |\n".to_string(),
-        &test_cwd(),
-    );
-
-    let rendered = render_lines(&plan.display_lines(/*width*/ 80));
-
-    assert!(
-        rendered.iter().any(|line| line.contains('━')),
-        "expected separated table in proposed plan output: {rendered:?}"
-    );
-    assert!(
-        !rendered
-            .iter()
-            .any(|line| line.trim() == "| Step | Owner |"),
-        "did not expect raw table header in rich proposed plan output: {rendered:?}"
-    );
-
-    let raw = render_lines(&plan.raw_lines());
-    assert!(
-        raw.iter().any(|line| line == "| Step | Owner |"),
-        "expected raw mode to preserve table markdown source: {raw:?}"
-    );
-}
-
-#[test]
-fn proposed_plan_cell_preserves_wrapped_table_web_links() {
-    let destination = "https://example.com/a/very/long/path/to/a/table/artifact";
-    let plan = new_proposed_plan(
-        format!("| Step | URL |\n| --- | --- |\n| Verify | {destination} |\n"),
-        &test_cwd(),
-    );
-
-    let lines = plan.display_hyperlink_lines(/*width*/ 32);
-    let linked_rows = lines
-        .iter()
-        .filter(|line| !line.hyperlinks.is_empty())
-        .collect::<Vec<_>>();
-
-    assert!(linked_rows.len() > 1);
-    assert!(linked_rows.iter().all(|line| {
-        line.hyperlinks
-            .iter()
-            .all(|link| link.destination == destination)
-    }));
 }
 
 #[test]
@@ -235,26 +167,6 @@ fn composite_cell_preserves_child_web_links() {
             /*columns*/ 0..destination.len(),
             destination.to_string(),
         )]
-    );
-}
-
-#[test]
-fn proposed_plan_cell_unwraps_markdown_fenced_table() {
-    let plan = new_proposed_plan(
-        "## Plan\n\n```markdown\n| Step | Owner |\n| --- | --- |\n| Verify | Codex |\n```\n"
-            .to_string(),
-        &test_cwd(),
-    );
-
-    let rendered = render_lines(&plan.display_lines(/*width*/ 80));
-
-    assert!(
-        rendered.iter().any(|line| line.contains('━')),
-        "expected separated table for markdown-fenced proposed plan output: {rendered:?}"
-    );
-    assert!(
-        !rendered.iter().any(|line| line.trim() == "```markdown"),
-        "did not expect markdown fence to render as code block: {rendered:?}"
     );
 }
 
@@ -291,10 +203,6 @@ fn session_configured_event(model: &str) -> ThreadSessionState {
         model: model.to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/tmp/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -302,7 +210,6 @@ fn session_configured_event(model: &str) -> ThreadSessionState {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(PathBuf::new()),
     }
 }
@@ -775,29 +682,13 @@ fn session_header_clamps_to_narrow_width() {
         /*show_fast_status*/ true,
         PathBuf::from("project"),
         "test",
-    )
-    .with_yolo_mode(/*yolo_mode*/ true);
+    );
 
     let lines = cell.display_lines(WIDTH);
     let widths = lines.iter().map(line_width).collect::<Vec<_>>();
 
     assert_eq!(widths, vec![usize::from(WIDTH); lines.len()]);
     insta::assert_snapshot!(render_lines(&lines).join("\n"));
-}
-
-#[test]
-fn session_header_indicates_yolo_mode() {
-    let cell = SessionHeaderHistoryCell::new(
-        "gpt-5".to_string(),
-        /*reasoning_effort*/ None,
-        /*show_fast_status*/ false,
-        test_path_buf("/tmp/project").abs().to_path_buf(),
-        "test",
-    )
-    .with_yolo_mode(/*yolo_mode*/ true);
-
-    let rendered = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
-    insta::assert_snapshot!(rendered);
 }
 
 #[test]
@@ -836,31 +727,6 @@ fn session_header_truncates_halfwidth_directory() {
     cell.render(area, &mut buf);
 
     insta::assert_snapshot!("session_header_halfwidth_directory", format!("{buf:?}"));
-}
-
-#[test]
-fn yolo_mode_includes_managed_full_access_profiles() {
-    let permission_profile: PermissionProfile = PermissionProfile::Managed {
-        network: NetworkSandboxPolicy::Enabled,
-        file_system: ManagedFileSystemPermissions::Unrestricted,
-    };
-
-    assert!(has_yolo_permissions(
-        AskForApproval::Never,
-        &permission_profile
-    ));
-}
-
-#[test]
-fn yolo_mode_excludes_external_sandbox_profiles() {
-    let permission_profile: PermissionProfile = PermissionProfile::External {
-        network: NetworkSandboxPolicy::Enabled,
-    };
-
-    assert!(!has_yolo_permissions(
-        AskForApproval::Never,
-        &permission_profile
-    ));
 }
 
 #[test]

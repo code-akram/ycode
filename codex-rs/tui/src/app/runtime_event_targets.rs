@@ -161,7 +161,6 @@ mod tests {
     use super::server_notification_thread_target;
     use crate::test_support::PathBufExt;
     use crate::test_support::test_path_buf;
-    use codex_cli_protocol::GuardianWarningNotification;
     use codex_cli_protocol::ServerNotification;
     use codex_cli_protocol::ThreadSettings;
     use codex_cli_protocol::ThreadSettingsUpdatedNotification;
@@ -175,12 +174,6 @@ mod tests {
     fn test_thread_settings() -> ThreadSettings {
         ThreadSettings {
             cwd: test_path_buf("/tmp/thread-settings").abs(),
-            approval_policy: codex_cli_protocol::AskForApproval::Never,
-            approvals_reviewer: codex_cli_protocol::ApprovalsReviewer::User,
-            sandbox_policy: codex_cli_protocol::SandboxPolicy::ReadOnly {
-                network_access: false,
-            },
-            active_permission_profile: None,
             model: "gpt-5.4".to_string(),
             model_provider: "openai".to_string(),
             service_tier: None,
@@ -215,19 +208,6 @@ mod tests {
         let thread_id = ThreadId::new();
         let notification = ServerNotification::Warning(WarningNotification {
             thread_id: Some(thread_id.to_string()),
-            message: "warning".to_string(),
-        });
-
-        let target = server_notification_thread_target(&notification);
-
-        assert_eq!(target, ServerNotificationThreadTarget::Thread(thread_id));
-    }
-
-    #[test]
-    fn guardian_warning_notifications_route_to_threads() {
-        let thread_id = ThreadId::new();
-        let notification = ServerNotification::GuardianWarning(GuardianWarningNotification {
-            thread_id: thread_id.to_string(),
             message: "warning".to_string(),
         });
 

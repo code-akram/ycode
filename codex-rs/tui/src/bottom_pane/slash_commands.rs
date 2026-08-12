@@ -165,12 +165,6 @@ mod tests {
     }
 
     #[test]
-    fn debug_command_still_resolves_for_dispatch() {
-        let cmd = find_builtin_command("debug-config", all_enabled_flags());
-        assert_eq!(cmd, Some(SlashCommand::DebugConfig));
-    }
-
-    #[test]
     fn clear_command_resolves_for_dispatch() {
         assert_eq!(
             find_builtin_command("clear", all_enabled_flags()),

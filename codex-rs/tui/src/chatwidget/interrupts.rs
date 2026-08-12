@@ -78,7 +78,6 @@ impl QueuedInterrupt {
 
 #[cfg(test)]
 mod tests {
-    use crate::approval_events::ExecApprovalRequestEvent;
     use codex_cli_protocol::CommandExecutionSource;
     use codex_cli_protocol::CommandExecutionStatus;
     use codex_cli_protocol::ThreadItem;
@@ -98,30 +97,12 @@ mod tests {
         }
     }
 
-    fn exec_approval(call_id: &str, approval_id: Option<&str>) -> ExecApprovalRequestEvent {
-        ExecApprovalRequestEvent {
-            call_id: call_id.to_string(),
-            approval_id: approval_id.map(str::to_string),
-            turn_id: "turn".to_string(),
-            environment_id: None,
-            command: vec!["true".to_string()],
-            cwd: AbsolutePathBuf::current_dir().expect("current dir"),
-            reason: None,
-            network_approval_context: None,
-            proposed_execpolicy_amendment: None,
-            proposed_network_policy_amendments: None,
-            additional_permissions: None,
-            available_decisions: None,
-        }
-    }
-
     fn command_execution(call_id: &str) -> ThreadItem {
         ThreadItem::CommandExecution {
             id: call_id.to_string(),
             command: "true".to_string(),
             cwd: AbsolutePathBuf::current_dir().expect("current dir").into(),
             process_id: None,
-            script_path: None,
             source: CommandExecutionSource::Agent,
             status: CommandExecutionStatus::InProgress,
             command_actions: Vec::new(),
@@ -151,33 +132,13 @@ mod tests {
     }
 
     #[test]
-    fn remove_resolved_prompt_matches_exec_approval_id() {
-        let mut manager = InterruptManager::new();
-        manager.push_exec_approval(exec_approval("call", Some("approval")));
-
-        assert!(
-            !manager.remove_resolved_prompt(&ResolvedCliRuntimeRequest::ExecApproval {
-                id: "call".to_string(),
-            })
-        );
-        assert_eq!(manager.queue.len(), 1);
-
-        assert!(
-            manager.remove_resolved_prompt(&ResolvedCliRuntimeRequest::ExecApproval {
-                id: "approval".to_string(),
-            })
-        );
-        assert!(manager.queue.is_empty());
-    }
-
-    #[test]
     fn remove_resolved_prompt_keeps_lifecycle_events() {
         let mut manager = InterruptManager::new();
         manager.push_item_started(command_execution("call"));
 
         assert!(
-            !manager.remove_resolved_prompt(&ResolvedCliRuntimeRequest::ExecApproval {
-                id: "call".to_string(),
+            !manager.remove_resolved_prompt(&ResolvedCliRuntimeRequest::UserInput {
+                call_id: "call".to_string(),
             })
         );
 

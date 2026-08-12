@@ -51,17 +51,6 @@ fn rejects_fixed_resume_picker_keys_inside_list_chords() {
 }
 
 #[test]
-fn rejects_ctrl_c_inside_approval_chords() {
-    let mut config = TuiKeymap::default();
-    config.approval.approve = Some(binding("ctrl-x ctrl-c"));
-
-    let error =
-        RuntimeKeymap::from_config(&config).expect_err("Ctrl+C must continue cancelling approvals");
-
-    assert!(error.contains("cancel"), "{error}");
-}
-
-#[test]
 fn resolves_chords_for_actions_in_different_contexts() {
     let mut config = TuiKeymap::default();
     config.global.open_transcript = Some(bindings(&["ctrl-t", "ctrl-x ctrl-t"]));

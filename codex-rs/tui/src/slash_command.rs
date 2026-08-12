@@ -247,13 +247,4 @@ mod tests {
         assert!(SlashCommand::Raw.supports_inline_args());
         assert!(SlashCommand::App.available_during_task());
     }
-
-    #[test]
-    fn auto_review_command_is_approve() {
-        assert_eq!(SlashCommand::AutoReview.command(), "approve");
-        assert_eq!(
-            SlashCommand::from_str("approve"),
-            Ok(SlashCommand::AutoReview)
-        );
-    }
 }

@@ -151,10 +151,6 @@ async fn submission_preserves_text_elements_and_local_images() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -162,7 +158,6 @@ async fn submission_preserves_text_elements_and_local_images() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_thread_session(configured);
@@ -224,129 +219,6 @@ async fn submission_preserves_text_elements_and_local_images() {
 }
 
 #[tokio::test]
-async fn submission_includes_configured_active_permission_profile() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    let thread_id = ThreadId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
-    let expected_permission_profile: PermissionProfile = PermissionProfile::Managed {
-        network: NetworkSandboxPolicy::Restricted,
-        file_system: ManagedFileSystemPermissions::Restricted {
-            entries: vec![
-                FileSystemSandboxEntry {
-                    path: FileSystemPath::Special {
-                        value: FileSystemSpecialPath::Root,
-                    },
-                    access: FileSystemAccessMode::Read,
-                    missing_path_behavior: None,
-                },
-                FileSystemSandboxEntry {
-                    path: FileSystemPath::GlobPattern {
-                        pattern: "/home/user/project/secrets/**".to_string(),
-                    },
-                    access: FileSystemAccessMode::Deny,
-                    missing_path_behavior: None,
-                },
-            ],
-            glob_scan_max_depth: None,
-        },
-    };
-    let expected_active_permission_profile = ActivePermissionProfile::new("custom");
-    let configured = crate::session_state::ThreadSessionState {
-        thread_id,
-        forked_from_id: None,
-        fork_parent_title: None,
-        thread_name: None,
-        model: "test-model".to_string(),
-        model_provider_id: "test-provider".to_string(),
-        service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: expected_permission_profile,
-        active_permission_profile: Some(expected_active_permission_profile.clone()),
-        cwd: test_path_buf("/home/user/project").abs(),
-        runtime_workspace_roots: Vec::new(),
-        instruction_source_paths: Vec::new(),
-        reasoning_effort: Some(ReasoningEffortConfig::default()),
-        agent_settings: None,
-        personality: None,
-        message_history: None,
-        network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
-    };
-    chat.handle_thread_session(configured);
-    drain_insert_history(&mut rx);
-
-    chat.bottom_pane.set_composer_text(
-        "submit with configured permissions".to_string(),
-        Vec::new(),
-        Vec::new(),
-    );
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    let active_permission_profile = match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            active_permission_profile,
-            ..
-        } => active_permission_profile,
-        other => panic!("expected Op::UserTurn, got {other:?}"),
-    };
-    assert_eq!(
-        active_permission_profile,
-        Some(expected_active_permission_profile)
-    );
-}
-
-#[tokio::test]
-async fn submission_omits_active_permission_profile_for_legacy_snapshot() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    let thread_id = ThreadId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
-    let expected_permission_profile: PermissionProfile = PermissionProfile::Managed {
-        network: NetworkSandboxPolicy::Restricted,
-        file_system: ManagedFileSystemPermissions::Unrestricted,
-    };
-    let configured = crate::session_state::ThreadSessionState {
-        thread_id,
-        forked_from_id: None,
-        fork_parent_title: None,
-        thread_name: None,
-        model: "test-model".to_string(),
-        model_provider_id: "test-provider".to_string(),
-        service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: expected_permission_profile,
-        active_permission_profile: None,
-        cwd: test_path_buf("/home/user/project").abs(),
-        runtime_workspace_roots: Vec::new(),
-        instruction_source_paths: Vec::new(),
-        reasoning_effort: Some(ReasoningEffortConfig::default()),
-        agent_settings: None,
-        personality: None,
-        message_history: None,
-        network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
-    };
-    chat.handle_thread_session(configured);
-    drain_insert_history(&mut rx);
-
-    chat.bottom_pane
-        .set_composer_text("submit".to_string(), Vec::new(), Vec::new());
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    let active_permission_profile = match next_submit_op(&mut op_rx) {
-        Op::UserTurn {
-            active_permission_profile,
-            ..
-        } => active_permission_profile,
-        other => panic!("expected Op::UserTurn, got {other:?}"),
-    };
-    assert_eq!(active_permission_profile, None);
-}
-
-#[tokio::test]
 async fn submission_with_remote_and_local_images_keeps_local_placeholder_numbering() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -360,10 +232,6 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -371,7 +239,6 @@ async fn submission_with_remote_and_local_images_keeps_local_placeholder_numberi
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_thread_session(configured);
@@ -458,10 +325,6 @@ async fn enter_with_only_remote_images_submits_user_turn() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -469,7 +332,6 @@ async fn enter_with_only_remote_images_submits_user_turn() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_thread_session(configured);
@@ -525,10 +387,6 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -536,7 +394,6 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_thread_session(configured);
@@ -553,47 +410,6 @@ async fn shift_enter_with_only_remote_images_does_not_submit_user_turn() {
 }
 
 #[tokio::test]
-async fn enter_with_only_remote_images_does_not_submit_when_modal_is_active() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    let thread_id = ThreadId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
-    let configured = crate::session_state::ThreadSessionState {
-        thread_id,
-        forked_from_id: None,
-        fork_parent_title: None,
-        thread_name: None,
-        model: "test-model".to_string(),
-        model_provider_id: "test-provider".to_string(),
-        service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
-        cwd: test_path_buf("/home/user/project").abs(),
-        runtime_workspace_roots: Vec::new(),
-        instruction_source_paths: Vec::new(),
-        reasoning_effort: Some(ReasoningEffortConfig::default()),
-        agent_settings: None,
-        personality: None,
-        message_history: None,
-        network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
-    };
-    chat.handle_thread_session(configured);
-    drain_insert_history(&mut rx);
-
-    let remote_url = "https://example.com/remote-only.png".to_string();
-    chat.set_remote_image_urls(vec![remote_url.clone()]);
-
-    chat.open_review_popup();
-    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    assert_eq!(chat.remote_image_urls(), vec![remote_url]);
-    assert_no_submit_op(&mut op_rx);
-}
-
-#[tokio::test]
 async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -607,10 +423,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -618,7 +430,6 @@ async fn enter_with_only_remote_images_does_not_submit_when_input_disabled() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_thread_session(configured);
@@ -651,10 +462,6 @@ async fn submission_prefers_selected_duplicate_skill_path() {
         model: "test-model".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -662,7 +469,6 @@ async fn submission_prefers_selected_duplicate_skill_path() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     };
     chat.handle_thread_session(configured);

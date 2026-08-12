@@ -1243,7 +1243,6 @@ fn print_completion(cmd: CompletionCommand) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use codex_protocol::ThreadId;
     use codex_tui::TokenUsage;
     use pretty_assertions::assert_eq;
@@ -1252,15 +1251,11 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
             psp: _,
-            mut interactive,
-            config_overrides: mut root_overrides,
+            interactive,
+            config_overrides: root_overrides,
             subcommand,
             feature_toggles: _,
         } = cli;
-        interactive
-            .shared
-            .take_auto_review_config_overrides(&mut root_overrides);
-
         let Subcommand::Resume(ResumeCommand {
             session_id,
             last,
@@ -1288,15 +1283,11 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
             psp: _,
-            mut interactive,
-            config_overrides: mut root_overrides,
+            interactive,
+            config_overrides: root_overrides,
             subcommand,
             feature_toggles: _,
         } = cli;
-        interactive
-            .shared
-            .take_auto_review_config_overrides(&mut root_overrides);
-
         let Subcommand::Fork(ForkCommand {
             session_id,
             last,
@@ -1309,22 +1300,6 @@ mod tests {
         let SessionTuiCli(fork_cli) = fork_cli;
 
         finalize_fork_interactive(interactive, root_overrides, session_id, last, all, fork_cli)
-    }
-
-    fn finalize_exec_from_args(args: &[&str]) -> ExecCli {
-        let mut cli = MultitoolCli::try_parse_from(args).expect("parse");
-        cli.interactive
-            .shared
-            .take_auto_review_config_overrides(&mut cli.config_overrides);
-        let Some(Subcommand::Exec(mut exec)) = cli.subcommand else {
-            panic!("expected exec subcommand");
-        };
-        exec.shared
-            .inherit_exec_root_options(&cli.interactive.shared);
-        prepend_config_flags(&mut exec.config_overrides, cli.config_overrides);
-        exec.shared
-            .take_auto_review_config_overrides(&mut exec.config_overrides);
-        exec
     }
 
     fn finalize_archive_from_args(args: &[&str]) -> (String, TuiCli) {
@@ -1398,12 +1373,6 @@ mod tests {
                 .as_deref(),
             Some("work")
         );
-        assert_eq!(
-            profile_v2_for_args(&["codex", "--profile", "work", "sandbox"])
-                .expect("sandbox supports config profile")
-                .as_deref(),
-            Some("work")
-        );
     }
 
     #[test]
@@ -1474,170 +1443,6 @@ mod tests {
     }
 
     #[test]
-    fn dangerous_bypass_conflicts_with_approval_policy() {
-        let err = MultitoolCli::try_parse_from([
-            "codex",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--ask-for-approval",
-            "on-request",
-        ])
-        .expect_err("conflicting permission flags should be rejected");
-
-        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
-    }
-
-    #[test]
-    fn approve_for_me_configures_interactive_mode() {
-        for flag in ["--approve-for-me", "--not-so-yolo"] {
-            let mut cli = MultitoolCli::try_parse_from(["codex", flag]).expect("parse flag");
-
-            assert!(cli.interactive.auto_review);
-            cli.interactive
-                .shared
-                .take_auto_review_config_overrides(&mut cli.interactive.config_overrides);
-            assert_eq!(
-                cli.interactive.config_overrides.raw_overrides,
-                vec![
-                    r#"approvals_reviewer="auto_review""#.to_string(),
-                    r#"approval_policy="on-request""#.to_string(),
-                    r#"sandbox_mode="workspace-write""#.to_string(),
-                ]
-            );
-            assert!(!cli.interactive.auto_review);
-        }
-    }
-
-    #[test]
-    fn not_so_yolo_alias_is_hidden_from_help() {
-        for args in [&["codex", "--help"][..], &["codex", "exec", "--help"][..]] {
-            let help = help_from_args(args);
-
-            assert!(!help.contains("--not-so-yolo"), "{help}");
-        }
-    }
-
-    #[test]
-    fn approve_for_me_defaults_propagate_from_root_to_exec() {
-        let exec = finalize_exec_from_args(&["codex", "--approve-for-me", "exec", "summarize"]);
-
-        assert_eq!(
-            exec.config_overrides.raw_overrides,
-            vec![
-                r#"approvals_reviewer="auto_review""#.to_string(),
-                r#"approval_policy="on-request""#.to_string(),
-                r#"sandbox_mode="workspace-write""#.to_string(),
-            ]
-        );
-        assert!(exec.sandbox_mode.is_none());
-    }
-
-    #[test]
-    fn later_exec_sandbox_partially_overrides_approve_for_me() {
-        let exec = finalize_exec_from_args(&[
-            "codex",
-            "--approve-for-me",
-            "exec",
-            "--sandbox",
-            "read-only",
-        ]);
-
-        assert_matches!(
-            exec.sandbox_mode,
-            Some(codex_utils_cli::SandboxModeCliArg::ReadOnly)
-        );
-        assert_eq!(
-            exec.config_overrides.raw_overrides,
-            vec![
-                r#"approvals_reviewer="auto_review""#.to_string(),
-                r#"approval_policy="on-request""#.to_string(),
-                r#"sandbox_mode="workspace-write""#.to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn later_approve_for_me_overrides_root_exec_sandbox() {
-        let exec = finalize_exec_from_args(&[
-            "codex",
-            "--sandbox",
-            "read-only",
-            "exec",
-            "--approve-for-me",
-        ]);
-
-        assert!(exec.sandbox_mode.is_none());
-        assert_eq!(
-            exec.config_overrides.raw_overrides,
-            vec![
-                r#"approvals_reviewer="auto_review""#.to_string(),
-                r#"approval_policy="on-request""#.to_string(),
-                r#"sandbox_mode="workspace-write""#.to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn later_resume_approval_policy_partially_overrides_approve_for_me() {
-        let interactive = finalize_resume_from_args(&[
-            "codex",
-            "--approve-for-me",
-            "resume",
-            "--ask-for-approval",
-            "never",
-        ]);
-
-        assert_matches!(
-            interactive.approval_policy,
-            Some(codex_utils_cli::ApprovalModeCliArg::Never)
-        );
-        assert_eq!(
-            interactive.config_overrides.raw_overrides,
-            vec![
-                r#"approvals_reviewer="auto_review""#.to_string(),
-                r#"approval_policy="on-request""#.to_string(),
-                r#"sandbox_mode="workspace-write""#.to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn later_approve_for_me_overrides_root_tui_approval_policy() {
-        let interactive = finalize_resume_from_args(&[
-            "codex",
-            "--ask-for-approval",
-            "never",
-            "resume",
-            "--approve-for-me",
-        ]);
-
-        assert!(interactive.approval_policy.is_none());
-        assert_eq!(
-            interactive.config_overrides.raw_overrides,
-            vec![
-                r#"approvals_reviewer="auto_review""#.to_string(),
-                r#"approval_policy="on-request""#.to_string(),
-                r#"sandbox_mode="workspace-write""#.to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn approve_for_me_conflicts_with_explicit_interactive_permissions() {
-        for conflicting_args in [
-            vec!["--sandbox", "read-only"],
-            vec!["--ask-for-approval", "on-request"],
-            vec!["--dangerously-bypass-approvals-and-sandbox"],
-        ] {
-            let mut args = vec!["codex", "--approve-for-me"];
-            args.extend(conflicting_args);
-
-            let error =
-                MultitoolCli::try_parse_from(args).expect_err("permission flags should conflict");
-            assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
-        }
-    }
-
-    #[test]
     fn debug_prompt_input_parses_prompt_and_images() {
         let cli = MultitoolCli::try_parse_from([
             "codex",
@@ -1688,12 +1493,6 @@ mod tests {
         );
     }
 
-    fn help_from_args(args: &[&str]) -> String {
-        let err = MultitoolCli::try_parse_from(args).expect_err("help should short-circuit");
-        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
-        err.to_string()
-    }
-
     #[test]
     fn archive_merges_scoped_tui_flags() {
         let (target, interactive) = finalize_archive_from_args(
@@ -1734,89 +1533,6 @@ mod tests {
             err.to_string(),
             "--force requires a session UUID; names must be confirmed interactively"
         );
-    }
-
-    #[test]
-    fn sandbox_parses_permission_profile() {
-        let cli = MultitoolCli::try_parse_from([
-            "codex",
-            "sandbox",
-            "--permission-profile",
-            ":workspace",
-            "--",
-            "echo",
-        ])
-        .expect("parse");
-
-        let Some(Subcommand::Sandbox(command)) = cli.subcommand else {
-            panic!("expected sandbox command");
-        };
-
-        assert_eq!(command.permissions_profile.as_deref(), Some(":workspace"));
-        assert_eq!(command.command, vec!["echo"]);
-    }
-
-    #[test]
-    fn sandbox_parses_legacy_permissions_profile_alias() {
-        let cli = MultitoolCli::try_parse_from([
-            "codex",
-            "sandbox",
-            "--permissions-profile",
-            ":workspace",
-            "--",
-            "echo",
-        ])
-        .expect("parse");
-
-        let Some(Subcommand::Sandbox(command)) = cli.subcommand else {
-            panic!("expected sandbox command");
-        };
-
-        assert_eq!(command.permissions_profile.as_deref(), Some(":workspace"));
-        assert_eq!(command.command, vec!["echo"]);
-    }
-
-    #[test]
-    fn sandbox_help_only_shows_singular_permission_profile() {
-        let help = help_from_args(&["codex", "sandbox", "--help"]);
-        assert!(help.contains("--permission-profile"), "{help}");
-        assert!(!help.contains("--permissions-profile"), "{help}");
-    }
-
-    #[test]
-    fn sandbox_parses_permissions_profile_short_alias() {
-        let cli =
-            MultitoolCli::try_parse_from(["codex", "sandbox", "-P", ":workspace", "--", "echo"])
-                .expect("parse");
-
-        let Some(Subcommand::Sandbox(command)) = cli.subcommand else {
-            panic!("expected sandbox command");
-        };
-
-        assert_eq!(command.permissions_profile.as_deref(), Some(":workspace"));
-        assert_eq!(command.command, vec!["echo"]);
-    }
-
-    #[test]
-    fn sandbox_parses_config_profile() {
-        let cli =
-            MultitoolCli::try_parse_from(["codex", "sandbox", "--profile", "work", "--", "echo"])
-                .expect("parse");
-
-        let Some(Subcommand::Sandbox(command)) = cli.subcommand else {
-            panic!("expected sandbox command");
-        };
-
-        assert_eq!(command.config_profile.as_deref(), Some("work"));
-        assert_eq!(command.command, vec!["echo"]);
-    }
-
-    #[test]
-    fn sandbox_rejects_explicit_profile_controls_without_profile() {
-        let err = MultitoolCli::try_parse_from(["codex", "sandbox", "-C", "/tmp"])
-            .expect_err("parse should fail");
-
-        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     fn sample_exit_info(conversation_id: Option<&str>, thread_name: Option<&str>) -> AppExitInfo {
@@ -2022,10 +1738,6 @@ mod tests {
                 "resume",
                 "sid",
                 "--search",
-                "--sandbox",
-                "workspace-write",
-                "--ask-for-approval",
-                "on-request",
                 "-m",
                 "gpt-5.1-test",
                 "-p",
@@ -2041,14 +1753,6 @@ mod tests {
 
         assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
         assert_eq!(interactive.config_profile_v2.as_deref(), Some("my-config"));
-        assert_matches!(
-            interactive.sandbox_mode,
-            Some(codex_utils_cli::SandboxModeCliArg::WorkspaceWrite)
-        );
-        assert_matches!(
-            interactive.approval_policy,
-            Some(codex_utils_cli::ApprovalModeCliArg::OnRequest)
-        );
         assert_eq!(
             interactive.cwd.as_deref(),
             Some(std::path::Path::new("/tmp"))
@@ -2067,22 +1771,6 @@ mod tests {
         assert!(!interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id.as_deref(), Some("sid"));
-    }
-
-    #[test]
-    fn resume_merges_dangerously_bypass_flag() {
-        let interactive = finalize_resume_from_args(
-            [
-                "codex",
-                "resume",
-                "--dangerously-bypass-approvals-and-sandbox",
-            ]
-            .as_ref(),
-        );
-        assert!(interactive.dangerously_bypass_approvals_and_sandbox);
-        assert!(interactive.resume_picker);
-        assert!(!interactive.resume_last);
-        assert_eq!(interactive.resume_session_id, None);
     }
 
     #[test]
@@ -2154,20 +1842,9 @@ mod tests {
     }
 
     #[test]
-    fn strict_config_parses_for_supported_commands() {
+    fn strict_config_parses_for_interactive_command() {
         let cli = MultitoolCli::try_parse_from(["codex", "--strict-config"]).expect("parse");
         assert!(cli.interactive.strict_config);
-
-        let cli =
-            MultitoolCli::try_parse_from(["codex", "review", "--strict-config", "--uncommitted"])
-                .expect("parse");
-        assert_matches!(
-            cli.subcommand,
-            Some(Subcommand::Review(ReviewCommand {
-                strict_config: true,
-                ..
-            }))
-        );
     }
 
     #[test]

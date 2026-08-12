@@ -2487,54 +2487,6 @@ async fn ambient_pet_hides_notification_text_overlay() {
     }
 }
 
-// Snapshot test: status widget + approval modal active together
-// The modal takes precedence visually; this captures the layout with a running
-// task (status indicator active) while an approval request is shown.
-#[tokio::test]
-async fn status_widget_and_approval_modal_snapshot() {
-    use crate::approval_events::ExecApprovalRequestEvent;
-
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    // Begin a running task so the status indicator would be active.
-    handle_turn_started(&mut chat, "turn-1");
-    // Provide a deterministic header for the status line.
-    handle_agent_reasoning_delta(&mut chat, "**Analyzing**");
-
-    // Now show an approval modal (e.g. exec approval).
-    let ev = ExecApprovalRequestEvent {
-        call_id: "call-approve-exec".into(),
-        approval_id: Some("call-approve-exec".into()),
-        turn_id: "turn-approve-exec".into(),
-        environment_id: None,
-        command: vec!["echo".into(), "hello world".into()],
-        cwd: test_path_buf("/tmp").abs(),
-        reason: Some(
-            "this is a test reason such as one that would be produced by the model".into(),
-        ),
-        network_approval_context: None,
-        proposed_execpolicy_amendment: Some(ExecPolicyAmendment {
-            command: vec!["echo".into(), "hello world".into()],
-        }),
-        proposed_network_policy_amendments: None,
-        additional_permissions: None,
-        available_decisions: None,
-    };
-    handle_exec_approval_request(&mut chat, "sub-approve-exec", ev);
-
-    // Render at the widget's desired height and snapshot.
-    let width: u16 = 100;
-    let height = chat.desired_height(width);
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
-        .expect("create terminal");
-    terminal
-        .draw(|f| chat.render(f.area(), f.buffer_mut()))
-        .expect("draw status + approval modal");
-    assert_chatwidget_snapshot!(
-        "status_widget_and_approval_modal",
-        normalized_backend_snapshot(terminal.backend())
-    );
-}
-
 // Snapshot test: status widget active (StatusIndicatorView)
 // Ensures the VT100 rendering of the status indicator is stable when active.
 #[tokio::test]
@@ -3299,10 +3251,6 @@ async fn session_configured_clears_goal_status_footer() {
         model: "gpt-5.4".to_string(),
         model_provider_id: "test-provider".to_string(),
         service_tier: None,
-        approval_policy: AskForApproval::Never,
-        approvals_reviewer: ApprovalsReviewer::User,
-        permission_profile: PermissionProfile::read_only(),
-        active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
         runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
@@ -3310,7 +3258,6 @@ async fn session_configured_clears_goal_status_footer() {
         agent_settings: None,
         personality: None,
         message_history: None,
-        network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
     });
 
@@ -3748,8 +3695,6 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
             command: codex_shell_command::parse_command::shlex_join(&command),
             cwd: cwd.clone().into(),
             process_id: None,
-            plugin_id: None,
-            script_path: None,
             source: ExecCommandSource::Agent,
             status: CliRuntimeCommandExecutionStatus::InProgress,
             command_actions: command_actions.clone(),
@@ -3765,8 +3710,6 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
             command: codex_shell_command::parse_command::shlex_join(&command),
             cwd: cwd.into(),
             process_id: None,
-            plugin_id: None,
-            script_path: None,
             source: ExecCommandSource::Agent,
             status: CliRuntimeCommandExecutionStatus::Completed,
             command_actions,
