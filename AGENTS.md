@@ -10,6 +10,11 @@
   logout, resume, fork, help, and version, plus the core primitives they need.
 - Build and installation surfaces are Cargo/source and a POSIX curl installer
   for native binaries. Do not distribute ycode through npm.
+- A complete product build and native archive must contain the `codex` CLI and
+  its separate `codex-code-mode-host` child-process companion as adjacent
+  executables. Use the canonical `just build` recipe so Cargo receives the
+  pinned sandboxed-V8 artifacts required by the host. Do not publish or
+  document a build that produces only the CLI.
 - Product code and substantial development tooling should be Rust. POSIX shell
   is allowed for bootstrap and installation. Python and Node tooling are
   subtraction targets. Keep `just` temporarily; simplify or remove it later.

@@ -198,4 +198,24 @@ mod tests {
         assert_eq!(context.rg_command(), default_rg_command());
         Ok(())
     }
+
+    #[test]
+    fn standalone_codex_resolves_adjacent_code_mode_host() -> std::io::Result<()> {
+        let bin_dir = tempfile::tempdir()?;
+        let exe_path = bin_dir
+            .path()
+            .join(if cfg!(windows) { "codex.exe" } else { "codex" });
+        let host_path = bin_dir.path().join(CODE_MODE_HOST_EXECUTABLE_NAME);
+        fs::write(&exe_path, "")?;
+        fs::write(&host_path, "")?;
+
+        let context = InstallContext::from_exe(Some(&exe_path));
+
+        assert_eq!(context.package_layout, None);
+        assert_eq!(
+            context.code_mode_host_program_from_exe(Some(&exe_path)),
+            host_path.canonicalize()?
+        );
+        Ok(())
+    }
 }

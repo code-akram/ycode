@@ -93,6 +93,7 @@ members = [
     "codex-experimental-api-macros",
     "model-provider",
 ]
+default-members = ["cli", "code-mode-host"]
 resolver = "2"
 
 [workspace.package]

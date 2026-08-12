@@ -1,6 +1,5 @@
 set working-directory := "codex-rs"
 set positional-arguments := true
-
 set shell := ["sh", "-eu", "-c"]
 
 # Display help
@@ -11,24 +10,28 @@ help:
 
 alias c := codex
 
-codex *args:
-    cargo run --bin codex -- {args}
+# Build the complete product pair: the CLI and its adjacent Code Mode host.
+build:
+    ../scripts/build/build-product.sh build
+
+codex *args: build
+    ./target/debug/codex {args}
 
 # `codex exec`
-exec *args:
-    cargo run --bin codex -- exec {args}
+exec *args: build
+    ./target/debug/codex exec {args}
 
-# Check the complete production CLI graph.
+# Check the complete product graph.
 check:
-    cargo check -p codex-cli
+    ../scripts/build/build-product.sh check
 
 # Run the CLI version of the file-search crate.
 file-search *args:
     cargo run --bin codex-file-search -- {args}
 
-# Run the standalone code-mode host from source.
-code-mode-host *args:
-    cargo run --bin codex-code-mode-host -- {args}
+# Run the separately built code-mode host.
+code-mode-host *args: build
+    ./target/debug/codex-code-mode-host {args}
 
 # Format Rust source.
 fmt:

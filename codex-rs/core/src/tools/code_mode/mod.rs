@@ -110,14 +110,15 @@ impl CodeModeService {
             ToolMode::Direct => "Falling back to direct tools",
             ToolMode::CodeMode | ToolMode::CodeModeOnly => "Code mode will fail closed",
         };
+        let recovery = if error == "code-mode host is disabled" {
+            "enable `features.code_mode_host`"
+        } else {
+            "install `codex-code-mode-host` adjacent to `codex`"
+        };
         (!self
             .unavailable_warning_emitted
             .swap(true, Ordering::Relaxed))
-        .then(|| {
-            format!(
-                "Code Mode is unavailable because {error}. {behavior}; enable `features.code_mode_host` and install `codex-code-mode-host`."
-            )
-        })
+        .then(|| format!("Code Mode is unavailable because {error}. {behavior}; {recovery}."))
     }
 
     pub(crate) fn session_provider(&self) -> Arc<dyn CodeModeSessionProvider> {
@@ -401,13 +402,73 @@ fn build_freeform_tool_payload(
 
 #[cfg(test)]
 mod tests {
+    use super::CodeModeService;
     use super::build_nested_tool_payload;
     use super::truncate_code_mode_result;
     use crate::tools::context::ToolPayload;
     use codex_code_mode::CodeModeToolKind;
+    use codex_code_mode::DisabledCodeModeSessionProvider;
+    use codex_code_mode::ProcessOwnedCodeModeSessionProvider;
+    use codex_features::Features;
     use codex_protocol::models::FunctionCallOutputContentItem;
+    use codex_protocol::openai_models::ToolMode;
     use codex_tools::ToolName;
     use serde_json::json;
+    use std::sync::Arc;
+
+    #[test]
+    fn available_process_host_emits_no_unavailable_warning() -> std::io::Result<()> {
+        let bin_dir = tempfile::tempdir()?;
+        let host_program = bin_dir.path().join("codex-code-mode-host");
+        std::fs::write(&host_program, "")?;
+        let service = CodeModeService::new(
+            Arc::new(ProcessOwnedCodeModeSessionProvider::with_host_program(
+                host_program,
+            )),
+            &Features::default(),
+        );
+
+        assert!(service.is_available());
+        assert_eq!(service.take_unavailable_warning(ToolMode::Direct), None);
+        Ok(())
+    }
+
+    #[test]
+    fn missing_process_host_warning_requests_adjacent_companion() -> std::io::Result<()> {
+        let bin_dir = tempfile::tempdir()?;
+        let host_program = bin_dir.path().join("codex-code-mode-host-does-not-exist");
+        let service = CodeModeService::new(
+            Arc::new(ProcessOwnedCodeModeSessionProvider::with_host_program(
+                host_program,
+            )),
+            &Features::default(),
+        );
+
+        assert!(!service.is_available());
+        let warning = service
+            .take_unavailable_warning(ToolMode::Direct)
+            .expect("missing host should warn");
+        assert!(warning.contains("host executable was not found"));
+        assert!(warning.contains("install `codex-code-mode-host` adjacent to `codex`"));
+        assert!(!warning.contains("enable `features.code_mode_host`"));
+        Ok(())
+    }
+
+    #[test]
+    fn disabled_process_host_warning_requests_feature_enablement() {
+        let service = CodeModeService::new(
+            Arc::new(DisabledCodeModeSessionProvider),
+            &Features::default(),
+        );
+
+        assert!(!service.is_available());
+        let warning = service
+            .take_unavailable_warning(ToolMode::Direct)
+            .expect("disabled host should warn");
+        assert!(warning.contains("code-mode host is disabled"));
+        assert!(warning.contains("enable `features.code_mode_host`"));
+        assert!(!warning.contains("install `codex-code-mode-host`"));
+    }
 
     #[test]
     fn build_nested_tool_payload_uses_function_kind() {

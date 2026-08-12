@@ -1,8 +1,9 @@
 # ycode
 
 ycode is an independent Rust terminal agent for Apple Silicon macOS. Its only
-supported target is `aarch64-apple-darwin`, and its installed executable remains
-named `codex` for now.
+supported target is `aarch64-apple-darwin`. The installed product is the `codex`
+CLI plus its adjacent `codex-code-mode-host` child-process companion; these
+executable names remain unchanged for now.
 
 The CLI provides an interactive TUI and noninteractive `exec` mode, including
 machine-readable output. It uses the OpenAI Responses API, supports native
@@ -14,8 +15,9 @@ Build and run from source:
 
 ```sh
 cd codex-rs
-cargo build -p codex-cli
-cargo run -p codex-cli --bin codex -- --help
+just build
+./target/debug/codex --help
+./target/debug/codex-code-mode-host --help
 ```
 
 Authentication remains at `CODEX_HOME/auth.json` with its existing wire format.
