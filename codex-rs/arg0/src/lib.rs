@@ -486,7 +486,6 @@ mod tests {
     use anyhow::ensure;
     use codex_install_context::CodexPackageLayout;
     use codex_install_context::InstallContext;
-    use codex_install_context::InstallMethod;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use std::fs;
@@ -526,7 +525,6 @@ mod tests {
         fs::create_dir_all(&existing_dir)?;
         let path_dir = AbsolutePathBuf::from_absolute_path(path_dir.canonicalize()?)?;
         let install_context = InstallContext {
-            method: InstallMethod::Other,
             package_layout: Some(CodexPackageLayout {
                 package_dir: AbsolutePathBuf::from_absolute_path(package_dir.canonicalize()?)?,
                 bin_dir: AbsolutePathBuf::from_absolute_path(bin_dir.canonicalize()?)?,

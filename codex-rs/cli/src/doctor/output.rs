@@ -35,10 +35,6 @@ const GROUPS: &[OutputGroup] = &[
         keys: &["config", "auth"],
     },
     OutputGroup {
-        title: "Updates",
-        keys: &["updates"],
-    },
-    OutputGroup {
         title: "Connectivity",
         keys: &["network", "websocket", "reachability"],
     },
@@ -248,7 +244,6 @@ fn issue_summary(check: &DoctorCheck) -> String {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DisplayStatus {
     Ok,
-    Update,
     Note,
     Warning,
     Fail,
@@ -283,7 +278,6 @@ fn status_marker(status: DisplayStatus, options: HumanOutputOptions) -> String {
     let marker = if options.ascii {
         match status {
             DisplayStatus::Ok => "[ok]",
-            DisplayStatus::Update => "[up]",
             DisplayStatus::Note | DisplayStatus::Warning => "[!!]",
             DisplayStatus::Fail => "[XX]",
             DisplayStatus::Idle => "[--]",
@@ -291,7 +285,6 @@ fn status_marker(status: DisplayStatus, options: HumanOutputOptions) -> String {
     } else {
         match status {
             DisplayStatus::Ok => "✓",
-            DisplayStatus::Update => "↑",
             DisplayStatus::Note | DisplayStatus::Warning => "⚠",
             DisplayStatus::Fail => "✗",
             DisplayStatus::Idle => "○",
@@ -300,7 +293,6 @@ fn status_marker(status: DisplayStatus, options: HumanOutputOptions) -> String {
 
     match status {
         DisplayStatus::Ok => green(marker, options),
-        DisplayStatus::Update => amber(marker, options),
         DisplayStatus::Note | DisplayStatus::Warning => orange(marker, options),
         DisplayStatus::Fail => red(marker, options),
         DisplayStatus::Idle => dim(marker, options),
@@ -320,7 +312,6 @@ fn style_description(
     let highlighted = highlight_actions(description, options);
     match status {
         DisplayStatus::Ok | DisplayStatus::Idle => dim(&highlighted, options),
-        DisplayStatus::Update => amber(&highlighted, options),
         DisplayStatus::Note | DisplayStatus::Warning | DisplayStatus::Fail => highlighted,
     }
 }
@@ -333,33 +324,7 @@ fn detail_marker(is_issue: bool, options: HumanOutputOptions) -> String {
 }
 
 fn style_note_summary(note: &DoctorNote, options: HumanOutputOptions) -> String {
-    if note.status == DisplayStatus::Update {
-        return style_update_note_summary(&note.summary, options);
-    }
     style_description(&note.summary, note.status, options)
-}
-
-fn style_update_note_summary(summary: &str, options: HumanOutputOptions) -> String {
-    if !options.color_enabled {
-        return summary.to_string();
-    }
-
-    let Some((version, rest)) = summary.split_once(" available") else {
-        return amber(summary, options);
-    };
-    let Some((action, parenthetical)) = rest.split_once(" (") else {
-        return format!(
-            "{}{}",
-            amber(&format!("{version} available"), options),
-            amber(rest, options)
-        );
-    };
-    format!(
-        "{}{} {}",
-        amber(&format!("{version} available"), options),
-        amber(action, options),
-        dim(&format!("({parenthetical}"), options)
-    )
 }
 
 fn summary_line(report: &DoctorReport, options: HumanOutputOptions) -> String {
@@ -412,7 +377,6 @@ fn count_label(
     let count = dim(&count.to_string(), options);
     let label = match status {
         DisplayStatus::Ok => green(label, options),
-        DisplayStatus::Update => amber(label, options),
         DisplayStatus::Note | DisplayStatus::Warning => orange(label, options),
         DisplayStatus::Fail => red(label, options),
         DisplayStatus::Idle => dim(label, options),
@@ -491,11 +455,6 @@ fn header_suffix(report: &DoctorReport) -> String {
 
 fn notes_for_report(report: &DoctorReport) -> Vec<DoctorNote> {
     let mut notes = Vec::new();
-    if let Some(check) = find_check(report, "updates") {
-        update_note(check, report)
-            .into_iter()
-            .for_each(|note| notes.push(note));
-    }
     if let Some(check) = find_check(report, "state") {
         rollout_note(check)
             .into_iter()
@@ -515,28 +474,6 @@ fn find_check<'a>(report: &'a DoctorReport, category: &str) -> Option<&'a Doctor
         .checks
         .iter()
         .find(|check| check.category == category)
-}
-
-fn update_note(check: &DoctorCheck, report: &DoctorReport) -> Option<DoctorNote> {
-    let status = detail::detail_value(check, "latest version status")?;
-    if !status.contains("newer version is available") {
-        return None;
-    }
-    let latest = detail::detail_value(check, "latest version")
-        .or_else(|| detail::detail_value(check, "cached latest version"))
-        .unwrap_or_else(|| "newer version".to_string());
-    let dismissed = detail::detail_value(check, "dismissed version");
-    let mut parenthetical = format!("current {}", report.codex_version);
-    if let Some(dismissed) = dismissed
-        && !detail::is_falsy(&dismissed)
-    {
-        parenthetical.push_str(&format!(", dismissed {dismissed}"));
-    }
-    Some(DoctorNote {
-        status: DisplayStatus::Update,
-        name: "updates".to_string(),
-        summary: format!("{latest} available ({parenthetical})"),
-    })
 }
 
 fn rollout_note(check: &DoctorCheck) -> Option<DoctorNote> {
@@ -889,7 +826,7 @@ impl StatusCounts {
                 DisplayStatus::Idle => counts.idle += 1,
                 DisplayStatus::Warning => counts.warning += 1,
                 DisplayStatus::Fail => counts.fail += 1,
-                DisplayStatus::Update | DisplayStatus::Note => {}
+                DisplayStatus::Note => {}
             }
         }
         counts
@@ -991,10 +928,6 @@ fn green(text: &str, options: HumanOutputOptions) -> String {
     color256(text, /*code*/ 10, options)
 }
 
-fn amber(text: &str, options: HumanOutputOptions) -> String {
-    color256(text, /*code*/ 220, options)
-}
-
 fn orange(text: &str, options: HumanOutputOptions) -> String {
     color256(text, /*code*/ 214, options)
 }
@@ -1087,13 +1020,13 @@ mod tests {
                 "runtime.provenance",
                 "runtime",
                 CheckStatus::Ok,
-                "running local build on darwin-arm64",
+                "running on darwin-arm64",
             ),
             DoctorCheck::new(
                 "installation",
                 "install",
                 CheckStatus::Ok,
-                "installation looks consistent",
+                "installation paths inspected",
             ),
             DoctorCheck::new(
                 "runtime.search",
@@ -1139,12 +1072,6 @@ mod tests {
             )
             .detail("CODEX_API_KEY: present")
             .remediation("Run `codex login`."),
-            DoctorCheck::new(
-                "updates.status",
-                "updates",
-                CheckStatus::Ok,
-                "update configuration is locally consistent",
-            ),
             DoctorCheck::new(
                 "network.env",
                 "network",
@@ -1201,9 +1128,8 @@ Environment
       GIT_PAGER                delta
       GH_PAGER                 less
       LESS                     -FRX
-  ✓ runtime      running local build on darwin-arm64
-  ✓ install      consistent
-      managed by               npm: no · bun: no · pnpm: no · package root —
+  ✓ runtime      running on darwin-arm64
+  ✓ install      paths inspected
   ✓ search       search is OK (bundled)
   ✓ git          git version 2.54.0
       selected git             /usr/bin/git
@@ -1220,9 +1146,6 @@ Configuration
   ✗ auth         token expired — Run `codex login`.
       CODEX_API_KEY            present
 
-Updates
-  ✓ updates      update configuration is locally consistent
-
 Connectivity
   ✓ network      network environment readable
   ✓ websocket    Responses WebSocket handshake succeeded
@@ -1232,7 +1155,7 @@ Background Server
   ✓ cli-runtime  background server is not running
 
 {}
-12 ok · 2 notes · 1 warn · 1 fail failed
+11 ok · 2 notes · 1 warn · 1 fail failed
 
 --summary compact output           --all expand truncated lists
 --json redacted report
@@ -1264,8 +1187,8 @@ Notes
 
 Environment
   ✓ system       en-US
-  ✓ runtime      running local build on darwin-arm64
-  ✓ install      consistent
+  ✓ runtime      running on darwin-arm64
+  ✓ install      paths inspected
   ✓ search       search is OK (bundled)
   ✓ git          git version 2.54.0
   ⚠ terminal     narrow terminal
@@ -1274,9 +1197,6 @@ Environment
 
 Configuration
   ✗ auth         token expired — Run `codex login`.
-
-Updates
-  ✓ updates      update configuration is locally consistent
 
 Connectivity
   ✓ network      network environment readable
@@ -1287,7 +1207,7 @@ Background Server
   ✓ cli-runtime  background server is not running
 
 {}
-12 ok · 2 notes · 1 warn · 1 fail failed
+11 ok · 2 notes · 1 warn · 1 fail failed
 
 Run codex doctor without --summary for detailed diagnostics.
 --all expand truncated lists       --json redacted report
@@ -1372,8 +1292,8 @@ Notes
 
 Environment
   [ok] system       en-US
-  [ok] runtime      running local build on darwin-arm64
-  [ok] install      consistent
+  [ok] runtime      running on darwin-arm64
+  [ok] install      paths inspected
   [ok] search       search is OK (bundled)
   [ok] git          git version 2.54.0
   [!!] terminal     narrow terminal
@@ -1382,9 +1302,6 @@ Environment
 
 Configuration
   [XX] auth         token expired - Run `codex login`.
-
-Updates
-  [ok] updates      update configuration is locally consistent
 
 Connectivity
   [ok] network      network environment readable
@@ -1395,7 +1312,7 @@ Background Server
   [ok] cli-runtime  background server is not running
 
 {}
-12 ok | 2 notes | 1 warn | 1 fail failed
+11 ok | 2 notes | 1 warn | 1 fail failed
 
 Run codex doctor without --summary for detailed diagnostics.
 --all expand truncated lists       --json redacted report
@@ -1467,15 +1384,6 @@ Run codex doctor without --summary for detailed diagnostics.
             codex_version: "0.0.0".to_string(),
             checks: vec![
                 DoctorCheck::new(
-                    "updates.status",
-                    "updates",
-                    CheckStatus::Ok,
-                    "update configuration is locally consistent",
-                )
-                .detail("latest version status: newer version is available")
-                .detail("latest version: 0.130.0")
-                .detail("dismissed version: 0.128.0"),
-                DoctorCheck::new(
                     "state.paths",
                     "state",
                     CheckStatus::Ok,
@@ -1524,8 +1432,6 @@ Run codex doctor without --summary for detailed diagnostics.
 
         let rendered = render_human_report(&report, summary_no_color_unicode_options());
 
-        assert!(rendered.contains("Notes\n   ↑ updates"));
-        assert!(rendered.contains("0.130.0 available (current 0.0.0, dismissed 0.128.0)"));
         assert!(rendered.contains("⚠ rollouts"));
         assert!(rendered.contains("⚠ sandbox"));
         assert!(rendered.contains("⚠ network"));
@@ -1533,7 +1439,7 @@ Run codex doctor without --summary for detailed diagnostics.
             "⚠ auth         mixed auth signals: ChatGPT login plus API key env var; HTTP reachability uses API-key mode"
         ));
         assert!(rendered.contains("○ cli-runtime  not running (ephemeral mode)"));
-        assert!(rendered.contains("5 ok · 1 idle · 5 notes · 1 warn · 0 fail degraded"));
+        assert!(rendered.contains("4 ok · 1 idle · 4 notes · 1 warn · 0 fail degraded"));
     }
 
     #[test]
@@ -1568,26 +1474,15 @@ Run codex doctor without --summary for detailed diagnostics.
     #[test]
     fn detail_value_colors_inline_statuses_and_low_signal_values() {
         let rendered = detail_value(
-            "npm: no · commit unknown · integrity ok · ~/code/codex/target/debug/codex · <redacted>",
+            "bundled: no · commit unknown · integrity ok · ~/code/codex/target/debug/codex · <redacted>",
             detailed_color_unicode_options(),
         );
 
-        assert!(rendered.contains("npm: \u{1b}[38;5;240mno"));
+        assert!(rendered.contains("bundled: \u{1b}[38;5;240mno"));
         assert!(rendered.contains("\u{1b}[38;5;240munknown"));
         assert!(rendered.contains("\u{1b}[38;5;10mok"));
         assert!(rendered.contains("\u{1b}[38;5;117m~/code/codex/target/debug/codex"));
         assert!(rendered.contains("\u{1b}[38;5;244m"));
-    }
-
-    #[test]
-    fn update_note_emphasizes_available_version_and_dims_context() {
-        let rendered = style_update_note_summary(
-            "0.130.0 available (current 0.0.0, dismissed 0.128.0)",
-            detailed_color_unicode_options(),
-        );
-
-        assert!(rendered.contains("\u{1b}[38;5;220m0.130.0 available"));
-        assert!(rendered.contains("\u{1b}[2m(current 0.0.0, dismissed 0.128.0)"));
     }
 
     #[test]

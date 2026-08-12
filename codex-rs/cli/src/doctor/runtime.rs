@@ -1,40 +1,28 @@
 //! Captures how this Codex process was launched.
 //!
-//! Runtime diagnostics answer provenance questions that are hard to infer from
-//! user reports: which binary is running, which install channel it resembles,
-//! which platform it targets, and whether the search command comes from bundled
-//! package files or from PATH.
+//! Runtime diagnostics answer which binary is running, which platform it
+//! targets, and whether search comes from bundled package files or from PATH.
 
 use std::env;
 use std::process::Command;
 
 use codex_install_context::InstallContext;
-use codex_install_context::InstallMethod;
 
 use super::CheckStatus;
 use super::DoctorCheck;
-use super::describe_install_context;
-use super::doctor_install_context;
 use super::push_path_detail;
 
 /// Builds the process provenance row for the current Codex executable.
 ///
-/// This check is informational and should not fail on its own; inconsistent
-/// install state is reported by the installation and update checks instead.
+/// This check is informational and should not fail on its own.
 pub(super) fn runtime_check() -> DoctorCheck {
     let current_exe = env::current_exe().ok();
-    let install_context = doctor_install_context(current_exe.as_deref());
     let os = env::consts::OS;
     let arch = env::consts::ARCH;
     let platform = format!("{os}-{arch}");
-    let install_method = install_method_name(&install_context);
     let mut details = vec![
         format!("version: {}", env!("CARGO_PKG_VERSION")),
         format!("platform: {platform}"),
-        format!(
-            "install method: {}",
-            describe_install_context(&install_context)
-        ),
         format!("commit: {}", build_commit()),
     ];
     push_path_detail(&mut details, "current executable", current_exe.as_deref());
@@ -43,7 +31,7 @@ pub(super) fn runtime_check() -> DoctorCheck {
         "runtime.provenance",
         "runtime",
         CheckStatus::Ok,
-        format!("running {install_method} on {platform}"),
+        format!("running on {platform}"),
     )
     .details(details)
 }
@@ -55,8 +43,7 @@ pub(super) fn runtime_check() -> DoctorCheck {
 /// means features that depend on file search may degrade even when the CLI
 /// launches.
 pub(super) fn search_check() -> DoctorCheck {
-    let current_exe = env::current_exe().ok();
-    let install_context = doctor_install_context(current_exe.as_deref());
+    let install_context = InstallContext::current();
     let rg_command = install_context.rg_command();
     let provider = search_provider(&install_context);
     let mut details = vec![
@@ -116,17 +103,6 @@ pub(super) fn search_check() -> DoctorCheck {
     check
 }
 
-fn install_method_name(context: &InstallContext) -> &'static str {
-    match &context.method {
-        InstallMethod::Standalone { .. } => "standalone",
-        InstallMethod::Npm => "npm",
-        InstallMethod::Bun => "bun",
-        InstallMethod::Pnpm => "pnpm",
-        InstallMethod::Brew => "brew",
-        InstallMethod::Other => "local build",
-    }
-}
-
 fn search_provider(context: &InstallContext) -> &'static str {
     let rg_command = context.rg_command();
     let from_package_layout = context
@@ -134,15 +110,7 @@ fn search_provider(context: &InstallContext) -> &'static str {
         .as_ref()
         .and_then(|package_layout| package_layout.path_dir.as_ref())
         .is_some_and(|path_dir| rg_command.starts_with(path_dir));
-    let from_legacy_standalone = matches!(
-        &context.method,
-        InstallMethod::Standalone {
-            resources_dir: Some(resources_dir),
-            ..
-        } if rg_command.starts_with(resources_dir)
-    );
-
-    if from_package_layout || from_legacy_standalone {
+    if from_package_layout {
         "bundled"
     } else {
         "system"

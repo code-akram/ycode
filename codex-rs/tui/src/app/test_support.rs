@@ -47,7 +47,6 @@ pub(super) async fn make_test_app() -> App {
         backtrack_render_pending: false,
         environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
         cli_runtime_target: crate::CliRuntimeTarget::Embedded,
-        pending_update_action: None,
         pending_shutdown_exit_thread_id: None,
         thread_event_channels: HashMap::new(),
         thread_event_listener_tasks: HashMap::new(),

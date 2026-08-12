@@ -427,9 +427,6 @@
             "in_app_browser": {
               "type": "boolean"
             },
-            "in_app_updates": {
-              "type": "boolean"
-            },
             "item_ids": {
               "type": "boolean"
             },
@@ -3264,10 +3261,6 @@
       "minimum": 0.0,
       "type": "integer"
     },
-    "check_for_update_on_startup": {
-      "description": "When `true`, checks for Codex updates on startup and surfaces update prompts. Set to `false` only if your Codex updates are centrally managed. Defaults to `true`.",
-      "type": "boolean"
-    },
     "compact_prompt": {
       "description": "Compact prompt used for history compaction.",
       "type": "string"
@@ -3433,9 +3426,6 @@
           "type": "boolean"
         },
         "in_app_browser": {
-          "type": "boolean"
-        },
-        "in_app_updates": {
           "type": "boolean"
         },
         "item_ids": {

@@ -458,7 +458,6 @@ mod tests {
 sqlite_home = {:?}
 log_dir = {:?}
 model_catalog_json = {:?}
-check_for_update_on_startup = false
 allow_login_shell = false
 
 [windows]
@@ -490,7 +489,6 @@ sandbox_private_desktop = false
             lock.model_catalog_json.as_deref(),
             Some(catalog_path.as_path())
         );
-        assert_eq!(lock.check_for_update_on_startup, Some(false));
         assert_eq!(lock.allow_login_shell, Some(false));
         assert_eq!(
             lock.windows

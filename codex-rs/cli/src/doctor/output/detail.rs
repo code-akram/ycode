@@ -180,19 +180,12 @@ fn parsed_details(check: &DoctorCheck) -> Vec<ParsedDetail> {
 fn runtime_details(parsed: &[ParsedDetail]) -> Vec<HumanDetail> {
     let mut out = Vec::new();
     push_row_if_present(&mut out, parsed, "version", "version");
-    push_row_if_present(&mut out, parsed, "install method", "install method");
     push_row_if_present(&mut out, parsed, "commit", "commit");
     push_row_if_present(&mut out, parsed, "current executable", "executable");
     push_remaining(
         &mut out,
         parsed,
-        &[
-            "version",
-            "platform",
-            "install method",
-            "commit",
-            "current executable",
-        ],
+        &["version", "platform", "commit", "current executable"],
         &[],
     );
     out
@@ -200,35 +193,6 @@ fn runtime_details(parsed: &[ParsedDetail]) -> Vec<HumanDetail> {
 
 fn install_details(parsed: &[ParsedDetail], options: HumanOutputOptions) -> Vec<HumanDetail> {
     let mut out = Vec::new();
-    push_row_if_present(&mut out, parsed, "install context", "context");
-    if parsed.iter().any(|detail| {
-        detail.value == "ignored inherited package-manager launch env for cargo-built binary"
-    }) {
-        out.push(HumanDetail::Bullet(
-            "ignored inherited package-manager launch env for cargo-built binary".to_string(),
-        ));
-    }
-
-    let managed_by_npm = value(parsed, "managed by npm").unwrap_or("false");
-    let managed_by_bun = value(parsed, "managed by bun").unwrap_or("false");
-    let managed_by_pnpm = value(parsed, "managed by pnpm").unwrap_or("false");
-    let package_root = value(parsed, "managed package root").unwrap_or("not set");
-    out.push(HumanDetail::Row {
-        label: "managed by".to_string(),
-        value: format!(
-            "npm: {} · bun: {} · pnpm: {} · package root {}",
-            yes_no(managed_by_npm),
-            yes_no(managed_by_bun),
-            yes_no(managed_by_pnpm),
-            if is_falsy(package_root) {
-                "—".to_string()
-            } else {
-                package_root.to_string()
-            }
-        ),
-        expected: None,
-    });
-
     let path_entries = numbered_values(parsed, "PATH codex #");
     if !path_entries.is_empty() {
         let total = path_entries.len();
@@ -260,15 +224,7 @@ fn install_details(parsed: &[ParsedDetail], options: HumanOutputOptions) -> Vec<
     push_remaining(
         &mut out,
         parsed,
-        &[
-            "current executable",
-            "install context",
-            "managed by npm",
-            "managed by bun",
-            "managed by pnpm",
-            "managed package root",
-            "PATH codex entries",
-        ],
+        &["current executable", "PATH codex entries"],
         &["PATH codex #"],
     );
     out
@@ -578,9 +534,6 @@ fn push_remaining(
     consumed_prefixes: &[&str],
 ) {
     for detail in parsed {
-        if detail.value == "ignored inherited package-manager launch env for cargo-built binary" {
-            continue;
-        }
         if consumed_labels.contains(&detail.label.as_str())
             || consumed_prefixes
                 .iter()
@@ -746,7 +699,6 @@ fn value<'a>(parsed: &'a [ParsedDetail], label: &str) -> Option<&'a str> {
 fn display_label(label: &str) -> String {
     match label {
         "optional reachability failed" => "optional reachability",
-        "check for update on startup" => "startup update check",
         other => other,
     }
     .to_string()
@@ -770,10 +722,6 @@ fn override_names(items: &[String]) -> Vec<String> {
         .map(|item| item.split_once('=').map_or(item.as_str(), |(name, _)| name))
         .map(str::to_string)
         .collect()
-}
-
-fn yes_no(value: &str) -> &'static str {
-    if value == "true" { "yes" } else { "no" }
 }
 
 pub(super) fn is_falsy(value: &str) -> bool {

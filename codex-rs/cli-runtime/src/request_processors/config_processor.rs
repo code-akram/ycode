@@ -258,7 +258,6 @@ fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigR
         sqlite_home: requirements.sqlite_home.map(Into::into),
         log_dir: requirements.log_dir.map(Into::into),
         model_catalog_json: requirements.model_catalog_json.map(Into::into),
-        check_for_update_on_startup: requirements.check_for_update_on_startup,
         allow_login_shell: requirements.allow_login_shell,
     }
 }
@@ -447,7 +446,6 @@ mod tests {
             sqlite_home: Some(sqlite_home.clone()),
             log_dir: Some(log_dir.clone()),
             model_catalog_json: Some(model_catalog_json.clone()),
-            check_for_update_on_startup: Some(false),
             allow_login_shell: Some(false),
             ..ConfigRequirementsToml::default()
         });
@@ -458,7 +456,6 @@ mod tests {
             mapped.model_catalog_json,
             Some(PathUri::from(model_catalog_json))
         );
-        assert_eq!(mapped.check_for_update_on_startup, Some(false));
         assert_eq!(mapped.allow_login_shell, Some(false));
     }
 }

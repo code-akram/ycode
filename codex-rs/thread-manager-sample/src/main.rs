@@ -285,7 +285,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         suppress_unstable_features_warning: false,
         active_project: ProjectConfig { trust_level: None },
         notices: Notice::default(),
-        check_for_update_on_startup: false,
         disable_paste_burst: false,
         tool_suggest: ToolSuggestConfig::default(),
     };

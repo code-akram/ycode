@@ -19,9 +19,8 @@ Environment
       GIT_PAGER                delta
       GH_PAGER                 less
       LESS                     -FRX
-  ✓ runtime      running local build on darwin-arm64
-  ✓ install      consistent
-      managed by               npm: no · bun: no · pnpm: no · package root —
+  ✓ runtime      running on darwin-arm64
+  ✓ install      paths inspected
   ✓ search       search is OK (bundled)
   ✓ git          git version 2.54.0
       selected git             /usr/bin/git
@@ -38,9 +37,6 @@ Configuration
   ✗ auth         token expired — Run `codex login`.
       CODEX_API_KEY            present
 
-Updates
-  ✓ updates      update configuration is locally consistent
-
 Connectivity
   ✓ network      network environment readable
   ✓ websocket    Responses WebSocket handshake succeeded
@@ -50,7 +46,7 @@ Background Server
   ✓ cli-runtime  background server is not running
 
 ─────────────────────────────────────────────────────────────
-12 ok · 2 notes · 1 warn · 1 fail failed
+11 ok · 2 notes · 1 warn · 1 fail failed
 
 --summary compact output           --all expand truncated lists
 --json redacted report

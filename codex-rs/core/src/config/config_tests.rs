@@ -6492,7 +6492,6 @@ async fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() 
         sqlite_home: None,
         log_dir: None,
         model_catalog_json: None,
-        check_for_update_on_startup: None,
         allow_login_shell: None,
         allowed_approval_policies: None,
         allowed_approvals_reviewers: None,
@@ -8847,7 +8846,6 @@ async fn exact_requirements_apply_to_runtime_config() -> std::io::Result<()> {
     std::fs::write(
         codex_home.path().join(CONFIG_TOML_FILE),
         r#"
-check_for_update_on_startup = true
 allow_login_shell = true
 
 [windows]
@@ -8862,7 +8860,6 @@ sandbox_private_desktop = true
 sqlite_home = {:?}
 log_dir = {:?}
 model_catalog_json = {:?}
-check_for_update_on_startup = false
 allow_login_shell = false
 
 [windows]
@@ -8877,12 +8874,8 @@ sandbox_private_desktop = false
     assert_eq!(config.sqlite.home(), required_sqlite_home.as_path());
     assert_eq!(config.log_dir, required_log_dir);
     assert_eq!(config.model_catalog, Some(catalog));
-    assert!(!config.check_for_update_on_startup);
     assert!(!config.permissions.allow_login_shell);
     assert!(!config.permissions.windows_sandbox_private_desktop);
-    assert!(config.startup_warnings.iter().any(|warning| {
-        warning.contains("Configured value for `check_for_update_on_startup` is overridden")
-    }));
     Ok(())
 }
 

@@ -36,10 +36,6 @@ use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::find_codex_home;
 use codex_features::FEATURES;
-use codex_install_context::CodexPackageLayout;
-use codex_install_context::InstallContext;
-use codex_install_context::InstallMethod;
-use codex_install_context::StandalonePlatform;
 use codex_login::AuthDotJson;
 use codex_login::AuthManager;
 use codex_login::CODEX_ACCESS_TOKEN_ENV_VAR;
@@ -69,7 +65,6 @@ mod runtime;
 mod system;
 mod thread_inventory;
 mod title;
-mod updates;
 
 use git::git_check;
 use output::HumanOutputOptions;
@@ -82,7 +77,6 @@ use runtime::search_check;
 use system::system_check;
 use thread_inventory::thread_inventory_check;
 use title::terminal_title_check;
-use updates::updates_check;
 
 const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
@@ -110,10 +104,6 @@ const COLOR_ENV_VARS: &[&str] = &[
 const TERMINAL_DIMENSION_ENV_VARS: &[&str] = &["COLUMNS", "LINES"];
 const TERMINFO_ENV_VARS: &[&str] = &["TERMINFO", "TERMINFO_DIRS"];
 const LOCALE_ENV_VARS: &[&str] = &["LC_ALL", "LC_CTYPE", "LANG"];
-#[cfg(windows)]
-const NPM_COMMAND: &str = "npm.cmd";
-#[cfg(not(windows))]
-const NPM_COMMAND: &str = "npm";
 const REMOTE_TERMINAL_ENV_VARS: &[&str] = &[
     "SSH_TTY",
     "SSH_CONNECTION",
@@ -348,7 +338,6 @@ async fn build_report(
             let (
                 config_check,
                 auth_check,
-                updates_check,
                 network_check,
                 websocket_check,
                 terminal_check,
@@ -360,7 +349,6 @@ async fn build_report(
             ) = tokio::join!(
                 async { run_sync_check("config", progress.clone(), || config_check(config)) },
                 async { run_sync_check("auth", progress.clone(), || auth_check(config)) },
-                async { run_sync_check("updates", progress.clone(), || updates_check(config)) },
                 async { run_sync_check("network", progress.clone(), network_check) },
                 run_async_check(
                     "websocket",
@@ -393,7 +381,6 @@ async fn build_report(
             checks.extend([
                 config_check,
                 auth_check,
-                updates_check,
                 network_check,
                 websocket_check,
                 terminal_check,
@@ -734,40 +721,8 @@ fn installation_check(show_details: bool) -> DoctorCheck {
     let mut details = Vec::new();
     let current_exe = env::current_exe().ok();
     push_path_detail(&mut details, "current executable", current_exe.as_deref());
-    let inherited_managed_env = inherited_managed_env_for_cargo_binary(current_exe.as_deref());
-    let install_context = doctor_install_context(current_exe.as_deref());
-    details.push(format!(
-        "install context: {}",
-        describe_install_context(&install_context)
-    ));
-    if inherited_managed_env {
-        details.push(
-            "ignored inherited package-manager launch env for cargo-built binary".to_string(),
-        );
-    }
-    details.push(format!(
-        "managed by npm: {}",
-        doctor_managed_by_npm(current_exe.as_deref())
-    ));
-    details.push(format!(
-        "managed by bun: {}",
-        env::var_os("CODEX_MANAGED_BY_BUN").is_some()
-    ));
-    details.push(format!(
-        "managed by pnpm: {}",
-        env::var_os("CODEX_MANAGED_BY_PNPM").is_some()
-    ));
-    push_env_path_detail(
-        &mut details,
-        "managed package root",
-        "CODEX_MANAGED_PACKAGE_ROOT",
-    );
 
     let path_entries = codex_path_entries();
-    let mut status = CheckStatus::Ok;
-    let mut summary = "installation looks consistent".to_string();
-    let mut remediation = None;
-
     if path_entries.len() > 1 {
         details.push(format!("PATH codex entries: {}", path_entries.len()));
     }
@@ -780,213 +735,13 @@ fn installation_check(show_details: bool) -> DoctorCheck {
         );
     }
 
-    if doctor_managed_by_npm(current_exe.as_deref()) {
-        match npm_global_root_check() {
-            NpmRootCheck::Match { package_root } => {
-                details.push(format!("npm update target: {}", package_root.display()));
-            }
-            NpmRootCheck::Mismatch {
-                running_package_root,
-                npm_package_root,
-            } => {
-                status = CheckStatus::Fail;
-                summary =
-                    "npm install -g @openai/codex would update a different install".to_string();
-                remediation = Some(format!(
-                    "Fix PATH or npm prefix so the running package root ({}) matches the npm global package root ({}).",
-                    running_package_root.display(),
-                    npm_package_root.display()
-                ));
-                details.push(format!(
-                    "running package root: {}",
-                    running_package_root.display()
-                ));
-                details.push(format!("npm package root: {}", npm_package_root.display()));
-            }
-            NpmRootCheck::MissingPackageRoot => {
-                status = status.max(CheckStatus::Warning);
-                summary = "npm-managed launch is missing package-root provenance".to_string();
-                remediation = Some(
-                    "Reinstall or update Codex so the JS shim provides CODEX_MANAGED_PACKAGE_ROOT."
-                        .to_string(),
-                );
-            }
-            NpmRootCheck::NpmUnavailable(error) => {
-                status = status.max(CheckStatus::Warning);
-                summary = "npm-managed launch could not inspect npm global root".to_string();
-                details.push(format!("npm root -g failed: {error}"));
-            }
-        }
-    }
-
-    let mut check = DoctorCheck::new("installation", "install", status, summary).details(details);
-    if let Some(remediation) = remediation {
-        check = check.remediation(remediation);
-    }
-    check
-}
-
-fn doctor_install_context(current_exe: Option<&Path>) -> InstallContext {
-    if inherited_managed_env_for_cargo_binary(current_exe) {
-        InstallContext {
-            method: InstallMethod::Other,
-            package_layout: None,
-        }
-    } else {
-        InstallContext::current().clone()
-    }
-}
-
-fn doctor_managed_by_npm(current_exe: Option<&Path>) -> bool {
-    env::var_os("CODEX_MANAGED_BY_NPM").is_some()
-        && !inherited_managed_env_for_cargo_binary(current_exe)
-}
-
-fn inherited_managed_env_for_cargo_binary(current_exe: Option<&Path>) -> bool {
-    if env::var_os("CODEX_MANAGED_BY_NPM").is_none()
-        && env::var_os("CODEX_MANAGED_BY_BUN").is_none()
-        && env::var_os("CODEX_MANAGED_BY_PNPM").is_none()
-    {
-        return false;
-    }
-
-    let Some(current_exe) = current_exe else {
-        return false;
-    };
-    let components = current_exe
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>();
-    components
-        .windows(2)
-        .any(|window| window[0] == "target" && matches!(window[1].as_ref(), "debug" | "release"))
-}
-
-fn describe_install_context(context: &InstallContext) -> String {
-    match &context.method {
-        InstallMethod::Standalone {
-            release_dir,
-            resources_dir,
-            platform,
-        } => {
-            let platform = match platform {
-                StandalonePlatform::Unix => "unix",
-                StandalonePlatform::Windows => "windows",
-            };
-            match &context.package_layout {
-                Some(package_layout) => {
-                    let resources = display_optional_path(package_layout.resources_dir.as_deref());
-                    let path = display_optional_path(package_layout.path_dir.as_deref());
-                    format!(
-                        "standalone ({platform}, package {}, bin {}, resources {resources}, path {path})",
-                        package_layout.package_dir.display(),
-                        package_layout.bin_dir.display()
-                    )
-                }
-                None => {
-                    let resources = display_optional_path(resources_dir.as_deref());
-                    format!(
-                        "standalone ({platform}, release {}, resources {resources})",
-                        release_dir.display()
-                    )
-                }
-            }
-        }
-        InstallMethod::Npm => {
-            describe_method_with_package_layout("npm", context.package_layout.as_ref())
-        }
-        InstallMethod::Bun => {
-            describe_method_with_package_layout("bun", context.package_layout.as_ref())
-        }
-        InstallMethod::Pnpm => {
-            describe_method_with_package_layout("pnpm", context.package_layout.as_ref())
-        }
-        InstallMethod::Brew => {
-            describe_method_with_package_layout("brew", context.package_layout.as_ref())
-        }
-        InstallMethod::Other => {
-            describe_method_with_package_layout("other", context.package_layout.as_ref())
-        }
-    }
-}
-
-fn describe_method_with_package_layout(
-    method: &str,
-    package_layout: Option<&CodexPackageLayout>,
-) -> String {
-    match package_layout {
-        Some(package_layout) => {
-            let resources = display_optional_path(package_layout.resources_dir.as_deref());
-            let path = display_optional_path(package_layout.path_dir.as_deref());
-            format!(
-                "{method} (package {}, bin {}, resources {resources}, path {path})",
-                package_layout.package_dir.display(),
-                package_layout.bin_dir.display()
-            )
-        }
-        None => method.to_string(),
-    }
-}
-
-fn display_optional_path(path: Option<&Path>) -> String {
-    path.map(|path| path.display().to_string())
-        .unwrap_or_else(|| "none".to_string())
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum NpmRootCheck {
-    Match {
-        package_root: PathBuf,
-    },
-    Mismatch {
-        running_package_root: PathBuf,
-        npm_package_root: PathBuf,
-    },
-    MissingPackageRoot,
-    NpmUnavailable(String),
-}
-
-fn npm_global_root_check() -> NpmRootCheck {
-    let Some(running_package_root) = env::var_os("CODEX_MANAGED_PACKAGE_ROOT").map(PathBuf::from)
-    else {
-        return NpmRootCheck::MissingPackageRoot;
-    };
-
-    let output = match run_command(NPM_COMMAND, ["root", "-g"]) {
-        Ok(output) => output,
-        Err(err) => return NpmRootCheck::NpmUnavailable(err),
-    };
-    let Some(npm_root) = output.lines().map(str::trim).find(|line| !line.is_empty()) else {
-        return NpmRootCheck::NpmUnavailable("empty output from npm root -g".to_string());
-    };
-
-    compare_npm_package_roots(&running_package_root, &PathBuf::from(npm_root))
-}
-
-fn compare_npm_package_roots(running_package_root: &Path, npm_root: &Path) -> NpmRootCheck {
-    let npm_package_root = npm_root.join("@openai").join("codex");
-    let running = normalize_path_for_compare(running_package_root);
-    let target = normalize_path_for_compare(&npm_package_root);
-    if running == target {
-        NpmRootCheck::Match {
-            package_root: npm_package_root,
-        }
-    } else {
-        NpmRootCheck::Mismatch {
-            running_package_root: running_package_root.to_path_buf(),
-            npm_package_root,
-        }
-    }
-}
-
-fn normalize_path_for_compare(path: &Path) -> String {
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let raw = canonical.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) {
-        raw.to_ascii_lowercase()
-    } else {
-        raw
-    }
+    DoctorCheck::new(
+        "installation",
+        "install",
+        CheckStatus::Ok,
+        "installation paths inspected",
+    )
+    .details(details)
 }
 
 fn display_list<T: AsRef<str>>(items: &[T]) -> String {
@@ -1844,7 +1599,6 @@ async fn state_check(config: &Config) -> DoctorCheck {
         .await;
     }
     rollout_stats_details(&mut details, &config.codex_home);
-    standalone_release_cache_details(&mut details);
 
     let status = if integrity_failures.is_empty() {
         CheckStatus::Ok
@@ -2575,35 +2329,10 @@ fn path_readiness(details: &mut Vec<String>, label: &str, path: &Path) {
     }
 }
 
-fn standalone_release_cache_details(details: &mut Vec<String>) {
-    let context = InstallContext::current();
-    let InstallMethod::Standalone { release_dir, .. } = &context.method else {
-        return;
-    };
-    let Some(releases_dir) = release_dir.parent() else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(&releases_dir) else {
-        return;
-    };
-    let release_count = entries.filter_map(Result::ok).count();
-    details.push(format!(
-        "standalone release cache: {release_count} entries in {}",
-        releases_dir.display()
-    ));
-}
-
 fn push_path_detail(details: &mut Vec<String>, label: &str, path: Option<&Path>) {
     match path {
         Some(path) => details.push(format!("{label}: {}", path.display())),
         None => details.push(format!("{label}: none")),
-    }
-}
-
-fn push_env_path_detail(details: &mut Vec<String>, label: &str, name: &str) {
-    match env::var_os(name) {
-        Some(path) => details.push(format!("{label}: {}", PathBuf::from(path).display())),
-        None => details.push(format!("{label}: not set")),
     }
 }
 
@@ -2742,31 +2471,6 @@ mod tests {
         assert_eq!(
             progress_impl.events(),
             vec!["begin test".to_string(), "finish test Warning".to_string()]
-        );
-    }
-
-    #[test]
-    fn compare_npm_package_roots_detects_match() {
-        let running = PathBuf::from("/prefix/lib/node_modules/@openai/codex");
-        let npm_root = PathBuf::from("/prefix/lib/node_modules");
-        assert_eq!(
-            compare_npm_package_roots(&running, &npm_root),
-            NpmRootCheck::Match {
-                package_root: npm_root.join("@openai").join("codex")
-            }
-        );
-    }
-
-    #[test]
-    fn compare_npm_package_roots_detects_mismatch() {
-        let running = PathBuf::from("/old/lib/node_modules/@openai/codex");
-        let npm_root = PathBuf::from("/new/lib/node_modules");
-        assert_eq!(
-            compare_npm_package_roots(&running, &npm_root),
-            NpmRootCheck::Mismatch {
-                running_package_root: running,
-                npm_package_root: npm_root.join("@openai").join("codex"),
-            }
         );
     }
 
