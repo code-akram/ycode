@@ -47,7 +47,6 @@ mod compact_remote;
 mod compact_remote_parity;
 mod compact_resume_fork;
 mod current_time_reminder;
-mod deprecation_notice;
 #[cfg(not(target_os = "windows"))]
 mod external_auth;
 mod fork_thread;

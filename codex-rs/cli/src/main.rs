@@ -56,7 +56,6 @@ use codex_login::AuthManager;
 use codex_memories_write::clear_memory_roots_contents;
 use codex_models_manager::bundled_models_response;
 use codex_models_manager::manager::RefreshStrategy;
-use codex_protocol::protocol::AskForApproval;
 use codex_protocol::user_input::UserInput;
 use codex_terminal_detection::TerminalName;
 
@@ -94,7 +93,6 @@ struct MultitoolCli {
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
     /// Run Codex non-interactively.
-    #[clap(visible_alias = "e")]
     Exec(ExecCli),
 
     /// Manage login.
@@ -117,7 +115,6 @@ enum Subcommand {
     Debug(DebugCommand),
 
     /// Apply the latest diff produced by Codex agent as a `git apply` to your local working tree.
-    #[clap(visible_alias = "a")]
     Apply(ApplyCommand),
 
     /// Resume a previous interactive session (picker by default; use --last to continue the most recent).
@@ -136,7 +133,7 @@ enum Subcommand {
     Fork(ForkCommand),
 
     /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
-    #[clap(name = "cloud", alias = "cloud-tasks")]
+    #[clap(name = "cloud")]
     Cloud(CloudTasksCli),
 
     /// Inspect feature flags.
@@ -473,8 +470,6 @@ fn stage_str(stage: Stage) -> &'static str {
         Stage::UnderDevelopment => "under development",
         Stage::Experimental { .. } => "experimental",
         Stage::Stable => "stable",
-        Stage::Deprecated => "deprecated",
-        Stage::Removed => "removed",
     }
 }
 
@@ -1211,7 +1206,7 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
         strict_config,
         web_search,
         prompt,
-        mut config_overrides,
+        config_overrides,
         ..
     } = subcommand_cli;
     interactive
@@ -1491,6 +1486,23 @@ mod tests {
                 .get_subcommands()
                 .all(|subcommand| subcommand.get_name() != "responses")
         );
+    }
+
+    #[test]
+    fn current_subcommands_have_no_removed_aliases() {
+        let command = MultitoolCli::command();
+        for current in ["exec", "apply", "cloud"] {
+            assert!(
+                command.find_subcommand(current).is_some(),
+                "missing {current}"
+            );
+        }
+        for removed in ["e", "a", "cloud-tasks"] {
+            assert!(
+                command.find_subcommand(removed).is_none(),
+                "removed alias {removed} is still registered"
+            );
+        }
     }
 
     #[test]
@@ -1889,50 +1901,17 @@ mod tests {
     #[test]
     fn feature_toggles_known_features_generate_overrides() {
         let toggles = FeatureToggles {
-            enable: vec!["web_search_request".to_string()],
+            enable: vec!["standalone_web_search".to_string()],
             disable: vec!["unified_exec".to_string()],
         };
         let overrides = toggles.to_overrides().expect("valid features");
         assert_eq!(
             overrides,
             vec![
-                "features.web_search_request=true".to_string(),
+                "features.standalone_web_search=true".to_string(),
                 "features.unified_exec=false".to_string(),
             ]
         );
-    }
-
-    #[test]
-    fn feature_toggles_accept_removed_image_detail_original_flag() {
-        let toggles = FeatureToggles {
-            enable: vec!["image_detail_original".to_string()],
-            disable: Vec::new(),
-        };
-        let overrides = toggles.to_overrides().expect("valid features");
-        assert_eq!(
-            overrides,
-            vec!["features.image_detail_original=true".to_string(),]
-        );
-    }
-
-    #[test]
-    fn feature_toggles_accept_removed_enable_fanout_flag() {
-        let toggles = FeatureToggles {
-            enable: vec!["enable_fanout".to_string()],
-            disable: Vec::new(),
-        };
-        let overrides = toggles.to_overrides().expect("valid features");
-        assert_eq!(overrides, vec!["features.enable_fanout=true".to_string(),]);
-    }
-
-    #[test]
-    fn feature_toggles_accept_removed_item_ids_flag() {
-        let toggles = FeatureToggles {
-            enable: vec!["item_ids".to_string()],
-            disable: Vec::new(),
-        };
-        let overrides = toggles.to_overrides().expect("valid features");
-        assert_eq!(overrides, vec!["features.item_ids=true".to_string()]);
     }
 
     #[test]

@@ -1,8 +1,6 @@
 use super::super::RequirementsLayerEntry;
-use super::super::hooks::HookDirectoryField;
 use super::RequirementsCompositionError;
 use super::compose_requirements_for_hostname;
-use super::compose_requirements_for_hostname_and_hook_directory;
 use super::compose_requirements_with_hostname_resolver;
 use crate::ConfigRequirementsToml;
 use crate::ConfigRequirementsWithSources;
@@ -13,7 +11,6 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::cell::Cell;
 use std::collections::BTreeMap;
-use tempfile::TempDir;
 use tempfile::tempdir;
 
 fn layer(id: &str, name: &str, contents: &str) -> RequirementsLayerEntry {
@@ -32,18 +29,6 @@ fn compose(
         compose_requirements_for_hostname(layers, /*hostname*/ None)?
             .map(ConfigRequirementsWithSources::into_toml),
     )
-}
-
-fn compose_with_hook_directory_field(
-    layers: Vec<RequirementsLayerEntry>,
-    hook_directory_field: HookDirectoryField,
-) -> Result<Option<ConfigRequirementsToml>, RequirementsCompositionError> {
-    Ok(compose_requirements_for_hostname_and_hook_directory(
-        layers,
-        /*hostname*/ None,
-        hook_directory_field,
-    )?
-    .map(ConfigRequirementsWithSources::into_toml))
 }
 
 fn expected_requirements(contents: impl AsRef<str>) -> ConfigRequirementsToml {
@@ -313,33 +298,6 @@ deny_read = [{high_path:?}, {low_path:?}]
     assert_eq!(
         composed.allow_remote_control,
         Some(Sourced::new(/*value*/ false, mdm_source))
-    );
-}
-
-#[test]
-fn single_regular_layer_keeps_enterprise_managed_source() {
-    let composed = compose_requirements_for_hostname(
-        vec![layer(
-            "req_1",
-            "Security baseline",
-            r#"
-allow_managed_hooks_only = true
-"#,
-        )],
-        /*hostname*/ None,
-    )
-    .expect("compose requirements")
-    .expect("requirements present");
-
-    assert_eq!(
-        composed.allow_managed_hooks_only,
-        Some(Sourced::new(
-            /*value*/ true,
-            RequirementSource::EnterpriseManaged {
-                id: "req_1".to_string(),
-                name: "Security baseline".to_string(),
-            },
-        ))
     );
 }
 
@@ -729,6 +687,7 @@ decision = "prompt"
     );
 }
 
+#[test]
 fn permissions_deny_read_unions_while_profiles_use_regular_toml_merge() {
     let high_path = if cfg!(windows) {
         "C:\\secret"

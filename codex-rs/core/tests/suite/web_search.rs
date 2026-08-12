@@ -60,7 +60,7 @@ async fn web_search_mode_cached_sets_external_web_access_false() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn web_search_mode_takes_precedence_over_legacy_flags() {
+async fn web_search_cached_mode_disables_external_access() {
     skip_if_no_network!();
 
     let server = start_mock_server().await;
@@ -71,10 +71,6 @@ async fn web_search_mode_takes_precedence_over_legacy_flags() {
     let resp_mock = responses::mount_sse_once(&server, sse).await;
 
     let mut builder = test_codex().with_model("gpt-5.4").with_config(|config| {
-        config
-            .features
-            .enable(Feature::WebSearchRequest)
-            .expect("test config should allow feature update");
         config
             .web_search_mode
             .set(WebSearchMode::Cached)
@@ -97,7 +93,7 @@ async fn web_search_mode_takes_precedence_over_legacy_flags() {
     assert_eq!(
         tool.get("external_web_access").and_then(Value::as_bool),
         Some(false),
-        "web_search mode should win over legacy web_search_request"
+        "cached web_search should disable external access"
     );
 }
 
@@ -117,14 +113,6 @@ async fn web_search_mode_defaults_to_cached_when_features_disabled() {
             .web_search_mode
             .set(WebSearchMode::Cached)
             .expect("test web_search_mode should satisfy constraints");
-        config
-            .features
-            .disable(Feature::WebSearchCached)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .disable(Feature::WebSearchRequest)
-            .expect("test config should allow feature update");
     });
     let test = builder
         .build(&server)
@@ -172,14 +160,6 @@ async fn web_search_mode_updates_between_turns_with_permission_profile() {
             .web_search_mode
             .set(WebSearchMode::Cached)
             .expect("test web_search_mode should satisfy constraints");
-        config
-            .features
-            .disable(Feature::WebSearchCached)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .disable(Feature::WebSearchRequest)
-            .expect("test config should allow feature update");
     });
     let test = builder
         .build(&server)

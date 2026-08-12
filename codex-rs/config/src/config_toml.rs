@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::permissions_toml::PermissionsToml;
-use crate::profile_toml::ConfigProfile;
 use crate::types::ApprovalsReviewer;
 use crate::types::AppsConfigToml;
 use crate::types::History;
@@ -234,21 +233,6 @@ pub struct ConfigToml {
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: Option<u64>,
 
-    /// Deprecated: ignored.
-    #[schemars(skip)]
-    pub js_repl_node_path: Option<AbsolutePathBuf>,
-
-    /// Deprecated: ignored.
-    #[schemars(skip)]
-    pub js_repl_node_module_dirs: Option<Vec<AbsolutePathBuf>>,
-
-    /// Profile to use from the `profiles` map.
-    pub profile: Option<String>,
-
-    /// Named profiles to facilitate switching between different configurations.
-    #[serde(default)]
-    pub profiles: HashMap<String, ConfigProfile>,
-
     /// Settings that govern if and what will be written to `~/.codex/history.jsonl`.
     #[serde(default = "default_history")]
     pub history: Option<History>,
@@ -324,11 +308,6 @@ pub struct ConfigToml {
     /// active.
     pub experimental_realtime_start_instructions: Option<String>,
 
-    /// Removed. Former remote thread-store endpoint setting kept only so we can
-    /// fail fast instead of silently falling back to local persistence.
-    #[schemars(skip)]
-    pub experimental_thread_store_endpoint: Option<String>,
-
     /// Experimental / do not use. Selects the thread store implementation.
     pub experimental_thread_store: Option<ThreadStoreToml>,
     pub projects: Option<HashMap<String, ProjectConfig>>,
@@ -360,11 +339,6 @@ pub struct ConfigToml {
     /// Suppress warnings about unstable (under development) features.
     pub suppress_unstable_features_warning: Option<bool>,
 
-    /// Compatibility-only settings retained so legacy `ghost_snapshot`
-    /// config still loads.
-    #[serde(default)]
-    pub ghost_snapshot: Option<GhostSnapshotToml>,
-
     /// Markers used to detect the project root when searching parent
     /// directories for `.codex` folders. Defaults to [".git"] when unset.
     #[serde(default)]
@@ -392,7 +366,6 @@ pub struct ConfigToml {
     pub notice: Option<Notice>,
 
     pub experimental_compact_prompt_file: Option<AbsolutePathBuf>,
-    pub experimental_use_unified_exec_tool: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
@@ -571,7 +544,6 @@ pub struct AgentsToml {
     pub enabled: Option<bool>,
     /// Maximum number of spawned agent threads that can be open concurrently per session.
     /// When unset, the selected multi-agent backend uses its default.
-    #[serde(alias = "max_threads")]
     #[schemars(range(min = 1))]
     pub max_concurrent_threads_per_session: Option<usize>,
     /// Maximum nesting depth for V1 agent threads. Ignored by V2.
@@ -580,9 +552,6 @@ pub struct AgentsToml {
     pub default_subagent_model: Option<String>,
     /// Default reasoning effort for spawned subagents when the spawn call does not select one.
     pub default_subagent_reasoning_effort: Option<ReasoningEffort>,
-    /// Removed agent-job setting retained as a no-op for compatibility.
-    #[schemars(skip)]
-    pub job_max_runtime_seconds: Option<u64>,
     /// Whether to record a model-visible message when an agent turn is interrupted.
     /// Defaults to true.
     pub interrupt_message: Option<bool>,
@@ -613,19 +582,6 @@ pub struct AgentRoleToml {
 
     /// Candidate nicknames for agents spawned with this role.
     pub nickname_candidates: Option<Vec<String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct GhostSnapshotToml {
-    /// Legacy no-op setting retained for compatibility.
-    #[serde(alias = "ignore_untracked_files_over_bytes")]
-    pub ignore_large_untracked_files: Option<i64>,
-    /// Legacy no-op setting retained for compatibility.
-    #[serde(alias = "large_untracked_dir_warning_threshold")]
-    pub ignore_large_untracked_dirs: Option<i64>,
-    /// Legacy no-op setting retained for compatibility.
-    pub disable_warnings: Option<bool>,
 }
 
 impl ConfigToml {

@@ -132,10 +132,10 @@ fn multi_agent_v2_feature_toggle_preserves_nested_configuration() {
     );
 }
 
-/// Adding nested multi-agent settings must retain an existing legacy boolean toggle.
+/// Adding nested multi-agent settings must retain an existing boolean toggle.
 #[test]
-fn multi_agent_v2_nested_edit_preserves_legacy_boolean_toggle() {
-    for feature_path in ["features", "profiles.work.features"] {
+fn multi_agent_v2_nested_edit_preserves_boolean_toggle() {
+    for feature_path in ["features"] {
         let tmp = tempdir().expect("tmpdir");
         let codex_home = tmp.path();
         let config_path = codex_home.join(CONFIG_TOML_FILE);
@@ -300,99 +300,6 @@ fn keymap_bindings_edit_writes_multiple_bindings_as_array() {
 }
 
 #[test]
-fn keymap_binding_edit_replaces_existing_binding_without_touching_profile() {
-    let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-    std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
-        r#"profile = "team"
-
-[tui.keymap.composer]
-submit = "enter"
-
-[profiles.team.tui.keymap.composer]
-submit = "shift-enter"
-"#,
-    )
-    .expect("seed config");
-
-    ConfigEditsBuilder::new(codex_home)
-        .with_edits([keymap_binding_edit("composer", "submit", "ctrl-enter")])
-        .apply_blocking()
-        .expect("persist");
-
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let value: TomlValue = toml::from_str(&raw).expect("parse config");
-
-    assert_eq!(
-        value
-            .get("tui")
-            .and_then(|value| value.get("keymap"))
-            .and_then(|value| value.get("composer"))
-            .and_then(|value| value.get("submit"))
-            .and_then(TomlValue::as_str),
-        Some("ctrl-enter")
-    );
-    assert_eq!(
-        value
-            .get("profiles")
-            .and_then(|value| value.get("team"))
-            .and_then(|value| value.get("tui"))
-            .and_then(|value| value.get("keymap"))
-            .and_then(|value| value.get("composer"))
-            .and_then(|value| value.get("submit"))
-            .and_then(TomlValue::as_str),
-        Some("shift-enter")
-    );
-}
-
-#[test]
-fn keymap_binding_clear_edit_removes_root_action_binding_without_touching_profile() {
-    let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-    std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
-        r#"profile = "team"
-
-[tui.keymap.composer]
-submit = "enter"
-
-[profiles.team.tui.keymap.composer]
-submit = "shift-enter"
-"#,
-    )
-    .expect("seed config");
-
-    ConfigEditsBuilder::new(codex_home)
-        .with_edits([keymap_binding_clear_edit("composer", "submit")])
-        .apply_blocking()
-        .expect("persist");
-
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let value: TomlValue = toml::from_str(&raw).expect("parse config");
-
-    assert_eq!(
-        value
-            .get("tui")
-            .and_then(|value| value.get("keymap"))
-            .and_then(|value| value.get("composer"))
-            .and_then(|value| value.get("submit")),
-        None
-    );
-    assert_eq!(
-        value
-            .get("profiles")
-            .and_then(|value| value.get("team"))
-            .and_then(|value| value.get("tui"))
-            .and_then(|value| value.get("keymap"))
-            .and_then(|value| value.get("composer"))
-            .and_then(|value| value.get("submit"))
-            .and_then(TomlValue::as_str),
-        Some("shift-enter")
-    );
-}
-
-#[test]
 fn set_model_availability_nux_count_writes_shown_count() {
     let tmp = tempdir().expect("tmpdir");
     let codex_home = tmp.path();
@@ -477,57 +384,6 @@ enabled = false
     assert_eq!(contents, expected);
 }
 
-#[test]
-fn blocking_set_model_ignores_inline_legacy_profile_contents() {
-    let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-
-    // Seed with inline tables for profiles to simulate common user config.
-    std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
-        r#"profile = "fast"
-
-profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
-"#,
-    )
-    .expect("seed");
-
-    apply_blocking(
-        codex_home,
-        &[ConfigEdit::SetModel {
-            model: Some("o4-mini".to_string()),
-            effort: None,
-        }],
-    )
-    .expect("persist");
-
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let value: TomlValue = toml::from_str(&raw).expect("parse config");
-
-    assert_eq!(
-        value.get("model").and_then(TomlValue::as_str),
-        Some("o4-mini")
-    );
-
-    // Legacy profile values stay untouched when root settings are updated.
-    let profiles_tbl = value
-        .get("profiles")
-        .and_then(|v| v.as_table())
-        .expect("profiles table");
-    let fast_tbl = profiles_tbl
-        .get("fast")
-        .and_then(|v| v.as_table())
-        .expect("fast table");
-    assert_eq!(
-        fast_tbl.get("sandbox_mode").and_then(|v| v.as_str()),
-        Some("strict")
-    );
-    assert_eq!(
-        fast_tbl.get("model").and_then(|v| v.as_str()),
-        Some("gpt-4o")
-    );
-}
-
 #[cfg(unix)]
 #[test]
 fn blocking_set_model_writes_through_symlink_chain() {
@@ -587,72 +443,6 @@ fn blocking_set_model_replaces_symlink_on_cycle() {
 
     let contents = std::fs::read_to_string(&config_path).expect("read config");
     let expected = r#"model = "gpt-5.4"
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn blocking_clear_model_does_not_follow_legacy_active_profile() {
-    let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-
-    std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
-        r#"profile = "fast"
-
-profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
-"#,
-    )
-    .expect("seed");
-
-    apply_blocking(
-        codex_home,
-        &[ConfigEdit::SetModel {
-            model: None,
-            effort: Some(ReasoningEffort::High),
-        }],
-    )
-    .expect("persist");
-
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"profile = "fast"
-
-profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
-model_reasoning_effort = "high"
-"#;
-    assert_eq!(contents, expected);
-}
-
-#[test]
-fn blocking_set_model_does_not_follow_legacy_active_profile() {
-    let tmp = tempdir().expect("tmpdir");
-    let codex_home = tmp.path();
-    std::fs::write(
-        codex_home.join(CONFIG_TOML_FILE),
-        r#"profile = "team"
-
-[profiles.team]
-model_reasoning_effort = "low"
-"#,
-    )
-    .expect("seed");
-
-    apply_blocking(
-        codex_home,
-        &[ConfigEdit::SetModel {
-            model: Some("o5-preview".to_string()),
-            effort: Some(ReasoningEffort::Minimal),
-        }],
-    )
-    .expect("persist");
-
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let expected = r#"profile = "team"
-model = "o5-preview"
-model_reasoning_effort = "minimal"
-
-[profiles.team]
-model_reasoning_effort = "low"
 "#;
     assert_eq!(contents, expected);
 }

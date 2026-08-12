@@ -1,6 +1,6 @@
 # `codex-config` loader
 
-This module is the canonical place to **load and describe Codex configuration layers** (user config, CLI/session overrides, cloud-managed config, managed config, and MDM-managed preferences) and to produce:
+This module is the canonical place to **load and describe configuration layers** (user config, CLI/session overrides, project config, cloud-managed config, and system config) and to produce:
 
 - An **effective merged** TOML config.
 - **Per-key origins** metadata (which layer “wins” for a given key).
@@ -18,21 +18,19 @@ Exported from `codex_config::loader`:
   - `with_user_config(user_config) -> ConfigLayerStack`
 - `ConfigLayerEntry` (one layer’s `{name, config, version, disabled_reason}`; `name` carries source metadata)
 - `ConfigLoadOptions` (user-facing load behavior such as strict config validation)
-- `LoaderOverrides` (test/override hooks for managed config sources)
+- `LoaderOverrides` (test/override hooks for config and requirements sources)
 - `merge_toml_values(base, overlay)` (public helper used elsewhere)
 
 ## Layering model
 
 Precedence is **top overrides bottom**:
 
-1. `LegacyManagedConfigTomlFromMdm` (MDM-delivered `managed_config.toml`, while it is being phased out)
-2. `LegacyManagedConfigTomlFromFile` (`managed_config.toml`, while it is being phased out)
-3. `SessionFlags` (CLI overrides, applied as dotted-path TOML writes)
-4. `Project` config (`.codex/config.toml`)
-5. `User` profile config, when present
-6. `User` config (`config.toml`)
-7. `EnterpriseManaged` cloud-managed config bundle layers
-8. `System` config (`/etc/codex/config.toml` or the Windows system config path)
+1. `SessionFlags` (CLI overrides, applied as dotted-path TOML writes)
+2. `Project` config (`.codex/config.toml`)
+3. `User` profile-v2 config file, when present
+4. `User` config (`config.toml`)
+5. `EnterpriseManaged` cloud-managed config bundle layers
+6. `System` config (`/etc/codex/config.toml` or the platform system config path)
 
 `ConfigLayerStack` stores layers in the opposite order internally: lowest
 precedence first, highest precedence last, so later layers override earlier
@@ -76,7 +74,7 @@ let layers_for_ui = layers.layers_high_to_low().collect::<Vec<_>>();
 Implementation is split by concern:
 
 - `state.rs`: public types (`ConfigLayerEntry`, `ConfigLayerStack`) + merge/origins convenience methods.
-- `layer_io.rs`: reading `config.toml`, managed config, and managed preferences inputs.
+- `mod.rs`: reading config and requirements inputs and assembling the layer stack.
 - `overrides.rs`: CLI dotted-path overrides → TOML “session flags” layer.
 - `merge.rs`: recursive TOML merge.
 - `fingerprint.rs`: stable per-layer hashing and per-key origins traversal.

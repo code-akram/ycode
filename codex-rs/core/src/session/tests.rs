@@ -5531,7 +5531,7 @@ async fn record_context_updates_emits_environment_item_for_network_changes() {
             }),
             ..Default::default()
         },
-        RequirementSource::LegacyManagedConfigTomlFromMdm,
+        RequirementSource::Unknown,
     ));
     let layers = config
         .config_layer_stack

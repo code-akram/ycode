@@ -17,7 +17,6 @@ use codex_config::ConfigLayerMetadata;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigLayerStack;
 use codex_config::ConfigRequirementsToml;
-use codex_config::ShellEnvironmentPolicyFilterRepresentation;
 use codex_config::config_toml::ConfigToml;
 use codex_config::merge_toml_values;
 use codex_config::shell_environment_filter_entry;
@@ -305,23 +304,6 @@ impl ConfigManager {
             {
                 segments[2] = pattern;
             }
-            if !value.is_null() {
-                match segments.as_slice() {
-                    [segment] if segment == "profile" => {
-                        return Err(ConfigManagerError::write(
-                            ConfigWriteErrorCode::ConfigValidationError,
-                            "`profile` is a legacy config selector and can no longer be written; use `--profile <name>` with `<name>.config.toml` instead",
-                        ));
-                    }
-                    [segment, ..] if segment == "profiles" => {
-                        return Err(ConfigManagerError::write(
-                            ConfigWriteErrorCode::ConfigValidationError,
-                            "`profiles` contains legacy config profile tables and can no longer be written; use `--profile <name>` with `<name>.config.toml` instead",
-                        ));
-                    }
-                    _ => {}
-                }
-            }
             let parsed_value = parse_value(value).map_err(|message| {
                 ConfigManagerError::write(ConfigWriteErrorCode::ConfigValidationError, message)
             })?;
@@ -338,14 +320,7 @@ impl ConfigManager {
                     })?;
             }
 
-            let persist_segments = if matches!(strategy, MergeStrategy::Upsert)
-                && parsed_value.as_ref().is_some_and(|value| {
-                    shell_environment_policy_representation_switch(&user_config, &segments, value)
-                }) {
-                vec!["shell_environment_policy".to_string()]
-            } else {
-                segments.clone()
-            };
+            let persist_segments = segments.clone();
             let original_value = value_at_path(&user_config, &persist_segments).cloned();
 
             apply_merge(&mut user_config, &segments, parsed_value.as_ref(), strategy).map_err(
@@ -580,11 +555,6 @@ fn apply_merge(
 
     let multi_agent_v2_feature_depth = match segments {
         [features, feature, ..] if features == "features" && feature == "multi_agent_v2" => Some(2),
-        [profiles, _, features, feature, ..]
-            if profiles == "profiles" && features == "features" && feature == "multi_agent_v2" =>
-        {
-            Some(4)
-        }
         _ => None,
     };
     let preserves_multi_agent_v2_feature_config =
@@ -602,9 +572,8 @@ fn apply_merge(
 
     if preserves_multi_agent_v2_feature_config
         || matches!(strategy, MergeStrategy::Upsert)
-            && (shell_environment_policy_representation_switch(root, segments, value)
-                || (matches!(value_at_path(root, segments), Some(TomlValue::Table(_)))
-                    && matches!(value, TomlValue::Table(_))))
+            && matches!(value_at_path(root, segments), Some(TomlValue::Table(_)))
+            && matches!(value, TomlValue::Table(_))
     {
         let overlay = sparse_overlay(segments, value);
         merge_toml_values(root, &overlay);
@@ -647,20 +616,6 @@ fn sparse_overlay(path: &[String], value: &TomlValue) -> TomlValue {
     path.iter().rev().fold(value.clone(), |value, segment| {
         TomlValue::Table(toml::map::Map::from_iter([(segment.clone(), value)]))
     })
-}
-
-fn shell_environment_policy_representation_switch(
-    root: &TomlValue,
-    segments: &[String],
-    value: &TomlValue,
-) -> bool {
-    let current = root
-        .get("shell_environment_policy")
-        .and_then(ShellEnvironmentPolicyFilterRepresentation::from_policy);
-    let edited = ShellEnvironmentPolicyFilterRepresentation::from_edit(segments, value);
-    current
-        .zip(edited)
-        .is_some_and(|(current, edited)| current != edited)
 }
 
 fn clear_path(root: &mut TomlValue, segments: &[String]) -> Result<bool, MergeError> {
@@ -766,9 +721,6 @@ fn value_at_semantic_path<'a>(root: &'a TomlValue, segments: &[String]) -> Optio
             }
             let is_multi_agent_v2_feature = match parents {
                 [features, feature] => features == "features" && feature == "multi_agent_v2",
-                [profiles, _, features, feature] => {
-                    profiles == "profiles" && features == "features" && feature == "multi_agent_v2"
-                }
                 _ => false,
             };
             if !is_multi_agent_v2_feature {
@@ -781,9 +733,6 @@ fn value_at_semantic_path<'a>(root: &'a TomlValue, segments: &[String]) -> Optio
 
 fn override_message(layer: &ConfigLayerSource) -> String {
     match layer {
-        ConfigLayerSource::Mdm { domain, key: _ } => {
-            format!("Overridden by managed policy (MDM): {domain}")
-        }
         ConfigLayerSource::System { file } => {
             format!("Overridden by managed config (system): {}", file.display())
         }
@@ -797,15 +746,6 @@ fn override_message(layer: &ConfigLayerSource) -> String {
         ConfigLayerSource::SessionFlags => "Overridden by session flags".to_string(),
         ConfigLayerSource::User { file, .. } => {
             format!("Overridden by user config: {}", file.display())
-        }
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
-            format!(
-                "Overridden by legacy managed_config.toml: {}",
-                file.display()
-            )
-        }
-        ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
-            "Overridden by legacy managed configuration from MDM".to_string()
         }
     }
 }
@@ -860,19 +800,6 @@ fn find_effective_layer(
 ) -> Option<ConfigLayerMetadata> {
     for layer in layers.layers_high_to_low() {
         if value_at_semantic_path(&layer.config, segments).is_some() {
-            return Some(layer.metadata());
-        }
-
-        let Some(layer_representation) = layer
-            .config
-            .get("shell_environment_policy")
-            .and_then(ShellEnvironmentPolicyFilterRepresentation::from_policy)
-        else {
-            continue;
-        };
-        if ShellEnvironmentPolicyFilterRepresentation::from_path(segments)
-            .is_some_and(|edit_representation| edit_representation != layer_representation)
-        {
             return Some(layer.metadata());
         }
     }

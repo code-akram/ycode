@@ -214,14 +214,14 @@ async fn ignore_rules_marks_config_stack_for_exec_policy_rule_skip() -> std::io:
 }
 
 #[tokio::test]
-async fn returns_config_error_for_invalid_managed_config_toml() {
+async fn returns_config_error_for_invalid_system_config_toml() {
     let tmp = tempdir().expect("tempdir");
-    let managed_path = tmp.path().join("managed_config.toml");
+    let system_path = tmp.path().join("system_config.toml");
     let contents = r#"model = "gpt-4"
 invalid = ["#;
-    std::fs::write(&managed_path, contents).expect("write managed config");
+    std::fs::write(&system_path, contents).expect("write managed config");
 
-    let overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_path.clone());
+    let overrides = LoaderOverrides::with_system_config_path_for_tests(system_path.clone());
 
     let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
     let err = load_config_layers_state(
@@ -237,8 +237,7 @@ invalid = ["#;
 
     let config_error = config_error_from_io(&err);
     let expected_toml_error = toml::from_str::<TomlValue>(contents).expect_err("parse error");
-    let expected_config_error =
-        config_error_from_toml(&managed_path, contents, expected_toml_error);
+    let expected_config_error = config_error_from_toml(&system_path, contents, expected_toml_error);
     assert_eq!(config_error, &expected_config_error);
 }
 
@@ -480,7 +479,7 @@ set = ["invalid"]
 #[tokio::test]
 async fn malformed_higher_shell_filter_reports_its_layer_when_lower_fields_are_replaced() {
     let tmp = tempdir().expect("tempdir");
-    let managed_path = tmp.path().join("managed_config.toml");
+    let system_path = tmp.path().join("system_config.toml");
     std::fs::write(
         tmp.path().join(CONFIG_TOML_FILE),
         r#"[shell_environment_policy]
@@ -490,7 +489,7 @@ set = ["invalid"]
     )
     .expect("write user config");
     std::fs::write(
-        &managed_path,
+        &system_path,
         r#"[shell_environment_policy]
 inherit = "core"
 set = { PATH = "/bin" }
@@ -504,8 +503,8 @@ set = { PATH = "/bin" }
     let err = ConfigBuilder::default()
         .codex_home(tmp.path().to_path_buf())
         .fallback_cwd(Some(tmp.path().to_path_buf()))
-        .loader_overrides(LoaderOverrides::with_managed_config_path_for_tests(
-            managed_path.clone(),
+        .loader_overrides(LoaderOverrides::with_system_config_path_for_tests(
+            system_path.clone(),
         ))
         .strict_config(/*strict_config*/ false)
         .build()
@@ -513,7 +512,7 @@ set = { PATH = "/bin" }
         .expect_err("malformed shell filter should be rejected");
 
     let config_error = config_error_from_io(&err);
-    assert_eq!(config_error.path, managed_path);
+    assert_eq!(config_error.path, system_path);
     assert!(config_error.message.contains("unknown variant `keep`"));
 }
 
@@ -652,9 +651,9 @@ memories = "true""#;
 }
 
 #[tokio::test]
-async fn merges_managed_config_layer_on_top() {
+async fn merges_system_config_layer_at_base() {
     let tmp = tempdir().expect("tempdir");
-    let managed_path = tmp.path().join("managed_config.toml");
+    let system_path = tmp.path().join("system_config.toml");
 
     std::fs::write(
         tmp.path().join(CONFIG_TOML_FILE),
@@ -666,17 +665,17 @@ value = "base"
     )
     .expect("write base");
     std::fs::write(
-        &managed_path,
+        &system_path,
         r#"foo = 2
 
 [nested]
-value = "managed_config"
+value = "system_config"
 extra = true
 "#,
     )
     .expect("write managed config");
 
-    let overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_path);
+    let overrides = LoaderOverrides::with_system_config_path_for_tests(system_path);
 
     let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
     let state = load_config_layers_state(
@@ -699,7 +698,7 @@ extra = true
         .expect("nested");
     assert_eq!(
         nested.get("value"),
-        Some(&TomlValue::String("managed_config".to_string()))
+        Some(&TomlValue::String("system_config".to_string()))
     );
     assert_eq!(nested.get("extra"), Some(&TomlValue::Boolean(true)));
 }
@@ -707,9 +706,9 @@ extra = true
 #[tokio::test]
 async fn returns_empty_when_all_layers_missing() {
     let tmp = tempdir().expect("tempdir");
-    let managed_path = tmp.path().join("managed_config.toml");
+    let system_path = tmp.path().join("system_config.toml");
 
-    let overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_path);
+    let overrides = LoaderOverrides::with_system_config_path_for_tests(system_path);
 
     let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
     let layers = load_config_layers_state(
@@ -768,7 +767,7 @@ async fn returns_empty_when_all_layers_missing() {
 #[tokio::test]
 async fn selected_user_config_file_layers_over_base_user_config() {
     let tmp = tempdir().expect("tempdir");
-    let managed_path = tmp.path().join("managed_config.toml");
+    let system_path = tmp.path().join("system_config.toml");
     let selected_config = tmp.path().join("work.config.toml");
 
     std::fs::write(
@@ -781,7 +780,7 @@ approval_policy = "on-request"
     .expect("write default user config");
     std::fs::write(&selected_config, r#"model = "gpt-work""#).expect("write selected user config");
 
-    let mut overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_path);
+    let mut overrides = LoaderOverrides::with_system_config_path_for_tests(system_path);
     overrides.user_config_path =
         Some(AbsolutePathBuf::from_absolute_path(&selected_config).expect("selected config path"));
     overrides.user_config_profile = Some("work".parse().expect("profile-v2 name"));
@@ -894,131 +893,13 @@ async fn includes_thread_config_layers_in_stack() -> anyhow::Result<()> {
 
 #[cfg(target_os = "macos")]
 #[tokio::test]
-async fn managed_preferences_take_highest_precedence() {
-    use base64::Engine;
-
-    let tmp = tempdir().expect("tempdir");
-    let managed_path = tmp.path().join("managed_config.toml");
-
-    std::fs::write(
-        tmp.path().join(CONFIG_TOML_FILE),
-        r#"[nested]
-value = "base"
-"#,
-    )
-    .expect("write base");
-    std::fs::write(
-        &managed_path,
-        r#"[nested]
-value = "managed_config"
-flag = true
-"#,
-    )
-    .expect("write managed config");
-    let raw_managed_preferences = r#"
-# managed profile
-[nested]
-value = "managed"
-flag = false
-"#;
-
-    let mut overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_path);
-    overrides.managed_preferences_base64 =
-        Some(base64::prelude::BASE64_STANDARD.encode(raw_managed_preferences.as_bytes()));
-
-    let cwd = AbsolutePathBuf::try_from(tmp.path()).expect("cwd");
-    let state = load_config_layers_state(
-        LOCAL_FS.as_ref(),
-        tmp.path(),
-        Some(cwd),
-        &[] as &[(String, TomlValue)],
-        overrides,
-        &codex_config::NoopThreadConfigLoader,
-    )
-    .await
-    .expect("load config");
-    let loaded = state.effective_config();
-    let nested = loaded
-        .get("nested")
-        .and_then(|v| v.as_table())
-        .expect("nested table");
-    assert_eq!(
-        nested.get("value"),
-        Some(&TomlValue::String("managed".to_string()))
-    );
-    assert_eq!(nested.get("flag"), Some(&TomlValue::Boolean(false)));
-    let mdm_layer = state
-        .layers_high_to_low()
-        .find(|layer| {
-            matches!(
-                layer.name,
-                ConfigLayerSource::LegacyManagedConfigTomlFromMdm
-            )
-        })
-        .expect("mdm layer");
-    let raw = mdm_layer.raw_toml().expect("preserved mdm toml");
-    assert!(raw.contains("# managed profile"));
-    assert!(raw.contains("value = \"managed\""));
-}
-
-#[cfg(target_os = "macos")]
-#[tokio::test]
-async fn managed_preferences_expand_home_directory_in_workspace_write_roots() -> anyhow::Result<()>
-{
-    use base64::Engine;
-    use codex_protocol::protocol::SandboxPolicy;
-
-    let Some(home) = dirs::home_dir() else {
-        return Ok(());
-    };
-    let tmp = tempdir()?;
-
-    let mut loader_overrides =
-        LoaderOverrides::with_managed_config_path_for_tests(tmp.path().join("managed_config.toml"));
-    loader_overrides.managed_preferences_base64 = Some(
-        base64::prelude::BASE64_STANDARD.encode(
-            r#"
-sandbox_mode = "workspace-write"
-[sandbox_workspace_write]
-writable_roots = ["~/code"]
-"#
-            .as_bytes(),
-        ),
-    );
-
-    let config = ConfigBuilder::default()
-        .codex_home(tmp.path().to_path_buf())
-        .fallback_cwd(Some(tmp.path().to_path_buf()))
-        .loader_overrides(loader_overrides)
-        .build()
-        .await?;
-
-    let expected_root = AbsolutePathBuf::from_absolute_path(home.join("code"))?;
-    match &config.legacy_sandbox_policy() {
-        SandboxPolicy::WorkspaceWrite { writable_roots, .. } => {
-            assert_eq!(
-                writable_roots
-                    .iter()
-                    .filter(|root| **root == expected_root)
-                    .count(),
-                1,
-            );
-        }
-        other => panic!("expected workspace-write policy, got {other:?}"),
-    }
-
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-#[tokio::test]
 async fn managed_preferences_requirements_are_applied() -> anyhow::Result<()> {
     use base64::Engine;
 
     let tmp = tempdir()?;
 
     let mut loader_overrides =
-        LoaderOverrides::with_managed_config_path_for_tests(tmp.path().join("managed_config.toml"));
+        LoaderOverrides::with_system_config_path_for_tests(tmp.path().join("config.toml"));
     loader_overrides.macos_managed_config_requirements_base64 = Some(
         base64::prelude::BASE64_STANDARD.encode(
             r#"
@@ -1075,7 +956,7 @@ async fn managed_preferences_requirements_resolve_paths_against_codex_home() -> 
     std::fs::create_dir_all(&codex_home)?;
 
     let mut loader_overrides =
-        LoaderOverrides::with_managed_config_path_for_tests(tmp.path().join("managed_config.toml"));
+        LoaderOverrides::with_system_config_path_for_tests(tmp.path().join("config.toml"));
     loader_overrides.macos_managed_config_requirements_base64 = Some(
         base64::prelude::BASE64_STANDARD.encode(
             r#"
@@ -1121,16 +1002,16 @@ async fn managed_preferences_requirements_take_precedence() -> anyhow::Result<()
     use base64::Engine;
 
     let tmp = tempdir()?;
-    let managed_path = tmp.path().join("managed_config.toml");
+    let system_path = tmp.path().join("system_config.toml");
 
     tokio::fs::write(
-        &managed_path,
+        &system_path,
         r#"approval_policy = "on-request"
 "#,
     )
     .await?;
 
-    let mut loader_overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_path);
+    let mut loader_overrides = LoaderOverrides::with_system_config_path_for_tests(system_path);
     loader_overrides.macos_managed_config_requirements_base64 = Some(
         base64::prelude::BASE64_STANDARD.encode(
             r#"
@@ -2183,9 +2064,9 @@ async fn load_config_layers_can_ignore_managed_requirements() -> anyhow::Result<
     tokio::fs::create_dir_all(&codex_home).await?;
     let cwd = AbsolutePathBuf::from_absolute_path(tmp.path())?;
 
-    let managed_config_path = tmp.path().join("managed_config.toml");
+    let system_config_path = tmp.path().join("system_config.toml");
     tokio::fs::write(
-        &managed_config_path,
+        &system_config_path,
         r#"approval_policy = "never"
 "#,
     )
@@ -2198,7 +2079,7 @@ async fn load_config_layers_can_ignore_managed_requirements() -> anyhow::Result<
     )
     .await?;
 
-    let mut overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_config_path);
+    let mut overrides = LoaderOverrides::with_system_config_path_for_tests(system_config_path);
     overrides.system_requirements_path = Some(system_requirements_path);
     overrides.ignore_managed_requirements = true;
 

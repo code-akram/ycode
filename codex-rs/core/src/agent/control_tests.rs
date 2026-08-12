@@ -646,7 +646,6 @@ async fn send_inter_agent_communication_without_turn_queues_message_without_trig
 async fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() {
     let (home, mut config) = test_config().await;
     let _ = config.features.enable(Feature::MultiAgentV2);
-    let _ = config.features.enable(Feature::Sqlite);
     config.model = Some("gpt-5.6-sol".to_string());
     let harness = AgentControlHarness::new_with_config(home, config).await;
     let (parent_thread_id, _parent_thread) = harness.start_paginated_thread().await;
@@ -765,7 +764,6 @@ async fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() {
 async fn resume_agent_from_rollout_does_not_reopen_v2_descendants() {
     let (home, mut config) = test_config().await;
     let _ = config.features.enable(Feature::MultiAgentV2);
-    let _ = config.features.enable(Feature::Sqlite);
     let harness = AgentControlHarness::new_with_config(home, config).await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
     let worker_path = AgentPath::root().join("worker").expect("worker path");
@@ -2432,58 +2430,6 @@ async fn spawn_agent_fork_last_n_turns_strips_parent_usage_hints() {
         .submit(Op::Shutdown {})
         .await
         .expect("parent shutdown should submit");
-}
-
-#[tokio::test]
-async fn spawn_agent_respects_legacy_max_threads_alias() {
-    let max_threads = 1usize;
-    let (_home, config) = test_config_with_cli_overrides(vec![(
-        "agents.max_threads".to_string(),
-        TomlValue::Integer(max_threads as i64),
-    )])
-    .await;
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.codex_home.to_path_buf(),
-        std::sync::Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
-    );
-    let control = manager.agent_control();
-
-    let _ = manager
-        .start_thread(StartThreadOptions::new(config.clone()))
-        .await
-        .expect("start thread");
-
-    let first_agent_id = control
-        .spawn_agent(
-            config.clone(),
-            text_input("hello"),
-            /*session_source*/ None,
-        )
-        .await
-        .expect("spawn_agent should succeed");
-
-    let err = control
-        .spawn_agent(
-            config,
-            text_input("hello again"),
-            /*session_source*/ None,
-        )
-        .await
-        .expect_err("spawn_agent should respect max threads");
-    let CodexErrorDetails::AgentLimitReached {
-        max_threads: seen_max_threads,
-    } = err.details()
-    else {
-        panic!("expected AgentLimitReached");
-    };
-    assert_eq!(*seen_max_threads, max_threads);
-
-    let _ = control
-        .shutdown_live_agent(first_agent_id)
-        .await
-        .expect("shutdown agent");
 }
 
 #[tokio::test]

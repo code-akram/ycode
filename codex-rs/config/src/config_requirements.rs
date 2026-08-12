@@ -46,10 +46,6 @@ pub enum RequirementSource {
     SystemRequirementsToml {
         file: AbsolutePathBuf,
     },
-    LegacyManagedConfigTomlFromFile {
-        file: AbsolutePathBuf,
-    },
-    LegacyManagedConfigTomlFromMdm,
 }
 
 impl RequirementSource {
@@ -104,12 +100,6 @@ impl fmt::Display for RequirementSource {
             }
             RequirementSource::SystemRequirementsToml { file } => {
                 write!(f, "{}", file.as_path().display())
-            }
-            RequirementSource::LegacyManagedConfigTomlFromFile { file } => {
-                write!(f, "{}", file.as_path().display())
-            }
-            RequirementSource::LegacyManagedConfigTomlFromMdm => {
-                write!(f, "MDM managed_config.toml (legacy)")
             }
         }
     }
@@ -851,7 +841,7 @@ pub struct ConfigRequirementsToml {
     pub computer_use: Option<ComputerUseRequirementsToml>,
     pub browser_use: Option<BrowserUseRequirementsToml>,
     pub windows: Option<WindowsRequirementsToml>,
-    #[serde(rename = "features", alias = "feature_requirements")]
+    #[serde(rename = "features")]
     pub feature_requirements: Option<FeatureRequirementsToml>,
     pub apps: Option<AppsRequirementsToml>,
     pub rules: Option<RequirementsExecPolicyToml>,
@@ -1619,7 +1609,6 @@ pub fn sandbox_mode_requirement_for_permission_profile(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::HookEventsToml;
     use anyhow::Result;
     use codex_execpolicy::Decision;
     use codex_execpolicy::Evaluation;
@@ -1688,7 +1677,7 @@ mod tests {
             domain: "com.openai.codex".to_string(),
             key: "requirements_toml_base64".to_string(),
         };
-        let legacy_source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let legacy_source = RequirementSource::Unknown;
 
         assert_eq!(
             RequirementSource::composite([
@@ -1923,7 +1912,7 @@ mod tests {
     #[test]
     fn merge_unset_fields_copies_every_field_and_sets_sources() {
         let mut target = ConfigRequirementsWithSources::default();
-        let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let source = RequirementSource::Unknown;
 
         let allowed_approval_policies = vec![AskForApproval::UnlessTrusted, AskForApproval::Never];
         let allowed_approvals_reviewers =
@@ -1980,7 +1969,6 @@ mod tests {
             default_permissions: Some("managed".to_string()),
             remote_sandbox_config: None,
             allowed_web_search_modes: Some(allowed_web_search_modes.clone()),
-            allow_managed_hooks_only: Some(true),
             allow_appshots: Some(false),
             allow_remote_control: Some(false),
             computer_use: Some(computer_use.clone()),
@@ -2029,10 +2017,6 @@ mod tests {
                 default_permissions: Some(Sourced::new("managed".to_string(), source.clone(),)),
                 allowed_web_search_modes: Some(Sourced::new(
                     allowed_web_search_modes,
-                    enforce_source.clone(),
-                )),
-                allow_managed_hooks_only: Some(Sourced::new(
-                    /*value*/ true,
                     enforce_source.clone(),
                 )),
                 allow_appshots: Some(Sourced::new(/*value*/ false, enforce_source.clone(),)),
@@ -2085,7 +2069,6 @@ mod tests {
                 allowed_permission_profiles: None,
                 default_permissions: None,
                 allowed_web_search_modes: None,
-                allow_managed_hooks_only: None,
                 allow_appshots: None,
                 allow_remote_control: None,
                 computer_use: None,
@@ -2107,7 +2090,7 @@ mod tests {
 
     #[test]
     fn merge_unset_fields_does_not_overwrite_existing_values() -> Result<()> {
-        let existing_source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let existing_source = RequirementSource::Unknown;
         let mut populated_target = ConfigRequirementsWithSources::default();
         let populated_requirements: ConfigRequirementsToml = from_str(
             r#"
@@ -2139,7 +2122,6 @@ mod tests {
                 allowed_permission_profiles: None,
                 default_permissions: None,
                 allowed_web_search_modes: None,
-                allow_managed_hooks_only: None,
                 allow_appshots: None,
                 allow_remote_control: None,
                 computer_use: None,
@@ -2163,7 +2145,7 @@ mod tests {
     fn merge_unset_fields_ignores_blank_guardian_override() {
         let mut target = ConfigRequirementsWithSources::default();
         target.merge_unset_fields(
-            RequirementSource::LegacyManagedConfigTomlFromMdm,
+            RequirementSource::Unknown,
             ConfigRequirementsToml {
                 guardian_policy_config: Some("   \n\t".to_string()),
                 ..Default::default()
@@ -2509,7 +2491,7 @@ allowed_approvals_reviewers = ["user"]
 
     #[test]
     fn merge_unset_fields_merges_apps_across_sources_with_enabled_evaluation() {
-        let higher_source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let higher_source = RequirementSource::Unknown;
         let lower_source = RequirementSource::MdmManagedPreferences {
             domain: "com.openai.codex".to_string(),
             key: "requirements_toml_base64".to_string(),
@@ -2554,14 +2536,14 @@ allowed_approvals_reviewers = ["user"]
         let mut target = ConfigRequirementsWithSources::default();
 
         target.merge_unset_fields(
-            RequirementSource::LegacyManagedConfigTomlFromMdm,
+            RequirementSource::Unknown,
             ConfigRequirementsToml {
                 apps: Some(apps_requirements(&[])),
                 ..Default::default()
             },
         );
         target.merge_unset_fields(
-            RequirementSource::LegacyManagedConfigTomlFromMdm,
+            RequirementSource::Unknown,
             ConfigRequirementsToml {
                 apps: Some(apps_requirements(&[("connector_123123", Some(false))])),
                 ..Default::default()
@@ -2641,7 +2623,7 @@ allowed_approvals_reviewers = ["user"]
                 domain: "com.openai.codex".to_string(),
                 key: "requirements_toml_base64".to_string(),
             },
-            RequirementSource::LegacyManagedConfigTomlFromMdm,
+            RequirementSource::Unknown,
         ]);
 
         let mut target = ConfigRequirementsWithSources::default();
@@ -2675,7 +2657,7 @@ allowed_approvals_reviewers = ["user"]
             "#,
         )?;
 
-        let source_location = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let source_location = RequirementSource::Unknown;
         let mut target = ConfigRequirementsWithSources::default();
         target.merge_unset_fields(source_location.clone(), source);
         let requirements = ConfigRequirements::try_from(target)?;
@@ -2974,7 +2956,7 @@ allowed_approvals_reviewers = ["user"]
 
     #[test]
     fn remote_sandbox_config_first_match_overrides_top_level() -> Result<()> {
-        let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let source = RequirementSource::Unknown;
         let mut requirements_toml: ConfigRequirementsToml = from_str(
             r#"
                 allowed_sandbox_modes = ["read-only"]
@@ -3065,7 +3047,7 @@ allowed_approvals_reviewers = ["user"]
 
     #[test]
     fn remote_sandbox_config_does_not_override_higher_precedence_sandbox_modes() -> Result<()> {
-        let high_source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let high_source = RequirementSource::Unknown;
         let mut high_precedence: ConfigRequirementsToml = from_str(
             r#"
                 allowed_sandbox_modes = ["read-only"]
@@ -3270,7 +3252,7 @@ allowed_approvals_reviewers = ["user"]
             "/tmp/blocked.sock" = "deny"
         "#;
 
-        let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let source = RequirementSource::Unknown;
         let mut requirements_with_sources = ConfigRequirementsWithSources::default();
         requirements_with_sources.merge_unset_fields(source.clone(), from_str(toml_str)?);
 
@@ -3343,7 +3325,7 @@ allowed_approvals_reviewers = ["user"]
             allow_local_binding = false
         "#;
 
-        let source = RequirementSource::LegacyManagedConfigTomlFromMdm;
+        let source = RequirementSource::Unknown;
         let mut requirements_with_sources = ConfigRequirementsWithSources::default();
         requirements_with_sources.merge_unset_fields(source.clone(), from_str(toml_str)?);
 

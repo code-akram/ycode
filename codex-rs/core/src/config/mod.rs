@@ -48,7 +48,6 @@ use codex_features::CurrentTimeReminderDeliveryMode;
 use codex_features::CurrentTimeSource;
 use codex_features::Feature;
 use codex_features::FeatureConfigSource;
-use codex_features::FeatureOverrides;
 use codex_features::FeatureToml;
 use codex_features::Features;
 use codex_features::FeaturesToml;
@@ -152,28 +151,6 @@ use permission_profile_catalog::validate_permission_profile_for_deny_read;
 pub(crate) use permissions::is_builtin_permission_profile_name;
 pub use resolved_permission_profile::PermissionProfileSnapshot;
 pub(crate) use resolved_permission_profile::PermissionProfileState;
-
-const DEFAULT_IGNORE_LARGE_UNTRACKED_DIRS: i64 = 200;
-const DEFAULT_IGNORE_LARGE_UNTRACKED_FILES: i64 = 10 * 1024 * 1024;
-
-/// Compatibility-only config retained so legacy `ghost_snapshot` settings
-/// continue to load even though snapshots are no longer produced.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GhostSnapshotConfig {
-    pub ignore_large_untracked_files: Option<i64>,
-    pub ignore_large_untracked_dirs: Option<i64>,
-    pub disable_warnings: bool,
-}
-
-impl Default for GhostSnapshotConfig {
-    fn default() -> Self {
-        Self {
-            ignore_large_untracked_files: Some(DEFAULT_IGNORE_LARGE_UNTRACKED_FILES),
-            ignore_large_untracked_dirs: Some(DEFAULT_IGNORE_LARGE_UNTRACKED_DIRS),
-            disable_warnings: false,
-        }
-    }
-}
 
 /// Maximum number of bytes of the documentation that will be embedded. Larger
 /// files are *silently truncated* to this size so we do not take up too much of
@@ -938,10 +915,6 @@ pub struct Config {
     /// Maximum poll window for background terminal output (`write_stdin`), in milliseconds.
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: u64,
-
-    /// Compatibility-only settings retained for legacy `ghost_snapshot`
-    /// config loading.
-    pub ghost_snapshot: GhostSnapshotConfig,
 
     /// Settings specific to the task-path-based multi-agent tool surface.
     pub multi_agent_v2: MultiAgentV2Config,
@@ -2146,7 +2119,6 @@ pub struct ConfigOverrides {
     pub personality: Option<Personality>,
     pub compact_prompt: Option<String>,
     pub show_raw_agent_reasoning: Option<bool>,
-    pub tools_web_search_request: Option<bool>,
     pub ephemeral: Option<bool>,
     pub psp: Option<bool>,
     /// Additional directories that should be treated as writable roots for this session.
@@ -2161,18 +2133,8 @@ fn dedupe_absolute_paths(paths: &mut Vec<AbsolutePathBuf>) {
     paths.retain(|path| seen.insert(path.clone()));
 }
 
-/// Resolve the web search mode from explicit config and feature flags.
-fn resolve_web_search_mode(config_toml: &ConfigToml, features: &Features) -> Option<WebSearchMode> {
-    if let Some(mode) = config_toml.web_search {
-        return Some(mode);
-    }
-    if features.enabled(Feature::WebSearchCached) {
-        return Some(WebSearchMode::Cached);
-    }
-    if features.enabled(Feature::WebSearchRequest) {
-        return Some(WebSearchMode::Live);
-    }
-    None
+fn resolve_web_search_mode(config_toml: &ConfigToml) -> Option<WebSearchMode> {
+    config_toml.web_search
 }
 
 fn resolve_web_search_config(config_toml: &ConfigToml) -> Option<WebSearchConfig> {
@@ -2551,10 +2513,8 @@ pub fn resolve_bootstrap_respect_system_proxy(
     let configured_features = Features::from_sources(
         FeatureConfigSource {
             features: cfg.features.as_ref(),
-            experimental_use_unified_exec_tool: cfg.experimental_use_unified_exec_tool,
         },
         FeatureConfigSource::default(),
-        FeatureOverrides::default(),
     );
     let features =
         ManagedFeatures::from_configured(configured_features, feature_requirements.cloned())?;
@@ -2736,13 +2696,6 @@ impl Config {
     ) -> std::io::Result<Self> {
         // Keep the large config-construction future off small test thread stacks.
         Box::pin(async move {
-        if cfg.experimental_thread_store_endpoint.is_some() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "`experimental_thread_store_endpoint` is no longer supported; remove it from config.toml",
-            ));
-        }
-
         let orchestrator = cfg.orchestrator.as_ref();
         let orchestrator_skills_enabled =
             resolve_orchestrator_feature_enabled(orchestrator.and_then(|value| value.skills.as_ref()));
@@ -2801,7 +2754,6 @@ impl Config {
             personality,
             compact_prompt,
             show_raw_agent_reasoning,
-            tools_web_search_request: override_tools_web_search_request,
             ephemeral,
             psp,
             additional_writable_roots,
@@ -2825,29 +2777,14 @@ impl Config {
                 "`permission_profile` and `default_permissions` overrides cannot both be set",
             ));
         }
-        if let Some(profile) = cfg.profile.as_deref() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "legacy `profile = \"{profile}\"` config is no longer supported; use `--profile {profile}` with `{profile}.config.toml` instead"
-                ),
-            ));
-        }
-
         let tool_suggest = resolve_tool_suggest_config(&cfg, &config_layer_stack);
-        let feature_overrides = FeatureOverrides {
-            web_search_request: override_tools_web_search_request,
-        };
-
         let configured_features = Features::from_sources(
             FeatureConfigSource {
                 features: cfg.features.as_ref(),
-                experimental_use_unified_exec_tool: cfg.experimental_use_unified_exec_tool,
             },
             FeatureConfigSource {
                 ..Default::default()
             },
-            feature_overrides,
         );
         let features = ManagedFeatures::from_configured_with_warnings(
             configured_features,
@@ -3163,8 +3100,7 @@ impl Config {
             );
             approvals_reviewer = constrained_approvals_reviewer.value();
         }
-        let web_search_mode =
-            resolve_web_search_mode(&cfg, &features).unwrap_or(WebSearchMode::Cached);
+        let web_search_mode = resolve_web_search_mode(&cfg).unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config(&cfg);
         let experimental_request_user_input_enabled =
             resolve_experimental_request_user_input_enabled(&cfg);
@@ -3271,31 +3207,6 @@ impl Config {
             .background_terminal_max_timeout
             .unwrap_or(DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS)
             .max(MIN_EMPTY_YIELD_TIME_MS);
-
-        let ghost_snapshot = {
-            let mut config = GhostSnapshotConfig::default();
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(ignore_over_bytes) = ghost_snapshot.ignore_large_untracked_files
-            {
-                config.ignore_large_untracked_files = if ignore_over_bytes > 0 {
-                    Some(ignore_over_bytes)
-                } else {
-                    None
-                };
-            }
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(threshold) = ghost_snapshot.ignore_large_untracked_dirs
-            {
-                config.ignore_large_untracked_dirs =
-                    if threshold > 0 { Some(threshold) } else { None };
-            }
-            if let Some(ghost_snapshot) = cfg.ghost_snapshot.as_ref()
-                && let Some(disable_warnings) = ghost_snapshot.disable_warnings
-            {
-                config.disable_warnings = disable_warnings;
-            }
-            config
-        };
 
         let use_experimental_unified_exec_tool = features.enabled(Feature::UnifiedExec);
 
@@ -3660,7 +3571,6 @@ impl Config {
             code_mode,
             use_experimental_unified_exec_tool,
             background_terminal_max_timeout,
-            ghost_snapshot,
             multi_agent_v2,
             token_budget,
             rollout_budget,

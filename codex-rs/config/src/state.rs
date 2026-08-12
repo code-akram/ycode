@@ -5,7 +5,6 @@ use crate::format_config_layer_source;
 
 use super::fingerprint::record_origins;
 use super::fingerprint::version_for_toml;
-use super::key_aliases::normalized_with_key_aliases;
 use super::merge::merge_toml_values;
 use crate::CloudConfigBundleLoader;
 use crate::ConfigLayer;
@@ -13,6 +12,7 @@ use crate::ConfigLayerMetadata;
 use crate::ConfigLayerSource;
 use crate::ProfileV2Name;
 use crate::shell_environment_policy::validate_shell_environment_policy_filter_config;
+use crate::strict_config::unknown_feature_toml_value_field;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -43,7 +43,6 @@ impl From<LoaderOverrides> for ConfigLoadOptions {
 pub struct LoaderOverrides {
     pub user_config_path: Option<AbsolutePathBuf>,
     pub user_config_profile: Option<ProfileV2Name>,
-    pub managed_config_path: Option<PathBuf>,
     pub system_config_path: Option<PathBuf>,
     pub system_requirements_path: Option<PathBuf>,
     pub ignore_managed_requirements: bool,
@@ -52,8 +51,6 @@ pub struct LoaderOverrides {
     pub ignore_user_config: bool,
     pub ignore_user_and_project_exec_policy_rules: bool,
     //TODO(gt): Add a macos_ prefix to this field and remove the target_os check.
-    #[cfg(target_os = "macos")]
-    pub managed_preferences_base64: Option<String>,
     pub macos_managed_config_requirements_base64: Option<String>,
 }
 
@@ -66,30 +63,21 @@ impl LoaderOverrides {
         Self {
             user_config_path: None,
             user_config_profile: None,
-            managed_config_path: Some(base.join("managed_config.toml")),
             system_config_path: Some(base.join("config.toml")),
             system_requirements_path: Some(base.join("requirements.toml")),
             ignore_managed_requirements: false,
             ignore_login_requirements: false,
             ignore_user_config: false,
             ignore_user_and_project_exec_policy_rules: false,
-            #[cfg(target_os = "macos")]
-            managed_preferences_base64: Some(String::new()),
             macos_managed_config_requirements_base64: Some(String::new()),
         }
     }
 
-    /// Returns overrides with host MDM disabled and managed config loaded from
-    /// `managed_config_path`. System requirements are loaded from a sibling
-    /// `requirements.toml` fixture.
-    ///
-    /// This is intended for tests that supply an explicit managed config fixture.
-    pub fn with_managed_config_path_for_tests(managed_config_path: PathBuf) -> Self {
-        let system_requirements_path = managed_config_path.with_file_name("requirements.toml");
+    /// Returns test overrides that load a fixture as the current system config.
+    pub fn with_system_config_path_for_tests(system_config_path: PathBuf) -> Self {
+        let system_requirements_path = system_config_path.with_file_name("requirements.toml");
         Self {
-            user_config_path: None,
-            user_config_profile: None,
-            managed_config_path: Some(managed_config_path),
+            system_config_path: Some(system_config_path),
             system_requirements_path: Some(system_requirements_path),
             ..Self::without_managed_config_for_tests()
         }
@@ -212,14 +200,11 @@ impl ConfigLayerEntry {
     // Get the `.codex/` folder associated with this config layer, if any.
     pub fn config_folder(&self) -> Option<AbsolutePathBuf> {
         match &self.name {
-            ConfigLayerSource::Mdm { .. } => None,
             ConfigLayerSource::System { file } => file.parent(),
             ConfigLayerSource::EnterpriseManaged { .. } => None,
             ConfigLayerSource::User { file, .. } => file.parent(),
             ConfigLayerSource::Project { dot_codex_folder } => Some(dot_codex_folder.clone()),
             ConfigLayerSource::SessionFlags => None,
-            ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => None,
-            ConfigLayerSource::LegacyManagedConfigTomlFromMdm => None,
         }
     }
 
@@ -246,7 +231,7 @@ pub struct ConfigLayerStack {
     /// layers.
     requirements: ConfigRequirements,
 
-    /// Raw requirements data as loaded from requirements.toml/MDM/legacy
+    /// Raw requirements data as loaded from requirements.toml or MDM.
     /// sources. This preserves the original allow-lists so they can be
     /// surfaced via APIs.
     requirements_toml: ConfigRequirementsToml,
@@ -461,8 +446,7 @@ impl ConfigLayerStack {
         let mut path = Vec::new();
 
         for layer in self.layers_low_to_high() {
-            let config = normalized_with_key_aliases(&layer.config, &[]);
-            record_origins(&config, &layer.metadata(), &mut path, &mut origins);
+            record_origins(&layer.config, &layer.metadata(), &mut path, &mut origins);
         }
 
         origins
@@ -503,6 +487,15 @@ impl ConfigLayerStack {
 /// Validates before merging so mixed forms and malformed filter entries cannot be normalized away.
 pub(crate) fn validate_enabled_config_layers(layers: &[ConfigLayerEntry]) -> std::io::Result<()> {
     for layer in layers.iter().filter(|layer| !layer.is_disabled()) {
+        if let Some(field) = unknown_feature_toml_value_field(&layer.config) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "unknown configuration field `{field}` in {}",
+                    format_config_layer_source(&layer.name, CONFIG_TOML_FILE)
+                ),
+            ));
+        }
         validate_shell_environment_policy_filter_config(&layer.config).map_err(|error| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

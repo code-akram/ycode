@@ -46,6 +46,7 @@ use codex_login::default_client::default_headers;
 use codex_login::load_auth_dot_json;
 use codex_model_provider::create_model_provider;
 use codex_protocol::auth::AuthMode;
+#[cfg(test)]
 use codex_protocol::protocol::AskForApproval;
 use codex_terminal_detection::Multiplexer;
 use codex_terminal_detection::TerminalInfo;
@@ -858,13 +859,6 @@ fn feature_flag_details(config: &Config, details: &mut Vec<String>) {
         "feature flag overrides: {}",
         display_list(&overrides)
     ));
-    for usage in features.legacy_feature_usages() {
-        details.push(format!(
-            "legacy feature flag: {} -> {}",
-            usage.alias,
-            usage.feature.key()
-        ));
-    }
 }
 
 fn config_toml_details(config: &Config, details: &mut Vec<String>) {

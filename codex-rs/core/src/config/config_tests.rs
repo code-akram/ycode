@@ -2074,7 +2074,7 @@ async fn managed_unrestricted_permission_profile_still_enables_network_requireme
             enabled: Some(true),
             ..Default::default()
         },
-        RequirementSource::LegacyManagedConfigTomlFromMdm,
+        RequirementSource::Unknown,
     ));
     let mut requirements_toml = config.config_layer_stack.requirements_toml().clone();
     requirements_toml.network = Some(codex_config::NetworkRequirementsToml {
@@ -3738,42 +3738,6 @@ async fn forced_chatgpt_workspace_id_empty_values_disable_runtime_restriction()
 }
 
 #[tokio::test]
-async fn legacy_remote_thread_store_endpoint_is_rejected() {
-    let cfg: ConfigToml =
-        toml::from_str(r#"experimental_thread_store_endpoint = "https://example.com""#)
-            .expect("legacy remote thread-store endpoint should still deserialize");
-
-    let err = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        tempdir().expect("tempdir").abs(),
-    )
-    .await
-    .expect_err("legacy remote thread-store endpoint should be rejected at load time");
-
-    assert!(
-        err.to_string()
-            .contains("experimental_thread_store_endpoint")
-    );
-    assert!(err.to_string().contains("no longer supported"));
-}
-
-#[test]
-fn profile_tui_rejects_unsupported_settings() {
-    let err = toml::from_str::<ConfigToml>(
-        r#"profile = "work"
-
-[profiles.work.tui]
-theme = "dark"
-"#,
-    )
-    .expect_err("profile TUI config should only accept supported fields");
-
-    assert!(err.to_string().contains("unknown field"));
-    assert!(err.to_string().contains("theme"));
-}
-
-#[tokio::test]
 async fn runtime_config_resolves_session_picker_view_default_and_override() {
     let cfg = Config::load_from_base_config_with_overrides(
         ConfigToml::default(),
@@ -4300,39 +4264,28 @@ async fn memory_tool_makes_memories_root_readable_without_creating_or_widening_w
 #[test]
 fn web_search_mode_defaults_to_none_if_unset() {
     let cfg = ConfigToml::default();
-    let features = Features::with_defaults();
 
-    assert_eq!(resolve_web_search_mode(&cfg, &features), None);
+    assert_eq!(resolve_web_search_mode(&cfg), None);
 }
 
 #[test]
-fn web_search_mode_prefers_config_over_legacy_flags() {
+fn web_search_mode_resolves_live_config() {
     let cfg = ConfigToml {
         web_search: Some(WebSearchMode::Live),
         ..Default::default()
     };
-    let mut features = Features::with_defaults();
-    features.enable(Feature::WebSearchCached);
 
-    assert_eq!(
-        resolve_web_search_mode(&cfg, &features),
-        Some(WebSearchMode::Live)
-    );
+    assert_eq!(resolve_web_search_mode(&cfg), Some(WebSearchMode::Live));
 }
 
 #[test]
-fn web_search_mode_disabled_overrides_legacy_request() {
+fn web_search_mode_resolves_disabled_config() {
     let cfg = ConfigToml {
         web_search: Some(WebSearchMode::Disabled),
         ..Default::default()
     };
-    let mut features = Features::with_defaults();
-    features.enable(Feature::WebSearchRequest);
 
-    assert_eq!(
-        resolve_web_search_mode(&cfg, &features),
-        Some(WebSearchMode::Disabled)
-    );
+    assert_eq!(resolve_web_search_mode(&cfg), Some(WebSearchMode::Disabled));
 }
 
 #[test]
@@ -4490,136 +4443,6 @@ fn web_search_mode_for_turn_does_not_implicitly_select_indexed() -> anyhow::Resu
     Ok(())
 }
 
-#[tokio::test]
-async fn project_profiles_are_ignored() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let workspace = TempDir::new()?;
-    let workspace_key = workspace.path().to_string_lossy().replace('\\', "\\\\");
-    std::fs::write(
-        codex_home.path().join(CONFIG_TOML_FILE),
-        format!(
-            r#"
-[projects."{workspace_key}"]
-trust_level = "trusted"
-"#,
-        ),
-    )?;
-    let project_config_dir = workspace.path().join(".codex");
-    std::fs::create_dir_all(&project_config_dir)?;
-    std::fs::write(
-        project_config_dir.join(CONFIG_TOML_FILE),
-        r#"
-profile = "project"
-
-[profiles.project]
-model = "gpt-project-local"
-"#,
-    )?;
-
-    let config = ConfigBuilder::without_managed_config_for_tests()
-        .codex_home(codex_home.path().to_path_buf())
-        .harness_overrides(ConfigOverrides {
-            cwd: Some(workspace.path().to_path_buf()),
-            ..Default::default()
-        })
-        .build()
-        .await?;
-
-    assert_eq!(config.model, None);
-    assert!(
-        config.startup_warnings.iter().any(|warning| {
-            warning.contains("profile")
-                && warning.contains("profiles")
-                && warning.contains(
-                    "If you want these settings to apply, manually set them in your user-level config.toml."
-                )
-        }),
-        "expected warning for ignored project-local profile keys: {:?}",
-        config.startup_warnings
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn feature_table_overrides_legacy_flags() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let mut entries = BTreeMap::new();
-    entries.insert("apply_patch_freeform".to_string(), false);
-    let cfg = ConfigToml {
-        features: Some(FeaturesToml::from(entries)),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.abs(),
-    )
-    .await?;
-
-    assert!(!config.features.enabled(Feature::ApplyPatchFreeform));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn legacy_toggles_map_to_features() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        experimental_use_unified_exec_tool: Some(true),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.abs(),
-    )
-    .await?;
-
-    assert!(config.features.enabled(Feature::UnifiedExec));
-
-    assert!(config.use_experimental_unified_exec_tool);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn managed_config_wins_over_cli_overrides() -> anyhow::Result<()> {
-    let codex_home = TempDir::new()?;
-    let managed_path = codex_home.path().join("managed_config.toml");
-
-    std::fs::write(
-        codex_home.path().join(CONFIG_TOML_FILE),
-        "model = \"base\"\n",
-    )?;
-    std::fs::write(&managed_path, "model = \"managed_config\"\n")?;
-
-    let overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_path);
-
-    let cwd = codex_home.path().abs();
-    let config_layer_stack = load_config_layers_state(
-        LOCAL_FS.as_ref(),
-        codex_home.path(),
-        Some(cwd),
-        &[("model".to_string(), TomlValue::String("cli".to_string()))],
-        overrides,
-        &codex_config::NoopThreadConfigLoader,
-    )
-    .await?;
-
-    let cfg =
-        deserialize_config_toml_with_base(config_layer_stack.effective_config(), codex_home.path())
-            .map_err(|e| {
-                tracing::error!("Failed to deserialize overridden config: {e}");
-                e
-            })?;
-
-    assert_eq!(cfg.model.as_deref(), Some("managed_config"));
-    Ok(())
-}
-
 #[test]
 fn desktop_toml_round_trips_opaque_nested_values() -> anyhow::Result<()> {
     let parsed = toml::from_str::<ConfigToml>(
@@ -4745,9 +4568,6 @@ async fn set_model_overwrites_existing_model() -> anyhow::Result<()> {
         r#"
 model = "gpt-5.4"
 model_reasoning_effort = "medium"
-
-[profiles.dev]
-model = "gpt-4.1"
 "#,
     )
     .await?;
@@ -4762,14 +4582,6 @@ model = "gpt-4.1"
 
     assert_eq!(parsed.model.as_deref(), Some("o4-mini"));
     assert_eq!(parsed.model_reasoning_effort, Some(ReasoningEffort::High));
-    assert_eq!(
-        parsed
-            .profiles
-            .get("dev")
-            .and_then(|profile| profile.model.as_deref()),
-        Some("gpt-4.1"),
-    );
-
     Ok(())
 }
 
@@ -5028,7 +4840,6 @@ async fn load_config_rejects_missing_agent_role_config_file() -> std::io::Result
             max_depth: None,
             default_subagent_model: None,
             default_subagent_reasoning_effort: None,
-            job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
                 "researcher".to_string(),
@@ -5946,25 +5757,6 @@ model = "gpt-5-mini"
     Ok(())
 }
 
-#[test]
-fn legacy_agent_job_max_runtime_seconds_is_accepted_as_noop() {
-    let parsed = toml::from_str::<ConfigToml>(
-        r#"
-[agents]
-job_max_runtime_seconds = 900
-"#,
-    )
-    .expect("legacy agent job setting should deserialize");
-
-    assert_eq!(
-        parsed.agents,
-        Some(AgentsToml {
-            job_max_runtime_seconds: Some(900),
-            ..Default::default()
-        })
-    );
-}
-
 #[tokio::test]
 async fn load_config_resolves_agent_controls() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
@@ -6007,27 +5799,6 @@ async fn load_config_resolves_agent_controls() -> std::io::Result<()> {
     Ok(())
 }
 
-#[test]
-fn agents_max_threads_alias_matches_canonical_config() {
-    let canonical: ConfigToml = toml::from_str(
-        r#"[agents]
-max_concurrent_threads_per_session = 7
-"#,
-    )
-    .expect("canonical agents thread limit should parse");
-    let legacy: ConfigToml = toml::from_str(
-        r#"[agents]
-max_threads = 7
-"#,
-    )
-    .expect("legacy agents thread limit should parse");
-
-    assert_eq!(legacy, canonical);
-    let serialized = toml::to_string(&legacy).expect("agents config should serialize");
-    assert!(serialized.contains("max_concurrent_threads_per_session = 7"));
-    assert!(!serialized.contains("max_threads"));
-}
-
 #[tokio::test]
 async fn load_config_normalizes_agent_role_nickname_candidates() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
@@ -6038,7 +5809,6 @@ async fn load_config_normalizes_agent_role_nickname_candidates() -> std::io::Res
             max_depth: None,
             default_subagent_model: None,
             default_subagent_reasoning_effort: None,
-            job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
                 "researcher".to_string(),
@@ -6084,7 +5854,6 @@ async fn load_config_rejects_empty_agent_role_nickname_candidates() -> std::io::
             max_depth: None,
             default_subagent_model: None,
             default_subagent_reasoning_effort: None,
-            job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
                 "researcher".to_string(),
@@ -6124,7 +5893,6 @@ async fn load_config_rejects_duplicate_agent_role_nickname_candidates() -> std::
             max_depth: None,
             default_subagent_model: None,
             default_subagent_reasoning_effort: None,
-            job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
                 "researcher".to_string(),
@@ -6164,7 +5932,6 @@ async fn load_config_rejects_unsafe_agent_role_nickname_candidates() -> std::io:
             max_depth: None,
             default_subagent_model: None,
             default_subagent_reasoning_effort: None,
-            job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
                 "researcher".to_string(),
@@ -6252,26 +6019,6 @@ fn create_test_fixture() -> std::io::Result<PrecedenceTestFixture> {
     let toml = r#"
 model = "o3"
 approval_policy = "untrusted"
-
-[profiles.o3]
-model = "o3"
-approval_policy = "never"
-model_reasoning_effort = "high"
-model_reasoning_summary = "detailed"
-
-[profiles.gpt3]
-model = "gpt-3.5-turbo"
-
-[profiles.zdr]
-model = "o3"
-approval_policy = "on-request"
-
-[profiles.gpt5]
-model = "gpt-5.4"
-approval_policy = "on-request"
-model_reasoning_effort = "high"
-model_reasoning_summary = "detailed"
-model_verbosity = "high"
 "#;
 
     let cfg: ConfigToml = toml::from_str(toml).expect("TOML deserialization should succeed");
@@ -6291,31 +6038,6 @@ model_verbosity = "high"
         codex_home: codex_home_temp_dir,
         cfg,
     })
-}
-
-#[tokio::test]
-async fn legacy_profile_selection_is_rejected() -> std::io::Result<()> {
-    let mut fixture = create_test_fixture()?;
-    fixture.cfg.profile = Some("gpt3".to_string());
-
-    let err = Config::load_from_base_config_with_overrides(
-        fixture.cfg.clone(),
-        ConfigOverrides {
-            cwd: Some(fixture.cwd_path()),
-            ..Default::default()
-        },
-        fixture.codex_home(),
-    )
-    .await
-    .expect_err("legacy profile selection should be rejected");
-
-    assert_eq!(err.kind(), ErrorKind::InvalidData);
-    assert!(
-        err.to_string()
-            .contains("legacy `profile = \"gpt3\"` config is no longer supported"),
-        "unexpected error: {err}"
-    );
-    Ok(())
 }
 
 #[tokio::test]
@@ -8295,36 +8017,6 @@ shell_tool = false
 
     assert!(config.features.enabled(Feature::Personality));
     assert!(!config.features.enabled(Feature::ShellTool));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn feature_requirements_warn_on_collab_legacy_alias() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-
-    let config = ConfigBuilder::without_managed_config_for_tests()
-        .codex_home(codex_home.path().to_path_buf())
-        .cloud_config_bundle(
-            CloudConfigBundleFixture::loader_with_enterprise_requirement(
-                r#"
-[features]
-collab = true
-"#,
-            ),
-        )
-        .build()
-        .await?;
-
-    assert!(config.features.enabled(Feature::Collab));
-    assert!(
-        config.startup_warnings.iter().any(|warning| {
-            warning.contains("Using legacy `features` requirement `collab`")
-                && warning.contains("prefer canonical feature key `multi_agent`")
-        }),
-        "{:?}",
-        config.startup_warnings
-    );
 
     Ok(())
 }

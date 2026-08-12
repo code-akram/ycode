@@ -134,16 +134,6 @@ fn unknown_feature_toml_value_path(value: &TomlValue) -> Vec<Vec<String>> {
     let mut paths = Vec::new();
     push_unknown_feature_paths(&mut paths, &["features"], root.get("features"));
 
-    if let Some(profiles) = root.get("profiles").and_then(TomlValue::as_table) {
-        for (profile_name, profile) in profiles {
-            let prefix = ["profiles", profile_name.as_str(), "features"];
-            let features = profile
-                .as_table()
-                .and_then(|profile| profile.get("features"));
-            push_unknown_feature_paths(&mut paths, &prefix, features);
-        }
-    }
-
     paths
 }
 

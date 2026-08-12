@@ -4,8 +4,6 @@ use serde_json::Value as JsonValue;
 /// Provenance for one layer in the effective Codex configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigLayerSource {
-    /// Managed preferences delivered by MDM.
-    Mdm { domain: String, key: String },
     /// Host-wide configuration loaded from a file.
     System { file: AbsolutePathBuf },
     /// Configuration delivered by an enterprise cloud bundle.
@@ -19,10 +17,6 @@ pub enum ConfigLayerSource {
     Project { dot_codex_folder: AbsolutePathBuf },
     /// Overrides supplied for the current session.
     SessionFlags,
-    /// Legacy managed configuration loaded from a file.
-    LegacyManagedConfigTomlFromFile { file: AbsolutePathBuf },
-    /// Legacy managed configuration delivered by MDM.
-    LegacyManagedConfigTomlFromMdm,
 }
 
 impl ConfigLayerSource {
@@ -30,7 +24,6 @@ impl ConfigLayerSource {
     /// from a layer with a lower precedence.
     pub fn precedence(&self) -> i16 {
         match self {
-            ConfigLayerSource::Mdm { .. } => 0,
             ConfigLayerSource::System { .. } => 10,
             ConfigLayerSource::EnterpriseManaged { .. } => 15,
             ConfigLayerSource::User { profile, .. } => {
@@ -42,8 +35,6 @@ impl ConfigLayerSource {
             }
             ConfigLayerSource::Project { .. } => 25,
             ConfigLayerSource::SessionFlags => 30,
-            ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => 40,
-            ConfigLayerSource::LegacyManagedConfigTomlFromMdm => 50,
         }
     }
 }
@@ -74,9 +65,6 @@ pub struct ConfigLayer {
 
 pub fn format_config_layer_source(source: &ConfigLayerSource, config_toml_file: &str) -> String {
     match source {
-        ConfigLayerSource::Mdm { domain, key } => {
-            format!("MDM ({domain}:{key})")
-        }
         ConfigLayerSource::System { file } => {
             format!("system ({})", file.as_path().display())
         }
@@ -93,11 +81,5 @@ pub fn format_config_layer_source(source: &ConfigLayerSource, config_toml_file: 
             )
         }
         ConfigLayerSource::SessionFlags => "session-flags".to_string(),
-        ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
-            format!("legacy managed_config.toml ({})", file.as_path().display())
-        }
-        ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
-            "legacy managed_config.toml (MDM)".to_string()
-        }
     }
 }

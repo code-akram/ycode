@@ -51,12 +51,7 @@ pub struct Cli {
     pub color: Color,
 
     /// Print events to stdout as JSONL.
-    #[arg(
-        long = "json",
-        alias = "experimental-json",
-        default_value_t = false,
-        global = true
-    )]
+    #[arg(long = "json", default_value_t = false, global = true)]
     pub json: bool,
 
     /// Specifies file where the last message from the agent should be written.

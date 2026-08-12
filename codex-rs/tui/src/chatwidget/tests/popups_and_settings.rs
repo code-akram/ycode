@@ -8,9 +8,9 @@ async fn experimental_features_popup_snapshot() {
 
     let features = vec![
         ExperimentalFeatureItem {
-            feature: Feature::JsRepl,
-            name: "JavaScript REPL".to_string(),
-            description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities.".to_string(),
+            feature: Feature::PreventIdleSleep,
+            name: "Prevent sleep while running".to_string(),
+            description: "Keep your computer awake while Codex is running a thread.".to_string(),
             enabled: false,
         },
         ExperimentalFeatureItem {
@@ -55,12 +55,12 @@ async fn experimental_features_popup_snapshot() {
 async fn experimental_features_toggle_saves_on_exit() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    let expected_feature = Feature::JsRepl;
+    let expected_feature = Feature::PreventIdleSleep;
     let view = ExperimentalFeaturesView::new(
         vec![ExperimentalFeatureItem {
             feature: expected_feature,
-            name: "JavaScript REPL".to_string(),
-            description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities.".to_string(),
+            name: "Prevent sleep while running".to_string(),
+            description: "Keep your computer awake while Codex is running a thread.".to_string(),
             enabled: false,
         }],
         chat.app_event_tx.clone(),

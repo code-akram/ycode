@@ -3859,10 +3859,6 @@ async fn multi_agent_v2_interrupt_agent_accepts_unloaded_task_name_target() {
         .features
         .enable(Feature::MultiAgentV2)
         .expect("test config should allow feature update");
-    config
-        .features
-        .enable(Feature::Sqlite)
-        .expect("test config should allow sqlite");
     let state_db = init_state_db(&config)
         .await
         .expect("sqlite state db should initialize");
@@ -4188,10 +4184,6 @@ async fn tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtr
     let (_session, turn) = make_session_and_context().await;
     let mut config = turn.config.as_ref().clone();
     config.agent_max_depth = 3;
-    config
-        .features
-        .enable(Feature::Sqlite)
-        .expect("test config should allow sqlite");
     let state_db = init_state_db(&config).await;
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy"));
     let manager = ThreadManager::new(

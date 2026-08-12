@@ -17,19 +17,9 @@ pub struct ShellEnvironmentPolicyToml {
 
     pub ignore_default_excludes: Option<bool>,
 
-    /// Legacy list of regular expressions to exclude.
-    pub exclude: Option<Vec<String>>,
-
     pub r#set: Option<HashMap<String, String>>,
 
-    /// Legacy list of regular expressions to include.
-    pub include_only: Option<Vec<String>>,
-
-    /// Pattern actions used by the canonical table representation.
-    ///
-    /// Ordinary config keeps accepting the legacy arrays above during the
-    /// migration. Requirements will accept only this keyed form, keeping array
-    /// compatibility isolated so the legacy fields can be deprecated later.
+    /// Pattern actions used by the environment filter table.
     /// Pattern keys merge case-insensitively across config layers, matching how
     /// the resulting patterns match environment variable names.
     pub filters: Option<BTreeMap<String, ShellEnvironmentPolicyFilter>>,
@@ -38,12 +28,11 @@ pub struct ShellEnvironmentPolicyToml {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ShellEnvironmentPolicyTomlRaw {
     inherit: Option<ShellEnvironmentPolicyInherit>,
     ignore_default_excludes: Option<bool>,
-    exclude: Option<Vec<String>>,
     r#set: Option<HashMap<String, String>>,
-    include_only: Option<Vec<String>>,
     filters: Option<BTreeMap<String, ShellEnvironmentPolicyFilter>>,
     experimental_use_profile: Option<bool>,
 }
@@ -74,7 +63,7 @@ where
     let Some(policy) = value.as_table() else {
         return Ok(());
     };
-    let filter_fields = ["exclude", "include_only", "filters"]
+    let filter_fields = ["filters"]
         .into_iter()
         .filter_map(|field| {
             policy
@@ -97,17 +86,10 @@ impl<'de> Deserialize<'de> for ShellEnvironmentPolicyToml {
         let ShellEnvironmentPolicyTomlRaw {
             inherit,
             ignore_default_excludes,
-            exclude,
             r#set,
-            include_only,
             filters,
             experimental_use_profile,
         } = ShellEnvironmentPolicyTomlRaw::deserialize(deserializer)?;
-        if filters.is_some() && (exclude.is_some() || include_only.is_some()) {
-            return Err(serde::de::Error::custom(
-                "cannot mix `filters` with legacy `exclude` or `include_only`",
-            ));
-        }
         if let Some(filters) = filters.as_ref() {
             let mut patterns = std::collections::HashSet::new();
             for pattern in filters.keys() {
@@ -121,9 +103,7 @@ impl<'de> Deserialize<'de> for ShellEnvironmentPolicyToml {
         Ok(Self {
             inherit,
             ignore_default_excludes,
-            exclude,
             r#set,
-            include_only,
             filters,
             experimental_use_profile,
         })
@@ -134,22 +114,16 @@ impl From<ShellEnvironmentPolicyToml> for ShellEnvironmentPolicy {
     fn from(toml: ShellEnvironmentPolicyToml) -> Self {
         let inherit = toml.inherit.unwrap_or(ShellEnvironmentPolicyInherit::All);
         let ignore_default_excludes = toml.ignore_default_excludes.unwrap_or(true);
-        let (exclude, include_only) = match toml.filters {
-            Some(filters) => filters.into_iter().fold(
-                (Vec::new(), Vec::new()),
-                |(mut exclude, mut include_only), (pattern, filter)| {
-                    match filter {
-                        ShellEnvironmentPolicyFilter::Include => include_only.push(pattern),
-                        ShellEnvironmentPolicyFilter::Exclude => exclude.push(pattern),
-                    }
-                    (exclude, include_only)
-                },
-            ),
-            None => (
-                toml.exclude.unwrap_or_default(),
-                toml.include_only.unwrap_or_default(),
-            ),
-        };
+        let (exclude, include_only) = toml.filters.unwrap_or_default().into_iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut exclude, mut include_only), (pattern, filter)| {
+                match filter {
+                    ShellEnvironmentPolicyFilter::Include => include_only.push(pattern),
+                    ShellEnvironmentPolicyFilter::Exclude => exclude.push(pattern),
+                }
+                (exclude, include_only)
+            },
+        );
 
         Self {
             inherit,

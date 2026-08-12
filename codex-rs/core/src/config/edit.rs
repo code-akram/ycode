@@ -563,9 +563,6 @@ impl ConfigDocument {
 fn is_multi_agent_v2_feature_path(segments: &[String]) -> bool {
     match segments {
         [features, feature] => features == "features" && feature == "multi_agent_v2",
-        [profiles, _, features, feature] => {
-            profiles == "profiles" && features == "features" && feature == "multi_agent_v2"
-        }
         _ => false,
     }
 }

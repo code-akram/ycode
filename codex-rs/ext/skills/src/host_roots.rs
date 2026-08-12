@@ -118,11 +118,7 @@ fn roots_from_layer_stack(
                     SkillScope::Admin,
                 ));
             }
-            ConfigLayerSource::Mdm { .. }
-            | ConfigLayerSource::EnterpriseManaged { .. }
-            | ConfigLayerSource::SessionFlags
-            | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
-            | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {}
+            ConfigLayerSource::EnterpriseManaged { .. } | ConfigLayerSource::SessionFlags => {}
         }
     }
 

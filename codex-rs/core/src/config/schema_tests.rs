@@ -55,29 +55,34 @@ Run `just write-config-schema` to overwrite with your changes.\n\n{diff}"
 }
 
 #[test]
-fn shell_environment_policy_schema_rejects_mixed_filter_representations() {
+fn config_schema_omits_removed_compatibility_fields() {
     let schema_json = config_schema_json().expect("serialize config schema");
     let schema_value: serde_json::Value =
         serde_json::from_slice(&schema_json).expect("decode schema json");
-    let constraints = schema_value
-        .pointer("/definitions/ShellEnvironmentPolicyToml/allOf")
-        .and_then(serde_json::Value::as_array)
-        .expect("shell environment policy constraints should be an array");
-    let required_pairs = constraints
-        .iter()
-        .map(|constraint| {
-            constraint
-                .pointer("/not/required")
-                .expect("constraint should prohibit a required-field pair")
-                .clone()
-        })
-        .collect::<Vec<_>>();
+    let properties = schema_value
+        .pointer("/definitions/ShellEnvironmentPolicyToml/properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("shell environment policy properties should be an object");
 
+    assert!(properties.contains_key("filters"));
+    assert!(!properties.contains_key("exclude"));
+    assert!(!properties.contains_key("include_only"));
     assert_eq!(
-        required_pairs,
-        vec![
-            serde_json::json!(["exclude", "filters"]),
-            serde_json::json!(["filters", "include_only"]),
-        ]
+        schema_value.pointer("/definitions/ShellEnvironmentPolicyToml/additionalProperties"),
+        Some(&serde_json::Value::Bool(false))
     );
+
+    let root_properties = schema_value
+        .pointer("/properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("root config properties should be an object");
+    assert!(!root_properties.contains_key("profile"));
+    assert!(!root_properties.contains_key("profiles"));
+
+    let agent_properties = schema_value
+        .pointer("/definitions/AgentsToml/properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("agent config properties should be an object");
+    assert!(!agent_properties.contains_key("max_threads"));
+    assert!(!agent_properties.contains_key("job_max_runtime_seconds"));
 }

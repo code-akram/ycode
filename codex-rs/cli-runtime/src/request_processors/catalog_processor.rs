@@ -280,10 +280,6 @@ impl CatalogRequestProcessor {
                         None,
                     ),
                     Stage::Stable => (ApiExperimentalFeatureStage::Stable, None, None, None),
-                    Stage::Deprecated => {
-                        (ApiExperimentalFeatureStage::Deprecated, None, None, None)
-                    }
-                    Stage::Removed => (ApiExperimentalFeatureStage::Removed, None, None, None),
                 };
 
                 ApiExperimentalFeature {

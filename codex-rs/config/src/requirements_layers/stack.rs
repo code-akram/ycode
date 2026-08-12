@@ -267,20 +267,6 @@ pub(super) fn merge_output_source(existing: &mut RequirementSource, incoming: &R
     }
 }
 
-pub(super) fn composition_conflict(
-    field: String,
-    existing_source: RequirementSource,
-    incoming_source: RequirementSource,
-    message: impl Into<String>,
-) -> RequirementsCompositionError {
-    RequirementsCompositionError::Conflict {
-        field,
-        existing_source,
-        incoming_source,
-        message: message.into(),
-    }
-}
-
 #[cfg(test)]
 #[path = "stack_tests.rs"]
 mod tests;

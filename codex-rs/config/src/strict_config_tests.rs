@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 #[test]
 fn ignored_toml_field_errors_accept_non_file_source_names() {
-    let source_name = "com.openai.codex:config_toml_base64";
+    let source_name = "enterprise-config";
     let contents = r#"
 model = "gpt-5"
 unknown_key = true"#;
@@ -92,15 +92,13 @@ foo = true"#;
 fn strict_config_accepts_tool_registry_config() {
     let path = Path::new("/tmp/config.toml");
 
-    for contents in [
-        "[features.tool_registry]\nerror_on_tool_collisions = true\n",
-        "[profiles.work.features.tool_registry]\nerror_on_tool_collisions = true\n",
-    ] {
-        assert_eq!(
-            config_error_from_ignored_toml_fields::<ConfigToml>(path, contents),
-            None
-        );
-    }
+    assert_eq!(
+        config_error_from_ignored_toml_fields::<ConfigToml>(
+            path,
+            "[features.tool_registry]\nerror_on_tool_collisions = true\n",
+        ),
+        None
+    );
 
     assert!(
         config_error_from_ignored_toml_fields::<ConfigToml>(
@@ -108,29 +106,6 @@ fn strict_config_accepts_tool_registry_config() {
             "[features.tool_registry]\nunknown = true\n",
         )
         .is_some()
-    );
-}
-
-#[test]
-fn strict_config_rejects_unknown_profile_feature_key() {
-    let path = Path::new("/tmp/config.toml");
-    let contents = r#"
-[profiles.work.features]
-foo = true"#;
-
-    let error = config_error_from_ignored_toml_fields::<ConfigToml>(path, contents)
-        .expect("unknown feature error");
-
-    assert_eq!(
-        error,
-        ConfigError::new(
-            path.to_path_buf(),
-            TextRange {
-                start: TextPosition { line: 3, column: 1 },
-                end: TextPosition { line: 3, column: 3 },
-            },
-            "unknown configuration field `profiles.work.features.foo`",
-        )
     );
 }
 

@@ -302,7 +302,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         developer_instructions: None,
         personality: None,
         compact_prompt: None,
-        tools_web_search_request: None,
         ephemeral: ephemeral.then_some(true),
         psp: Some(psp),
         ..Default::default()

@@ -30,10 +30,6 @@ pub enum ExperimentalFeatureStage {
     UnderDevelopment,
     /// Feature is production-ready.
     Stable,
-    /// Feature is deprecated and should be avoided.
-    Deprecated,
-    /// Feature flag is retained only for backwards compatibility.
-    Removed,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]

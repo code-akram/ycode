@@ -75,25 +75,8 @@ fn parses_config_isolation_flags() {
 }
 
 #[test]
-fn approve_for_me_flag_applies_to_resume_when_passed_at_exec_root() {
-    for flag in ["--approve-for-me", "--not-so-yolo"] {
-        let cli = Cli::parse_from(["codex-exec", flag, "resume", "--last"]);
-
-        assert!(cli.auto_review);
-    }
-}
-
-#[test]
-fn approve_for_me_flag_conflicts_with_other_sandbox_modes() {
-    for conflicting_args in [
-        vec!["--sandbox", "read-only"],
-        vec!["--dangerously-bypass-approvals-and-sandbox"],
-    ] {
-        let mut args = vec!["codex-exec", "--approve-for-me"];
-        args.extend(conflicting_args);
-        args.push("summarize");
-
-        let error = Cli::try_parse_from(args).expect_err("flags should conflict");
-        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
-    }
+fn json_flag_uses_only_current_spelling() {
+    let cli = Cli::parse_from(["codex-exec", "--json", "summarize"]);
+    assert!(cli.json);
+    assert!(Cli::try_parse_from(["codex-exec", "--experimental-json", "summarize"]).is_err());
 }

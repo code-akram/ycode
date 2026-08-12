@@ -1,6 +1,5 @@
 use crate::Feature;
 use crate::FeatureConfigSource;
-use crate::FeatureOverrides;
 use crate::FeatureToml;
 use crate::Features;
 use crate::FeaturesToml;
@@ -62,7 +61,7 @@ fn default_enabled_features_are_stable() {
     for spec in crate::FEATURES {
         if spec.default_enabled {
             assert!(
-                matches!(spec.stage, Stage::Stable | Stage::Removed),
+                matches!(spec.stage, Stage::Stable),
                 "feature `{}` is enabled by default but is not stable/removed ({:?})",
                 spec.key,
                 spec.stage
@@ -118,34 +117,6 @@ disable_in_process_fallback = true
 }
 
 #[test]
-fn from_sources_ignores_removed_terminal_resize_reflow_feature_key() {
-    let features_toml = FeaturesToml::from(BTreeMap::from([(
-        "terminal_resize_reflow".to_string(),
-        false,
-    )]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
-    assert_eq!(features.enabled(Feature::TerminalResizeReflow), true);
-}
-
-#[test]
-fn image_generation_extension_alias_is_supported() {
-    assert_eq!(
-        feature_for_key("imagegenext"),
-        Some(Feature::ImageGeneration)
-    );
-}
-
-#[test]
 fn image_generation_toggle_controls_extension_backed_generation() {
     let mut entries = BTreeMap::new();
     entries.insert("image_generation".to_string(), false);
@@ -157,31 +128,6 @@ fn image_generation_toggle_controls_extension_backed_generation() {
     features.disable(Feature::ImageGeneration);
     features.apply_map(&entries);
     assert!(features.enabled(Feature::ImageGeneration));
-}
-
-#[test]
-fn canonical_image_generation_toggle_wins_over_extension_alias() {
-    for (canonical, alias) in [(false, true), (true, false)] {
-        let entries = BTreeMap::from([
-            ("image_generation".to_string(), canonical),
-            ("imagegenext".to_string(), alias),
-        ]);
-        let mut features = Features::with_defaults();
-        features.apply_map(&entries);
-        assert_eq!(features.enabled(Feature::ImageGeneration), canonical);
-    }
-}
-
-#[test]
-fn telepathy_is_legacy_alias_for_chronicle() {
-    assert_eq!(feature_for_key("chronicle"), Some(Feature::Chronicle));
-    assert_eq!(feature_for_key("telepathy"), Some(Feature::Chronicle));
-}
-
-#[test]
-fn collab_is_legacy_alias_for_multi_agent() {
-    assert_eq!(feature_for_key("multi_agent"), Some(Feature::Collab));
-    assert_eq!(feature_for_key("collab"), Some(Feature::Collab));
 }
 
 #[test]
@@ -201,120 +147,10 @@ fn from_sources_applies_base_profile_and_overrides() {
             features: Some(&profile_features),
             ..Default::default()
         },
-        FeatureOverrides {
-            web_search_request: Some(false),
-        },
     );
 
     assert_eq!(features.enabled(Feature::CodeModeOnly), true);
     assert_eq!(features.enabled(Feature::CodeMode), true);
-    assert_eq!(features.enabled(Feature::ApplyPatchFreeform), false);
-    assert_eq!(features.enabled(Feature::WebSearchRequest), false);
-}
-
-#[test]
-fn from_sources_ignores_removed_image_detail_original_feature_key() {
-    let features_toml = FeaturesToml::from(BTreeMap::from([(
-        "image_detail_original".to_string(),
-        true,
-    )]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
-}
-
-#[test]
-fn from_sources_ignores_removed_resize_all_images_feature_key() {
-    let features_toml =
-        FeaturesToml::from(BTreeMap::from([("resize_all_images".to_string(), false)]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
-}
-
-#[test]
-fn from_sources_ignores_removed_item_ids_feature_key() {
-    let features_toml = FeaturesToml::from(BTreeMap::from([("item_ids".to_string(), false)]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
-    assert_eq!(features.enabled(Feature::ItemIds), true);
-}
-
-#[test]
-fn from_sources_ignores_removed_undo_feature_key() {
-    let features_toml = FeaturesToml::from(BTreeMap::from([("undo".to_string(), true)]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
-}
-
-#[test]
-fn from_sources_ignores_removed_js_repl_feature_keys() {
-    let features_toml = FeaturesToml::from(BTreeMap::from([
-        ("js_repl".to_string(), true),
-        ("js_repl_tools_only".to_string(), true),
-    ]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
-}
-
-#[test]
-fn from_sources_ignores_removed_apply_patch_freeform_feature_key() {
-    let features_toml =
-        FeaturesToml::from(BTreeMap::from([("apply_patch_freeform".to_string(), true)]));
-
-    let features = Features::from_sources(
-        FeatureConfigSource {
-            features: Some(&features_toml),
-            ..Default::default()
-        },
-        FeatureConfigSource::default(),
-        FeatureOverrides::default(),
-    );
-
-    assert_eq!(features, Features::with_defaults());
 }
 
 #[test]
@@ -343,7 +179,6 @@ max_concurrent_threads_per_session = 4
 min_wait_timeout_ms = 2500
 max_wait_timeout_ms = 120000
 default_wait_timeout_ms = 30000
-usage_hint_enabled = false
 usage_hint_text = "Custom delegation guidance."
 root_agent_usage_hint_text = "Root guidance."
 subagent_usage_hint_text = "Subagent guidance."
@@ -370,7 +205,6 @@ non_code_mode_only = true
             min_wait_timeout_ms: Some(2500),
             max_wait_timeout_ms: Some(120000),
             default_wait_timeout_ms: Some(30000),
-            usage_hint_enabled: Some(false),
             usage_hint_text: Some("Custom delegation guidance.".to_string()),
             root_agent_usage_hint_text: Some("Root guidance.".to_string()),
             subagent_usage_hint_text: Some("Subagent guidance.".to_string()),
@@ -464,9 +298,7 @@ fn materialize_resolved_enabled_writes_all_features_and_preserves_custom_config(
             ..Default::default()
         },
         FeatureConfigSource::default(),
-        FeatureOverrides::default(),
     );
-    assert_eq!(replayed.enabled(Feature::ApplyPatchFreeform), false);
 }
 
 #[test]

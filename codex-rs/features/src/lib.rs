@@ -14,7 +14,6 @@ use std::collections::BTreeSet;
 use toml::Table;
 
 mod feature_configs;
-mod legacy;
 pub use feature_configs::CodeModeConfigToml;
 pub use feature_configs::CodeModeHostConfigToml;
 pub use feature_configs::CurrentTimeReminderConfigToml;
@@ -29,8 +28,6 @@ pub use feature_configs::RolloutBudgetConfigToml;
 pub use feature_configs::TokenBudgetConfigToml;
 pub use feature_configs::TokenBudgetMode;
 pub use feature_configs::ToolRegistryConfigToml;
-use legacy::LegacyFeatureToggles;
-pub use legacy::legacy_feature_keys;
 
 /// High-level lifecycle stage for a feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,17 +42,13 @@ pub enum Stage {
     },
     /// Stable features. The feature flag is kept for ad-hoc enabling/disabling
     Stable,
-    /// Deprecated feature that should not be used anymore.
-    Deprecated,
-    /// The feature flag is useless but kept for backward compatibility reason.
-    Removed,
 }
 
 impl Stage {
     pub fn experimental_menu_name(self) -> Option<&'static str> {
         match self {
             Stage::Experimental { name, .. } => Some(name),
-            Stage::UnderDevelopment | Stage::Stable | Stage::Deprecated | Stage::Removed => None,
+            Stage::UnderDevelopment | Stage::Stable => None,
         }
     }
 
@@ -64,7 +57,7 @@ impl Stage {
             Stage::Experimental {
                 menu_description, ..
             } => Some(menu_description),
-            Stage::UnderDevelopment | Stage::Stable | Stage::Deprecated | Stage::Removed => None,
+            Stage::UnderDevelopment | Stage::Stable => None,
         }
     }
 
@@ -74,7 +67,7 @@ impl Stage {
                 announcement: "", ..
             } => None,
             Stage::Experimental { announcement, .. } => Some(announcement),
-            Stage::UnderDevelopment | Stage::Stable | Stage::Deprecated | Stage::Removed => None,
+            Stage::UnderDevelopment | Stage::Stable => None,
         }
     }
 }
@@ -108,8 +101,6 @@ pub enum Feature {
     /// on either `unified_exec` or `shell_zsh_fork` because those features have
     /// separate rollout and enterprise controls.
     UnifiedExecZshFork,
-    /// Removed compatibility flag. Transcript scrollback reflow on terminal resize is always on.
-    TerminalResizeReflow,
     /// Add terminal-specific visualization guidance to TUI developer instructions.
     TerminalVisualizationInstructions,
     /// Stream structured progress while apply_patch input is being generated.
@@ -118,11 +109,6 @@ pub enum Feature {
     ExecPermissionApprovals,
     /// Expose the built-in request_permissions tool.
     RequestPermissionsTool,
-    /// Allow the model to request web searches that fetch live content.
-    WebSearchRequest,
-    /// Allow the model to request web searches that fetch cached content.
-    /// Takes precedence over `WebSearchRequest`.
-    WebSearchCached,
     /// Expose the extension-backed standalone web search tool.
     StandaloneWebSearch,
     /// Experimental shell snapshotting.
@@ -145,12 +131,6 @@ pub enum Feature {
     Collab,
     /// Enable task-path-based multi-agent routing.
     MultiAgentV2,
-    /// Removed compatibility flag retained as a no-op.
-    MultiAgentMode,
-    /// Removed compatibility flag for the deleted agent-job tools.
-    SpawnCsv,
-    /// Removed compatibility flag retained as a no-op now that tool_search is always enabled.
-    ToolSearch,
     /// Describe deferred tool namespaces in the model-visible world state.
     DeferredToolWorldState,
     /// Enable discoverable tool suggestions for apps.
@@ -181,16 +161,10 @@ pub enum Feature {
     ImageGeneration,
     /// Tell the model when a prompt image was resized and include its dimensions.
     ImageResizeNotice,
-    /// Removed compatibility flag for always-on centralized image preparation.
-    ResizeAllImages,
-    /// Removed compatibility flag for always-on response item IDs.
-    ItemIds,
     /// Request sequential cutoff reasoning summary delivery.
     ConcurrentReasoningSummaries,
     /// Enable search across retained filesystem-backed skill providers.
     SkillSearch,
-    /// Removed compatibility flag for deleted skill env var dependency prompting.
-    SkillEnvVarDependencyPrompt,
     /// Enable the unified mention popup used by default in the TUI.
     MentionsV2,
     /// Enable automatic review for approval prompts.
@@ -221,46 +195,6 @@ pub enum Feature {
     UseAgentIdentity,
     /// Enable workspace dependency support.
     WorkspaceDependencies,
-
-    // Removed
-    /// Removed compatibility flag retained as a no-op so old configs can
-    /// still parse `undo`.
-    GhostCommit,
-    /// Removed compatibility flag for the deleted JavaScript REPL feature.
-    JsRepl,
-    /// Removed compatibility flag for the deleted JavaScript REPL tool-only mode.
-    JsReplToolsOnly,
-    /// Legacy search-tool feature flag kept for backward compatibility.
-    SearchTool,
-    /// Allow the model to request approval and propose exec rules.
-    RequestRule,
-    /// Enable Windows sandbox (restricted token) on Windows.
-    WindowsSandbox,
-    /// Use the elevated Windows sandbox pipeline (setup + runner).
-    WindowsSandboxElevated,
-    /// Legacy remote models flag kept for backward compatibility.
-    RemoteModels,
-    /// Removed legacy git commit attribution guidance flag.
-    CodexGitCommit,
-    /// Persist rollout metadata to a local SQLite database.
-    Sqlite,
-    /// Removed compatibility flag for the deleted apply_patch fallback feature.
-    ApplyPatchFreeform,
-    /// Removed compatibility flag for the deleted unavailable-tool placeholder backfill.
-    UnavailableDummyTools,
-    /// Steer feature flag - when enabled, Enter submits immediately instead of queuing.
-    /// Kept for config backward compatibility; behavior is always steer-enabled.
-    Steer,
-    /// Removed compatibility flag retained as a no-op so old wrappers can
-    /// still pass `--enable image_detail_original`.
-    ImageDetailOriginal,
-    /// Removed compatibility flag retained as a no-op now that workspace owner
-    /// usage nudges are always enabled.
-    WorkspaceOwnerUsageNudge,
-    /// Legacy rollout flag for Responses API WebSocket transport experiments.
-    ResponsesWebsockets,
-    /// Legacy rollout flag for Responses API WebSocket transport v2 experiments.
-    ResponsesWebsocketsV2,
 }
 
 impl Feature {
@@ -284,43 +218,15 @@ impl Feature {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LegacyFeatureUsage {
-    pub alias: String,
-    pub feature: Feature,
-    pub summary: String,
-    pub details: Option<String>,
-}
-
 /// Holds the effective set of enabled features.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Features {
     enabled: BTreeSet<Feature>,
-    legacy_usages: BTreeSet<LegacyFeatureUsage>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct FeatureOverrides {
-    pub web_search_request: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FeatureConfigSource<'a> {
     pub features: Option<&'a FeaturesToml>,
-    pub experimental_use_unified_exec_tool: Option<bool>,
-}
-
-impl FeatureOverrides {
-    fn apply(self, features: &mut Features) {
-        if let Some(enabled) = self.web_search_request {
-            if enabled {
-                features.enable(Feature::WebSearchRequest);
-            } else {
-                features.disable(Feature::WebSearchRequest);
-            }
-            features.record_legacy_usage("web_search_request", Feature::WebSearchRequest);
-        }
-    }
 }
 
 impl Features {
@@ -332,10 +238,7 @@ impl Features {
                 set.insert(spec.id);
             }
         }
-        Self {
-            enabled: set,
-            legacy_usages: BTreeSet::new(),
-        }
+        Self { enabled: set }
     }
 
     pub fn enabled(&self, f: Feature) -> bool {
@@ -360,78 +263,11 @@ impl Features {
         }
     }
 
-    pub fn record_legacy_usage_force(&mut self, alias: &str, feature: Feature) {
-        let (summary, details) = legacy_usage_notice(alias, feature);
-        self.legacy_usages.insert(LegacyFeatureUsage {
-            alias: alias.to_string(),
-            feature,
-            summary,
-            details,
-        });
-    }
-
-    pub fn record_legacy_usage(&mut self, alias: &str, feature: Feature) {
-        if alias == feature.key() {
-            return;
-        }
-        self.record_legacy_usage_force(alias, feature);
-    }
-
-    pub fn legacy_feature_usages(&self) -> impl Iterator<Item = &LegacyFeatureUsage> + '_ {
-        self.legacy_usages.iter()
-    }
-
     /// Apply a table of key -> bool toggles (e.g. from TOML).
     pub fn apply_map(&mut self, m: &BTreeMap<String, bool>) {
         for (k, v) in m {
-            match k.as_str() {
-                "web_search_request" => {
-                    self.record_legacy_usage_force(
-                        "features.web_search_request",
-                        Feature::WebSearchRequest,
-                    );
-                }
-                "web_search_cached" => {
-                    self.record_legacy_usage_force(
-                        "features.web_search_cached",
-                        Feature::WebSearchCached,
-                    );
-                }
-                "undo" => {
-                    continue;
-                }
-                "js_repl" => {
-                    continue;
-                }
-                "js_repl_tools_only" => {
-                    continue;
-                }
-                "apply_patch_freeform" => {
-                    continue;
-                }
-                "tool_search" => {
-                    continue;
-                }
-                "image_detail_original" | "resize_all_images" | "item_ids" => {
-                    continue;
-                }
-                "skill_env_var_dependency_prompt" => {
-                    continue;
-                }
-                "terminal_resize_reflow" => {
-                    continue;
-                }
-                _ => {}
-            }
-            if k == "imagegenext" && m.contains_key(Feature::ImageGeneration.key()) {
-                self.record_legacy_usage(k, Feature::ImageGeneration);
-                continue;
-            }
             match feature_for_key(k) {
                 Some(feat) => {
-                    if k != feat.key() {
-                        self.record_legacy_usage(k.as_str(), feat);
-                    }
                     if *v {
                         self.enable(feat);
                     } else {
@@ -445,25 +281,15 @@ impl Features {
         }
     }
 
-    pub fn from_sources(
-        base: FeatureConfigSource<'_>,
-        profile: FeatureConfigSource<'_>,
-        overrides: FeatureOverrides,
-    ) -> Self {
+    pub fn from_sources(base: FeatureConfigSource<'_>, profile: FeatureConfigSource<'_>) -> Self {
         let mut features = Features::with_defaults();
 
         for source in [base, profile] {
-            LegacyFeatureToggles {
-                experimental_use_unified_exec_tool: source.experimental_use_unified_exec_tool,
-            }
-            .apply(&mut features);
-
             if let Some(feature_entries) = source.features {
                 features.apply_toml(feature_entries);
             }
         }
 
-        overrides.apply(&mut features);
         features.normalize_dependencies();
 
         features
@@ -480,55 +306,9 @@ impl Features {
     }
 }
 
-fn legacy_usage_notice(alias: &str, feature: Feature) -> (String, Option<String>) {
-    let canonical = feature.key();
-    match feature {
-        Feature::WebSearchRequest | Feature::WebSearchCached => {
-            let label = match alias {
-                "web_search" => "[features].web_search",
-                "features.web_search_request" | "web_search_request" => {
-                    "[features].web_search_request"
-                }
-                "features.web_search_cached" | "web_search_cached" => {
-                    "[features].web_search_cached"
-                }
-                _ => alias,
-            };
-            let summary =
-                format!("`{label}` is deprecated because web search is enabled by default.");
-            (summary, Some(web_search_details().to_string()))
-        }
-        _ => {
-            let label = if alias.contains('.') || alias.starts_with('[') {
-                alias.to_string()
-            } else {
-                format!("[features].{alias}")
-            };
-            let summary = format!("`{label}` is deprecated. Use `[features].{canonical}` instead.");
-            let details = if alias == canonical {
-                None
-            } else {
-                Some(format!(
-                    "Enable it with `--enable {canonical}` or `[features].{canonical}` in config.toml. See https://developers.openai.com/codex/config-basic#feature-flags for details."
-                ))
-            };
-            (summary, details)
-        }
-    }
-}
-
-fn web_search_details() -> &'static str {
-    "Set `web_search` to `\"live\"`, `\"indexed\"`, `\"cached\"`, or `\"disabled\"` at the top level (or under a profile) in config.toml if you want to override it."
-}
-
 /// Keys accepted in `[features]` tables.
 pub fn feature_for_key(key: &str) -> Option<Feature> {
-    for spec in FEATURES {
-        if spec.key == key {
-            return Some(spec.id);
-        }
-    }
-    legacy::feature_for_key(key)
+    canonical_feature_for_key(key)
 }
 
 pub fn canonical_feature_for_key(key: &str) -> Option<Feature> {
@@ -561,7 +341,7 @@ pub struct FeaturesToml {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_time_reminder: Option<FeatureToml<CurrentTimeReminderConfigToml>>,
     pub network_proxy: Option<FeatureToml<NetworkProxyConfigToml>>,
-    /// Boolean feature toggles keyed by canonical or legacy feature name.
+    /// Boolean feature toggles keyed by canonical feature name.
     #[serde(flatten)]
     entries: BTreeMap<String, bool>,
 }
@@ -574,10 +354,6 @@ impl Features {
 }
 
 impl FeaturesToml {
-    /// Removes compatibility-only inputs that no longer affect runtime
-    /// behavior or belong in newly materialized config.
-    pub fn clear_removed_compatibility_entries(&mut self) {}
-
     pub fn entries(&self) -> BTreeMap<String, bool> {
         let mut entries = self.entries.clone();
         if let Some(enabled) = self.code_mode.as_ref().and_then(FeatureToml::enabled) {
@@ -609,7 +385,6 @@ impl FeaturesToml {
     }
 
     pub fn materialize_resolved_enabled(&mut self, features: &Features) {
-        self.clear_removed_compatibility_entries();
         let Self {
             tool_registry: _,
             code_mode,
@@ -621,9 +396,6 @@ impl FeaturesToml {
             network_proxy,
             entries,
         } = self;
-        for key in legacy::legacy_feature_keys() {
-            entries.remove(key);
-        }
         for spec in FEATURES {
             let enabled = features.enabled(spec.id);
             if spec.id == Feature::CodeMode {
@@ -710,12 +482,6 @@ pub struct FeatureSpec {
 pub const FEATURES: &[FeatureSpec] = &[
     // Stable features.
     FeatureSpec {
-        id: Feature::GhostCommit,
-        key: "undo",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::ShellTool,
         key: "shell_tool",
         stage: Stage::Stable,
@@ -758,12 +524,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::JsRepl,
-        key: "js_repl",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::ExecutedToolCallMetadata,
         key: "executed_tool_call_metadata",
         stage: Stage::UnderDevelopment,
@@ -794,52 +554,10 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::JsReplToolsOnly,
-        key: "js_repl_tools_only",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::TerminalResizeReflow,
-        key: "terminal_resize_reflow",
-        stage: Stage::Removed,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::WebSearchRequest,
-        key: "web_search_request",
-        stage: Stage::Deprecated,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WebSearchCached,
-        key: "web_search_cached",
-        stage: Stage::Deprecated,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::StandaloneWebSearch,
         key: "standalone_web_search",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::SearchTool,
-        key: "search_tool",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CodexGitCommit,
-        key: "codex_git_commit",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::Sqlite,
-        key: "sqlite",
-        stage: Stage::Removed,
-        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::MemoryTool,
@@ -860,12 +578,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::ApplyPatchFreeform,
-        key: "apply_patch_freeform",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::ApplyPatchStreamingEvents,
         key: "apply_patch_streaming_events",
         stage: Stage::UnderDevelopment,
@@ -881,30 +593,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::RequestPermissionsTool,
         key: "request_permissions_tool",
         stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::RequestRule,
-        key: "request_rule",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WindowsSandbox,
-        key: "experimental_windows_sandbox",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WindowsSandboxElevated,
-        key: "elevated_windows_sandbox",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::RemoteModels,
-        key: "remote_models",
-        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {
@@ -942,33 +630,9 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::MultiAgentMode,
-        key: "multi_agent_mode",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::SpawnCsv,
-        key: "enable_fanout",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ToolSearch,
-        key: "tool_search",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::DeferredToolWorldState,
         key: "deferred_tool_world_state",
         stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::UnavailableDummyTools,
-        key: "unavailable_dummy_tools",
-        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {
@@ -1026,18 +690,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::ResizeAllImages,
-        key: "resize_all_images",
-        stage: Stage::Removed,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::ItemIds,
-        key: "item_ids",
-        stage: Stage::Removed,
-        default_enabled: true,
-    },
-    FeatureSpec {
         id: Feature::ConcurrentReasoningSummaries,
         key: "concurrent_reasoning_summaries",
         stage: Stage::UnderDevelopment,
@@ -1050,21 +702,9 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::SkillEnvVarDependencyPrompt,
-        key: "skill_env_var_dependency_prompt",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::MentionsV2,
         key: "mentions_v2",
         stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::Steer,
-        key: "steer",
-        stage: Stage::Removed,
         default_enabled: true,
     },
     FeatureSpec {
@@ -1134,12 +774,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::ImageDetailOriginal,
-        key: "image_detail_original",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::PreventIdleSleep,
         key: "prevent_idle_sleep",
         stage: Stage::Experimental {
@@ -1147,24 +781,6 @@ pub const FEATURES: &[FeatureSpec] = &[
             menu_description: "Keep your computer awake while Codex is running a thread.",
             announcement: "NEW: Prevent sleep while running is now available in /experimental.",
         },
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WorkspaceOwnerUsageNudge,
-        key: "workspace_owner_usage_nudge",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ResponsesWebsockets,
-        key: "responses_websockets",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ResponsesWebsocketsV2,
-        key: "responses_websockets_v2",
-        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {

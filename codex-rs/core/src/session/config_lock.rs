@@ -209,8 +209,6 @@ fn drop_lockfile_inputs(lock_config: &mut ConfigToml) {
     // The lockfile should contain replayable values, not the profile,
     // debug-control, file-include, and environment-specific inputs that
     // produced those values in the original session.
-    lock_config.profile = None;
-    lock_config.profiles.clear();
     clear_config_lock_debug_controls(lock_config);
     lock_config.model_instructions_file = None;
     lock_config.experimental_compact_prompt_file = None;
@@ -219,7 +217,6 @@ fn drop_lockfile_inputs(lock_config: &mut ConfigToml) {
     lock_config.sandbox_workspace_write = None;
     lock_config.default_permissions = None;
     lock_config.permissions = None;
-    lock_config.experimental_use_unified_exec_tool = None;
 }
 
 fn resolved_config_to_toml<Toml>(
@@ -302,8 +299,6 @@ mod tests {
             lock.model_reasoning_effort,
             sc.agent_settings.reasoning_effort()
         );
-        assert_eq!(lock.profile, None);
-        assert!(lock.profiles.is_empty());
         assert!(
             lock.debug
                 .as_ref()

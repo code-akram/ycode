@@ -2,23 +2,7 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn shell_environment_policy_accepts_legacy_lists_or_filters() {
-    let legacy: ShellEnvironmentPolicyToml = toml::from_str(
-        r#"
-exclude = ["LEGACY_*", "SHARED_*"]
-include_only = ["PATH", "HOME"]
-"#,
-    )
-    .expect("legacy arrays should remain valid in config.toml");
-    assert_eq!(
-        legacy,
-        ShellEnvironmentPolicyToml {
-            exclude: Some(vec!["LEGACY_*".to_string(), "SHARED_*".to_string()]),
-            include_only: Some(vec!["PATH".to_string(), "HOME".to_string()]),
-            ..Default::default()
-        }
-    );
-
+fn shell_environment_policy_accepts_filters() {
     let filtered: ShellEnvironmentPolicyToml = toml::from_str(
         r#"
 [filters]
@@ -43,33 +27,20 @@ include_only = ["PATH", "HOME"]
             ..Default::default()
         }
     );
-    assert_eq!(
-        ShellEnvironmentPolicy::from(filtered),
-        ShellEnvironmentPolicy::from(ShellEnvironmentPolicyToml {
-            exclude: Some(vec!["FLIP_TO_EXCLUDE".to_string()]),
-            include_only: Some(vec!["FLIP_TO_INCLUDE".to_string()]),
-            ..Default::default()
-        })
-    );
+    let resolved = ShellEnvironmentPolicy::from(filtered);
+    assert_eq!(resolved.exclude.len(), 1);
+    assert_eq!(resolved.include_only.len(), 1);
 }
 
 #[test]
-fn shell_environment_policy_rejects_mixed_legacy_lists_and_filters() {
+fn shell_environment_policy_rejects_legacy_lists() {
     let error = toml::from_str::<ShellEnvironmentPolicyToml>(
         r#"
 exclude = ["LEGACY_*"]
-
-[filters]
-"CANONICAL_*" = "include"
 "#,
     )
-    .expect_err("one config layer must not mix legacy lists and filters");
-
-    assert!(
-        error
-            .to_string()
-            .contains("cannot mix `filters` with legacy `exclude` or `include_only`")
-    );
+    .expect_err("obsolete exclude arrays should be rejected");
+    assert!(error.to_string().contains("exclude"));
 }
 
 #[test]

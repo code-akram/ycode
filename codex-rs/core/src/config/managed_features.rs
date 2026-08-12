@@ -11,7 +11,6 @@ use codex_config::Sourced;
 use codex_config::config_toml::ConfigToml;
 use codex_features::Feature;
 use codex_features::FeatureConfigSource;
-use codex_features::FeatureOverrides;
 use codex_features::Features;
 use codex_features::canonical_feature_for_key;
 use codex_features::feature_for_key;
@@ -261,13 +260,6 @@ fn explicit_feature_settings_in_config(cfg: &ConfigToml) -> Vec<(String, Feature
             }
         }
     }
-    if let Some(enabled) = cfg.experimental_use_unified_exec_tool {
-        explicit_settings.push((
-            "experimental_use_unified_exec_tool".to_string(),
-            Feature::UnifiedExec,
-            enabled,
-        ));
-    }
     explicit_settings
 }
 
@@ -320,10 +312,8 @@ pub(crate) fn validate_feature_requirements_in_config_toml(
     let configured_features = Features::from_sources(
         FeatureConfigSource {
             features: cfg.features.as_ref(),
-            experimental_use_unified_exec_tool: cfg.experimental_use_unified_exec_tool,
         },
         FeatureConfigSource::default(),
-        FeatureOverrides::default(),
     );
     ManagedFeatures::from_configured(configured_features, feature_requirements.cloned()).map(|_| ())
 }
