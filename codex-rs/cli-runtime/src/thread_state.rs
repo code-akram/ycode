@@ -217,9 +217,6 @@ pub(crate) async fn resolve_server_request_on_thread_listener(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_cli_protocol::ApprovalsReviewer;
-    use codex_cli_protocol::AskForApproval;
-    use codex_cli_protocol::SandboxPolicy;
     use codex_protocol::config_types::AgentSettings;
     use codex_protocol::config_types::Settings;
     use codex_utils_absolute_path::AbsolutePathBuf;
@@ -244,14 +241,8 @@ mod tests {
     fn thread_settings(model: &str) -> ThreadSettings {
         ThreadSettings {
             cwd: AbsolutePathBuf::from_absolute_path("/tmp").expect("absolute path"),
-            approval_policy: AskForApproval::OnRequest,
-            approvals_reviewer: ApprovalsReviewer::User,
-            sandbox_policy: SandboxPolicy::ReadOnly {
-                network_access: false,
-            },
-            active_permission_profile: None,
             model: model.to_string(),
-            model_provider: "mock_provider".to_string(),
+            model_provider: "openai".to_string(),
             service_tier: None,
             effort: None,
             summary: None,

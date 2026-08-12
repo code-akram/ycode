@@ -1,9 +1,5 @@
 use super::*;
 use anyhow::Result;
-use codex_cli_protocol::AppConfig;
-use codex_cli_protocol::AppToolApproval;
-use codex_cli_protocol::AppsConfig;
-use codex_cli_protocol::AskForApproval;
 use codex_cli_protocol::ConfigLayerSource as ApiConfigLayerSource;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
@@ -63,7 +59,7 @@ async fn write_value_preserves_comments_and_order() -> Result<()> {
     let tmp = tempdir().expect("tempdir");
     let original = r#"# Codex user configuration
 model = "gpt-5.2"
-approval_policy = "on-request"
+service_tier = "priority"
 
 [notice]
 # Preserve this comment
@@ -89,7 +85,7 @@ unified_exec = true
     let updated = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
     let expected = r#"# Codex user configuration
 model = "gpt-5.2"
-approval_policy = "on-request"
+service_tier = "priority"
 
 [notice]
 # Preserve this comment
@@ -117,9 +113,12 @@ async fn process_routing_does_not_enter_config_layers() -> Result<()> {
     let config = service
         .load_with_overrides(
             Some(
-                [("features".to_string(), serde_json::json!({ "apps": true }))]
-                    .into_iter()
-                    .collect(),
+                [(
+                    "features".to_string(),
+                    serde_json::json!({ "multi_agent_v2": true }),
+                )]
+                .into_iter()
+                .collect(),
             ),
             Default::default(),
         )
@@ -166,7 +165,7 @@ async fn clear_missing_nested_config_is_noop() -> Result<()> {
 async fn clear_user_value_if_matches_clears_matching_value() -> Result<()> {
     let tmp = tempdir().expect("tempdir");
     let path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&path, "model = \"gpt-5.2\"\napproval_policy = \"never\"\n")?;
+    std::fs::write(&path, "model = \"gpt-5.2\"\nservice_tier = \"priority\"\n")?;
 
     let service = ConfigManager::without_managed_config_for_tests(tmp.path().to_path_buf());
     service
@@ -175,7 +174,7 @@ async fn clear_user_value_if_matches_clears_matching_value() -> Result<()> {
 
     assert_eq!(
         std::fs::read_to_string(&path)?,
-        "approval_policy = \"never\"\n"
+        "service_tier = \"priority\"\n"
     );
     Ok(())
 }
@@ -184,7 +183,7 @@ async fn clear_user_value_if_matches_clears_matching_value() -> Result<()> {
 async fn clear_user_value_if_matches_preserves_non_matching_value() -> Result<()> {
     let tmp = tempdir().expect("tempdir");
     let path = tmp.path().join(CONFIG_TOML_FILE);
-    let original = "model = \"gpt-5.2\"\napproval_policy = \"never\"\n";
+    let original = "model = \"gpt-5.2\"\nservice_tier = \"priority\"\n";
     std::fs::write(&path, original)?;
 
     let service = ConfigManager::without_managed_config_for_tests(tmp.path().to_path_buf());
@@ -303,68 +302,6 @@ async fn batch_write_rejects_legacy_profile_selector() -> Result<()> {
 }
 
 #[tokio::test]
-async fn write_value_supports_nested_app_paths() -> Result<()> {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "")?;
-
-    let service = ConfigManager::without_managed_config_for_tests(tmp.path().to_path_buf());
-    service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "apps".to_string(),
-            value: serde_json::json!({
-                "app1": {
-                    "enabled": false,
-                },
-            }),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect("write apps succeeds");
-
-    service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "apps.app1.default_tools_approval_mode".to_string(),
-            value: serde_json::json!("prompt"),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect("write apps.app1.default_tools_approval_mode succeeds");
-
-    let read = service
-        .read(ConfigReadParams {
-            include_layers: false,
-            cwd: None,
-        })
-        .await
-        .expect("config read succeeds");
-
-    assert_eq!(
-        read.config.apps,
-        Some(AppsConfig {
-            default: None,
-            apps: std::collections::HashMap::from([(
-                "app1".to_string(),
-                AppConfig {
-                    enabled: false,
-                    approvals_reviewer: None,
-                    destructive_enabled: None,
-                    open_world_enabled: None,
-                    default_tools_approval_mode: Some(AppToolApproval::Prompt),
-                    default_tools_enabled: None,
-                    tools: None,
-                },
-            )]),
-        })
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn read_includes_origins_and_layers() {
     let tmp = tempdir().expect("tempdir");
     let user_path = tmp.path().join(CONFIG_TOML_FILE);
@@ -372,7 +309,7 @@ async fn read_includes_origins_and_layers() {
     let user_file = AbsolutePathBuf::try_from(user_path.clone()).expect("user file");
 
     let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
+    std::fs::write(&managed_path, "model = \"system\"").unwrap();
     let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
 
     let service = ConfigManager::new_for_tests(
@@ -390,14 +327,9 @@ async fn read_includes_origins_and_layers() {
         .await
         .expect("response");
 
-    assert_eq!(response.config.approval_policy, Some(AskForApproval::Never));
-
+    assert_eq!(response.config.model.as_deref(), Some("system"));
     assert_eq!(
-        response
-            .origins
-            .get("approval_policy")
-            .expect("origin")
-            .name,
+        response.origins.get("model").expect("origin").name,
         ApiConfigLayerSource::LegacyManagedConfigTomlFromFile {
             file: managed_file.clone()
         },
@@ -433,65 +365,13 @@ async fn read_includes_origins_and_layers() {
     ));
 }
 
-#[cfg(target_os = "macos")]
-#[tokio::test]
-async fn write_value_succeeds_when_managed_preferences_expand_home_directory_paths() -> Result<()> {
-    use base64::Engine;
-
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"\n")?;
-
-    let mut loader_overrides =
-        LoaderOverrides::with_managed_config_path_for_tests(tmp.path().join("managed_config.toml"));
-    loader_overrides.managed_preferences_base64 = Some(
-        base64::prelude::BASE64_STANDARD.encode(
-            r#"
-sandbox_mode = "workspace-write"
-[sandbox_workspace_write]
-writable_roots = ["~/code"]
-"#
-            .as_bytes(),
-        ),
-    );
-
-    let service = ConfigManager::new_for_tests(
-        tmp.path().to_path_buf(),
-        vec![],
-        loader_overrides,
-        CloudConfigBundleLoader::default(),
-    );
-
-    let response = service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "model".to_string(),
-            value: serde_json::json!("updated"),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect("write succeeds");
-
-    assert_eq!(response.status, WriteStatus::Ok);
-    assert_eq!(
-        std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config"),
-        "model = \"updated\"\n"
-    );
-
-    Ok(())
-}
-
 #[tokio::test]
 async fn write_value_reports_override() {
     let tmp = tempdir().expect("tempdir");
-    std::fs::write(
-        tmp.path().join(CONFIG_TOML_FILE),
-        "approval_policy = \"on-request\"",
-    )
-    .unwrap();
+    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"").unwrap();
 
     let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
+    std::fs::write(&managed_path, "model = \"system\"").unwrap();
     let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
 
     let service = ConfigManager::new_for_tests(
@@ -504,8 +384,8 @@ async fn write_value_reports_override() {
     let result = service
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "approval_policy".to_string(),
-            value: serde_json::json!("never"),
+            key_path: "model".to_string(),
+            value: serde_json::json!("system"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
         })
@@ -519,16 +399,9 @@ async fn write_value_reports_override() {
         })
         .await
         .expect("read");
+    assert_eq!(read_after.config.model.as_deref(), Some("system"));
     assert_eq!(
-        read_after.config.approval_policy,
-        Some(AskForApproval::Never)
-    );
-    assert_eq!(
-        read_after
-            .origins
-            .get("approval_policy")
-            .expect("origin")
-            .name,
+        read_after.origins.get("model").expect("origin").name,
         ApiConfigLayerSource::LegacyManagedConfigTomlFromFile {
             file: managed_file.clone()
         }
@@ -725,7 +598,7 @@ async fn invalid_user_value_rejected_even_if_overridden_by_managed() {
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"").unwrap();
 
     let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
+    std::fs::write(&managed_path, "hide_agent_reasoning = true").unwrap();
 
     let service = ConfigManager::new_for_tests(
         tmp.path().to_path_buf(),
@@ -737,7 +610,7 @@ async fn invalid_user_value_rejected_even_if_overridden_by_managed() {
     let error = service
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "approval_policy".to_string(),
+            key_path: "hide_agent_reasoning".to_string(),
             value: serde_json::json!("bogus"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
@@ -911,42 +784,6 @@ async fn read_materializes_default_allow_login_shell() {
 }
 
 #[tokio::test]
-async fn write_value_allows_unmanaged_sibling_of_exact_requirement() {
-    let tmp = tempdir().expect("tempdir");
-    let path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&path, "").unwrap();
-
-    let service = ConfigManager::new_for_tests(
-        tmp.path().to_path_buf(),
-        vec![],
-        LoaderOverrides::without_managed_config_for_tests(),
-        CloudConfigBundleFixture::loader_with_enterprise_requirement(
-            r#"
-[windows]
-sandbox_private_desktop = false
-"#,
-        ),
-    );
-
-    service
-        .write_value(ConfigValueWriteParams {
-            file_path: Some(path.display().to_string()),
-            key_path: "windows.sandbox".to_string(),
-            value: serde_json::json!("elevated"),
-            merge_strategy: MergeStrategy::Replace,
-            expected_version: None,
-        })
-        .await
-        .expect("unmanaged sibling should remain writable");
-
-    assert!(
-        std::fs::read_to_string(path)
-            .unwrap()
-            .contains("sandbox = \"elevated\"")
-    );
-}
-
-#[tokio::test]
 async fn read_reports_managed_overrides_user_and_session_flags() {
     let tmp = tempdir().expect("tempdir");
     let user_path = tmp.path().join(CONFIG_TOML_FILE);
@@ -1018,7 +855,7 @@ async fn write_value_reports_managed_override() {
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "").unwrap();
 
     let managed_path = tmp.path().join("managed_config.toml");
-    std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
+    std::fs::write(&managed_path, "model = \"gpt-5\"").unwrap();
     let managed_file = AbsolutePathBuf::try_from(managed_path.clone()).expect("managed file");
 
     let service = ConfigManager::new_for_tests(
@@ -1031,8 +868,8 @@ async fn write_value_reports_managed_override() {
     let result = service
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
-            key_path: "approval_policy".to_string(),
-            value: serde_json::json!("on-request"),
+            key_path: "model".to_string(),
+            value: serde_json::json!("gpt-4.1"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
         })
@@ -1045,7 +882,7 @@ async fn write_value_reports_managed_override() {
         overridden.overriding_layer.name,
         ApiConfigLayerSource::LegacyManagedConfigTomlFromFile { file: managed_file }
     );
-    assert_eq!(overridden.effective_value, serde_json::json!("never"));
+    assert_eq!(overridden.effective_value, serde_json::json!("gpt-5"));
 }
 
 /// Legacy managed feature toggles own their normalized enabled origin and override metadata.
@@ -1277,16 +1114,6 @@ exclude = []
             serde_json::json!("include"),
             r#"[shell_environment_policy.filters]
 "секрет_*" = "include"
-"#,
-        ),
-        (
-            r#"[permissions.dev.network.domains]
-"example.com" = "deny"
-"#,
-            "permissions.dev.network.domains",
-            serde_json::json!({"EXAMPLE.COM": "allow"}),
-            r#"[permissions.dev.network.domains]
-"example.com" = "allow"
 "#,
         ),
         (

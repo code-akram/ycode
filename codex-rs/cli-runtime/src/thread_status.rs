@@ -457,18 +457,6 @@ mod tests {
             },
         );
 
-        let permission_guard = manager
-            .note_permission_requested(INTERACTIVE_THREAD_ID)
-            .await;
-        assert_eq!(
-            manager
-                .loaded_status_for_thread(INTERACTIVE_THREAD_ID)
-                .await,
-            ThreadStatus::Active {
-                active_flags: vec![ThreadActiveFlag::WaitingOnApproval],
-            },
-        );
-
         let user_input_guard = manager
             .note_user_input_requested(INTERACTIVE_THREAD_ID)
             .await;
@@ -477,22 +465,9 @@ mod tests {
                 .loaded_status_for_thread(INTERACTIVE_THREAD_ID)
                 .await,
             ThreadStatus::Active {
-                active_flags: vec![
-                    ThreadActiveFlag::WaitingOnApproval,
-                    ThreadActiveFlag::WaitingOnUserInput,
-                ],
-            },
-        );
-
-        drop(permission_guard);
-        wait_for_status(
-            &manager,
-            INTERACTIVE_THREAD_ID,
-            ThreadStatus::Active {
                 active_flags: vec![ThreadActiveFlag::WaitingOnUserInput],
             },
-        )
-        .await;
+        );
 
         drop(user_input_guard);
         wait_for_status(
@@ -632,8 +607,8 @@ mod tests {
 
         assert_eq!(manager.running_turn_count().await, 0);
 
-        let _permission_guard = manager
-            .note_permission_requested(INTERACTIVE_THREAD_ID)
+        let _user_input_guard = manager
+            .note_user_input_requested(INTERACTIVE_THREAD_ID)
             .await;
         assert_eq!(manager.running_turn_count().await, 0);
 

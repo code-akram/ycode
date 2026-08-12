@@ -391,63 +391,6 @@ mod tests {
     use codex_utils_absolute_path::AbsolutePathBuf;
     use codex_utils_path_uri::PathUri;
     use pretty_assertions::assert_eq;
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn requirements_api_includes_allow_managed_hooks_only() {
-        let mapped = map_requirements_toml_to_api(ConfigRequirementsToml {
-            allow_managed_hooks_only: Some(true),
-            ..ConfigRequirementsToml::default()
-        });
-
-        assert_eq!(mapped.allow_managed_hooks_only, Some(true));
-        assert_eq!(mapped.hooks, None);
-    }
-
-    #[test]
-    fn requirements_api_includes_permission_default_and_allowlist() {
-        let mapped = map_requirements_toml_to_api(ConfigRequirementsToml {
-            allowed_permission_profiles: Some(BTreeMap::from([
-                ("managed-build".to_string(), false),
-                ("managed-standard".to_string(), true),
-            ])),
-            default_permissions: Some("managed-standard".to_string()),
-            ..ConfigRequirementsToml::default()
-        });
-
-        assert_eq!(
-            mapped.allowed_permission_profiles,
-            Some(BTreeMap::from([
-                ("managed-build".to_string(), false),
-                ("managed-standard".to_string(), true),
-            ]))
-        );
-        assert_eq!(
-            mapped.default_permissions,
-            Some("managed-standard".to_string())
-        );
-    }
-
-    #[test]
-    fn requirements_api_includes_allow_appshots() {
-        let mapped = map_requirements_toml_to_api(ConfigRequirementsToml {
-            allow_appshots: Some(false),
-            ..ConfigRequirementsToml::default()
-        });
-
-        assert_eq!(mapped.allow_appshots, Some(false));
-        assert_eq!(mapped.hooks, None);
-    }
-
-    #[test]
-    fn requirements_api_includes_allow_remote_control() {
-        let mapped = map_requirements_toml_to_api(ConfigRequirementsToml {
-            allow_remote_control: Some(false),
-            ..ConfigRequirementsToml::default()
-        });
-
-        assert_eq!(mapped.allow_remote_control, Some(false));
-    }
 
     #[test]
     fn requirements_api_includes_new_thread_model_defaults() {

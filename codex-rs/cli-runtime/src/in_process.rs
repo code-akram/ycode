@@ -746,8 +746,6 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
 mod tests {
     use super::*;
     use codex_cli_protocol::ClientInfo;
-    use codex_cli_protocol::ConfigRequirementsReadResponse;
-    use codex_cli_protocol::ExternalAgentConfigImportCompletedNotification;
     use codex_cli_protocol::SessionSource as ApiSessionSource;
     use codex_cli_protocol::ThreadStartParams;
     use codex_cli_protocol::ThreadStartResponse;
@@ -819,27 +817,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn in_process_start_initializes_and_handles_typed_v2_request() {
-        let client = start_test_client(SessionSource::Cli).await;
-        let response = client
-            .request(ClientRequest::ConfigRequirementsRead {
-                request_id: RequestId::Integer(1),
-                params: None,
-            })
-            .await
-            .expect("request transport should work")
-            .expect("request should succeed");
-        assert!(response.is_object());
-
-        let _parsed: ConfigRequirementsReadResponse =
-            serde_json::from_value(response).expect("response should match v2 schema");
-        client
-            .shutdown()
-            .await
-            .expect("in-process runtime should shutdown cleanly");
-    }
-
-    #[tokio::test]
     async fn in_process_start_uses_requested_session_source_for_thread_start() {
         for (requested_source, expected_source) in [
             (SessionSource::Cli, ApiSessionSource::Cli),
@@ -873,9 +850,12 @@ mod tests {
             start_test_client_with_capacity(SessionSource::Cli, /*channel_capacity*/ 0).await;
         let response = loop {
             match client
-                .request(ClientRequest::ConfigRequirementsRead {
+                .request(ClientRequest::ThreadStart {
                     request_id: RequestId::Integer(4),
-                    params: None,
+                    params: ThreadStartParams {
+                        ephemeral: Some(true),
+                        ..ThreadStartParams::default()
+                    },
                 })
                 .await
             {
@@ -886,8 +866,8 @@ mod tests {
                 Err(err) => panic!("request transport should work: {err}"),
             }
         };
-        let _parsed: ConfigRequirementsReadResponse =
-            serde_json::from_value(response).expect("response should match v2 schema");
+        let _parsed: ThreadStartResponse =
+            serde_json::from_value(response).expect("thread/start response should parse");
         client
             .shutdown()
             .await
@@ -963,14 +943,6 @@ mod tests {
                     duration_ms: None,
                 },
             })
-        ));
-        assert!(server_notification_requires_delivery(
-            &ServerNotification::ExternalAgentConfigImportCompleted(
-                ExternalAgentConfigImportCompletedNotification {
-                    import_id: "import".to_string(),
-                    item_type_results: Vec::new(),
-                },
-            )
         ));
     }
 }

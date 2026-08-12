@@ -113,24 +113,11 @@ mod thread_processor_behavior_tests {
     use codex_cli_protocol::ServerRequestPayload;
     use codex_cli_protocol::ThreadItem;
     use codex_cli_protocol::ToolRequestUserInputParams;
-    use codex_config::CloudConfigBundleLoader;
-    use codex_config::LoaderOverrides;
-    use codex_config::SessionThreadConfig;
-    use codex_config::StaticThreadConfigLoader;
-    use codex_config::ThreadConfigSource;
-    use codex_model_provider_info::ModelProviderInfo;
     use codex_protocol::ThreadId;
     use codex_protocol::config_types::AgentSettings;
     use codex_protocol::config_types::Settings;
-    use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
-    use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
-    use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
     use codex_protocol::models::PermissionProfile;
     use codex_protocol::openai_models::ReasoningEffort;
-    use codex_protocol::permissions::FileSystemAccessMode;
-    use codex_protocol::permissions::FileSystemPath;
-    use codex_protocol::permissions::FileSystemSandboxEntry;
-    use codex_protocol::permissions::NetworkSandboxPolicy;
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::SubAgentSource;
@@ -142,7 +129,6 @@ mod thread_processor_behavior_tests {
     use pretty_assertions::assert_eq;
     use serde_json::Value;
     use serde_json::json;
-    use std::collections::BTreeMap;
     use std::path::PathBuf;
     use std::sync::Arc;
     use tempfile::TempDir;
@@ -494,111 +480,6 @@ mod thread_processor_behavior_tests {
     }
 
     #[test]
-    fn requested_permissions_trust_project_uses_permission_profile_intent() {
-        let cwd = test_path_buf("/tmp/project").abs();
-        let full_access_profile = codex_protocol::models::PermissionProfile::Disabled;
-        let workspace_write_profile = codex_protocol::models::PermissionProfile::workspace_write();
-        let read_only_profile = codex_protocol::models::PermissionProfile::read_only();
-        let split_write_profile =
-            codex_protocol::models::PermissionProfile::from_runtime_permissions(
-                &FileSystemSandboxPolicy::restricted(vec![
-                    FileSystemSandboxEntry {
-                        path: FileSystemPath::Path { path: cwd.clone() },
-                        access: FileSystemAccessMode::Write,
-                        missing_path_behavior: None,
-                    },
-                    FileSystemSandboxEntry {
-                        path: FileSystemPath::GlobPattern {
-                            pattern: "/tmp/project/**/*.env".to_string(),
-                        },
-                        access: FileSystemAccessMode::Deny,
-                        missing_path_behavior: None,
-                    },
-                ]),
-                NetworkSandboxPolicy::Restricted,
-            );
-
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                permission_profile: Some(full_access_profile),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                permission_profile: Some(workspace_write_profile),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                permission_profile: Some(split_write_profile),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                default_permissions: Some(BUILT_IN_PERMISSION_PROFILE_WORKSPACE.to_string()),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(requested_permissions_trust_project(
-            &ConfigOverrides {
-                default_permissions: Some(
-                    BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS.to_string()
-                ),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(!requested_permissions_trust_project(
-            &ConfigOverrides {
-                permission_profile: Some(read_only_profile),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-        assert!(!requested_permissions_trust_project(
-            &ConfigOverrides {
-                default_permissions: Some(BUILT_IN_PERMISSION_PROFILE_READ_ONLY.to_string()),
-                ..Default::default()
-            },
-            cwd.as_path()
-        ));
-    }
-
-    #[test]
-    fn config_load_error_marks_cloud_config_bundle_failures_for_relogin() {
-        let err = std::io::Error::other(CloudConfigBundleLoadError::new(
-            CloudConfigBundleLoadErrorCode::Auth,
-            Some(401),
-            "Your authentication session could not be refreshed automatically. Please log out and sign in again.",
-        ));
-
-        let error = config_load_error(&err);
-
-        assert_eq!(
-            error.data,
-            Some(json!({
-                "reason": "cloudConfigBundle",
-                "errorCode": "Auth",
-                "action": "relogin",
-                "statusCode": 401,
-                "detail": "Your authentication session could not be refreshed automatically. Please log out and sign in again.",
-            }))
-        );
-        assert!(
-            error.message.contains("failed to load configuration"),
-            "unexpected error message: {}",
-            error.message
-        );
-    }
-
-    #[test]
     fn config_load_error_leaves_non_cloud_config_bundle_failures_unmarked() {
         let err = std::io::Error::other("a local dependency failed to initialize");
 
@@ -613,46 +494,6 @@ mod thread_processor_behavior_tests {
     }
 
     #[test]
-    fn config_load_error_marks_non_auth_cloud_config_bundle_failures_without_relogin() {
-        let err = std::io::Error::other(CloudConfigBundleLoadError::new(
-            CloudConfigBundleLoadErrorCode::RequestFailed,
-            /*status_code*/ None,
-            "Failed to load cloud config bundle (workspace-managed policies).",
-        ));
-
-        let error = config_load_error(&err);
-
-        assert_eq!(
-            error.data,
-            Some(json!({
-                "reason": "cloudConfigBundle",
-                "errorCode": "RequestFailed",
-                "detail": "Failed to load cloud config bundle (workspace-managed policies).",
-            }))
-        );
-    }
-
-    #[test]
-    fn config_load_error_marks_invalid_cloud_config_bundle_failures_without_relogin() {
-        let err = std::io::Error::other(CloudConfigBundleLoadError::new(
-            CloudConfigBundleLoadErrorCode::InvalidBundle,
-            /*status_code*/ None,
-            "invalid cloud config bundle: invalid cloud config fragment Base policy (cfg_123)",
-        ));
-
-        let error = config_load_error(&err);
-
-        assert_eq!(
-            error.data,
-            Some(json!({
-                "reason": "cloudConfigBundle",
-                "errorCode": "InvalidBundle",
-                "detail": "invalid cloud config bundle: invalid cloud config fragment Base policy (cfg_123)",
-            }))
-        );
-    }
-
-    #[test]
     fn collect_resume_override_mismatches_includes_service_tier() {
         let cwd = test_path_buf("/tmp").abs();
         let request = ThreadResumeParams {
@@ -663,10 +504,6 @@ mod thread_processor_behavior_tests {
             service_tier: Some(Some("priority".to_string())),
             cwd: None,
             runtime_workspace_roots: None,
-            approval_policy: None,
-            approvals_reviewer: None,
-            sandbox: None,
-            permissions: None,
             config: None,
             base_instructions: None,
             developer_instructions: None,
@@ -721,8 +558,8 @@ mod thread_processor_behavior_tests {
             Utc::now(),
             codex_protocol::protocol::SessionSource::default(),
         );
-        builder.model_provider = Some("mock_provider".to_string());
-        let mut metadata = builder.build("mock_provider");
+        builder.model_provider = Some("openai".to_string());
+        let mut metadata = builder.build("openai");
         metadata.model = model.map(ToString::to_string);
         metadata.reasoning_effort = reasoning_effort;
         Ok(metadata)
@@ -763,10 +600,6 @@ mod thread_processor_behavior_tests {
             Some("gpt-5.1-codex-max".to_string())
         );
         assert_eq!(
-            typesafe_overrides.model_provider,
-            Some("mock_provider".to_string())
-        );
-        assert_eq!(
             request_overrides,
             Some(HashMap::from([(
                 "model_reasoning_effort".to_string(),
@@ -796,7 +629,6 @@ mod thread_processor_behavior_tests {
         );
 
         assert_eq!(typesafe_overrides.model, Some("gpt-5.2-codex".to_string()));
-        assert_eq!(typesafe_overrides.model_provider, None);
         assert_eq!(
             request_overrides,
             Some(HashMap::from([(
@@ -825,7 +657,6 @@ mod thread_processor_behavior_tests {
         );
 
         assert_eq!(typesafe_overrides.model, None);
-        assert_eq!(typesafe_overrides.model_provider, None);
         assert_eq!(
             request_overrides,
             Some(HashMap::from([(
@@ -854,7 +685,6 @@ mod thread_processor_behavior_tests {
         );
 
         assert_eq!(typesafe_overrides.model, None);
-        assert_eq!(typesafe_overrides.model_provider, None);
         assert_eq!(
             request_overrides,
             Some(HashMap::from([(
@@ -879,10 +709,6 @@ mod thread_processor_behavior_tests {
         );
 
         assert_eq!(typesafe_overrides.model, None);
-        assert_eq!(
-            typesafe_overrides.model_provider,
-            Some("mock_provider".to_string())
-        );
         assert_eq!(request_overrides, None);
         Ok(())
     }

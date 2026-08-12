@@ -624,9 +624,6 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::error_code::INVALID_REQUEST_ERROR_CODE;
-    use codex_protocol::config_types::WindowsSandboxLevel;
-    use codex_protocol::models::PermissionProfile;
-    use codex_sandboxing::SandboxType;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     #[cfg(not(target_os = "windows"))]
@@ -660,20 +657,12 @@ mod tests {
                 process_id: Some("proc-100".to_string()),
                 exec_request: ExecRequest::new(
                     vec!["sh".to_string(), "-lc".to_string(), "sleep 30".to_string()],
-                    cwd.clone(),
+                    cwd.clone().into(),
                     HashMap::new(),
-                    /*network*/ None,
-                    /*network_environment_id*/ None,
                     ExecExpiration::Cancellation(CancellationToken::new()),
                     codex_core::exec::ExecCapturePolicy::ShellTool,
-                    SandboxType::None,
-                    vec![cwd.clone()],
-                    WindowsSandboxLevel::Disabled,
-                    /*windows_sandbox_private_desktop*/ false,
-                    PermissionProfile::read_only(),
                     /*arg0*/ None,
                 ),
-                started_network_proxy: None,
                 tty: false,
                 stream_stdin: false,
                 stream_stdout_stderr: false,
@@ -748,23 +737,15 @@ mod tests {
                 process_id: Some("proc-101".to_string()),
                 exec_request: ExecRequest::new(
                     vec!["sh".to_string(), "-lc".to_string(), "sleep 30".to_string()],
-                    cwd.clone(),
+                    cwd.into(),
                     HashMap::new(),
-                    /*network*/ None,
-                    /*network_environment_id*/ None,
                     ExecExpiration::TimeoutOrCancellation {
                         timeout: Duration::from_secs(30),
                         cancellation,
                     },
                     codex_core::exec::ExecCapturePolicy::ShellTool,
-                    SandboxType::None,
-                    vec![cwd],
-                    WindowsSandboxLevel::Disabled,
-                    /*windows_sandbox_private_desktop*/ false,
-                    PermissionProfile::read_only(),
                     /*arg0*/ None,
                 ),
-                started_network_proxy: None,
                 tty: false,
                 stream_stdin: false,
                 stream_stdout_stderr: false,

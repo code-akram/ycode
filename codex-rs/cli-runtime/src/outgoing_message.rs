@@ -663,21 +663,15 @@ mod tests {
     use codex_cli_protocol::AccountLoginCompletedNotification;
     use codex_cli_protocol::AccountRateLimitsUpdatedNotification;
     use codex_cli_protocol::AccountUpdatedNotification;
-    use codex_cli_protocol::ApplyPatchApprovalParams;
     use codex_cli_protocol::AuthMode;
-    use codex_cli_protocol::CommandExecutionApprovalDecision;
-    use codex_cli_protocol::CommandExecutionRequestApprovalParams;
     use codex_cli_protocol::ConfigWarningNotification;
     use codex_cli_protocol::DynamicToolCallParams;
-    use codex_cli_protocol::FileChangeRequestApprovalParams;
-    use codex_cli_protocol::GuardianWarningNotification;
     use codex_cli_protocol::ModelRerouteReason;
     use codex_cli_protocol::ModelReroutedNotification;
     use codex_cli_protocol::ModelVerification;
     use codex_cli_protocol::ModelVerificationNotification;
     use codex_cli_protocol::RateLimitSnapshot;
     use codex_cli_protocol::RateLimitWindow;
-    use codex_cli_protocol::ServerResponse;
     use codex_cli_protocol::ToolRequestUserInputParams;
     use codex_cli_protocol::TurnModerationMetadataNotification;
     use codex_protocol::ThreadId;
@@ -840,27 +834,6 @@ mod tests {
     }
 
     #[test]
-    fn verify_guardian_warning_notification_serialization() {
-        let notification = ServerNotification::GuardianWarning(GuardianWarningNotification {
-            thread_id: "thread-1".to_string(),
-            message: "Automatic approval review denied the requested action.".to_string(),
-        });
-
-        assert_eq!(
-            json!({
-                "method": "guardianWarning",
-                "params": {
-                    "threadId": "thread-1",
-                    "message": "Automatic approval review denied the requested action.",
-                },
-            }),
-            serde_json::to_value(notification)
-                .expect("ensure the notification serializes correctly"),
-            "ensure the notification serializes correctly"
-        );
-    }
-
-    #[test]
     fn verify_model_rerouted_notification_serialization() {
         let notification = ServerNotification::ModelRerouted(ModelReroutedNotification {
             thread_id: "thread-1".to_string(),
@@ -934,48 +907,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn server_request_response_from_result_decodes_typed_response() {
-        let request = ServerRequest::CommandExecutionRequestApproval {
-            request_id: RequestId::Integer(7),
-            params: CommandExecutionRequestApprovalParams {
-                thread_id: "thread-1".to_string(),
-                turn_id: "turn-1".to_string(),
-                item_id: "item-1".to_string(),
-                started_at_ms: 0,
-                approval_id: None,
-                environment_id: None,
-                reason: None,
-                network_approval_context: None,
-                command: Some("echo hi".to_string()),
-                cwd: None,
-                command_actions: None,
-                additional_permissions: None,
-                proposed_execpolicy_amendment: None,
-                proposed_network_policy_amendments: None,
-                available_decisions: None,
-            },
-        };
-
-        let response = request
-            .response_from_result(json!({
-                "decision": "acceptForSession",
-            }))
-            .expect("decode typed server response");
-
-        let ServerResponse::CommandExecutionRequestApproval {
-            request_id,
-            response,
-        } = response
-        else {
-            panic!("expected command execution approval response");
-        };
-        assert_eq!(request_id, RequestId::Integer(7));
-        assert_eq!(
-            response.decision,
-            CommandExecutionApprovalDecision::AcceptForSession
-        );
-    }
     #[tokio::test]
     async fn send_response_routes_to_target_connection() {
         let (tx, mut rx) = mpsc::channel::<OutgoingEnvelope>(4);
@@ -1206,13 +1137,14 @@ mod tests {
         let outgoing = OutgoingMessageSender::new(tx);
 
         let (request_id, wait_for_result) = outgoing
-            .send_request(ServerRequestPayload::ApplyPatchApproval(
-                ApplyPatchApprovalParams {
-                    conversation_id: ThreadId::new(),
+            .send_request(ServerRequestPayload::DynamicToolCall(
+                DynamicToolCallParams {
+                    thread_id: ThreadId::new().to_string(),
+                    turn_id: "turn-1".to_string(),
                     call_id: "call-id".to_string(),
-                    file_changes: HashMap::new(),
-                    reason: None,
-                    grant_root: None,
+                    namespace: None,
+                    tool: "tool".to_string(),
+                    arguments: json!({}),
                 },
             ))
             .await;
@@ -1266,14 +1198,14 @@ mod tests {
             ))
             .await;
         let (second_request_id, _second_waiter) = thread_outgoing
-            .send_request(ServerRequestPayload::FileChangeRequestApproval(
-                FileChangeRequestApprovalParams {
+            .send_request(ServerRequestPayload::DynamicToolCall(
+                DynamicToolCallParams {
                     thread_id: thread_id.to_string(),
                     turn_id: "turn-1".to_string(),
-                    item_id: "call-2".to_string(),
-                    started_at_ms: 0,
-                    reason: None,
-                    grant_root: None,
+                    call_id: "call-2".to_string(),
+                    namespace: None,
+                    tool: "tool".to_string(),
+                    arguments: json!({}),
                 },
             ))
             .await;
