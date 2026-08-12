@@ -2,12 +2,12 @@
 source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
-"                                                            "
-"› Ask Codex to do anything                                  "
-"                                                            "
+"Ask anything... "Fix a TODO in the codebase"                "
 "                                                            "
 "                                                            "
 "                                                            "
 "                                                            "
 "                                                            "
-"  ? for shortcuts                        100% context left  "
+"                                                            "
+"                                                            "
+"  ? for shortcuts           100% context left · / commands  "

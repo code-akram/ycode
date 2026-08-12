@@ -377,6 +377,9 @@ async fn unified_exec_end_after_task_complete_is_suppressed() {
     chat.on_task_complete(
         /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
     );
+    let completed_turn = drain_insert_history(&mut rx);
+    assert_eq!(completed_turn.len(), 1);
+    assert!(lines_to_single_string(&completed_turn[0]).contains("▣ Build · gpt-5.6-sol · 0s"));
     end_exec(&mut chat, begin, "", "", /*exit_code*/ 0);
 
     let cells = drain_insert_history(&mut rx);
@@ -393,6 +396,9 @@ async fn unified_exec_interaction_after_task_complete_is_suppressed() {
     chat.on_task_complete(
         /*last_agent_message*/ None, /*duration_ms*/ None, /*from_replay*/ false,
     );
+    let completed_turn = drain_insert_history(&mut rx);
+    assert_eq!(completed_turn.len(), 1);
+    assert!(lines_to_single_string(&completed_turn[0]).contains("▣ Build · gpt-5.6-sol · 0s"));
 
     terminal_interaction(&mut chat, "call-1", "proc-1", "ls\n");
 
@@ -473,8 +479,8 @@ async fn final_worked_for_uses_cumulative_turn_duration_snapshot() {
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
     assert!(
-        combined.contains("Worked for 2m 05s"),
-        "expected final separator to use cumulative turn duration, got:\n{combined}"
+        combined.contains("▣ Build · gpt-5.6-sol · 2m 05s"),
+        "expected Mini turn summary to use cumulative turn duration, got:\n{combined}"
     );
     assert_chatwidget_snapshot!("final_worked_for_uses_cumulative_turn_duration", combined);
 }

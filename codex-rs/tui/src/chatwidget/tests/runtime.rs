@@ -536,7 +536,9 @@ async fn live_cli_runtime_turn_completed_clears_working_status_after_answer_item
         /*replay_kind*/ None,
     );
 
-    assert!(drain_insert_history(&mut rx).is_empty());
+    let completed_turn = drain_insert_history(&mut rx);
+    assert_eq!(completed_turn.len(), 1);
+    assert!(lines_to_single_string(&completed_turn[0]).contains("▣ Build · gpt-5.6-sol · 0s"));
     assert!(!chat.bottom_pane.is_task_running());
     assert!(chat.bottom_pane.status_widget().is_none());
     assert_eq!(

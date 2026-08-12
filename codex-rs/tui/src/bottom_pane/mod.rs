@@ -1434,7 +1434,9 @@ impl BottomPane {
             let mut flex = FlexRenderable::new();
             // Avoid double-surfacing the same summary and avoid adding an extra
             // row while the status line is already visible.
-            if self.status.is_none() && !self.unified_exec_footer.is_empty() {
+            let unified_exec_footer_is_separate =
+                self.status.is_none() && !self.unified_exec_footer.is_empty();
+            if unified_exec_footer_is_separate {
                 flex.push(
                     /*flex*/ 0,
                     RenderableItem::Borrowed(&self.unified_exec_footer),
@@ -1443,7 +1445,7 @@ impl BottomPane {
             let has_pending_input = !self.pending_input_preview.queued_messages.is_empty()
                 || !self.pending_input_preview.pending_steers.is_empty()
                 || !self.pending_input_preview.rejected_steers.is_empty();
-            let has_status_or_footer = !self.unified_exec_footer.is_empty();
+            let has_status_or_footer = unified_exec_footer_is_separate;
             let has_inline_previews = has_pending_input;
             if has_inline_previews && has_status_or_footer {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
@@ -1978,12 +1980,13 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Codex to do anything".to_string(),
+            placeholder_text: "Ask anything... \"Fix a TODO in the codebase\"".to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
             skills: Some(Vec::new()),
         });
 
+        pane.dismiss_initial_placeholder();
         pane.set_task_running(/*running*/ true);
         pane.update_status(
             "Working".to_string(),
@@ -2015,12 +2018,13 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Codex to do anything".to_string(),
+            placeholder_text: "Ask anything... \"Fix a TODO in the codebase\"".to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
             skills: Some(Vec::new()),
         });
 
+        pane.dismiss_initial_placeholder();
         pane.set_task_running(/*running*/ true);
         pane.set_pending_input_preview(
             vec!["Queued follow-up question".to_string()],
@@ -2047,12 +2051,13 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Codex to do anything".to_string(),
+            placeholder_text: "Ask anything... \"Fix a TODO in the codebase\"".to_string(),
             disable_paste_burst: false,
             animations_enabled: true,
             skills: Some(Vec::new()),
         });
 
+        pane.dismiss_initial_placeholder();
         pane.set_task_running(/*running*/ true);
         pane.set_pending_input_preview(
             vec!["Queued follow-up question".to_string()],

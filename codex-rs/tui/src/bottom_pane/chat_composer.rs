@@ -4633,6 +4633,8 @@ mod tests {
     use tokio::sync::mpsc::UnboundedReceiver;
     use tokio::sync::mpsc::unbounded_channel;
 
+    const MINI_PLACEHOLDER: &str = "Ask anything... \"Fix a TODO in the codebase\"";
+
     pub(super) fn new_test_composer() -> (ChatComposer, UnboundedReceiver<AppEvent>) {
         let (tx, rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
@@ -4641,7 +4643,7 @@ mod tests {
                 /*has_input_focus*/ true,
                 sender,
                 /*enhanced_keys_supported*/ false,
-                "Ask Codex to do anything".to_string(),
+                MINI_PLACEHOLDER.to_string(),
                 /*disable_paste_burst*/ false,
             ),
             rx,
@@ -4734,18 +4736,20 @@ mod tests {
     }
 
     #[test]
-    fn footer_hint_row_is_separated_from_composer() {
+    fn footer_hint_uses_the_single_bottom_rail() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
         let composer = ChatComposer::new(
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            MINI_PLACEHOLDER.to_string(),
             /*disable_paste_burst*/ false,
         );
 
-        let area = Rect::new(0, 0, 40, 6);
+        let height = composer.desired_height(/*width*/ 40);
+        assert_eq!(height, 2, "one input row plus one status rail");
+        let area = Rect::new(0, 0, 40, height);
         let mut buf = Buffer::empty(area);
         composer.render(area, &mut buf);
 
@@ -4760,7 +4764,7 @@ mod tests {
         let mut hint_row: Option<(u16, String)> = None;
         for y in 0..area.height {
             let row = row_to_string(y);
-            if row.contains("? for shortcuts") {
+            if row.contains("/ commands") {
                 hint_row = Some((y, row));
                 break;
             }
@@ -4774,17 +4778,7 @@ mod tests {
             "hint row should occupy the bottom line: {hint_row_contents:?}",
         );
 
-        assert!(
-            hint_row_idx > 0,
-            "expected a spacing row above the footer hints",
-        );
-
-        let spacing_row = row_to_string(hint_row_idx - 1);
-        assert_eq!(
-            spacing_row.trim(),
-            "",
-            "expected blank spacing row above hints but saw: {spacing_row:?}",
-        );
+        assert_eq!(hint_row_idx, 1, "footer must share the only bottom rail");
     }
 
     #[test]
@@ -4882,7 +4876,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             enhanced_keys_supported,
-            "Ask Codex to do anything".to_string(),
+            MINI_PLACEHOLDER.to_string(),
             /*disable_paste_burst*/ false,
         );
         setup(&mut composer);
@@ -5139,7 +5133,7 @@ mod tests {
         ))));
         composer.set_status_line_hyperlink(Some(url.to_string()));
 
-        let area = Rect::new(0, 0, 40, 6);
+        let area = Rect::new(0, 0, 100, 6);
         let mut buf = Buffer::empty(area);
         composer.render(area, &mut buf);
 
@@ -7853,7 +7847,7 @@ mod tests {
                 /*has_input_focus*/ true,
                 sender.clone(),
                 /*enhanced_keys_supported*/ false,
-                "Ask Codex to do anything".to_string(),
+                MINI_PLACEHOLDER.to_string(),
                 /*disable_paste_burst*/ false,
             );
 

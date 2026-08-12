@@ -2042,7 +2042,7 @@ async fn repeated_generic_warning_is_not_hidden() {
 }
 
 #[tokio::test]
-async fn fixed_status_line_shows_model_reasoning_service_tier_and_cwd() {
+async fn mini_status_rail_shows_model_reasoning_and_service_tier() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     set_fast_mode_test_catalog(&mut chat);
     assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
@@ -2053,20 +2053,16 @@ async fn fixed_status_line_shows_model_reasoning_service_tier_and_cwd() {
     set_fast_mode_test_catalog(&mut chat);
     assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
     chat.refresh_status_line();
-    let test_cwd = test_path_display("/tmp/project");
-
-    assert_eq!(
-        status_line_text(&chat),
-        Some(format!("gpt-5.4 xhigh fast · {test_cwd}"))
-    );
+    let rendered = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(rendered.contains("gpt-5.4 xhigh fast"));
+    assert!(!rendered.contains(&test_path_display("/tmp/project")));
 
     chat.set_model("gpt-5.2");
     chat.refresh_status_line();
 
-    assert_eq!(
-        status_line_text(&chat),
-        Some(format!("gpt-5.2 xhigh · {test_cwd}"))
-    );
+    let rendered = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(rendered.contains("gpt-5.2 xhigh"));
+    assert!(!rendered.contains("fast"));
 }
 
 #[tokio::test]

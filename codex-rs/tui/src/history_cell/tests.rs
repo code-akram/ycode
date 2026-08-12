@@ -363,7 +363,7 @@ fn error_event_oversized_input_snapshot() {
 #[test]
 fn empty_agent_message_cell_transcript() {
     let cell = AgentMessageCell::new(vec![Line::default()], /*is_first_line*/ false);
-    assert_eq!(cell.transcript_lines(/*width*/ 80), vec![Line::from("  ")]);
+    assert_eq!(cell.transcript_lines(/*width*/ 80), vec![Line::default()]);
     assert_eq!(cell.desired_transcript_height(/*width*/ 80), 1);
 }
 
@@ -1553,10 +1553,9 @@ fn agent_markdown_cell_renders_source_at_different_widths() {
     let cell = AgentMarkdownCell::new(source.to_string(), &test_cwd());
 
     let lines_80 = render_lines(&cell.display_lines(/*width*/ 80));
-    assert!(
-        lines_80.first().is_some_and(|line| line.starts_with("• ")),
-        "first line should start with bullet prefix: {:?}",
-        lines_80[0]
+    assert_eq!(
+        lines_80.first().map(String::as_str),
+        Some("A long agent message that should wrap differently when the terminal width")
     );
 
     let lines_32 = render_lines(&cell.display_lines(/*width*/ 32));
@@ -1577,7 +1576,7 @@ fn agent_markdown_cell_does_not_split_words_after_inline_markdown() {
         "expected wrapping to stop before 'strikethrough': {lines:?}",
     );
     assert!(
-        lines[1].starts_with("  strikethrough,"),
+        lines[1].starts_with("strikethrough,"),
         "expected the next line to resume with the full word: {lines:?}",
     );
 }
@@ -1600,19 +1599,20 @@ fn streamed_agent_list_paragraph_preserves_item_indent_when_wrapped() {
         lines
             .iter()
             .filter(|line| line.contains("paired output") || line.contains("suggestions."))
-            .all(|line| line.starts_with("     ")),
-        "expected all wrapped paragraph rows to retain the assistant gutter and list indent: {lines:?}",
+            .all(|line| line.starts_with("   ")),
+        "expected wrapped paragraph rows to retain the list indent without an assistant gutter: {lines:?}",
     );
     insta::assert_snapshot!(lines.join("\n"));
 }
 
 #[test]
-fn agent_markdown_cell_narrow_width_shows_prefix_only() {
+fn agent_markdown_cell_narrow_width_wraps_without_gutter() {
     let source = "narrow width coverage\n";
     let cell = AgentMarkdownCell::new(source.to_string(), &test_cwd());
 
     let lines = render_lines(&cell.display_lines(/*width*/ 2));
-    assert_eq!(lines, vec!["• ".to_string()]);
+    assert_eq!(lines.concat(), "narrowwidthcoverage");
+    assert!(lines.iter().all(|line| line.chars().count() <= 2));
 }
 
 #[test]

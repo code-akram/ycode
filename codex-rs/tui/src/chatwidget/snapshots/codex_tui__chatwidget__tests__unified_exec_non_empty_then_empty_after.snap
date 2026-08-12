@@ -1,8 +1,10 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/exec_flow.rs
 expression: combined
 ---
 ↳ Interacted with background terminal · just fix
   └ pwd
 
 • Waited for background terminal · just fix
+
+▣ Build · gpt-5.6-sol · 0s
