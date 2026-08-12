@@ -4,23 +4,24 @@ use std::path::PathBuf;
 
 /// Returns the path to the Codex configuration directory, which can be
 /// specified by the `CODEX_HOME` environment variable. If not set, defaults to
-/// `~/.codex`.
+/// `~/.ycode`.
 ///
 /// - If `CODEX_HOME` is set, the value must exist and be a directory. The
 ///   value will be canonicalized and this function will Err otherwise.
 /// - If `CODEX_HOME` is not set, this function does not verify that the
 ///   directory exists.
 pub fn find_codex_home() -> std::io::Result<AbsolutePathBuf> {
-    let codex_home_env = std::env::var("CODEX_HOME")
-        .ok()
-        .filter(|val| !val.is_empty());
-    find_codex_home_from_env(codex_home_env.as_deref())
+    let codex_home_env = std::env::var("CODEX_HOME").ok();
+    find_codex_home_from_env(codex_home_env.as_deref(), home_dir())
 }
 
-fn find_codex_home_from_env(codex_home_env: Option<&str>) -> std::io::Result<AbsolutePathBuf> {
+fn find_codex_home_from_env(
+    codex_home_env: Option<&str>,
+    default_home_dir: Option<PathBuf>,
+) -> std::io::Result<AbsolutePathBuf> {
     // Honor the `CODEX_HOME` environment variable when it is set to allow users
     // (and tests) to override the default location.
-    match codex_home_env {
+    match codex_home_env.filter(|val| !val.is_empty()) {
         Some(val) => {
             let path = PathBuf::from(val);
             let metadata = std::fs::metadata(&path).map_err(|err| match err.kind() {
@@ -50,13 +51,13 @@ fn find_codex_home_from_env(codex_home_env: Option<&str>) -> std::io::Result<Abs
             }
         }
         None => {
-            let mut p = home_dir().ok_or_else(|| {
+            let mut p = default_home_dir.ok_or_else(|| {
                 std::io::Error::new(
                     std::io::ErrorKind::NotFound,
                     "Could not find home directory",
                 )
             })?;
-            p.push(".codex");
+            p.push(".ycode");
             AbsolutePathBuf::from_absolute_path(p)
         }
     }
@@ -66,7 +67,6 @@ fn find_codex_home_from_env(codex_home_env: Option<&str>) -> std::io::Result<Abs
 mod tests {
     use super::find_codex_home_from_env;
     use codex_utils_absolute_path::AbsolutePathBuf;
-    use dirs::home_dir;
     use pretty_assertions::assert_eq;
     use std::fs;
     use std::io::ErrorKind;
@@ -80,7 +80,8 @@ mod tests {
             .to_str()
             .expect("missing codex home path should be valid utf-8");
 
-        let err = find_codex_home_from_env(Some(missing_str)).expect_err("missing CODEX_HOME");
+        let err =
+            find_codex_home_from_env(Some(missing_str), None).expect_err("missing CODEX_HOME");
         assert_eq!(err.kind(), ErrorKind::NotFound);
         assert!(
             err.to_string().contains("CODEX_HOME"),
@@ -97,7 +98,7 @@ mod tests {
             .to_str()
             .expect("file codex home path should be valid utf-8");
 
-        let err = find_codex_home_from_env(Some(file_str)).expect_err("file CODEX_HOME");
+        let err = find_codex_home_from_env(Some(file_str), None).expect_err("file CODEX_HOME");
         assert_eq!(err.kind(), ErrorKind::InvalidInput);
         assert!(
             err.to_string().contains("not a directory"),
@@ -108,12 +109,15 @@ mod tests {
     #[test]
     fn find_codex_home_env_valid_directory_canonicalizes() {
         let temp_home = TempDir::new().expect("temp home");
+        let default_home = TempDir::new().expect("default temp home");
         let temp_str = temp_home
             .path()
             .to_str()
             .expect("temp codex home path should be valid utf-8");
 
-        let resolved = find_codex_home_from_env(Some(temp_str)).expect("valid CODEX_HOME");
+        let resolved =
+            find_codex_home_from_env(Some(temp_str), Some(default_home.path().to_path_buf()))
+                .expect("valid CODEX_HOME");
         let expected = temp_home
             .path()
             .canonicalize()
@@ -123,11 +127,24 @@ mod tests {
     }
 
     #[test]
-    fn find_codex_home_without_env_uses_default_home_dir() {
-        let resolved =
-            find_codex_home_from_env(/*codex_home_env*/ None).expect("default CODEX_HOME");
-        let mut expected = home_dir().expect("home dir");
-        expected.push(".codex");
+    fn find_codex_home_without_env_uses_ycode_under_supplied_home() {
+        let temp_home = TempDir::new().expect("temp home");
+        let resolved = find_codex_home_from_env(
+            /*codex_home_env*/ None,
+            Some(temp_home.path().to_path_buf()),
+        )
+        .expect("default CODEX_HOME");
+        let expected = temp_home.path().join(".ycode");
+        let expected = AbsolutePathBuf::from_absolute_path(expected).expect("absolute home");
+        assert_eq!(resolved, expected);
+    }
+
+    #[test]
+    fn find_codex_home_with_empty_env_uses_ycode_under_supplied_home() {
+        let temp_home = TempDir::new().expect("temp home");
+        let resolved = find_codex_home_from_env(Some(""), Some(temp_home.path().to_path_buf()))
+            .expect("default CODEX_HOME");
+        let expected = temp_home.path().join(".ycode");
         let expected = AbsolutePathBuf::from_absolute_path(expected).expect("absolute home");
         assert_eq!(resolved, expected);
     }

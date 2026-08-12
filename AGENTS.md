@@ -36,9 +36,9 @@
   ChatGPT endpoints and must not reintroduce provider selection, custom base
   URLs, or compatibility transports.
 - Make no compatibility promise for legacy Codex configuration fields,
-  deprecated CLI aliases, or migration code. Temporarily preserve the existing
-  authentication credential location and format. Preserve other configuration
-  until its dedicated cleanup.
+  deprecated CLI aliases, or migration code. Use `~/.ycode/auth.json` as the
+  default authentication credential location and preserve its existing JSON
+  format. Preserve other configuration until its dedicated cleanup.
 - Plan mode and dedicated code-review mode are later subtraction targets. Main
   and sub-agents will ultimately run with full access; native multi-agent
   collaboration remains protected.
@@ -63,15 +63,17 @@ following without direct user approval for the specific change:
   path;
 - authentication token acquisition, storage, and refresh;
 - ChatGPT account, session, entitlement, and model-access handling;
-- the existing ChatGPT credential location and format; or
+- the default ChatGPT credential location (`~/.ycode/auth.json`) and existing
+  JSON format; or
 - official OpenAI backend/client bindings required by either protected
   first-party authentication path.
 
-Authentication should ultimately be file-only. Temporarily preserve the
-existing Codex credential path and JSON format and the working ChatGPT login;
-migrate deliberately later to `~/.ycode/auth.json`. Keychain and keyring storage
-are later subtraction targets. OpenAI API keys must come only from the
-environment and must not be persisted.
+Authentication should ultimately be file-only. Use `~/.ycode/auth.json` by
+default while preserving `CODEX_HOME` as the explicit compatibility and test
+override. Do not import or fall back to `~/.codex`. Preserve the existing JSON
+format and working ChatGPT login. Keychain and keyring storage are later
+subtraction targets. OpenAI API keys must come only from the environment and
+must not be persisted.
 
 Third-party login methods, alternate-provider authentication, Azure/compatible
 endpoints, arbitrary proxies, and custom API base URLs are not protected by
