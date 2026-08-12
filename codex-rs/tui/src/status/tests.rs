@@ -33,7 +33,6 @@ use codex_cli_protocol::RateLimitSnapshot;
 use codex_cli_protocol::RateLimitWindow;
 use codex_cli_protocol::SpendControlLimitSnapshot;
 use codex_config::LoaderOverrides;
-use codex_config::types::AuthCredentialsStoreMode;
 use codex_models_manager::test_support::construct_model_info_offline_for_tests;
 use codex_models_manager::test_support::get_model_offline_for_tests;
 use codex_protocol::ThreadId;
@@ -356,13 +355,11 @@ async fn status_snapshot_shows_chatgpt_plan_without_email() {
     let mut config = test_config(&temp_home).await;
     config.model = Some("gpt-5.1-codex-max".to_string());
     config.model_provider_id = "openai".to_string();
-    config.cli_auth_credentials_store_mode = AuthCredentialsStoreMode::File;
     set_workspace_cwd(&mut config, test_path_buf("/workspace/tests").abs());
 
     write_chatgpt_auth(
         temp_home.path(),
         ChatGptAuthFixture::new("access-chatgpt").plan_type("enterprise_cbp_automation"),
-        AuthCredentialsStoreMode::File,
     )
     .expect("write email-less ChatGPT auth");
     let mut cli_runtime = crate::start_embedded_cli_runtime_for_picker(&config)

@@ -242,39 +242,6 @@
       },
       "type": "object"
     },
-    "AuthCredentialsStoreMode": {
-      "description": "Determine where Codex should store CLI auth credentials.",
-      "oneOf": [
-        {
-          "description": "Persist credentials in CODEX_HOME/auth.json.",
-          "enum": [
-            "file"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Persist credentials in the keyring. Fail if unavailable.",
-          "enum": [
-            "keyring"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Use keyring when available; otherwise, fall back to a file in CODEX_HOME.",
-          "enum": [
-            "auto"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Store credentials in memory only for the current process.",
-          "enum": [
-            "ephemeral"
-          ],
-          "type": "string"
-        }
-      ]
-    },
     "AutoCompactTokenLimitScope": {
       "description": "Selects which part of the active context is charged against `model_auto_compact_token_limit`.",
       "oneOf": [
@@ -536,9 +503,6 @@
               "$ref": "#/definitions/FeatureToml_for_RolloutBudgetConfigToml"
             },
             "search_tool": {
-              "type": "boolean"
-            },
-            "secret_auth_storage": {
               "type": "boolean"
             },
             "shell_snapshot": {
@@ -3304,15 +3268,6 @@
       "description": "When `true`, checks for Codex updates on startup and surfaces update prompts. Set to `false` only if your Codex updates are centrally managed. Defaults to `true`.",
       "type": "boolean"
     },
-    "cli_auth_credentials_store": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/AuthCredentialsStoreMode"
-        }
-      ],
-      "default": null,
-      "description": "Preferred backend for storing CLI auth credentials. file (default): Use a file in the Codex home directory. keyring: Use an OS-specific keyring service. auto: Use the keyring if available, otherwise use a file."
-    },
     "compact_prompt": {
       "description": "Compact prompt used for history compaction.",
       "type": "string"
@@ -3556,9 +3511,6 @@
           "$ref": "#/definitions/FeatureToml_for_RolloutBudgetConfigToml"
         },
         "search_tool": {
-          "type": "boolean"
-        },
-        "secret_auth_storage": {
           "type": "boolean"
         },
         "shell_snapshot": {

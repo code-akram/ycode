@@ -45,7 +45,6 @@ use codex_login::AuthManager;
 use codex_login::CODEX_ACCESS_TOKEN_ENV_VAR;
 use codex_login::CODEX_API_KEY_ENV_VAR;
 use codex_login::CodexAuth;
-use codex_login::OPENAI_API_KEY_ENV_VAR;
 use codex_login::default_client::create_client_without_request_logging;
 use codex_login::default_client::default_headers;
 use codex_login::load_auth_dot_json;
@@ -1131,31 +1130,20 @@ fn config_toml_details(config: &Config, details: &mut Vec<String>) {
 fn auth_check(config: &Config) -> DoctorCheck {
     let mut details = Vec::new();
     let auth_path = config.codex_home.join("auth.json");
-    details.push(format!(
-        "auth storage mode: {:?}",
-        config.cli_auth_credentials_store_mode
-    ));
+    details.push("auth storage mode: file".to_string());
     details.push(format!("auth file: {}", auth_path.display()));
 
-    let env_auth_vars = [
-        OPENAI_API_KEY_ENV_VAR,
-        CODEX_API_KEY_ENV_VAR,
-        CODEX_ACCESS_TOKEN_ENV_VAR,
-    ]
-    .into_iter()
-    .filter(|name| env_var_present(name))
-    .collect::<Vec<_>>();
+    let env_auth_vars = [CODEX_API_KEY_ENV_VAR, CODEX_ACCESS_TOKEN_ENV_VAR]
+        .into_iter()
+        .filter(|name| env_var_present(name))
+        .collect::<Vec<_>>();
     if !env_auth_vars.is_empty() {
         details.push(format!(
             "auth env vars present: {}",
             env_auth_vars.join(", ")
         ));
     }
-    match load_auth_dot_json(
-        &config.codex_home,
-        config.cli_auth_credentials_store_mode,
-        config.auth_keyring_backend_kind(),
-    ) {
+    match load_auth_dot_json(&config.codex_home) {
         Ok(Some(auth)) => {
             details.push(format!("stored auth mode: {}", stored_auth_mode(&auth)));
             details.push(format!("stored API key: {}", auth.openai_api_key.is_some()));
@@ -1252,14 +1240,9 @@ fn stored_auth_issues(
     let mut issues = Vec::new();
     match stored_auth_mode_value(auth) {
         AuthMode::ApiKey => {
-            let stored_key_present = auth
-                .openai_api_key
-                .as_deref()
-                .is_some_and(|key| !key.trim().is_empty());
-            let env_key_present =
-                env_var_present(OPENAI_API_KEY_ENV_VAR) || env_var_present(CODEX_API_KEY_ENV_VAR);
-            if !stored_key_present && !env_key_present {
-                issues.push("API key auth is missing an API key");
+            let env_key_present = env_var_present(CODEX_API_KEY_ENV_VAR);
+            if !env_key_present {
+                issues.push("API key auth requires CODEX_API_KEY");
             }
         }
         AuthMode::Chatgpt => {
@@ -2255,13 +2238,7 @@ impl ProviderAuthReachabilityMode {
 }
 
 fn provider_reachability_plan(config: &Config) -> ReachabilityPlan {
-    let stored_auth = load_auth_dot_json(
-        &config.codex_home,
-        config.cli_auth_credentials_store_mode,
-        config.auth_keyring_backend_kind(),
-    )
-    .ok()
-    .flatten();
+    let stored_auth = load_auth_dot_json(&config.codex_home).ok().flatten();
     let mode = provider_auth_reachability_mode_from_auth(env_var_present, stored_auth.as_ref());
     provider_reachability_plan_from_parts(
         mode,
@@ -2288,14 +2265,14 @@ fn provider_auth_reachability_mode_from_auth(
     env_var_present: impl Fn(&str) -> bool,
     stored_auth: Option<&AuthDotJson>,
 ) -> ProviderAuthReachabilityMode {
-    if env_var_present(OPENAI_API_KEY_ENV_VAR) || env_var_present(CODEX_API_KEY_ENV_VAR) {
+    if env_var_present(CODEX_API_KEY_ENV_VAR) {
         return ProviderAuthReachabilityMode::ApiKey;
     }
     if env_var_present(CODEX_ACCESS_TOKEN_ENV_VAR) {
         return ProviderAuthReachabilityMode::Chatgpt;
     }
     match stored_auth.map(stored_auth_mode_value) {
-        Some(AuthMode::ApiKey) => ProviderAuthReachabilityMode::ApiKey,
+        Some(AuthMode::ApiKey) => ProviderAuthReachabilityMode::Chatgpt,
         Some(
             AuthMode::Chatgpt
             | AuthMode::ChatgptAuthTokens
@@ -2968,9 +2945,9 @@ mod tests {
 
         assert_eq!(
             stored_auth_issues(&auth, |_| false),
-            vec!["API key auth is missing an API key"]
+            vec!["API key auth requires CODEX_API_KEY"]
         );
-        assert!(stored_auth_issues(&auth, |name| name == OPENAI_API_KEY_ENV_VAR).is_empty());
+        assert!(stored_auth_issues(&auth, |name| name == CODEX_API_KEY_ENV_VAR).is_empty());
     }
 
     #[test]
@@ -3016,7 +2993,7 @@ mod tests {
     }
 
     #[test]
-    fn provider_reachability_mode_uses_api_key_auth() {
+    fn provider_reachability_mode_uses_only_environment_api_key_auth() {
         let api_key_auth = AuthDotJson {
             auth_mode: Some(AuthMode::ApiKey),
             openai_api_key: Some("sk-test".to_string()),
@@ -3028,11 +3005,11 @@ mod tests {
 
         assert_eq!(
             provider_auth_reachability_mode_from_auth(|_| false, Some(&api_key_auth),),
-            ProviderAuthReachabilityMode::ApiKey
+            ProviderAuthReachabilityMode::Chatgpt
         );
         assert_eq!(
             provider_auth_reachability_mode_from_auth(
-                |name| name == OPENAI_API_KEY_ENV_VAR,
+                |name| name == CODEX_API_KEY_ENV_VAR,
                 /*stored_auth*/ None,
             ),
             ProviderAuthReachabilityMode::ApiKey

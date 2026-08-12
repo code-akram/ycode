@@ -6,9 +6,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::DateTime;
 use chrono::Utc;
-use codex_config::types::AuthCredentialsStoreMode;
 use codex_login::AuthDotJson;
-use codex_login::AuthKeyringBackendKind;
 use codex_login::save_auth;
 use codex_login::token_data::TokenData;
 use codex_login::token_data::parse_chatgpt_jwt_claims;
@@ -143,11 +141,7 @@ pub fn encode_id_token(claims: &ChatGptIdTokenClaims) -> Result<String> {
     Ok(format!("{header_b64}.{payload_b64}.{signature_b64}"))
 }
 
-pub fn write_chatgpt_auth(
-    codex_home: &Path,
-    fixture: ChatGptAuthFixture,
-    cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
-) -> Result<()> {
+pub fn write_chatgpt_auth(codex_home: &Path, fixture: ChatGptAuthFixture) -> Result<()> {
     let id_token_raw = encode_id_token(&fixture.claims)?;
     let id_token = parse_chatgpt_jwt_claims(&id_token_raw).context("parse id token")?;
     let tokens = TokenData {
@@ -168,11 +162,5 @@ pub fn write_chatgpt_auth(
         personal_access_token: None,
     };
 
-    save_auth(
-        codex_home,
-        &auth,
-        cli_auth_credentials_store_mode,
-        AuthKeyringBackendKind::default(),
-    )
-    .context("write auth.json")
+    save_auth(codex_home, &auth).context("write auth.json")
 }

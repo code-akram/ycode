@@ -49,7 +49,6 @@ members = [
     "ext/memories",
     "ext/skills",
     "ext/web-search",
-    "keyring-store",
     "file-search",
     "file-watcher",
     "login",
@@ -160,7 +159,6 @@ codex-install-context = { path = "install-context" }
 codex-file-search = { path = "file-search" }
 codex-file-watcher = { path = "file-watcher" }
 codex-git-utils = { path = "git-utils" }
-codex-keyring-store = { path = "keyring-store" }
 codex-login = { path = "login" }
 codex-message-history = { path = "message-history" }
 codex-memories-extension = { path = "ext/memories" }
@@ -212,7 +210,6 @@ codex-v8-poc = { path = "v8-poc" }
 core_test_support = { path = "core/tests/common" }
 
 # External
-age = "0.11.1"
 ansi-to-tui = "8.0.1"
 anyhow = "1"
 arboard = { version = "3", features = ["wayland-data-control"] }
@@ -282,7 +279,6 @@ inventory = "0.3.19"
 itertools = "0.14.0"
 jsonptr = { version = "0.7.1", default-features = false }
 jsonwebtoken = "9.3.1"
-keyring = { version = "3.6", default-features = false }
 lazy_static = "1"
 libc = "0.2.182"
 # Keep SQLx's bundled SQLite on a version containing the WAL-reset corruption fix:

@@ -1,7 +1,7 @@
 //! Optional smoke tests that hit the real OpenAI /v1/responses endpoint. They are `#[ignore]` by
 //! default so CI stays deterministic and free. Developers can run them locally with
 //! `just test -p codex-core --test all --run-ignored only live_cli` provided they set a valid
-//! `OPENAI_API_KEY`.
+//! `CODEX_API_KEY`.
 
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
@@ -10,8 +10,7 @@ use std::process::Stdio;
 use tempfile::TempDir;
 
 fn require_api_key() -> String {
-    std::env::var("OPENAI_API_KEY")
-        .expect("OPENAI_API_KEY env var not set — skip running live tests")
+    std::env::var("CODEX_API_KEY").expect("CODEX_API_KEY env var not set — skip running live tests")
 }
 
 /// Helper that spawns the binary inside a TempDir with minimal flags. Returns (Assert, TempDir).
@@ -34,7 +33,7 @@ fn run_live(prompt: &str) -> (assert_cmd::assert::Assert, TempDir) {
 
     let mut cmd = Command::new(codex_utils_cargo_bin::cargo_bin("codex-rs").unwrap());
     cmd.current_dir(dir.path());
-    cmd.env("OPENAI_API_KEY", require_api_key());
+    cmd.env("CODEX_API_KEY", require_api_key());
     cmd.env("HOME", home.path());
     cmd.env("CODEX_HOME", &codex_home);
 
@@ -117,8 +116,8 @@ fn run_live(prompt: &str) -> (assert_cmd::assert::Assert, TempDir) {
 #[ignore]
 #[test]
 fn live_create_file_hello_txt() {
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        eprintln!("skipping live_create_file_hello_txt – OPENAI_API_KEY not set");
+    if std::env::var("CODEX_API_KEY").is_err() {
+        eprintln!("skipping live_create_file_hello_txt – CODEX_API_KEY not set");
         return;
     }
 
@@ -139,8 +138,8 @@ fn live_create_file_hello_txt() {
 #[ignore]
 #[test]
 fn live_print_working_directory() {
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        eprintln!("skipping live_print_working_directory – OPENAI_API_KEY not set");
+    if std::env::var("CODEX_API_KEY").is_err() {
+        eprintln!("skipping live_print_working_directory – CODEX_API_KEY not set");
         return;
     }
 

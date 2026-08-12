@@ -48,13 +48,6 @@ impl From<ProviderAccount> for Account {
 #[ts(tag = "type")]
 #[ts(export_to = "v2/")]
 pub enum LoginAccountParams {
-    #[serde(rename = "apiKey", rename_all = "camelCase")]
-    #[ts(rename = "apiKey", rename_all = "camelCase")]
-    ApiKey {
-        #[serde(rename = "apiKey")]
-        #[ts(rename = "apiKey")]
-        api_key: String,
-    },
     #[serde(rename = "chatgpt", rename_all = "camelCase")]
     #[ts(rename = "chatgpt", rename_all = "camelCase")]
     Chatgpt {
@@ -104,9 +97,6 @@ pub enum LoginAppBrand {
 #[ts(tag = "type")]
 #[ts(export_to = "v2/")]
 pub enum LoginAccountResponse {
-    #[serde(rename = "apiKey", rename_all = "camelCase")]
-    #[ts(rename = "apiKey", rename_all = "camelCase")]
-    ApiKey {},
     #[serde(rename = "chatgpt", rename_all = "camelCase")]
     #[ts(rename = "chatgpt", rename_all = "camelCase")]
     Chatgpt {

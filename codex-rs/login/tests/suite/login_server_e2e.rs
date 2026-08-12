@@ -8,9 +8,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use base64::Engine;
-use codex_config::types::AuthCredentialsStoreMode;
 use codex_http_client::HttpClientBuilder;
-use codex_login::AuthKeyringBackendKind;
 use codex_login::LoginCallbackResult;
 use codex_login::LoginOnboardingEntrypoint;
 use codex_login::LoginSuccessPage;
@@ -104,7 +102,7 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     let tmp = tempdir()?;
     let codex_home = tmp.path().to_path_buf();
 
-    // Seed auth.json with stale API key + tokens that should be overwritten.
+    // Seed auth.json with stale credentials that should be overwritten.
     let stale_auth = serde_json::json!({
         "OPENAI_API_KEY": "sk-stale",
         "tokens": {
@@ -126,7 +124,6 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
 
     let opts = ServerOptions {
         codex_home: server_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer,
@@ -135,7 +132,6 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
         force_state: Some(state),
         forced_chatgpt_workspace_id: Some(vec![chatgpt_account_id.to_string()]),
         codex_streamlined_login: false,
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
         login_success_page: LoginSuccessPage::Local,
     };
     let server = run_login_server(opts)?;
@@ -177,10 +173,7 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     let auth_path = codex_home.join("auth.json");
     let data = std::fs::read_to_string(&auth_path)?;
     let json: serde_json::Value = serde_json::from_str(&data)?;
-    // The following assert is here because of the old oauth flow that exchanges tokens for an
-    // API key. See obtain_api_key in server.rs for details. Once we remove this old mechanism
-    // from the code, this test should be updated to expect that the API key is no longer present.
-    assert_eq!(json["OPENAI_API_KEY"], "access-123");
+    assert_eq!(json["OPENAI_API_KEY"], serde_json::Value::Null);
     assert_eq!(json["tokens"]["access_token"], "access-123");
     assert_eq!(json["tokens"]["refresh_token"], "refresh-123");
     assert_eq!(json["tokens"]["account_id"], chatgpt_account_id);
@@ -199,7 +192,6 @@ async fn hosted_login_redirects_to_configured_open_app_url() -> Result<()> {
     let tmp = tempdir()?;
     let server = run_login_server(ServerOptions {
         codex_home: tmp.path().to_path_buf(),
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer,
@@ -212,7 +204,6 @@ async fn hosted_login_redirects_to_configured_open_app_url() -> Result<()> {
             url: Url::parse("http://localhost:3000/codex/open-app?source=old")?,
             app_brand: LoginSuccessPageBrand::Chatgpt,
         },
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
     })?;
     let login_port = server.actual_port;
     let client = HttpClientBuilder::new()
@@ -252,7 +243,6 @@ async fn creates_missing_codex_home_dir() -> Result<()> {
     let server_home = codex_home.clone();
     let opts = ServerOptions {
         codex_home: server_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer,
@@ -261,7 +251,6 @@ async fn creates_missing_codex_home_dir() -> Result<()> {
         force_state: Some(state),
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
         login_success_page: LoginSuccessPage::Local,
     };
     let server = run_login_server(opts)?;
@@ -295,7 +284,6 @@ async fn login_server_includes_forced_workspaces_as_one_query_param() -> Result<
 
     let opts = ServerOptions {
         codex_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer,
@@ -307,7 +295,6 @@ async fn login_server_includes_forced_workspaces_as_one_query_param() -> Result<
             WORKSPACE_ID_SECOND_ALLOWED.to_string(),
         ]),
         codex_streamlined_login: false,
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
         login_success_page: LoginSuccessPage::Local,
     };
     let server = run_login_server(opts)?;
@@ -339,7 +326,6 @@ async fn forced_chatgpt_workspace_id_mismatch_blocks_login() -> Result<()> {
 
     let opts = ServerOptions {
         codex_home: codex_home.clone(),
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer,
@@ -348,7 +334,6 @@ async fn forced_chatgpt_workspace_id_mismatch_blocks_login() -> Result<()> {
         force_state: Some(state.clone()),
         forced_chatgpt_workspace_id: Some(vec![WORKSPACE_ID_ALLOWED.to_string()]),
         codex_streamlined_login: false,
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
         login_success_page: LoginSuccessPage::Local,
     };
     let server = run_login_server(opts)?;
@@ -402,7 +387,6 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
 
     let opts = ServerOptions {
         codex_home: codex_home.clone(),
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer,
@@ -411,7 +395,6 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
         force_state: Some(state.clone()),
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
         login_success_page: LoginSuccessPage::Local,
     };
     let server = run_login_server(opts)?;
@@ -473,7 +456,6 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
 
     let opts = ServerOptions {
         codex_home: codex_home.clone(),
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer,
@@ -482,7 +464,6 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
         force_state: Some(state.clone()),
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
         login_success_page: LoginSuccessPage::Local,
     };
     let server = run_login_server(opts)?;
@@ -583,8 +564,6 @@ async fn falls_back_to_registered_fallback_port_when_default_port_is_in_use() ->
         tmp.path().to_path_buf(),
         codex_login::CLIENT_ID.to_string(),
         /*forced_chatgpt_workspace_id*/ None,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
         codex_login::test_support::transport_default_auth_route_config(),
     );
     opts.issuer = issuer;
@@ -623,7 +602,6 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
 
     let first_opts = ServerOptions {
         codex_home: first_codex_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer: issuer.clone(),
@@ -632,7 +610,6 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
         force_state: Some("cancel_state".to_string()),
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
         login_success_page: LoginSuccessPage::Local,
     };
 
@@ -647,7 +624,6 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
 
     let second_opts = ServerOptions {
         codex_home: second_codex_home,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
         client_id: codex_login::CLIENT_ID.to_string(),
         issuer,
@@ -656,7 +632,6 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
         force_state: Some("cancel_state_2".to_string()),
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
-        auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
         login_success_page: LoginSuccessPage::Local,
     };
 

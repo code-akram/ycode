@@ -12,7 +12,6 @@ use codex_core_api::AltScreenMode;
 use codex_core_api::ApprovalsReviewer;
 use codex_core_api::Arg0DispatchPaths;
 use codex_core_api::AskForApproval;
-use codex_core_api::AuthCredentialsStoreMode;
 use codex_core_api::AuthManager;
 use codex_core_api::AutoCompactTokenLimitScope;
 use codex_core_api::CodexHomeUserInstructionsProvider;
@@ -227,7 +226,6 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         cwd: cwd.clone(),
         workspace_roots: vec![cwd],
         workspace_roots_explicit: false,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         project_doc_max_bytes: 32 * 1024,
         project_doc_fallback_filenames: Vec::new(),
         tool_output_token_limit: None,

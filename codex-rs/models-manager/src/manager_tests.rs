@@ -8,8 +8,6 @@ use crate::cache::ModelsCacheFuture;
 use chrono::Utc;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
-use codex_login::AuthCredentialsStoreMode;
-use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::ExternalAuth;
@@ -579,9 +577,7 @@ c2ln",
 
     CodexAuth::from_auth_storage(
         codex_home,
-        AuthCredentialsStoreMode::File,
         /*chatgpt_base_url*/ None,
-        AuthKeyringBackendKind::default(),
         &codex_login::test_support::transport_default_auth_route_config(),
     )
     .await

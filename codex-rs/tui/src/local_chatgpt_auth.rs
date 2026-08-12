@@ -2,8 +2,6 @@
 
 use std::path::Path;
 
-use codex_config::types::AuthCredentialsStoreMode;
-use codex_login::AuthKeyringBackendKind;
 use codex_login::load_auth_dot_json;
 use codex_protocol::auth::AuthMode;
 
@@ -16,16 +14,11 @@ pub(crate) struct LocalChatgptAuth {
 
 pub(crate) fn load_local_chatgpt_auth(
     codex_home: &Path,
-    auth_credentials_store_mode: AuthCredentialsStoreMode,
     forced_chatgpt_workspace_id: Option<&[String]>,
 ) -> Result<LocalChatgptAuth, String> {
-    let auth = load_auth_dot_json(
-        codex_home,
-        auth_credentials_store_mode,
-        AuthKeyringBackendKind::default(),
-    )
-    .map_err(|err| format!("failed to load local auth: {err}"))?
-    .ok_or_else(|| "no local auth available".to_string())?;
+    let auth = load_auth_dot_json(codex_home)
+        .map_err(|err| format!("failed to load local auth: {err}"))?
+        .ok_or_else(|| "no local auth available".to_string())?;
     if matches!(auth.auth_mode, Some(AuthMode::ApiKey)) || auth.openai_api_key.is_some() {
         return Err("local auth is not a ChatGPT login".to_string());
     }
@@ -116,13 +109,7 @@ mod tests {
             agent_identity: None,
             personal_access_token: None,
         };
-        save_auth(
-            codex_home,
-            &auth,
-            AuthCredentialsStoreMode::File,
-            AuthKeyringBackendKind::default(),
-        )
-        .expect("chatgpt auth should save");
+        save_auth(codex_home, &auth).expect("chatgpt auth should save");
     }
 
     #[test]
@@ -130,12 +117,8 @@ mod tests {
         let codex_home = TempDir::new().expect("tempdir");
         write_chatgpt_auth(codex_home.path(), "business");
 
-        let auth = load_local_chatgpt_auth(
-            codex_home.path(),
-            AuthCredentialsStoreMode::File,
-            Some(&["workspace-1".to_string()]),
-        )
-        .expect("chatgpt auth should load");
+        let auth = load_local_chatgpt_auth(codex_home.path(), Some(&["workspace-1".to_string()]))
+            .expect("chatgpt auth should load");
 
         assert_eq!(auth.chatgpt_account_id, "workspace-1");
         assert_eq!(auth.chatgpt_plan_type.as_deref(), Some("business"));
@@ -146,12 +129,9 @@ mod tests {
     fn rejects_missing_local_auth() {
         let codex_home = TempDir::new().expect("tempdir");
 
-        let err = load_local_chatgpt_auth(
-            codex_home.path(),
-            AuthCredentialsStoreMode::File,
-            /*forced_chatgpt_workspace_id*/ None,
-        )
-        .expect_err("missing auth should fail");
+        let err =
+            load_local_chatgpt_auth(codex_home.path(), /*forced_chatgpt_workspace_id*/ None)
+                .expect_err("missing auth should fail");
 
         assert_eq!(err, "no local auth available");
     }
@@ -159,27 +139,23 @@ mod tests {
     #[test]
     fn rejects_api_key_auth() {
         let codex_home = TempDir::new().expect("tempdir");
-        save_auth(
-            codex_home.path(),
-            &AuthDotJson {
-                auth_mode: Some(AuthMode::ApiKey),
-                openai_api_key: Some("sk-test".to_string()),
-                tokens: None,
-                last_refresh: None,
-                agent_identity: None,
-                personal_access_token: None,
-            },
-            AuthCredentialsStoreMode::File,
-            AuthKeyringBackendKind::default(),
+        let stale_auth = AuthDotJson {
+            auth_mode: Some(AuthMode::ApiKey),
+            openai_api_key: Some("sk-test".to_string()),
+            tokens: None,
+            last_refresh: None,
+            agent_identity: None,
+            personal_access_token: None,
+        };
+        std::fs::write(
+            codex_home.path().join("auth.json"),
+            serde_json::to_vec_pretty(&stale_auth).expect("serialize stale auth"),
         )
-        .expect("api key auth should save");
+        .expect("write stale auth");
 
-        let err = load_local_chatgpt_auth(
-            codex_home.path(),
-            AuthCredentialsStoreMode::File,
-            /*forced_chatgpt_workspace_id*/ None,
-        )
-        .expect_err("api key auth should fail");
+        let err =
+            load_local_chatgpt_auth(codex_home.path(), /*forced_chatgpt_workspace_id*/ None)
+                .expect_err("api key auth should fail");
 
         assert_eq!(err, "local auth is not a ChatGPT login");
     }
@@ -198,7 +174,6 @@ mod tests {
 
         let auth = load_local_chatgpt_auth(
             codex_home.path(),
-            AuthCredentialsStoreMode::File,
             Some(&["workspace-1".to_string(), "workspace-2".to_string()]),
         )
         .expect("managed auth should win");
@@ -212,12 +187,8 @@ mod tests {
         let codex_home = TempDir::new().expect("tempdir");
         write_chatgpt_auth(codex_home.path(), "self_serve_business_usage_based");
 
-        let auth = load_local_chatgpt_auth(
-            codex_home.path(),
-            AuthCredentialsStoreMode::File,
-            Some(&["workspace-1".to_string()]),
-        )
-        .expect("chatgpt auth should load");
+        let auth = load_local_chatgpt_auth(codex_home.path(), Some(&["workspace-1".to_string()]))
+            .expect("chatgpt auth should load");
 
         assert_eq!(
             auth.chatgpt_plan_type.as_deref(),

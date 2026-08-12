@@ -16,8 +16,6 @@ use codex_api::ApiError;
 use codex_api::ResponseEvent;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
-use codex_login::AuthCredentialsStoreMode;
-use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
@@ -285,10 +283,8 @@ async fn chatgpt_auth_manager(
     let auth_manager = AuthManager::shared(
         codex_home.path().to_path_buf(),
         /*enable_codex_api_key_env*/ false,
-        AuthCredentialsStoreMode::File,
         /*forced_chatgpt_workspace_id*/ None,
         /*chatgpt_base_url*/ None,
-        AuthKeyringBackendKind::default(),
         codex_login::test_support::transport_default_auth_route_config(),
     )
     .await;

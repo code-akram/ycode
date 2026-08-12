@@ -25,7 +25,6 @@ use std::thread;
 use std::time::Duration;
 
 use crate::auth::AuthDotJson;
-use crate::auth::AuthKeyringBackendKind;
 use crate::auth::save_auth;
 use crate::callback_params::LoginCallbackResult;
 use crate::callback_params::login_callback_result_from_state;
@@ -42,7 +41,6 @@ use crate::token_data::TokenData;
 use crate::token_data::parse_chatgpt_jwt_claims;
 use base64::Engine;
 use chrono::Utc;
-use codex_config::types::AuthCredentialsStoreMode;
 use codex_protocol::auth::AuthMode;
 use codex_utils_template::Template;
 use rand::RngCore;
@@ -77,8 +75,6 @@ pub struct ServerOptions {
     pub forced_chatgpt_workspace_id: Option<Vec<String>>,
     pub codex_streamlined_login: bool,
     pub login_success_page: LoginSuccessPage,
-    pub cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
-    pub auth_keyring_backend_kind: AuthKeyringBackendKind,
     pub auth_route_config: AuthRouteConfig,
 }
 
@@ -88,8 +84,6 @@ impl ServerOptions {
         codex_home: PathBuf,
         client_id: String,
         forced_chatgpt_workspace_id: Option<Vec<String>>,
-        cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
-        auth_keyring_backend_kind: AuthKeyringBackendKind,
         auth_route_config: AuthRouteConfig,
     ) -> Self {
         Self {
@@ -102,8 +96,6 @@ impl ServerOptions {
             forced_chatgpt_workspace_id,
             codex_streamlined_login: false,
             login_success_page: LoginSuccessPage::default(),
-            cli_auth_credentials_store_mode,
-            auth_keyring_backend_kind,
             auth_route_config,
         }
     }
@@ -425,23 +417,11 @@ async fn process_request(
                             /*error_description*/ None,
                         );
                     }
-                    // Obtain API key via token-exchange and persist
-                    let api_key = obtain_api_key(
-                        &opts.issuer,
-                        &opts.client_id,
-                        &tokens.id_token,
-                        &opts.auth_route_config,
-                    )
-                    .await
-                    .ok();
                     if let Err(err) = persist_tokens_async(
                         &opts.codex_home,
-                        api_key.clone(),
                         tokens.id_token.clone(),
                         tokens.access_token.clone(),
                         tokens.refresh_token.clone(),
-                        opts.cli_auth_credentials_store_mode,
-                        opts.auth_keyring_backend_kind,
                     )
                     .await
                     {
@@ -882,15 +862,12 @@ pub(crate) async fn exchange_code_for_tokens(
     })
 }
 
-/// Persists exchanged credentials using the configured local auth store.
+/// Persists exchanged ChatGPT credentials in `CODEX_HOME/auth.json`.
 pub(crate) async fn persist_tokens_async(
     codex_home: &Path,
-    api_key: Option<String>,
     id_token: String,
     access_token: String,
     refresh_token: String,
-    auth_credentials_store_mode: AuthCredentialsStoreMode,
-    keyring_backend_kind: AuthKeyringBackendKind,
 ) -> io::Result<()> {
     // Reuse existing synchronous logic but run it off the async runtime.
     let codex_home = codex_home.to_path_buf();
@@ -909,18 +886,13 @@ pub(crate) async fn persist_tokens_async(
         }
         let auth = AuthDotJson {
             auth_mode: Some(AuthMode::Chatgpt),
-            openai_api_key: api_key,
+            openai_api_key: None,
             tokens: Some(tokens),
             last_refresh: Some(Utc::now()),
             agent_identity: None,
             personal_access_token: None,
         };
-        save_auth(
-            &codex_home,
-            &auth,
-            auth_credentials_store_mode,
-            keyring_backend_kind,
-        )
+        save_auth(&codex_home, &auth)
     })
     .await
     .map_err(|e| io::Error::other(format!("persist task failed: {e}")))?
@@ -1131,43 +1103,6 @@ fn html_escape(input: &str) -> String {
     escaped
 }
 
-/// Exchanges an authenticated ID token for an API-key style access token.
-pub(crate) async fn obtain_api_key(
-    issuer: &str,
-    client_id: &str,
-    id_token: &str,
-    auth_route_config: &AuthRouteConfig,
-) -> io::Result<String> {
-    // Token exchange for an API key access token
-    #[derive(serde::Deserialize)]
-    struct ExchangeResp {
-        access_token: String,
-    }
-    let token_endpoint = format!("{}/oauth/token", issuer.trim_end_matches('/'));
-    let client = create_raw_auth_client(&token_endpoint, auth_route_config)?;
-    let resp = client
-        .post(token_endpoint)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!(
-            "grant_type={}&client_id={}&requested_token={}&subject_token={}&subject_token_type={}",
-            urlencoding::encode("urn:ietf:params:oauth:grant-type:token-exchange"),
-            urlencoding::encode(client_id),
-            urlencoding::encode("openai-api-key"),
-            urlencoding::encode(id_token),
-            urlencoding::encode("urn:ietf:params:oauth:token-type:id_token")
-        ))
-        .send()
-        .await
-        .map_err(io::Error::other)?;
-    if !resp.status().is_success() {
-        return Err(io::Error::other(format!(
-            "api key exchange failed with status {}",
-            resp.status()
-        )));
-    }
-    let body: ExchangeResp = resp.json().await.map_err(io::Error::other)?;
-    Ok(body.access_token)
-}
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;

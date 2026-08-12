@@ -210,10 +210,6 @@ impl AccountRequestProcessor {
         params: LoginAccountParams,
     ) -> Result<(), JSONRPCErrorError> {
         match params {
-            LoginAccountParams::ApiKey { api_key } => {
-                self.login_api_key_v2(request_id, LoginApiKeyParams { api_key })
-                    .await;
-            }
             LoginAccountParams::Chatgpt {
                 app_brand,
                 codex_streamlined_login,
@@ -262,59 +258,6 @@ impl AccountRequestProcessor {
         )
     }
 
-    async fn login_api_key_common(
-        &self,
-        params: &LoginApiKeyParams,
-    ) -> std::result::Result<(), JSONRPCErrorError> {
-        if self.auth_manager.is_external_chatgpt_auth_active() {
-            return Err(self.external_auth_active_error());
-        }
-
-        if !self
-            .auth_manager
-            .is_login_method_allowed(ForcedLoginMethod::Api)
-        {
-            return Err(invalid_request(
-                "API key login is disabled. Use ChatGPT login instead.",
-            ));
-        }
-
-        // Cancel any active login attempt.
-        {
-            let mut guard = self.active_login.lock().await;
-            if let Some(active) = guard.take() {
-                drop(active);
-            }
-        }
-
-        match login_with_api_key(
-            &self.config.codex_home,
-            &params.api_key,
-            self.config.cli_auth_credentials_store_mode,
-            self.config.auth_keyring_backend_kind(),
-        ) {
-            Ok(()) => {
-                self.auth_manager.reload().await;
-                Ok(())
-            }
-            Err(err) => Err(internal_error(format!("failed to save api key: {err}"))),
-        }
-    }
-
-    async fn login_api_key_v2(&self, request_id: ConnectionRequestId, params: LoginApiKeyParams) {
-        let result = self
-            .login_api_key_common(&params)
-            .await
-            .map(|()| LoginAccountResponse::ApiKey {});
-        let logged_in = result.is_ok();
-        self.outgoing.send_result(request_id, result).await;
-
-        if logged_in {
-            self.send_login_success_notifications(/*login_id*/ None)
-                .await;
-        }
-    }
-
     // Build options for a ChatGPT login attempt; performs validation.
     async fn login_chatgpt_common(
         &self,
@@ -344,8 +287,6 @@ impl AccountRequestProcessor {
                 config.codex_home.to_path_buf(),
                 oauth_client_id(),
                 self.auth_manager.effective_chatgpt_workspaces(),
-                config.cli_auth_credentials_store_mode,
-                config.auth_keyring_backend_kind(),
                 config.auth_route_config(),
             )
         };

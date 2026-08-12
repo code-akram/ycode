@@ -1137,7 +1137,7 @@ mod tests {
                 CheckStatus::Fail,
                 "token expired",
             )
-            .detail("OPENAI_API_KEY: present")
+            .detail("CODEX_API_KEY: present")
             .remediation("Run `codex login`."),
             DoctorCheck::new(
                 "updates.status",
@@ -1218,7 +1218,7 @@ Environment
 
 Configuration
   ✗ auth         token expired — Run `codex login`.
-      OPENAI_API_KEY           present
+      CODEX_API_KEY            present
 
 Updates
   ✓ updates      update configuration is locally consistent
@@ -1416,7 +1416,7 @@ Run codex doctor without --summary for detailed diagnostics.
                 color_enabled: false,
             },
         );
-        assert!(rendered.contains("      OPENAI_API_KEY           present"));
+        assert!(rendered.contains("      CODEX_API_KEY            present"));
     }
 
     #[test]
@@ -1615,8 +1615,8 @@ Run codex doctor without --summary for detailed diagnostics.
     #[test]
     fn redact_detail_preserves_env_var_names() {
         assert_eq!(
-            redact_detail("auth env vars present: OPENAI_API_KEY, CODEX_API_KEY"),
-            "auth env vars present: OPENAI_API_KEY, CODEX_API_KEY"
+            redact_detail("auth env vars present: CODEX_API_KEY, CODEX_ACCESS_TOKEN"),
+            "auth env vars present: CODEX_API_KEY, CODEX_ACCESS_TOKEN"
         );
     }
 

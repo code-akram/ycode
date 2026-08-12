@@ -3,12 +3,10 @@ use anyhow::Result;
 use base64::Engine;
 use chrono::Duration;
 use chrono::Utc;
-use codex_config::types::AuthCredentialsStoreMode;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 use codex_http_client::cache_system_proxy_route_for_test;
 use codex_login::AuthDotJson;
-use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::CLIENT_ID_OVERRIDE_ENV_VAR;
 use codex_login::REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR;
@@ -135,10 +133,8 @@ async fn refresh_token_honors_respect_system_proxy() -> Result<()> {
     let auth_manager = AuthManager::shared(
         codex_home.path().to_path_buf(),
         /*enable_codex_api_key_env*/ false,
-        AuthCredentialsStoreMode::File,
         /*forced_chatgpt_workspace_id*/ None,
         /*chatgpt_base_url*/ None,
-        AuthKeyringBackendKind::default(),
         /*auth_route_config*/
         codex_login::AuthRouteConfig::from_http_client_factory(HttpClientFactory::new(
             OutboundProxyPolicy::RespectSystemProxy,
@@ -154,12 +150,7 @@ async fn refresh_token_honors_respect_system_proxy() -> Result<()> {
         agent_identity: None,
         personal_access_token: None,
     };
-    save_auth(
-        codex_home.path(),
-        &initial_auth,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(codex_home.path(), &initial_auth)?;
     auth_manager.reload().await;
 
     auth_manager
@@ -446,12 +437,7 @@ async fn refresh_token_skips_refresh_when_auth_changed() -> Result<()> {
         agent_identity: None,
         personal_access_token: None,
     };
-    save_auth(
-        ctx.codex_home.path(),
-        &disk_auth,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(ctx.codex_home.path(), &disk_auth)?;
 
     ctx.auth_manager
         .refresh_token()
@@ -515,12 +501,7 @@ async fn refresh_token_errors_on_account_mismatch() -> Result<()> {
         agent_identity: None,
         personal_access_token: None,
     };
-    save_auth(
-        ctx.codex_home.path(),
-        &disk_auth,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(ctx.codex_home.path(), &disk_auth)?;
 
     let err = ctx
         .auth_manager
@@ -688,12 +669,7 @@ async fn auth_reloads_disk_auth_when_cached_auth_is_stale() -> Result<()> {
         agent_identity: None,
         personal_access_token: None,
     };
-    save_auth(
-        ctx.codex_home.path(),
-        &disk_auth,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(ctx.codex_home.path(), &disk_auth)?;
 
     let cached_auth = ctx
         .auth_manager
@@ -754,12 +730,7 @@ async fn auth_reloads_disk_auth_without_calling_expired_refresh_token() -> Resul
         agent_identity: None,
         personal_access_token: None,
     };
-    save_auth(
-        ctx.codex_home.path(),
-        &disk_auth,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(ctx.codex_home.path(), &disk_auth)?;
 
     let cached_auth = ctx
         .auth_manager
@@ -1019,12 +990,7 @@ async fn refresh_token_reloads_changed_auth_after_permanent_failure() -> Result<
         agent_identity: None,
         personal_access_token: None,
     };
-    save_auth(
-        ctx.codex_home.path(),
-        &disk_auth,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(ctx.codex_home.path(), &disk_auth)?;
 
     ctx.auth_manager
         .refresh_token()
@@ -1145,12 +1111,7 @@ async fn unauthorized_recovery_reloads_then_refreshes_tokens() -> Result<()> {
         agent_identity: None,
         personal_access_token: None,
     };
-    save_auth(
-        ctx.codex_home.path(),
-        &disk_auth,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(ctx.codex_home.path(), &disk_auth)?;
 
     let cached_before = ctx
         .auth_manager
@@ -1243,12 +1204,7 @@ async fn unauthorized_recovery_errors_on_account_mismatch() -> Result<()> {
         agent_identity: None,
         personal_access_token: None,
     };
-    save_auth(
-        ctx.codex_home.path(),
-        &disk_auth,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(ctx.codex_home.path(), &disk_auth)?;
 
     let cached_before = ctx
         .auth_manager
@@ -1337,10 +1293,8 @@ impl RefreshTokenTestContext {
         let auth_manager = AuthManager::shared(
             codex_home.path().to_path_buf(),
             /*enable_codex_api_key_env*/ false,
-            AuthCredentialsStoreMode::File,
             /*forced_chatgpt_workspace_id*/ None,
             /*chatgpt_base_url*/ None,
-            AuthKeyringBackendKind::default(),
             codex_login::test_support::transport_default_auth_route_config(),
         )
         .await;
@@ -1353,22 +1307,13 @@ impl RefreshTokenTestContext {
     }
 
     fn load_auth(&self) -> Result<AuthDotJson> {
-        load_auth_dot_json(
-            self.codex_home.path(),
-            AuthCredentialsStoreMode::File,
-            AuthKeyringBackendKind::default(),
-        )
-        .context("load auth.json")?
-        .context("auth.json should exist")
+        load_auth_dot_json(self.codex_home.path())
+            .context("load auth.json")?
+            .context("auth.json should exist")
     }
 
     async fn write_auth(&self, auth_dot_json: &AuthDotJson) -> Result<()> {
-        save_auth(
-            self.codex_home.path(),
-            auth_dot_json,
-            AuthCredentialsStoreMode::File,
-            AuthKeyringBackendKind::default(),
-        )?;
+        save_auth(self.codex_home.path(), auth_dot_json)?;
         self.auth_manager.reload().await;
         Ok(())
     }

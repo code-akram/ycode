@@ -255,8 +255,6 @@ pub fn auth_provider_from_auth_manager(
 #[cfg(test)]
 mod tests {
     use codex_agent_identity::generate_agent_key_material;
-    use codex_login::AuthCredentialsStoreMode;
-    use codex_login::AuthKeyringBackendKind;
     use codex_login::auth::AgentIdentityAuthRecord;
     use codex_login::auth::login_with_chatgpt_auth_tokens;
     use codex_protocol::account::PlanType;
@@ -345,10 +343,8 @@ mod tests {
         let auth_manager = AuthManager::shared(
             codex_home.clone(),
             /*enable_codex_api_key_env*/ false,
-            AuthCredentialsStoreMode::File,
             /*forced_chatgpt_workspace_id*/ None,
             /*chatgpt_base_url*/ None,
-            AuthKeyringBackendKind::default(),
             codex_login::test_support::transport_default_auth_route_config(),
         )
         .await;
@@ -404,10 +400,8 @@ mod tests {
             AuthManager::new(
                 codex_home.clone(),
                 /*enable_codex_api_key_env*/ false,
-                AuthCredentialsStoreMode::Ephemeral,
                 /*forced_chatgpt_workspace_id*/ None,
                 /*chatgpt_base_url*/ None,
-                AuthKeyringBackendKind::default(),
                 codex_login::test_support::transport_default_auth_route_config(),
             )
             .await,

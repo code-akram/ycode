@@ -6,10 +6,8 @@ use std::sync::atomic::Ordering;
 use anyhow::Result;
 use app_test_support::ChatGptAuthFixture;
 use app_test_support::write_chatgpt_auth;
-use codex_config::types::AuthCredentialsStoreMode;
 use predicates::str::contains;
 use pretty_assertions::assert_eq;
-use serde_json::Value;
 use serde_json::json;
 use tempfile::TempDir;
 use wiremock::Mock;
@@ -25,40 +23,17 @@ fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
     Ok(cmd)
 }
 
-fn write_file_auth_config(codex_home: &Path) -> Result<()> {
-    std::fs::write(
-        codex_home.join("config.toml"),
-        "cli_auth_credentials_store = \"file\"\n",
-    )?;
-    Ok(())
-}
-
-fn read_auth_json(codex_home: &Path) -> Result<Value> {
-    let auth_json = std::fs::read_to_string(codex_home.join("auth.json"))?;
-    Ok(serde_json::from_str(&auth_json)?)
-}
-
 #[test]
-fn login_with_api_key_reads_stdin_and_writes_auth_json() -> Result<()> {
+fn login_rejects_removed_api_key_persistence_flag() -> Result<()> {
     let codex_home = TempDir::new()?;
-    write_file_auth_config(codex_home.path())?;
 
     let mut cmd = codex_command(codex_home.path())?;
-    cmd.args([
-        "-c",
-        "forced_login_method=\"api\"",
-        "login",
-        "--with-api-key",
-    ])
-    .write_stdin("sk-test\n")
-    .assert()
-    .success()
-    .stderr(contains("Successfully logged in"));
-
-    let auth = read_auth_json(codex_home.path())?;
-    assert_eq!(auth["OPENAI_API_KEY"], "sk-test");
-    assert!(auth.get("tokens").is_none());
-    assert!(auth.get("agent_identity").is_none());
+    cmd.args(["login", "--with-api-key"])
+        .write_stdin("sk-test\n")
+        .assert()
+        .failure()
+        .stderr(contains("unexpected argument '--with-api-key'"));
+    assert!(!codex_home.path().join("auth.json").exists());
 
     Ok(())
 }
@@ -66,7 +41,6 @@ fn login_with_api_key_reads_stdin_and_writes_auth_json() -> Result<()> {
 #[test]
 fn login_status_reports_auth_storage_errors() -> Result<()> {
     let codex_home = TempDir::new()?;
-    write_file_auth_config(codex_home.path())?;
     std::fs::write(codex_home.path().join("auth.json"), "{invalid json")?;
 
     codex_command(codex_home.path())?
@@ -96,24 +70,20 @@ async fn debug_prompt_input_follows_authenticated_attribution_setting() -> Resul
     let codex_home = TempDir::new()?;
     std::fs::write(
         codex_home.path().join("config.toml"),
-        format!(
-            "cli_auth_credentials_store = \"file\"\nchatgpt_base_url = \"{}/backend-api\"\n",
-            server.uri()
-        ),
+        format!("chatgpt_base_url = \"{}/backend-api\"\n", server.uri()),
     )?;
     write_chatgpt_auth(
         codex_home.path(),
         ChatGptAuthFixture::new("chatgpt-token")
             .account_id("workspace-123")
             .plan_type("enterprise"),
-        AuthCredentialsStoreMode::File,
     )?;
     for enabled in [true, false] {
         let output = codex_command(codex_home.path())?
             .env("NO_PROXY", "127.0.0.1,localhost")
             .env("no_proxy", "127.0.0.1,localhost")
             .env_remove("CODEX_ACCESS_TOKEN")
-            .env_remove("OPENAI_API_KEY")
+            .env_remove("CODEX_API_KEY")
             .args(["debug", "prompt-input"])
             .output()?;
         assert!(output.status.success());

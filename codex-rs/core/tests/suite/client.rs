@@ -1,4 +1,3 @@
-use codex_config::types::AuthCredentialsStoreMode;
 use codex_core::ModelClient;
 use codex_core::NewThread;
 use codex_core::Prompt;
@@ -9,7 +8,6 @@ use codex_core::resolve_installation_id;
 use codex_core::thread_store_from_config;
 use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
-use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
@@ -633,58 +631,6 @@ async fn response_item_ids_are_sent_for_all_remote_v2_compaction_requests() -> a
     }
 
     Ok(())
-}
-
-/// Writes an `auth.json` into the provided `codex_home` with the specified parameters.
-/// Returns the fake JWT string written to `tokens.id_token`.
-#[expect(clippy::unwrap_used)]
-fn write_auth_json(
-    codex_home: &TempDir,
-    openai_api_key: Option<&str>,
-    chatgpt_plan_type: &str,
-    access_token: &str,
-    account_id: Option<&str>,
-) -> String {
-    use base64::Engine as _;
-
-    let header = json!({ "alg": "none", "typ": "JWT" });
-    let payload = json!({
-        "email": "user@example.com",
-        "https://api.openai.com/auth": {
-            "chatgpt_plan_type": chatgpt_plan_type,
-            "chatgpt_account_id": account_id.unwrap_or("acc-123")
-        }
-    });
-
-    let b64 = |b: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b);
-    let header_b64 = b64(&serde_json::to_vec(&header).unwrap());
-    let payload_b64 = b64(&serde_json::to_vec(&payload).unwrap());
-    let signature_b64 = b64(b"sig");
-    let fake_jwt = format!("{header_b64}.{payload_b64}.{signature_b64}");
-
-    let mut tokens = json!({
-        "id_token": fake_jwt,
-        "access_token": access_token,
-        "refresh_token": "refresh-test",
-    });
-    if let Some(acc) = account_id {
-        tokens["account_id"] = json!(acc);
-    }
-
-    let auth_json = json!({
-        "OPENAI_API_KEY": openai_api_key,
-        "tokens": tokens,
-        // RFC3339 datetime; value doesn't matter for these tests
-        "last_refresh": chrono::Utc::now(),
-    });
-
-    std::fs::write(
-        codex_home.path().join("auth.json"),
-        serde_json::to_string_pretty(&auth_json).unwrap(),
-    )
-    .unwrap();
-
-    fake_jwt
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1388,7 +1334,7 @@ async fn chatgpt_auth_sends_correct_request() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
+async fn api_key_auth_sends_api_key_without_persisting_it() {
     skip_if_no_network!();
 
     // Mock server
@@ -1416,31 +1362,12 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
         ..built_in_model_providers()["openai"].clone()
     };
 
-    // Init session
+    // Initialize a session with process-only API-key auth. API keys are never written to auth.json.
     let codex_home = TempDir::new().unwrap();
-    // Write auth.json that contains both API key and ChatGPT tokens for a plan that should prefer ChatGPT,
-    // but config will force API key preference.
-    let _jwt = write_auth_json(
-        &codex_home,
-        Some("sk-test-key"),
-        "pro",
-        "Access-123",
-        Some("acc-123"),
-    );
-
     let mut config = load_default_config_for_test(&codex_home).await;
     config.model_provider = model_provider;
 
-    let auth = CodexAuth::from_auth_storage(
-        codex_home.path(),
-        AuthCredentialsStoreMode::File,
-        /*chatgpt_base_url*/ None,
-        AuthKeyringBackendKind::default(),
-        &codex_login::test_support::transport_default_auth_route_config(),
-    )
-    .await
-    .expect("Failed to load CodexAuth")
-    .expect("No CodexAuth found in codex_home");
+    let auth = CodexAuth::from_api_key("sk-test-key");
     let auth_manager = codex_core::test_support::auth_manager_from_auth(auth);
     let installation_id = resolve_installation_id(&config.codex_home)
         .await
@@ -1479,6 +1406,7 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
         .unwrap();
 
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    assert!(!codex_home.path().join("auth.json").exists());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

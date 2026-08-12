@@ -26,8 +26,6 @@ use codex_config::loader::project_trust_key;
 use codex_config::permissions_toml::PermissionsToml;
 use codex_config::sandbox_mode_requirement_for_permission_profile;
 use codex_config::types::ApprovalsReviewer;
-use codex_config::types::AuthCredentialsStoreMode;
-use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::History;
 use codex_config::types::MemoriesConfig;
 use codex_config::types::ModelAvailabilityNuxConfig;
@@ -126,7 +124,7 @@ use toml::Value as TomlValue;
 use toml_edit::DocumentMut;
 
 pub(crate) mod agent_roles;
-mod auth_keyring;
+mod auth;
 pub mod edit;
 mod managed_features;
 mod network_proxy_spec;
@@ -136,8 +134,7 @@ mod requirements;
 mod resolved_permission_profile;
 #[cfg(test)]
 mod schema;
-pub use auth_keyring::bootstrap_auth_config;
-pub use auth_keyring::resolve_bootstrap_auth_keyring_backend_kind;
+pub use auth::bootstrap_auth_config;
 pub use codex_config::ConfigLoadOptions;
 pub use codex_config::Constrained;
 pub use codex_config::ConstraintError;
@@ -255,7 +252,6 @@ pub(crate) const HARD_MIN_MULTI_AGENT_V2_TIMEOUT_MS: i64 = 0;
 pub(crate) const HARD_MAX_MULTI_AGENT_V2_TIMEOUT_MS: i64 =
     DEFAULT_MULTI_AGENT_V2_MAX_WAIT_TIMEOUT_MS;
 pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
-const LOCAL_DEV_BUILD_VERSION: &str = "0.0.0";
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 const CONFIG_PROFILE_V2_SUFFIX: &str = ".config.toml";
@@ -270,19 +266,6 @@ fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<AbsolutePathBuf> {
         trimmed,
         resolved_cwd,
     ))
-}
-
-fn resolve_cli_auth_credentials_store_mode(
-    configured: AuthCredentialsStoreMode,
-    package_version: &str,
-) -> AuthCredentialsStoreMode {
-    match (package_version, configured) {
-        (
-            LOCAL_DEV_BUILD_VERSION,
-            AuthCredentialsStoreMode::Keyring | AuthCredentialsStoreMode::Auto,
-        ) => AuthCredentialsStoreMode::File,
-        (_, mode) => mode,
-    }
 }
 
 #[cfg(test)]
@@ -780,12 +763,6 @@ pub struct Config {
     /// or legacy config, rather than defaulting to `cwd`.
     pub workspace_roots_explicit: bool,
 
-    /// Preferred store for CLI auth credentials.
-    /// file (default): Use a file in the Codex home directory.
-    /// keyring: Use an OS-specific keyring service.
-    /// auto: Use the OS-specific keyring service if available, otherwise use a file.
-    pub cli_auth_credentials_store_mode: AuthCredentialsStoreMode,
-
     /// Combined provider map (defaults plus user-defined providers).
 
     /// Maximum number of bytes to include from an AGENTS.md project doc file.
@@ -1232,14 +1209,6 @@ pub struct TerminalResizeReflowConfig {
 impl AuthManagerConfig for Config {
     fn codex_home(&self) -> PathBuf {
         self.codex_home.to_path_buf()
-    }
-
-    fn cli_auth_credentials_store_mode(&self) -> AuthCredentialsStoreMode {
-        self.cli_auth_credentials_store_mode
-    }
-
-    fn auth_keyring_backend_kind(&self) -> AuthKeyringBackendKind {
-        Config::auth_keyring_backend_kind(self)
     }
 
     fn forced_login_method(&self) -> Option<ForcedLoginMethod> {
@@ -3598,12 +3567,6 @@ impl Config {
             include_skill_instructions,
             orchestrator_skills_enabled,
             include_environment_context,
-            // The config.toml omits "_mode" because it's a config file. However, "_mode"
-            // is important in code to differentiate the mode from the store implementation.
-            cli_auth_credentials_store_mode: resolve_cli_auth_credentials_store_mode(
-                cfg.cli_auth_credentials_store.unwrap_or_default(),
-                env!("CARGO_PKG_VERSION"),
-            ),
             project_doc_max_bytes: cfg.project_doc_max_bytes.unwrap_or(AGENTS_MD_MAX_BYTES),
             project_doc_fallback_filenames: cfg
                 .project_doc_fallback_filenames

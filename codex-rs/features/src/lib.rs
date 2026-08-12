@@ -87,9 +87,6 @@ pub enum Feature {
     ShellTool,
     /// Enable the built-in local image viewer.
     ViewImage,
-    /// Store CLI auth in the encrypted local secrets backend when keyring storage is selected.
-    SecretAuthStorage,
-
     // Experimental
     /// Record model-attempted tool calls in internal Responses metadata.
     ExecutedToolCallMetadata,
@@ -733,12 +730,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "view_image",
         stage: Stage::Stable,
         default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::SecretAuthStorage,
-        key: "secret_auth_storage",
-        stage: Stage::Stable,
-        default_enabled: cfg!(windows),
     },
     FeatureSpec {
         id: Feature::UnifiedExec,

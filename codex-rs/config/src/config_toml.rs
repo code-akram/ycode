@@ -8,7 +8,6 @@ use crate::permissions_toml::PermissionsToml;
 use crate::profile_toml::ConfigProfile;
 use crate::types::ApprovalsReviewer;
 use crate::types::AppsConfigToml;
-use crate::types::AuthCredentialsStoreMode;
 use crate::types::History;
 use crate::types::MemoriesToml;
 use crate::types::Notice;
@@ -219,13 +218,6 @@ pub struct ConfigToml {
     /// When set, restricts the login mechanism users may use.
     #[serde(default)]
     pub forced_login_method: Option<ForcedLoginMethod>,
-
-    /// Preferred backend for storing CLI auth credentials.
-    /// file (default): Use a file in the Codex home directory.
-    /// keyring: Use an OS-specific keyring service.
-    /// auto: Use the keyring if available, otherwise use a file.
-    #[serde(default)]
-    pub cli_auth_credentials_store: Option<AuthCredentialsStoreMode>,
 
     /// Maximum number of bytes to include from an AGENTS.md project doc file.
     #[serde(default = "default_project_doc_max_bytes")]

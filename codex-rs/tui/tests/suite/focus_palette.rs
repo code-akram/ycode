@@ -95,7 +95,7 @@ impl PtyCodex {
             .arg("-C")
             .arg(repo_root)
             .env("TERM", "xterm-256color")
-            .env("OPENAI_API_KEY", "focus-palette-test")
+            .env("CODEX_API_KEY", "focus-palette-test")
             .env("CODEX_HOME", codex_home.path())
             .stdin(stdin)
             .stdout(stdout)
@@ -256,9 +256,5 @@ fn write_test_config(codex_home: &Path, repo_root: &Path) -> Result<()> {
     );
     std::fs::write(codex_home.join("config.toml"), config)
         .context("write focus-test Codex configuration")?;
-    std::fs::write(
-        codex_home.join("auth.json"),
-        r#"{"OPENAI_API_KEY":"focus-palette-test","tokens":null,"last_refresh":null}"#,
-    )
-    .context("write focus-test API-key authentication")
+    Ok(())
 }

@@ -1,9 +1,7 @@
 use anyhow::Context;
 use anyhow::Result;
 use base64::Engine;
-use codex_config::types::AuthCredentialsStoreMode;
 use codex_login::AuthDotJson;
-use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::CLIENT_ID;
 use codex_login::CLIENT_ID_OVERRIDE_ENV_VAR;
@@ -50,17 +48,10 @@ async fn logout_with_revoke_revokes_refresh_token_then_removes_auth() -> Result<
     );
 
     let codex_home = TempDir::new()?;
-    save_auth(
-        codex_home.path(),
-        &chatgpt_auth(),
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(codex_home.path(), &chatgpt_auth())?;
 
     let removed = logout_with_revoke(
         codex_home.path(),
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
         &codex_login::test_support::transport_default_auth_route_config(),
     )
     .await?;
@@ -109,17 +100,10 @@ async fn logout_with_revoke_uses_stored_auth_when_access_token_env_is_set() -> R
     );
 
     let codex_home = TempDir::new()?;
-    save_auth(
-        codex_home.path(),
-        &chatgpt_auth(),
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(codex_home.path(), &chatgpt_auth())?;
 
     let removed = logout_with_revoke(
         codex_home.path(),
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
         &codex_login::test_support::transport_default_auth_route_config(),
     )
     .await?;
@@ -152,17 +136,10 @@ async fn logout_with_revoke_removes_auth_when_revoke_fails() -> Result<()> {
     );
 
     let codex_home = TempDir::new()?;
-    save_auth(
-        codex_home.path(),
-        &chatgpt_auth(),
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
+    save_auth(codex_home.path(), &chatgpt_auth())?;
 
     let removed = logout_with_revoke(
         codex_home.path(),
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
         &codex_login::test_support::transport_default_auth_route_config(),
     )
     .await?;
@@ -197,24 +174,18 @@ async fn auth_manager_logout_with_revoke_uses_cached_auth() -> Result<()> {
     save_auth(
         codex_home.path(),
         &chatgpt_auth_with_refresh_token(REFRESH_TOKEN),
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
     )?;
     let manager = AuthManager::new(
         codex_home.path().to_path_buf(),
         /*enable_codex_api_key_env*/ false,
-        AuthCredentialsStoreMode::File,
         /*forced_chatgpt_workspace_id*/ None,
         /*chatgpt_base_url*/ None,
-        AuthKeyringBackendKind::default(),
         codex_login::test_support::transport_default_auth_route_config(),
     )
     .await;
     save_auth(
         codex_home.path(),
         &chatgpt_auth_with_refresh_token("newer-disk-refresh-token"),
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
     )?;
 
     let removed = manager.logout_with_revoke().await?;
