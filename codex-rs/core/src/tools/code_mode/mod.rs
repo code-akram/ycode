@@ -121,6 +121,7 @@ impl CodeModeService {
         .then(|| format!("Code Mode is unavailable because {error}. {behavior}; {recovery}."))
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn session_provider(&self) -> Arc<dyn CodeModeSessionProvider> {
         Arc::clone(&self.session_provider)
     }
@@ -315,7 +316,6 @@ fn truncate_code_mode_result(
 }
 
 async fn call_nested_tool(
-    exec: ExecContext,
     tool_runtime: ToolCallRuntime,
     invocation: CodeModeNestedToolCall,
     cancellation_token: CancellationToken,

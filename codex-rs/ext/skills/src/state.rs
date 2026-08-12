@@ -336,4 +336,4 @@ pub(crate) struct SkillsTurnState {
 pub(crate) struct ExecutorSkillsStepState(pub(crate) SkillCatalog);
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct HostSkillsStepState(pub(crate) SkillCatalog);
+pub(crate) struct HostSkillsStepState;

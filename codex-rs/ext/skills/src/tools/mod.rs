@@ -63,6 +63,7 @@ struct SkillToolContext {
     providers: SkillProviders,
     thread_state: Arc<SkillsThreadState>,
     executor_query: Option<SkillListQuery>,
+    #[allow(dead_code)] // Preserves executor filesystem-authority context for the skills seam.
     sandbox_contexts: Option<Arc<HashMap<String, FileSystemSandboxContext>>>,
     executor_catalog: Arc<OnceCell<SkillCatalog>>,
 }

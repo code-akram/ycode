@@ -103,7 +103,6 @@ pub async fn run(
             return;
         }
     };
-    let raw_memory_count = raw_memories.len();
     let new_watermark = get_watermark(claim.watermark, &raw_memories);
 
     // 5. Sync the current inputs into the memory workspace.
@@ -231,7 +230,7 @@ mod job {
     }
 
     pub(super) async fn failed(
-        context: &MemoryStartupContext,
+        _context: &MemoryStartupContext,
         db: &StateRuntime,
         claim: &Claim,
         reason: &'static str,
@@ -258,12 +257,12 @@ mod job {
     }
 
     pub(super) async fn succeed(
-        context: &MemoryStartupContext,
+        _context: &MemoryStartupContext,
         db: &StateRuntime,
         claim: &Claim,
         completion_watermark: i64,
         selected_outputs: &[codex_state::Stage1Output],
-        reason: &'static str,
+        _reason: &'static str,
     ) -> bool {
         db.memories()
             .mark_global_phase2_job_succeeded(&claim.token, completion_watermark, selected_outputs)

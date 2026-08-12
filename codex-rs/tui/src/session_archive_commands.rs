@@ -12,7 +12,6 @@ use std::sync::Arc;
 use crate::Cli;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
-use crate::legacy_core::config::bootstrap_auth_config;
 use crate::legacy_core::config::load_config_toml_with_layer_stack;
 use crate::legacy_core::config::resolve_profile_v2_config_path;
 use crate::named_session_lookup::NamedSessionCandidates;

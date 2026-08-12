@@ -1334,6 +1334,7 @@ impl ChatComposer {
     }
 
     /// Returns whether the composer currently accepts interactive draft edits.
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn input_enabled(&self) -> bool {
         self.draft.input_enabled
     }

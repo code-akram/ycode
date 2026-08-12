@@ -101,6 +101,7 @@ pub(crate) fn apply_package_path_prepend(
 }
 
 #[cfg(unix)]
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) fn prepend_zsh_fork_bin_to_path(
     env: &mut HashMap<String, String>,
     shell_zsh_path: &Path,
@@ -112,6 +113,7 @@ pub(crate) fn prepend_zsh_fork_bin_to_path(
 }
 
 #[cfg(unix)]
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) fn apply_zsh_fork_path_prepend(
     env: &mut HashMap<String, String>,
     runtime_path_prepends: &mut RuntimePathPrepends,

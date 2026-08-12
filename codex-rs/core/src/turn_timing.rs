@@ -158,6 +158,7 @@ impl TurnTimingState {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) async fn record_ttft_for_response_event(
         &self,
         event: &ResponseEvent,
@@ -169,6 +170,7 @@ impl TurnTimingState {
         state.record_turn_ttft()
     }
 
+    #[allow(dead_code)] // Retained turn-timing seam for item consumers.
     pub(crate) async fn record_ttfm_for_turn_item(&self, item: &TurnItem) -> Option<Duration> {
         if !matches!(item, TurnItem::AgentMessage(_)) {
             return None;
@@ -341,6 +343,7 @@ impl TurnTimingStateInner {
         Some(self.first_token_at?.duration_since(self.started_at?))
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     fn record_turn_ttft(&mut self) -> Option<Duration> {
         if self.first_token_at.is_some() {
             return None;
@@ -350,6 +353,7 @@ impl TurnTimingStateInner {
         self.time_to_first_token()
     }
 
+    #[allow(dead_code)] // Retained turn-timing state transition for item consumers.
     fn record_turn_ttfm(&mut self) -> Option<Duration> {
         if self.first_message_at.is_some() {
             return None;
@@ -361,6 +365,7 @@ impl TurnTimingStateInner {
     }
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 fn response_event_records_turn_ttft(event: &ResponseEvent) -> bool {
     match event {
         ResponseEvent::OutputItemDone(item) | ResponseEvent::OutputItemAdded(item) => {
@@ -384,6 +389,7 @@ fn response_event_records_turn_ttft(event: &ResponseEvent) -> bool {
     }
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 fn response_item_records_turn_ttft(item: &ResponseItem) -> bool {
     match item {
         ResponseItem::Message { .. } => {

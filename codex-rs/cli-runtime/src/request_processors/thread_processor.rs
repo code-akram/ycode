@@ -1033,7 +1033,7 @@ impl ThreadRequestProcessor {
         allow_provider_model_fallback: bool,
         experimental_raw_events: bool,
         request_trace: Option<W3cTraceContext>,
-        initial_config_warnings: Arc<Vec<ConfigWarningNotification>>,
+        _initial_config_warnings: Arc<Vec<ConfigWarningNotification>>,
     ) -> Result<(), JSONRPCErrorError> {
         let thread_start_started_at = std::time::Instant::now();
         let requested_cwd = typesafe_overrides.cwd.clone();
@@ -2829,6 +2829,7 @@ impl ThreadRequestProcessor {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn subscribe_running_assistant_turn_count(&self) -> watch::Receiver<usize> {
         self.thread_watch_manager.subscribe_running_turn_count()
     }

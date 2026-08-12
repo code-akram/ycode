@@ -1,4 +1,3 @@
-use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -10,7 +9,6 @@ use crate::tools::context::FunctionToolOutput;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
 use crate::tools::handlers::apply_patch::intercept_apply_patch;
-use crate::tools::handlers::parse_arguments;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::runtimes::shell::ShellRequest;
 use crate::tools::runtimes::shell::ShellRuntime;

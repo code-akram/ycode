@@ -33,6 +33,8 @@ pub(crate) struct ThreadExtensionDependencies {
     pub(crate) state_db: Option<StateDbHandle>,
     pub(crate) thread_manager: Weak<ThreadManager>,
     pub(crate) goal_service: Arc<GoalService>,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) environment_manager: Arc<EnvironmentManager>,
     pub(crate) executor_skill_provider: Arc<dyn codex_skills_extension::SkillProvider>,
     pub(crate) git_attribution_base_url: String,

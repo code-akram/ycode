@@ -149,6 +149,8 @@ pub(crate) enum AppEvent {
     },
 
     /// Submit an op to the specified thread, regardless of current focus.
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     SubmitThreadOp {
         thread_id: ThreadId,
         op: AppCommand,
@@ -232,6 +234,7 @@ pub(crate) enum AppEvent {
     ///
     /// This is the Plan Mode handoff path: the previous thread remains resumable, but the model
     /// sees only the explicit prompt carried in `text` once the new session is configured.
+    #[allow(dead_code)] // Retained UI event compatibility variant.
     ClearUiAndSubmitUserMessage {
         text: String,
     },

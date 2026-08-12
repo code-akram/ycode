@@ -62,6 +62,8 @@ pub(crate) enum SideContentWidth {
     /// Fixed number of columns.  `Fixed(0)` disables side content entirely.
     Fixed(u16),
     /// Exact 50/50 split of the content area (minus the inter-column gap).
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     Half,
 }
 
@@ -291,7 +293,9 @@ pub(crate) struct ListSelectionView {
 
 const SELECTION_TOGGLE_ON_PREFIX: &str = "[*] ";
 const SELECTION_TOGGLE_OFF_PREFIX: &str = "[ ] ";
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) const SELECTION_TOGGLE_UNAVAILABLE_PREFIX: &str = "[-] ";
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) const SELECTION_TOGGLE_BLOCKED_PREFIX: &str = "[!] ";
 
 fn selection_toggle_prefix(toggle: &SelectionToggle) -> &'static str {
@@ -813,6 +817,7 @@ impl ListSelectionView {
         self.apply_filter();
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn take_last_selected_index(&mut self) -> Option<usize> {
         self.last_selected_actual_idx.take()
     }

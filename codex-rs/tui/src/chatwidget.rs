@@ -65,12 +65,9 @@ use codex_cli_protocol::AddCreditsNudgeEmailStatus;
 use codex_cli_protocol::CodexErrorInfo as CliRuntimeCodexErrorInfo;
 use codex_cli_protocol::CollabAgentTool;
 use codex_cli_protocol::CollabAgentToolCallStatus;
-use codex_cli_protocol::CommandExecutionRequestApprovalParams;
 use codex_cli_protocol::CommandExecutionSource as ExecCommandSource;
 use codex_cli_protocol::CreditsSnapshot;
 use codex_cli_protocol::ErrorNotification;
-use codex_cli_protocol::FileChangeRequestApprovalParams;
-use codex_cli_protocol::GuardianApprovalReviewAction;
 use codex_cli_protocol::ItemCompletedNotification;
 use codex_cli_protocol::ItemStartedNotification;
 use codex_cli_protocol::ModelVerification as CliRuntimeModelVerification;
@@ -92,18 +89,11 @@ use codex_cli_protocol::TurnCompletedNotification;
 use codex_cli_protocol::TurnPlanStepStatus;
 use codex_cli_protocol::TurnStatus;
 use codex_cli_protocol::UserInput;
-use codex_config::Constrained;
-use codex_config::ConstraintResult;
-use codex_config::types::ApprovalsReviewer;
 use codex_features::FEATURES;
 use codex_features::Feature;
 use codex_git_utils::get_git_repo_root;
 use codex_protocol::ThreadId;
 use codex_protocol::account::PlanType;
-use codex_protocol::approvals::GuardianAssessmentAction;
-use codex_protocol::approvals::GuardianAssessmentDecisionSource;
-use codex_protocol::approvals::GuardianAssessmentEvent;
-use codex_protocol::approvals::GuardianAssessmentStatus;
 use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::Settings;
@@ -112,7 +102,6 @@ use codex_protocol::items::AgentMessageItem;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::plan_tool::PlanItemArg as UpdatePlanItemArg;
 use codex_protocol::plan_tool::StepStatus as UpdatePlanItemStatus;
-use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
 use codex_terminal_detection::Multiplexer;
@@ -378,10 +367,7 @@ use crate::streaming::controller::StreamController;
 use crate::workspace_command::WorkspaceCommandRunner;
 
 use chrono::Local;
-use codex_cli_protocol::AskForApproval;
 use codex_file_search::FileMatch;
-use codex_protocol::models::ActivePermissionProfile;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -1093,6 +1079,7 @@ impl ChatWidget {
         self.request_redraw();
     }
 
+    #[allow(dead_code)] // Retained warning presentation seam for non-default events.
     pub(crate) fn add_warning_message(&mut self, message: String) {
         self.add_to_history(history_cell::new_warning_event(message));
         self.request_redraw();
@@ -1107,6 +1094,7 @@ impl ChatWidget {
         warn!(feature, "stubbed unsupported TUI feature");
         self.add_error_message(format!("{feature}: {TUI_STUB_MESSAGE}"));
     }
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 
     fn rename_confirmation_cell(name: &str, thread_id: Option<ThreadId>) -> PlainHistoryCell {
         let mut line = vec![

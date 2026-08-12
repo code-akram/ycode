@@ -157,6 +157,7 @@ impl PendingInteractiveReplayState {
         );
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     fn remove_call_id_from_turn_map(
         call_ids_by_turn_id: &mut HashMap<String, Vec<String>>,
         call_id: &str,

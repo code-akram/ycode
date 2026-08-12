@@ -341,10 +341,10 @@ fn request_span(span_name: &str, request: &JSONRPCRequest) -> tracing::Span {
 fn request_result(message: &Option<RpcServerOutboundMessage>) -> &'static str {
     match message {
         Some(RpcServerOutboundMessage::Error { .. }) => "error",
+        #[cfg(test)]
+        Some(RpcServerOutboundMessage::Request(_)) => "success",
         Some(
-            RpcServerOutboundMessage::Request(_)
-            | RpcServerOutboundMessage::Response { .. }
-            | RpcServerOutboundMessage::Notification(_),
+            RpcServerOutboundMessage::Response { .. } | RpcServerOutboundMessage::Notification(_),
         )
         | None => "success",
     }

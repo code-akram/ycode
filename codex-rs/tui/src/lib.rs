@@ -216,6 +216,7 @@ impl CliRuntimeTarget {
         false
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     fn auth_config_for_cloud_loader(&self, mut auth_config: AuthConfig) -> AuthConfig {
         if self.uses_remote_workspace() {
             // Remove local auth restrictions before loading credentials for a remote
@@ -1130,7 +1131,7 @@ async fn run_ratatui_app(
         resume_picker::SessionSelection::StartFresh
     ) && (cli.resume_picker || cli.fork_picker);
 
-    let mut config = match &session_selection {
+    let config = match &session_selection {
         resume_picker::SessionSelection::Resume(_) | resume_picker::SessionSelection::Fork(_) => {
             load_config_or_exit_with_fallback_cwd(
                 cli_kv_overrides.clone(),

@@ -162,6 +162,7 @@ impl NetworkProxySpec {
         Ok(StartedNetworkProxy::new(proxy, handle))
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn recompute_for_permission_profile(
         &self,
         permission_profile: &PermissionProfile,
@@ -173,6 +174,7 @@ impl NetworkProxySpec {
         )
     }
 
+    #[allow(dead_code)] // Retained disabled approval-flow network policy seam.
     pub(crate) fn with_exec_policy_network_rules(
         &self,
         exec_policy: &Policy,
@@ -188,6 +190,7 @@ impl NetworkProxySpec {
         Ok(spec)
     }
 
+    #[allow(dead_code)] // Retained disabled approval-flow live proxy update seam.
     pub(crate) async fn apply_to_started_proxy(
         &self,
         started_proxy: &StartedNetworkProxy,
@@ -356,12 +359,14 @@ impl NetworkProxySpec {
     }
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 fn apply_exec_policy_network_rules(config: &mut NetworkProxyConfig, exec_policy: &Policy) {
     let (allowed_domains, denied_domains) = exec_policy.compiled_network_domains();
     upsert_network_domains(config, allowed_domains, /*allow*/ true);
     upsert_network_domains(config, denied_domains, /*allow*/ false);
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 fn upsert_network_domains(config: &mut NetworkProxyConfig, hosts: Vec<String>, allow: bool) {
     let mut incoming = HashSet::new();
     for host in hosts {

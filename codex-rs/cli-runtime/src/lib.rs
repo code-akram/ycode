@@ -1,10 +1,6 @@
 #![recursion_limit = "256"]
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
-use codex_cli_protocol::ConfigWarningNotification;
-use codex_cli_protocol::TextPosition as RuntimeTextPosition;
-use codex_cli_protocol::TextRange as RuntimeTextRange;
-
 mod attestation;
 mod auth_mode;
 mod bespoke_event_handling;

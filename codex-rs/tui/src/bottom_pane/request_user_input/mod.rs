@@ -953,9 +953,7 @@ impl RequestUserInputOverlay {
     }
 
     fn dismiss_resolved_request(&mut self, request: &ResolvedCliRuntimeRequest) -> bool {
-        let ResolvedCliRuntimeRequest::UserInput { call_id } = request else {
-            return false;
-        };
+        let ResolvedCliRuntimeRequest::UserInput { call_id } = request;
 
         let queue_len = self.queue.len();
         self.queue

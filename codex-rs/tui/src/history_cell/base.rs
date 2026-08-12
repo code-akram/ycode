@@ -24,11 +24,13 @@ impl HistoryCell for PlainHistoryCell {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) struct WebHyperlinkHistoryCell {
     lines: Vec<HyperlinkLine>,
 }
 
 impl WebHyperlinkHistoryCell {
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn new(lines: Vec<Line<'static>>) -> Self {
         Self {
             lines: crate::terminal_hyperlinks::annotate_web_urls(lines),

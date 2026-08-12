@@ -102,7 +102,6 @@ impl ChatWidget {
         self.unified_exec_wait_streak = None;
         self.request_redraw();
 
-        let had_pending_steers = !self.input_queue.pending_steers.is_empty();
         self.refresh_pending_input_preview();
 
         // If there is a queued user message, send exactly one now to begin the next turn.

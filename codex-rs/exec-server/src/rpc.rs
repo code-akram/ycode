@@ -1,9 +1,7 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI64;
 use std::sync::atomic::Ordering;
@@ -20,7 +18,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 use tokio::sync::SemaphorePermit;
 use tokio::sync::mpsc;
@@ -72,29 +69,9 @@ pub(crate) enum RpcClientEvent {
     Disconnected { reason: Option<String> },
 }
 
-pub(crate) enum RpcInboundRequestAdmissionError {
-    InvalidRequestId,
-    DuplicateRequestId,
-    AtCapacity,
-}
-
-pub(crate) struct RpcInboundRequestGuard {
-    request_id: RequestId,
-    request_ids: Arc<StdMutex<HashSet<RequestId>>>,
-    _call_slot: OwnedSemaphorePermit,
-}
-
-impl Drop for RpcInboundRequestGuard {
-    fn drop(&mut self) {
-        self.request_ids
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&self.request_id);
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum RpcServerOutboundMessage {
+    #[cfg(test)]
     Request(JSONRPCRequest),
     Response {
         request_id: RequestId,
@@ -277,7 +254,6 @@ where
 pub(crate) struct RpcClient {
     write_tx: mpsc::Sender<JSONRPCMessage>,
     pending: Arc<Mutex<HashMap<RequestId, PendingRequest>>>,
-    inbound_request_ids: Arc<StdMutex<HashSet<RequestId>>>,
     // Shared transport state from `JsonRpcConnection`. Calls use this to fail
     // immediately when the socket closes, even if no JSON-RPC error response
     // can be delivered for their request id.
@@ -345,7 +321,6 @@ impl RpcClient {
             Self {
                 write_tx,
                 pending,
-                inbound_request_ids: Arc::new(StdMutex::new(HashSet::new())),
                 disconnected_rx,
                 closed,
                 shared_call_slots: Semaphore::new(MAX_IN_FLIGHT_REGULAR_CALLS),
@@ -357,44 +332,6 @@ impl RpcClient {
             },
             event_rx,
         )
-    }
-
-    pub(crate) fn admit_inbound_request(
-        &self,
-        request_id: &RequestId,
-        call_slots: &Arc<Semaphore>,
-    ) -> Result<RpcInboundRequestGuard, RpcInboundRequestAdmissionError> {
-        let request_id = match request_id {
-            RequestId::Integer(request_id) if *request_id >= 0 => request_id,
-            RequestId::Integer(_) | RequestId::String(_) => {
-                return Err(RpcInboundRequestAdmissionError::InvalidRequestId);
-            }
-        };
-        let request_id = RequestId::Integer(*request_id);
-        {
-            let mut request_ids = self
-                .inbound_request_ids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !request_ids.insert(request_id.clone()) {
-                return Err(RpcInboundRequestAdmissionError::DuplicateRequestId);
-            }
-        }
-        let call_slot = match Arc::clone(call_slots).try_acquire_owned() {
-            Ok(call_slot) => call_slot,
-            Err(_) => {
-                self.inbound_request_ids
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .remove(&request_id);
-                return Err(RpcInboundRequestAdmissionError::AtCapacity);
-            }
-        };
-        Ok(RpcInboundRequestGuard {
-            request_id,
-            request_ids: Arc::clone(&self.inbound_request_ids),
-            _call_slot: call_slot,
-        })
     }
 
     pub(crate) async fn notify<P: Serialize>(
@@ -410,24 +347,6 @@ impl RpcClient {
             .send(JSONRPCMessage::Notification(JSONRPCNotification {
                 method: method.to_string(),
                 params: Some(params),
-            }))
-            .await
-            .map_err(|_| RpcCallError::Closed)
-    }
-
-    pub(crate) async fn respond<T: Serialize>(
-        &self,
-        request_id: RequestId,
-        result: &T,
-    ) -> Result<(), RpcCallError> {
-        let result = serde_json::to_value(result).map_err(RpcCallError::Json)?;
-        if self.closed.load(Ordering::Acquire) || *self.disconnected_rx.borrow() {
-            return Err(RpcCallError::Closed);
-        }
-        self.write_tx
-            .send(JSONRPCMessage::Response(JSONRPCResponse {
-                id: request_id,
-                result,
             }))
             .await
             .map_err(|_| RpcCallError::Closed)
@@ -633,6 +552,7 @@ pub(crate) fn encode_server_message(
     message: RpcServerOutboundMessage,
 ) -> Result<JSONRPCMessage, serde_json::Error> {
     match message {
+        #[cfg(test)]
         RpcServerOutboundMessage::Request(request) => Ok(JSONRPCMessage::Request(request)),
         RpcServerOutboundMessage::Response { request_id, result } => {
             Ok(JSONRPCMessage::Response(JSONRPCResponse {

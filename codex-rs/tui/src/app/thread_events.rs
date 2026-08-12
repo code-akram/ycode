@@ -172,6 +172,7 @@ impl ThreadEventStore {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(super) fn pending_replay_requests(&self) -> Vec<ServerRequest> {
         self.buffer
             .iter()
@@ -190,6 +191,7 @@ impl ThreadEventStore {
             .collect()
     }
 
+    #[allow(dead_code)] // Retained inactive-thread file-change projection seam.
     pub(super) fn file_change_changes(
         &self,
         turn_id: &str,
@@ -282,10 +284,12 @@ impl ThreadEventStore {
     }
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 fn turn_id_matches(request_turn_id: &str, candidate_turn_id: &str) -> bool {
     request_turn_id.is_empty() || request_turn_id == candidate_turn_id
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 fn file_change_item_changes(
     item: &ThreadItem,
     item_id: &str,

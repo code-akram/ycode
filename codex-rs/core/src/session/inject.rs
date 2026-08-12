@@ -106,9 +106,6 @@ impl Session {
         }
 
         let task_input = if has_user_input {
-            for item in &input {
-                if let TurnInput::UserInput { content, .. } = item {}
-            }
             input
         } else {
             self.input_queue

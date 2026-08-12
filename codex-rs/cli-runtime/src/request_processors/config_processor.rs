@@ -4,7 +4,6 @@ use crate::config_manager::ConfigManager;
 use crate::config_manager_service::ConfigManagerError;
 use crate::error_code::internal_error;
 use crate::error_code::invalid_request;
-use crate::outgoing_message::ConnectionRequestId;
 use crate::outgoing_message::OutgoingMessageSender;
 use codex_cli_protocol::BrowserUseRequirements;
 use codex_cli_protocol::ClientResponsePayload;
@@ -13,7 +12,6 @@ use codex_cli_protocol::ConfigBatchWriteParams;
 use codex_cli_protocol::ConfigReadParams;
 use codex_cli_protocol::ConfigReadResponse;
 use codex_cli_protocol::ConfigRequirements;
-use codex_cli_protocol::ConfigRequirementsReadResponse;
 use codex_cli_protocol::ConfigValueWriteParams;
 use codex_cli_protocol::ConfigWriteErrorCode;
 use codex_cli_protocol::ConfigWriteResponse;
@@ -43,8 +41,11 @@ const SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT: &[&str] = &[
 
 #[derive(Clone)]
 pub(crate) struct ConfigRequestProcessor {
+    #[allow(dead_code)] // Retained processor dependency for compatibility request handling.
     outgoing: Arc<OutgoingMessageSender>,
     config_manager: ConfigManager,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     thread_manager: Arc<ThreadManager>,
 }
 
@@ -201,6 +202,7 @@ impl ConfigRequestProcessor {
     }
 }
 
+#[allow(dead_code)] // Retained structured requirements compatibility mapper.
 fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigRequirements {
     ConfigRequirements {
         allowed_approval_policies: requirements.allowed_approval_policies.map(|policies| {
@@ -262,6 +264,7 @@ fn map_requirements_toml_to_api(requirements: ConfigRequirementsToml) -> ConfigR
     }
 }
 
+#[allow(dead_code)] // Retained compatibility mapper for non-default consumers.
 fn map_computer_use_requirements_to_api(
     computer_use: codex_config::ComputerUseRequirementsToml,
 ) -> ComputerUseRequirements {
@@ -270,6 +273,7 @@ fn map_computer_use_requirements_to_api(
     }
 }
 
+#[allow(dead_code)] // Retained compatibility mapper for non-default consumers.
 fn map_browser_use_requirements_to_api(
     browser_use: codex_config::BrowserUseRequirementsToml,
 ) -> BrowserUseRequirements {
@@ -278,8 +282,11 @@ fn map_browser_use_requirements_to_api(
     }
 }
 
+#[allow(dead_code)] // Retained sandbox requirement compatibility mapper.
 fn map_sandbox_mode_requirement_to_api(mode: CoreSandboxModeRequirement) -> Option<SandboxMode> {
     match mode {
+        #[allow(dead_code)]
+        // Retained compatibility, test, or architectural seam for non-default consumers.
         CoreSandboxModeRequirement::ReadOnly => Some(SandboxMode::ReadOnly),
         CoreSandboxModeRequirement::WorkspaceWrite => Some(SandboxMode::WorkspaceWrite),
         CoreSandboxModeRequirement::DangerFullAccess => Some(SandboxMode::DangerFullAccess),
@@ -287,6 +294,7 @@ fn map_sandbox_mode_requirement_to_api(mode: CoreSandboxModeRequirement) -> Opti
     }
 }
 
+#[allow(dead_code)] // Retained compatibility mapper for non-default consumers.
 fn map_residency_requirement_to_api(
     residency: CoreResidencyRequirement,
 ) -> codex_cli_protocol::ResidencyRequirement {
@@ -295,6 +303,7 @@ fn map_residency_requirement_to_api(
     }
 }
 
+#[allow(dead_code)] // Retained compatibility mapper for non-default consumers.
 fn map_network_requirements_to_api(
     network: codex_config::NetworkRequirementsToml,
 ) -> NetworkRequirements {
@@ -345,6 +354,7 @@ fn map_network_requirements_to_api(
     }
 }
 
+#[allow(dead_code)] // Retained compatibility mapper for non-default consumers.
 fn map_network_domain_permission_to_api(
     permission: codex_config::NetworkDomainPermissionToml,
 ) -> NetworkDomainPermission {
@@ -354,6 +364,7 @@ fn map_network_domain_permission_to_api(
     }
 }
 
+#[allow(dead_code)] // Retained compatibility mapper for non-default consumers.
 fn map_network_unix_socket_permission_to_api(
     permission: codex_config::NetworkUnixSocketPermissionToml,
 ) -> NetworkUnixSocketPermission {

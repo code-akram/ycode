@@ -80,14 +80,12 @@ fn render_catalog(
 ) -> RenderedCatalog {
     render_prepared_catalog(
         include_skills_usage_instructions,
-        budget,
         render_available_skills(catalog, policy, budget),
     )
 }
 
 fn render_prepared_catalog(
     include_skills_usage_instructions: bool,
-    budget: SkillMetadataBudget,
     rendered: Option<AvailableSkillsRender>,
 ) -> RenderedCatalog {
     let Some(rendered) = rendered else {
@@ -149,7 +147,7 @@ where
 {
     fn contribute_thread_context<'a>(
         &'a self,
-        session_store: &'a ExtensionData,
+        _session_store: &'a ExtensionData,
         thread_store: &'a ExtensionData,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<PromptFragment>> + Send + 'a>> {
         Box::pin(async move {

@@ -103,8 +103,8 @@ impl MemoryStartupContext {
         auth_manager: Arc<AuthManager>,
         thread_id: ThreadId,
         thread: Arc<CodexThread>,
-        config: &Config,
-        source: SessionSource,
+        _config: &Config,
+        _source: SessionSource,
         provider: SharedModelProvider,
     ) -> Self {
         Self {

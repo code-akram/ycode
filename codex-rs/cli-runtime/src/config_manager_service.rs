@@ -165,6 +165,7 @@ impl ConfigManager {
         })
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) async fn read_requirements(
         &self,
     ) -> Result<Option<ConfigRequirementsToml>, ConfigManagerError> {
@@ -191,6 +192,7 @@ impl ConfigManager {
     }
 
     /// Clears a value from the active user config only when its current raw value matches.
+    #[allow(dead_code)] // Retained conditional config cleanup seam for non-default clients.
     pub(crate) async fn clear_user_value_if_matches(
         &self,
         key_path: &str,

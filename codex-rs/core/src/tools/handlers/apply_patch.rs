@@ -29,7 +29,6 @@ use crate::tools::runtimes::apply_patch::ApplyPatchRequest;
 use crate::tools::runtimes::apply_patch::ApplyPatchRuntime;
 use crate::tools::sandboxing::ToolCtx;
 use codex_apply_patch::ApplyPatchAction;
-use codex_apply_patch::ApplyPatchFileChange;
 use codex_apply_patch::Hunk;
 use codex_apply_patch::StreamingPatchParser;
 use codex_exec_server::ExecutorFileSystem;
@@ -265,7 +264,6 @@ impl ApplyPatchHandler {
                 };
                 let content = execute_verified_patch(
                     changes,
-                    turn_environment.cwd(),
                     turn_environment.clone(),
                     Some(&tracker),
                     tool_ctx,
@@ -324,7 +322,7 @@ pub(crate) async fn intercept_apply_patch(
                 tool_name: ToolName::plain(tool_name),
             };
             let content =
-                execute_verified_patch(changes, cwd, turn_environment, tracker, tool_ctx).await?;
+                execute_verified_patch(changes, turn_environment, tracker, tool_ctx).await?;
             Ok(Some(FunctionToolOutput::from_text(content, Some(true))))
         }
         codex_apply_patch::MaybeApplyPatchVerified::CorrectnessError(parse_error) => {
@@ -342,7 +340,6 @@ pub(crate) async fn intercept_apply_patch(
 
 async fn execute_verified_patch(
     action: ApplyPatchAction,
-    cwd: &PathUri,
     turn_environment: TurnEnvironment,
     tracker: Option<&SharedTurnDiffTracker>,
     tool_ctx: ToolCtx,

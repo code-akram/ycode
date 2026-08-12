@@ -4958,7 +4958,7 @@ async fn submission_loop_channel_close_runs_full_thread_teardown() {
     let (tx_sub, rx_sub) = async_channel::bounded(1);
     drop(tx_sub);
     let session = Arc::new(session);
-    submission_loop(session, Arc::clone(&turn_context.config), rx_sub).await;
+    submission_loop(session, rx_sub).await;
 
     assert_eq!(1, calls.load(std::sync::atomic::Ordering::SeqCst));
     assert_eq!(
@@ -5043,7 +5043,7 @@ async fn submission_loop_channel_close_aborts_active_turn_before_thread_stop_lif
 
     let (tx_sub, rx_sub) = async_channel::bounded(1);
     drop(tx_sub);
-    submission_loop(Arc::clone(&session), session.get_config().await, rx_sub).await;
+    submission_loop(Arc::clone(&session), rx_sub).await;
 
     assert_eq!(
         vec!["turn_abort", "thread_stop"],

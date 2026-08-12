@@ -87,6 +87,7 @@ impl HeadTailBuffer {
     ///
     /// The returned chunks are ordered as: head chunks first, then tail chunks.
     /// Omitted bytes are not represented in the snapshot.
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn snapshot_chunks(&self) -> Vec<Vec<u8>> {
         let mut out = Vec::with_capacity(2);
         if !self.head.is_empty() {

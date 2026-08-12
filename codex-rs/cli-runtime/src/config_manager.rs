@@ -91,6 +91,7 @@ impl ConfigManager {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn replace_thread_config_loader(
         &self,
         thread_config_loader: Arc<dyn ThreadConfigLoader>,
@@ -148,6 +149,7 @@ impl ConfigManager {
         Ok(config)
     }
 
+    #[allow(dead_code)] // Retained configuration loader seam for non-default clients.
     pub(crate) async fn load_default_config(&self) -> std::io::Result<Config> {
         let mut loader_overrides = self.loader_overrides.clone();
         loader_overrides.ignore_user_config = true;

@@ -277,14 +277,9 @@ impl CoreTurnHost {
         invocation: CodeModeNestedToolCall,
         cancellation_token: CancellationToken,
     ) -> Result<JsonValue, String> {
-        call_nested_tool(
-            self.exec.clone(),
-            self.tool_runtime.clone(),
-            invocation,
-            cancellation_token,
-        )
-        .await
-        .map_err(|error| error.to_string())
+        call_nested_tool(self.tool_runtime.clone(), invocation, cancellation_token)
+            .await
+            .map_err(|error| error.to_string())
     }
 
     async fn notify(&self, call_id: String, cell_id: CellId, text: String) -> Result<(), String> {

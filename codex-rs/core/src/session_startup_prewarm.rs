@@ -35,6 +35,7 @@ pub(crate) enum SessionStartupPrewarmResolution {
 }
 
 impl SessionStartupPrewarmHandle {
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn new(
         task: JoinHandle<CodexResult<ModelClientSession>>,
         started_at: Instant,
@@ -131,6 +132,7 @@ impl SessionStartupPrewarmHandle {
 }
 
 impl Session {
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) async fn schedule_startup_prewarm(self: &Arc<Self>, base_instructions: String) {
         if !self.services.model_client.responses_websocket_enabled() {
             // Without websocket prewarm, resolve auth once so Agent Identity bootstrap can
@@ -182,6 +184,7 @@ impl Session {
     }
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 async fn schedule_startup_prewarm_inner(
     session: Arc<Session>,
     base_instructions: String,

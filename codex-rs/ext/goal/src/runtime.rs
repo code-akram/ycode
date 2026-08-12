@@ -196,10 +196,7 @@ impl GoalRuntimeHandle {
         Ok(())
     }
 
-    pub async fn apply_external_goal_clear(
-        &self,
-        goal: codex_state::ThreadGoal,
-    ) -> Result<(), String> {
+    pub async fn apply_external_goal_clear(&self) -> Result<(), String> {
         if !self.is_enabled() {
             return Ok(());
         }

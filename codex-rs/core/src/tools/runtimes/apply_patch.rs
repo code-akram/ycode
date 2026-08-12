@@ -17,6 +17,8 @@ use std::time::Instant;
 pub struct ApplyPatchRequest {
     pub turn_environment: TurnEnvironment,
     pub action: ApplyPatchAction,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     pub changes: Arc<std::collections::HashMap<PathBuf, FileChange>>,
 }
 

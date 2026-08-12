@@ -10,6 +10,8 @@ pub(crate) struct ToolCtx {
     pub session: Arc<Session>,
     pub turn: Arc<TurnContext>,
     pub call_id: String,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     pub tool_name: ToolName,
 }
 

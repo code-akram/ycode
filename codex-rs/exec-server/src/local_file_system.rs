@@ -878,12 +878,6 @@ pub(crate) fn resolve_existing_path(path: &Path) -> io::Result<PathBuf> {
     Ok(resolved)
 }
 
-pub(crate) fn current_sandbox_cwd() -> io::Result<PathBuf> {
-    let cwd = std::env::current_dir()
-        .map_err(|err| io::Error::other(format!("failed to read current dir: {err}")))?;
-    resolve_existing_path(cwd.as_path())
-}
-
 fn copy_symlink(source: &Path, target: &Path) -> io::Result<()> {
     let link_target = std::fs::read_link(source)?;
     #[cfg(unix)]

@@ -476,13 +476,6 @@ impl AgentControl {
             residency_slot.commit(new_thread.thread_id);
         }
 
-        if let Some(SessionSource::SubAgent(
-            subagent_source @ SubAgentSource::ThreadSpawn {
-                parent_thread_id, ..
-            },
-        )) = notification_source.as_ref()
-        {}
-
         // Notify a new thread has been created. This notification will be processed by clients
         // to subscribe or drain this newly created thread.
         // TODO(jif) add helper for drain

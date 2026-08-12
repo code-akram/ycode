@@ -43,6 +43,7 @@ use crate::session::completed_session_loop_termination;
 /// The returned IO yields events emitted by the sub-agent.
 /// Its submission channel accepts additional `Op`s for the sub-agent.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) async fn run_codex_thread_interactive(
     config: Config,
     auth_manager: Arc<AuthManager>,
@@ -139,6 +140,7 @@ pub(crate) async fn run_codex_thread_interactive(
 ///
 /// Internally calls the interactive variant, then immediately submits the provided input.
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) async fn run_codex_thread_one_shot(
     config: Config,
     auth_manager: Arc<AuthManager>,
@@ -228,6 +230,7 @@ pub(crate) async fn run_codex_thread_one_shot(
     ))
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 async fn forward_events(
     io: Arc<SessionIo>,
     tx_sub: Sender<Event>,
@@ -283,6 +286,7 @@ async fn forward_events(
 }
 
 /// Ask the delegate to stop and drain its events so background sends do not hit a closed channel.
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 async fn shutdown_delegate(io: &SessionIo) {
     let _ = io.submit(Op::Interrupt).await;
     let _ = io.submit(Op::Shutdown {}).await;
@@ -300,6 +304,7 @@ async fn shutdown_delegate(io: &SessionIo) {
     .await;
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 async fn forward_event_or_shutdown(
     io: &SessionIo,
     tx_sub: &Sender<Event>,
@@ -316,6 +321,7 @@ async fn forward_event_or_shutdown(
 }
 
 /// Forward ops from a caller to a sub-agent, respecting cancellation.
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 async fn forward_ops(
     io: Arc<SessionIo>,
     rx_ops: Receiver<Submission>,
@@ -524,6 +530,7 @@ async fn handle_patch_approval(
         .await;
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 async fn handle_request_user_input(
     io: &SessionIo,
     id: String,
@@ -585,6 +592,7 @@ async fn handle_request_permissions(
         .await;
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 async fn await_user_input_with_cancel<F>(
     fut: F,
     parent_session: &Session,

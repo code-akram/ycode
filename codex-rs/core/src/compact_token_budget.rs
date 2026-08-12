@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use crate::compact::InitialContextInjection;
 use crate::context::world_state::WorldState;
-use crate::responses_metadata::CompactionTrigger;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
-use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
@@ -36,7 +34,7 @@ pub(crate) async fn run_manual_compact_task(
         .capture_step_context(Arc::clone(&turn_context), &CancellationToken::new())
         .await?;
     let world_state = Arc::new(sess.build_world_state_for_step(&step_context).await?);
-    run_compact_task_inner(&sess, &step_context, world_state, CompactionTrigger::Manual).await
+    run_compact_task_inner(&sess, &step_context, world_state).await
 }
 
 /// Runs token-budget inline auto-compaction as a normal compaction lifecycle.
@@ -55,14 +53,13 @@ pub(crate) async fn run_inline_auto_compact_task(
             Arc::new(sess.build_world_state_for_step(&step_context).await?)
         }
     };
-    run_compact_task_inner(&sess, &step_context, world_state, CompactionTrigger::Auto).await
+    run_compact_task_inner(&sess, &step_context, world_state).await
 }
 
 async fn run_compact_task_inner(
     sess: &Arc<Session>,
     step_context: &Arc<StepContext>,
     world_state: Arc<WorldState>,
-    trigger: CompactionTrigger,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
     let compaction_item = TurnItem::ContextCompaction(ContextCompactionItem::new());

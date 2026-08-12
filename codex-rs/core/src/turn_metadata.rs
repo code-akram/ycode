@@ -34,6 +34,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 const MODEL_KEY: &str = "model";
 const REASONING_EFFORT_KEY: &str = "reasoning_effort";
 const USER_INPUT_REQUESTED_DURING_TURN_KEY: &str = "user_input_requested_during_turn";
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 const WORKSPACE_KIND_KEY: &str = "workspace_kind";
 
 pub(crate) struct ExtensionToolMetadataContext<'a> {
@@ -226,6 +227,7 @@ impl TurnMetadataState {
             filter_extra_metadata(responsesapi_client_metadata);
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn workspace_kind(&self) -> Option<String> {
         self.responsesapi_client_metadata
             .read()

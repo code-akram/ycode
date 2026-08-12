@@ -306,7 +306,7 @@ impl ToolRegistry {
     )]
     pub(crate) async fn dispatch_any_with_terminal_outcome(
         &self,
-        mut invocation: ToolInvocation,
+        invocation: ToolInvocation,
         terminal_outcome_reached: Option<Arc<AtomicBool>>,
     ) -> Result<AnyToolResult, FunctionCallError> {
         let tool_name = invocation.tool_name.clone();

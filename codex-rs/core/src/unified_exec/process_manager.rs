@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 use tokio::sync::watch;
 use tokio::time::Duration;
 use tokio::time::Instant;
+#[cfg(test)]
 use tokio_util::sync::CancellationToken;
 
 use crate::codex_thread::BackgroundTerminalInfo;
@@ -97,7 +98,7 @@ fn apply_unified_exec_env(mut env: HashMap<String, String>) -> HashMap<String, S
 fn exec_env_policy_from_shell_policy(
     policy: &ShellEnvironmentPolicy,
 ) -> codex_exec_server::ExecEnvPolicy {
-    let mut exclude = policy
+    let exclude = policy
         .exclude
         .iter()
         .map(std::string::ToString::to_string)
@@ -133,7 +134,7 @@ fn exec_server_env_for_request(
     HashMap<String, String>,
 ) {
     if let Some(exec_server_env_config) = &request.exec_server_env_config {
-        let mut env =
+        let env =
             env_overlay_for_exec_server(&request.env, &exec_server_env_config.local_policy_env);
         (Some(exec_server_env_config.policy.clone()), env)
     } else {
@@ -164,9 +165,8 @@ struct PreparedProcessHandles {
     process: Arc<UnifiedExecProcess>,
     output: OutputHandles,
     pause_state: Option<watch::Receiver<bool>>,
-    session: Option<Arc<crate::session::session::Session>>,
+    _session: Option<Arc<crate::session::session::Session>>,
     call_id: String,
-    hook_command: String,
     process_id: i32,
     tty: bool,
 }
@@ -181,6 +181,7 @@ impl Drop for InitialExecCommandGuard {
     }
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 fn fail_process_with_message(process: &UnifiedExecProcess, message: String) -> UnifiedExecError {
     if let Some(message) = process.failure_message() {
         process.terminate();
@@ -426,9 +427,7 @@ impl UnifiedExecProcessManager {
             process,
             output,
             pause_state,
-            session: _,
             call_id,
-            hook_command,
             process_id,
             tty,
             ..
@@ -609,9 +608,8 @@ impl UnifiedExecProcessManager {
             process: Arc::clone(&entry.process),
             output,
             pause_state,
-            session,
+            _session: session,
             call_id: entry.call_id.clone(),
-            hook_command: entry.hook_command.clone(),
             process_id: entry.process_id,
             tty: entry.tty,
         })
@@ -1037,9 +1035,9 @@ impl UnifiedExecProcessManager {
             if entry.initial_exec_command_active.load(Ordering::Acquire) {
                 return true;
             }
-            let Some(entry) = store.remove(process_id) else {
+            if store.remove(process_id).is_none() {
                 return false;
-            };
+            }
         }
         true
     }

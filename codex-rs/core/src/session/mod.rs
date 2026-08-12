@@ -5,8 +5,6 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 
 use crate::agent::AgentControl;
 use crate::agent::AgentStatus;
@@ -52,7 +50,6 @@ use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_models_manager::manager::SharedModelsManager;
-use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
@@ -97,7 +94,6 @@ use codex_rollout::state_db;
 use codex_rollout_trace::AgentResultTracePayload;
 use codex_rollout_trace::ThreadStartedTraceMetadata;
 use codex_rollout_trace::ThreadTraceContext;
-use codex_terminal_detection::user_agent;
 use codex_thread_store::CreateThreadParams;
 use codex_thread_store::LiveThread;
 use codex_thread_store::LiveThreadInitGuard;
@@ -257,7 +253,6 @@ use crate::stream_events_utils::handle_output_item_done;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::turn_timing::TurnTimingState;
 use crate::unified_exec::UnifiedExecProcessManager;
-use codex_git_utils::get_git_repo_root;
 use codex_protocol::ResponseItemId;
 use codex_protocol::config_types::AgentSettings;
 use codex_protocol::config_types::Personality;
@@ -315,6 +310,8 @@ pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum GitEnrichmentPolicy {
     Fresh,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     Skip,
 }
 
@@ -356,6 +353,8 @@ pub(crate) struct SessionSpawnArgs {
     /// `Session::new` creates the root trace itself when rollout tracing is enabled.
     pub(crate) parent_rollout_thread_trace: ThreadTraceContext,
     pub(crate) user_shell_override: Option<shell::Shell>,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) parent_trace: Option<W3cTraceContext>,
     pub(crate) environment_selections: Vec<TurnEnvironmentSelection>,
     pub(crate) thread_extension_init: ExtensionDataInit,
@@ -487,7 +486,6 @@ impl Session {
         let model_info = models_manager
             .get_model_info(model.as_str(), &config.to_models_manager_config())
             .await;
-        let configured_config = Arc::clone(&config);
         if config.config_lock_export_dir.is_some()
             && config.config_lock_save_fields_resolved_from_model_catalog
         {
@@ -612,7 +610,7 @@ impl Session {
         // This task will run until Op::Shutdown is received.
         let session_for_loop = Arc::clone(&session);
         let session_loop_handle = tokio::spawn(async move {
-            submission_loop(session_for_loop, configured_config, rx_sub)
+            submission_loop(session_for_loop, rx_sub)
                 .instrument(info_span!("session_loop", thread_id = %thread_id))
                 .await;
         });
@@ -814,6 +812,7 @@ fn push_prompt_fragment(
 }
 
 impl Session {
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) async fn cli_runtime_client_metadata(&self) -> CliRuntimeClientMetadata {
         let state = self.state.lock().await;
         CliRuntimeClientMetadata {
@@ -950,6 +949,7 @@ impl Session {
         state.auto_compact_window_snapshot()
     }
 
+    #[allow(dead_code)] // Retained session accounting seam for non-default consumers.
     pub(crate) async fn estimated_tokens_after_last_model_generated_item(&self) -> i64 {
         let state = self.state.lock().await;
         state
@@ -1776,6 +1776,7 @@ impl Session {
         Ok(())
     }
 
+    #[allow(dead_code)] // Retained disabled approval-flow lookup seam.
     pub(crate) async fn turn_context_for_sub_id(&self, sub_id: &str) -> Option<Arc<TurnContext>> {
         let active = self.active_turn.lock().await;
         active
@@ -2855,6 +2856,7 @@ impl Session {
         self.features.enabled(feature)
     }
 
+    #[allow(dead_code)] // Retained managed-feature snapshot seam for session consumers.
     pub(crate) fn features(&self) -> ManagedFeatures {
         self.features.clone()
     }
@@ -3371,6 +3373,7 @@ impl Session {
         self.send_token_count_event(turn_context).await;
     }
 
+    #[allow(dead_code)] // Retained canonical item projection seam for protocol consumers.
     pub(crate) async fn record_response_item_and_emit_turn_item(
         &self,
         turn_context: &TurnContext,

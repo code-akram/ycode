@@ -69,7 +69,6 @@ use codex_login::RefreshTokenError;
 use codex_login::UnauthorizedRecovery;
 use codex_login::default_client::add_originator_header;
 use codex_login::default_client::create_client_for_route;
-use codex_protocol::auth::AuthMode;
 
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
@@ -434,6 +433,7 @@ impl ModelClient {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn with_prompt_cache_key_override(
         mut self,
         prompt_cache_key_override: Option<String>,
@@ -1765,7 +1765,6 @@ where
         let mut items_added: Vec<ResponseItem> = Vec::new();
         let mut api_stream = api_stream;
         let upstream_request_id = upstream_request_id.as_deref();
-        if let Some(upstream_request_id) = upstream_request_id {}
         loop {
             let event = tokio::select! {
                 _ = consumer_dropped.cancelled() => {
@@ -1841,7 +1840,6 @@ where
                         extract_response_debug_context_from_api_error(&err);
                     let upstream_request_id =
                         upstream_request_id.or(response_debug_context.request_id.as_deref());
-                    if let Some(upstream_request_id) = upstream_request_id {}
                     let mapped = provider.map_api_error(err);
                     inference_trace_attempt.record_failed(
                         &mapped,
@@ -1893,7 +1891,7 @@ async fn handle_unauthorized(
         let mode = recovery.mode_name();
         let phase = recovery.step_name();
         return match recovery.next().await {
-            Ok(step_result) => {
+            Ok(_) => {
                 tracing::debug!(
                     mode,
                     phase,

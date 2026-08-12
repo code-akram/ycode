@@ -653,7 +653,7 @@ impl App {
         self.refresh_in_memory_config_from_disk_best_effort("starting a new thread")
             .await;
         let model = self.chat_widget.current_model().to_string();
-        let mut config = self.fresh_session_config();
+        let config = self.fresh_session_config();
         let summary = session_summary(
             self.chat_widget.token_usage(),
             self.chat_widget.thread_id(),
@@ -978,7 +978,7 @@ impl App {
             } else {
                 (current_cwd, resume_cwd)
             };
-        let mut resume_config = match self
+        let resume_config = match self
             .rebuild_config_for_resume_or_fallback(&config_current_cwd, config_resume_cwd)
             .await
         {

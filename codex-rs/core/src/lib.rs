@@ -66,7 +66,6 @@ pub(crate) use skills::HostSkillsService;
 pub(crate) use skills::SkillInjections;
 pub(crate) use skills::build_skill_injections;
 pub(crate) use skills::collect_explicit_skill_mentions;
-pub(crate) use skills::injection;
 pub(crate) use skills::maybe_emit_implicit_skill_invocation;
 pub(crate) use skills::skills_load_input_from_config;
 mod event_mapping;

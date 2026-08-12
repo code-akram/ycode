@@ -5,13 +5,11 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio::time::sleep;
 use tokio::time::timeout_at;
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
 
 use super::ConnectionStatus;
 use super::ExecServerClient;

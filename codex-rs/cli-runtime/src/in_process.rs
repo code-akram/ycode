@@ -343,7 +343,7 @@ impl InProcessClientHandle {
 /// This function sends `initialize` followed by `initialized` before returning
 /// the handle, so callers receive a ready-to-use runtime. If initialize fails,
 /// the runtime is shut down and an `InvalidData` error is returned.
-pub async fn start(mut args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {
+pub async fn start(args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {
     let initialize = args.initialize.clone();
     let client = start_uninitialized(args).await?;
 

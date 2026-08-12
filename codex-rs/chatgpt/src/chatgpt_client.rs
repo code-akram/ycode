@@ -120,6 +120,7 @@ pub(crate) async fn chatgpt_get_request_with_timeout<T: DeserializeOwned>(
 ///
 /// Callers that bind other state to the auth snapshot should pass that same snapshot here rather
 /// than reacquiring auth while the request is in flight.
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) async fn chatgpt_post_request_with_timeout<
     TResponse: DeserializeOwned,
     TRequest: Serialize + ?Sized,

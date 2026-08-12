@@ -38,7 +38,9 @@ mod styles;
 use styles::Canvas;
 use styles::paint_style;
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 const PROMPT_ACCENT_ALPHA: f32 = 0.86;
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 const CHARGE: Duration = Duration::from_millis(150);
 
 pub(crate) const IGNITION_FRAME_TICK: Duration = Duration::from_millis(33);
@@ -102,6 +104,7 @@ impl EffortTier {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     fn prompt_glyph(self) -> &'static str {
         match self {
             Self::Max => "›",
@@ -122,6 +125,7 @@ impl EffortTier {
         self.hues(on_light_bg)[0]
     }
 
+    #[allow(dead_code)] // Retained Mini prompt rendering seam.
     fn accent_fallback(self) -> Color {
         match self {
             Self::Max => Color::Yellow,
@@ -129,6 +133,7 @@ impl EffortTier {
         }
     }
 
+    #[allow(dead_code)] // Retained Mini prompt rendering seam.
     pub(crate) fn prompt(self, charge: f32) -> Span<'static> {
         self.prompt_for(
             charge,
@@ -138,6 +143,7 @@ impl EffortTier {
         )
     }
 
+    #[allow(dead_code)] // Retained Mini prompt rendering seam.
     fn prompt_for(
         self,
         charge: f32,
@@ -153,6 +159,7 @@ impl EffortTier {
         Span::styled(self.prompt_glyph(), style)
     }
 
+    #[allow(dead_code)] // Retained Mini prompt rendering seam.
     fn accent_color_for(
         self,
         charge: f32,
@@ -204,6 +211,7 @@ impl EffortIgnition {
                 .is_some_and(|elapsed| elapsed >= self.style.total_duration(self.tier))
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn charge_alpha(&self) -> f32 {
         match self.elapsed() {
             Some(elapsed) => (elapsed.as_secs_f32() / CHARGE.as_secs_f32()).clamp(0.0, 1.0),

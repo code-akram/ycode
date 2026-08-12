@@ -16,6 +16,7 @@ mod fs_helper_main;
 mod fs_sandbox;
 mod local_file_system;
 mod local_process;
+#[cfg(test)]
 mod network_policy_decisions;
 mod noise_channel;
 mod noise_relay;

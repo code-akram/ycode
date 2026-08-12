@@ -112,6 +112,7 @@ impl QueuedInitializedRequest {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     fn new_background(future: impl Future<Output = ()> + Send + 'static) -> Self {
         Self {
             gate: None,
@@ -140,6 +141,7 @@ pub(crate) struct RequestSerializationQueues {
 
 impl RequestSerializationQueues {
     /// Enqueue app-owned work alongside RPCs that mutate the same serialized resource.
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) async fn enqueue_background(
         &self,
         key: RequestSerializationQueueKey,

@@ -132,6 +132,7 @@ impl CompactionTurnMetadata {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn trigger(self) -> CompactionTrigger {
         self.trigger
     }
@@ -144,6 +145,7 @@ impl CompactionTurnMetadata {
         self.implementation
     }
 
+    #[allow(dead_code)] // Serialized compaction metadata accessor retained for diagnostics/tests.
     pub(crate) fn phase(self) -> CompactionPhase {
         self.phase
     }

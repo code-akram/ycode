@@ -236,6 +236,7 @@ impl UnifiedExecProcess {
         }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(super) fn fail_and_terminate(&self, message: String) {
         let state = self.state_rx.borrow().clone();
         if state.failure_message.is_none() {
@@ -244,6 +245,7 @@ impl UnifiedExecProcess {
         self.terminate();
     }
 
+    #[allow(dead_code)] // Retained testable process-output snapshot seam.
     async fn snapshot_output(&self) -> Vec<Vec<u8>> {
         let guard = self.output.output_buffer.lock().await;
         guard.snapshot_chunks()

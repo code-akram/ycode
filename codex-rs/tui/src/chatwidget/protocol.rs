@@ -266,7 +266,7 @@ impl ChatWidget {
     fn handle_item_started_notification(
         &mut self,
         notification: ItemStartedNotification,
-        from_replay: bool,
+        _from_replay: bool,
     ) {
         match notification.item {
             item @ ThreadItem::CommandExecution { .. } => self.on_command_execution_started(item),

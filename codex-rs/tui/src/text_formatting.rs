@@ -260,6 +260,7 @@ pub(crate) fn center_truncate_path(path: &str, max_width: usize) -> String {
 /// - ["apple"] -> "apple"
 /// - ["apple", "banana"] -> "apple and banana"
 /// - ["apple", "banana", "cherry"] -> "apple, banana and cherry"
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) fn proper_join<T: AsRef<str>>(items: &[T]) -> String {
     match items.len() {
         0 => String::new(),

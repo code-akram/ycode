@@ -12,35 +12,20 @@ use crate::thread_state::resolve_server_request_on_thread_listener;
 use crate::thread_status::ThreadWatchActiveGuard;
 use crate::thread_status::ThreadWatchManager;
 use codex_cli_protocol::AccountRateLimitsUpdatedNotification;
-use codex_cli_protocol::AdditionalPermissionProfile as V2AdditionalPermissionProfile;
 use codex_cli_protocol::CodexErrorInfo as V2CodexErrorInfo;
 use codex_cli_protocol::CommandAction as V2ParsedCommand;
-use codex_cli_protocol::CommandExecutionApprovalDecision;
-use codex_cli_protocol::CommandExecutionPresentation;
-use codex_cli_protocol::CommandExecutionRequestApprovalParams;
-use codex_cli_protocol::CommandExecutionRequestApprovalResponse;
 use codex_cli_protocol::CommandExecutionSource;
 use codex_cli_protocol::CommandExecutionStatus;
 use codex_cli_protocol::DeprecationNoticeNotification;
 use codex_cli_protocol::DynamicToolCallParams;
 use codex_cli_protocol::EnvironmentConnectionNotification;
 use codex_cli_protocol::ErrorNotification;
-use codex_cli_protocol::ExecPolicyAmendment as V2ExecPolicyAmendment;
-use codex_cli_protocol::FileChangeApprovalDecision;
-use codex_cli_protocol::FileChangeRequestApprovalParams;
-use codex_cli_protocol::FileChangeRequestApprovalResponse;
-use codex_cli_protocol::GrantedPermissionProfile as V2GrantedPermissionProfile;
-use codex_cli_protocol::GuardianWarningNotification;
 use codex_cli_protocol::ItemCompletedNotification;
 use codex_cli_protocol::ItemStartedNotification;
 use codex_cli_protocol::ModelReroutedNotification;
 use codex_cli_protocol::ModelSafetyBufferingUpdatedNotification;
 use codex_cli_protocol::ModelVerificationNotification;
 use codex_cli_protocol::NetworkApprovalContext as V2NetworkApprovalContext;
-use codex_cli_protocol::NetworkPolicyAmendment as V2NetworkPolicyAmendment;
-use codex_cli_protocol::NetworkPolicyRuleAction as V2NetworkPolicyRuleAction;
-use codex_cli_protocol::PermissionsRequestApprovalParams;
-use codex_cli_protocol::PermissionsRequestApprovalResponse;
 use codex_cli_protocol::RawResponseCompletedNotification;
 use codex_cli_protocol::RawResponseItemCompletedNotification;
 use codex_cli_protocol::RequestId;
@@ -83,26 +68,19 @@ use codex_core::ThreadManager;
 use codex_protocol::ThreadId;
 use codex_protocol::items::CollabAgentTool as CoreCollabAgentTool;
 use codex_protocol::items::TurnItem as CoreTurnItem;
-use codex_protocol::models::AdditionalPermissionProfile as CoreAdditionalPermissionProfile;
 use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::protocol::CodexErrorInfo as CoreCodexErrorInfo;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::ExecApprovalRequestEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RealtimeEvent;
-use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SubAgentActivityKind;
 use codex_protocol::protocol::TokenCountEvent;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnDiffEvent;
-use codex_protocol::request_permissions::PermissionGrantScope as CorePermissionGrantScope;
-use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
-use codex_protocol::request_permissions::RequestPermissionsResponse as CoreRequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputAnswer as CoreRequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputResponse as CoreRequestUserInputResponse;
-use codex_shell_command::parse_command::shlex_join;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use std::collections::HashMap;
@@ -113,12 +91,14 @@ use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use tracing::error;
 
+#[allow(dead_code)] // Retained compatibility projection for disabled approval events.
 enum CommandExecutionApprovalPresentation {
     Network(V2NetworkApprovalContext),
     Command(CommandExecutionCompletionItem),
 }
 
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)] // Retained compatibility projection for disabled approval events.
 struct CommandExecutionCompletionItem {
     command: String,
     cwd: LegacyAppPathString,
@@ -135,12 +115,16 @@ pub(crate) async fn apply_bespoke_event_handling(
     thread_state: Arc<tokio::sync::Mutex<ThreadState>>,
     thread_watch_manager: ThreadWatchManager,
     thread_list_state_permit: Arc<tokio::sync::Semaphore>,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     fallback_model_provider: String,
 ) {
     let Event {
         id: event_turn_id,
         msg,
     } = event;
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     match msg {
         EventMsg::TurnStarted(payload) => {
             // While not technically necessary as it was already done on TurnComplete, be extra cautios and abort any pending server requests.
@@ -938,6 +922,7 @@ async fn remove_missing_thread_watch(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)] // Retained compatibility projection for disabled approval events.
 async fn start_command_execution_item(
     conversation_id: &ThreadId,
     turn_id: String,
@@ -982,6 +967,7 @@ async fn start_command_execution_item(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)] // Retained compatibility projection for disabled approval events.
 async fn complete_command_execution_item(
     conversation_id: &ThreadId,
     turn_id: String,
@@ -1004,6 +990,7 @@ async fn complete_command_execution_item(
     }
 
     let item = ThreadItem::CommandExecution {
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
         id: item_id,
         command: completion_item.command,
         cwd: completion_item.cwd,
@@ -1293,6 +1280,7 @@ async fn on_request_user_input_response(
     }
 }
 
+#[allow(dead_code)] // Retained timestamp helper for compatibility event projection.
 fn now_unix_timestamp_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1315,6 +1303,8 @@ mod tests {
     use codex_cli_protocol::ServerRequest;
     use codex_cli_protocol::TurnPlanStepStatus;
     use codex_login::CodexAuth;
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     use codex_protocol::AgentPath;
     use codex_protocol::items::AgentMessageContent as CoreAgentMessageContent;
     use codex_protocol::items::AgentMessageItem as CoreAgentMessageItem;

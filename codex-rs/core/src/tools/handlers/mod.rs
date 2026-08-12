@@ -30,7 +30,6 @@ mod wait_for_environment;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use serde::Deserialize;
-use serde_json::Map;
 use serde_json::Value;
 
 use crate::environment_selection::TurnEnvironmentSnapshot;

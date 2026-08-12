@@ -37,8 +37,11 @@ pub(crate) struct SessionServices {
     pub(crate) show_raw_agent_reasoning: bool,
     pub(crate) auth_manager: Arc<AuthManager>,
     /// Upload-only clients shared across turns without logging signed blob URLs.
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) openai_file_upload_client_pool: RouteAwareClientPool,
     pub(crate) models_manager: SharedModelsManager,
+    #[allow(dead_code)] // Keeps the runtime alive for session-owned asynchronous services.
     pub(crate) runtime_handle: Handle,
     pub(crate) skills_service: Arc<HostSkillsService>,
     pub(crate) agents_md_manager: Arc<AgentsMdManager>,

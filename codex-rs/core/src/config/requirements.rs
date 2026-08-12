@@ -100,6 +100,7 @@ pub(super) fn push_sqlite_home_env_override_warning(
 
 /// Emits one source-aware warning when a structured requirement replaces one
 /// or more configured values.
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 fn push_structured_requirement_override_warning(
     field_name: &str,
     conflict: bool,

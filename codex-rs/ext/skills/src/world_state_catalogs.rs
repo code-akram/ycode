@@ -210,9 +210,7 @@ impl<'a> CatalogContext<'a> {
                     executor_capability_discovery: None,
                 })
                 .await;
-            self.input
-                .turn_store
-                .insert(HostSkillsStepState(catalog.clone()));
+            self.input.turn_store.insert(HostSkillsStepState);
             catalog
         } else {
             SkillCatalog::default()

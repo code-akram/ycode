@@ -88,6 +88,7 @@ impl SessionState {
         self.next_turn_is_first = value;
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn take_next_turn_is_first(&mut self) -> bool {
         let is_first_turn = self.next_turn_is_first;
         self.next_turn_is_first = false;

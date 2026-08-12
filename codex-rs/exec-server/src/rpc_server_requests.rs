@@ -3,22 +3,29 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicI64;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 
+#[cfg(test)]
 use codex_exec_server_protocol::JSONRPCRequest;
 use codex_exec_server_protocol::RequestId;
+#[cfg(test)]
 use serde::Serialize;
+#[cfg(test)]
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+#[cfg(test)]
+use std::time::Duration;
+#[cfg(test)]
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+#[cfg(test)]
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 use crate::rpc::RpcCallError;
 use crate::rpc::RpcServerOutboundMessage;
 
+#[cfg(test)]
 pub(crate) const MAX_IN_FLIGHT_SERVER_CALLS: usize = 256;
 
 type PendingRequest = oneshot::Sender<Result<Value, RpcCallError>>;
@@ -29,18 +36,24 @@ pub(crate) struct RpcServerRequestSender {
 }
 
 struct RpcServerRequestSenderInner {
+    #[cfg(test)]
     outgoing_tx: mpsc::Sender<RpcServerOutboundMessage>,
+    #[cfg(not(test))]
+    _outgoing_tx: mpsc::Sender<RpcServerOutboundMessage>,
     pending: Mutex<HashMap<RequestId, PendingRequest>>,
+    #[cfg(test)]
     call_slots: Semaphore,
     next_request_id: AtomicI64,
     closed: CancellationToken,
 }
 
+#[cfg(test)]
 struct PendingServerRequestGuard {
     inner: Arc<RpcServerRequestSenderInner>,
     request_id: RequestId,
 }
 
+#[cfg(test)]
 impl Drop for PendingServerRequestGuard {
     fn drop(&mut self) {
         self.inner
@@ -55,8 +68,12 @@ impl RpcServerRequestSender {
     pub(crate) fn new(outgoing_tx: mpsc::Sender<RpcServerOutboundMessage>) -> Self {
         Self {
             inner: Arc::new(RpcServerRequestSenderInner {
+                #[cfg(test)]
                 outgoing_tx,
+                #[cfg(not(test))]
+                _outgoing_tx: outgoing_tx,
                 pending: Mutex::new(HashMap::new()),
+                #[cfg(test)]
                 call_slots: Semaphore::new(MAX_IN_FLIGHT_SERVER_CALLS),
                 next_request_id: AtomicI64::new(1),
                 closed: CancellationToken::new(),
@@ -64,6 +81,7 @@ impl RpcServerRequestSender {
         }
     }
 
+    #[cfg(test)]
     pub(crate) async fn call_with_timeout<P, T>(
         &self,
         method: &str,

@@ -515,40 +515,19 @@ mod worker {
         SkippedAlreadyCompressed,
     }
 
-    impl CompressionOutcome {
-        fn tag(self) -> &'static str {
-            match self {
-                CompressionOutcome::Compressed => "compressed",
-                CompressionOutcome::SkippedNotCold => "skipped_not_cold",
-                CompressionOutcome::SkippedChanged => "skipped_changed",
-                CompressionOutcome::SkippedAlreadyCompressed => "skipped_already_compressed",
-            }
-        }
-    }
-
     struct CompressionMeasurement {
         outcome: CompressionOutcome,
-        source_bytes: Option<u64>,
-        compressed_bytes: Option<u64>,
     }
 
     impl CompressionMeasurement {
-        fn new(
-            outcome: CompressionOutcome,
-            source_bytes: Option<u64>,
-            compressed_bytes: Option<u64>,
-        ) -> Self {
-            Self {
-                outcome,
-                source_bytes,
-                compressed_bytes,
-            }
+        fn new(outcome: CompressionOutcome) -> Self {
+            Self { outcome }
         }
     }
 
     enum ColdFileState {
         Cold(FileState),
-        NotCold(Option<FileState>),
+        NotCold,
     }
 
     async fn drain_compression_jobs(
@@ -595,21 +574,16 @@ mod worker {
     fn compress_rollout_if_cold_blocking(path: &Path) -> io::Result<CompressionMeasurement> {
         let before = match cold_file_state(path)? {
             ColdFileState::Cold(state) => state,
-            ColdFileState::NotCold(state) => {
+            ColdFileState::NotCold => {
                 return Ok(CompressionMeasurement::new(
                     CompressionOutcome::SkippedNotCold,
-                    state.map(|state| state.len),
-                    /*compressed_bytes*/ None,
                 ));
             }
         };
-        let source_bytes = Some(before.len);
         let compressed_path = path::compressed_rollout_path(path);
         if compressed_path.exists() {
             return Ok(CompressionMeasurement::new(
                 CompressionOutcome::SkippedAlreadyCompressed,
-                source_bytes,
-                /*compressed_bytes*/ None,
             ));
         }
 
@@ -628,21 +602,17 @@ mod worker {
         if !same_file_state(path, &before)? {
             return Ok(CompressionMeasurement::new(
                 CompressionOutcome::SkippedChanged,
-                source_bytes,
-                /*compressed_bytes*/ None,
             ));
         }
         set_file_metadata(temp_file.as_file(), before.modified, &before.permissions)?;
         temp_file.as_file().sync_all()?;
-        let compressed_bytes = temp_file.as_file().metadata()?.len();
+        temp_file.as_file().metadata()?;
 
         match temp_file.persist_noclobber(compressed_path.as_path()) {
             Ok(_) => {}
             Err(err) if err.error.kind() == io::ErrorKind::AlreadyExists => {
                 return Ok(CompressionMeasurement::new(
                     CompressionOutcome::SkippedAlreadyCompressed,
-                    source_bytes,
-                    /*compressed_bytes*/ None,
                 ));
             }
             Err(err) => return Err(err.error),
@@ -651,16 +621,10 @@ mod worker {
             let _ = std::fs::remove_file(compressed_path.as_path());
             return Ok(CompressionMeasurement::new(
                 CompressionOutcome::SkippedChanged,
-                source_bytes,
-                /*compressed_bytes*/ None,
             ));
         }
         std::fs::remove_file(path)?;
-        Ok(CompressionMeasurement::new(
-            CompressionOutcome::Compressed,
-            source_bytes,
-            Some(compressed_bytes),
-        ))
+        Ok(CompressionMeasurement::new(CompressionOutcome::Compressed))
     }
 
     struct FileState {
@@ -673,12 +637,12 @@ mod worker {
         let metadata = match std::fs::metadata(path) {
             Ok(metadata) => metadata,
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                return Ok(ColdFileState::NotCold(None));
+                return Ok(ColdFileState::NotCold);
             }
             Err(err) => return Err(err),
         };
         if !metadata.is_file() {
-            return Ok(ColdFileState::NotCold(None));
+            return Ok(ColdFileState::NotCold);
         }
         let modified = metadata.modified()?;
         let state = FileState {
@@ -690,7 +654,7 @@ mod worker {
             .duration_since(modified)
             .unwrap_or(Duration::ZERO);
         if age < MIN_ROLLOUT_AGE {
-            return Ok(ColdFileState::NotCold(Some(state)));
+            return Ok(ColdFileState::NotCold);
         }
         Ok(ColdFileState::Cold(state))
     }

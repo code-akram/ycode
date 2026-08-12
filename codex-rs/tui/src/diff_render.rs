@@ -301,6 +301,7 @@ pub struct DiffSummary {
 }
 
 impl DiffSummary {
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn new(changes: HashMap<PathBuf, FileChange>, cwd: AbsolutePathBuf) -> Self {
         Self { changes, cwd }
     }
@@ -792,6 +793,7 @@ pub(crate) fn calculate_add_remove_from_diff(diff: &str) -> (usize, usize) {
 /// This is the convenience entry point used by preview surfaces and
 /// any caller that does not have syntax spans.  Delegates to the inner
 /// rendering core with `syntax_spans = None`.
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) fn push_wrapped_diff_line_with_style_context(
     line_number: usize,
     kind: DiffLineType,
@@ -820,6 +822,7 @@ pub(crate) fn push_wrapped_diff_line_with_style_context(
 /// `syntax_spans` (from [`highlight_code_to_styled_spans`]) onto the diff
 /// coloring.  Delete lines receive a `DIM` modifier so syntax colors do not
 /// overpower the removal cue.
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) fn push_wrapped_diff_line_with_syntax_and_style_context(
     line_number: usize,
     kind: DiffLineType,

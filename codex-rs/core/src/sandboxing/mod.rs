@@ -9,6 +9,7 @@ use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
 
 #[derive(Debug)]
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) struct ExecOptions {
     pub(crate) expiration: ExecExpiration,
     pub(crate) capture_policy: ExecCapturePolicy,

@@ -2,9 +2,12 @@ use super::*;
 
 #[derive(Clone)]
 pub(crate) struct CommandExecRequestProcessor {
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     arg0_paths: Arg0DispatchPaths,
     config: Arc<Config>,
     outgoing: Arc<OutgoingMessageSender>,
+    #[allow(dead_code)] // Retained processor dependency for compatibility request handling.
     config_manager: ConfigManager,
     environment_manager: Arc<EnvironmentManager>,
     command_exec_manager: CommandExecManager,

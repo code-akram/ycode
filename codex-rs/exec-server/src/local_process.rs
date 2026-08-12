@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 use tokio::sync::Notify;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
+#[cfg(test)]
 use tokio_util::sync::CancellationToken;
 
 use crate::ExecBackend;

@@ -92,6 +92,8 @@ pub(crate) struct SessionConfiguration {
     // TODO(pakrym): Remove config from here
     pub(super) original_config_do_not_use: Arc<Config>,
     /// Optional client service name used to derive the Responses request originator.
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(super) metrics_service_name: Option<String>,
     pub(super) cli_runtime_client_name: Option<String>,
     pub(super) cli_runtime_client_version: Option<String>,
@@ -134,10 +136,12 @@ impl SessionConfiguration {
             .unwrap_or_default()
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn codex_home(&self) -> &AbsolutePathBuf {
         &self.codex_home
     }
 
+    #[allow(dead_code)] // Retained permission-profile state accessor for compatibility consumers.
     pub(super) fn permission_profile_state(&self) -> &PermissionProfileState {
         &self.permission_profile_state
     }
@@ -439,6 +443,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) cli_runtime_client_version: Option<String>,
 }
 
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) struct CliRuntimeClientMetadata {
     pub(crate) client_name: Option<String>,
     pub(crate) client_version: Option<String>,
@@ -702,7 +707,7 @@ impl Session {
         ));
 
         // Join all independent futures.
-        let (thread_persistence_result, state_db_ctx, auth) =
+        let (thread_persistence_result, state_db_ctx, _auth) =
             tokio::join!(thread_persistence_fut, state_db_fut, auth_fut);
 
         let mut live_thread_init =

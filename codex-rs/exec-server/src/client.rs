@@ -18,7 +18,6 @@ use tokio::sync::OnceCell;
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
-use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
 use tokio::time::timeout;
@@ -113,7 +112,6 @@ use crate::protocol::WriteParams;
 use crate::protocol::WriteResponse;
 use crate::rpc::RpcCallError;
 use crate::rpc::RpcClient;
-use crate::rpc_server_requests::MAX_IN_FLIGHT_SERVER_CALLS;
 use codex_http_client::HttpClientFactory;
 
 pub(crate) mod http_client;
@@ -225,8 +223,6 @@ struct Inner {
     http_body_streams_write_lock: Mutex<()>,
     http_body_stream_byte_budget: Arc<Semaphore>,
     http_body_stream_next_id: AtomicU64,
-    // Keep admission shared while recovered transports finish older requests.
-    rpc_inbound_request_slots: Arc<Semaphore>,
     session_id: OnceLock<String>,
     reconnect_strategy: Option<ExecServerReconnectStrategy>,
 }
@@ -901,7 +897,7 @@ impl ExecServerClient {
                     .call_rpc::<_, ExecResponse>(&rpc_client, EXEC_METHOD, &params)
                     .await
                 {
-                    Ok(response) => {
+                    Ok(_) => {
                         state.recoverable.store(true, Ordering::Release);
                         let session = Session {
                             client: client.clone(),
@@ -1017,7 +1013,6 @@ impl ExecServerClient {
             http_body_streams_write_lock: Mutex::new(()),
             http_body_stream_byte_budget: Arc::new(Semaphore::new(MAX_QUEUED_HTTP_BODY_BYTES)),
             http_body_stream_next_id: AtomicU64::new(1),
-            rpc_inbound_request_slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_SERVER_CALLS)),
             session_id,
             reconnect_strategy,
         });

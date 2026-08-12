@@ -125,6 +125,7 @@ impl ThreadWatchManager {
             .count()
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn subscribe_running_turn_count(&self) -> watch::Receiver<usize> {
         self.running_turn_count_tx.subscribe()
     }

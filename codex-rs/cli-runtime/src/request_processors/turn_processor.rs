@@ -2,7 +2,6 @@ use super::*;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputContentItem;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AdditionalContextEntry as CoreAdditionalContextEntry;
 use codex_protocol::protocol::AdditionalContextKind as CoreAdditionalContextKind;
 use codex_protocol::protocol::MultiAgentVersion;
@@ -84,8 +83,12 @@ pub(crate) struct TurnRequestProcessor {
     auth_manager: Arc<AuthManager>,
     thread_manager: Arc<ThreadManager>,
     outgoing: Arc<OutgoingMessageSender>,
+    #[allow(dead_code)] // Retained turn processor dependency for compatibility requests.
     arg0_paths: Arg0DispatchPaths,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     config: Arc<Config>,
+    #[allow(dead_code)] // Retained turn processor dependency for compatibility requests.
     config_manager: ConfigManager,
     pending_thread_unloads: Arc<Mutex<HashSet<ThreadId>>>,
     thread_state_manager: ThreadStateManager,

@@ -156,6 +156,7 @@ impl ContextManager {
         Arc::unwrap_or_clone(self.items)
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn history_version(&self) -> u64 {
         self.history_version
     }
@@ -315,6 +316,7 @@ impl ContextManager {
         }
     }
 
+    #[allow(dead_code)] // Retained session accounting seam for non-default consumers.
     pub(crate) fn estimated_tokens_after_last_model_generated_item(&self) -> i64 {
         self.items_after_last_model_generated_item()
             .iter()

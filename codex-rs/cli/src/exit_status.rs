@@ -1,4 +1,5 @@
 #[cfg(unix)]
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) fn handle_exit_status(status: std::process::ExitStatus) -> ! {
     use std::os::unix::process::ExitStatusExt;
 

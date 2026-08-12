@@ -84,6 +84,7 @@ impl TurnEnvironment {
         self.config.permission_profile.active_permission_profile()
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn permission_profile_with_workspace_roots(&self) -> PermissionProfile {
         let workspace_roots = self
             .workspace_roots()
@@ -162,6 +163,8 @@ pub struct TurnContext {
 
 enum TurnMultiAgentRuntime {
     ResolveAndStore,
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     Preview,
 }
 
@@ -195,6 +198,7 @@ impl TurnContext {
         self.config.permissions.file_system_sandbox_policy()
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn network_sandbox_policy(&self) -> NetworkSandboxPolicy {
         self.config.permissions.network_sandbox_policy()
     }
@@ -580,22 +584,21 @@ impl Session {
             }
         };
 
-        let (session_configuration, permission_profile_changed, previous_config, new_config) =
-            match update_result {
-                Ok(update) => update,
-                Err(err) => {
-                    let message = err.to_string();
-                    self.send_event_raw(Event {
-                        id: sub_id.clone(),
-                        msg: EventMsg::Error(ErrorEvent {
-                            message: message.clone(),
-                            codex_error_info: Some(CodexErrorInfo::BadRequest),
-                        }),
-                    })
-                    .await;
-                    return Err(CodexErr::InvalidRequest(message));
-                }
-            };
+        let (session_configuration, _, previous_config, new_config) = match update_result {
+            Ok(update) => update,
+            Err(err) => {
+                let message = err.to_string();
+                self.send_event_raw(Event {
+                    id: sub_id.clone(),
+                    msg: EventMsg::Error(ErrorEvent {
+                        message: message.clone(),
+                        codex_error_info: Some(CodexErrorInfo::BadRequest),
+                    }),
+                })
+                .await;
+                return Err(CodexErr::InvalidRequest(message));
+            }
+        };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
 
         Ok(self
@@ -623,6 +626,7 @@ impl Session {
         .await
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     async fn new_startup_prewarm_turn_from_configuration(
         &self,
         sub_id: String,

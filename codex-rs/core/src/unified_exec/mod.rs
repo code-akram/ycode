@@ -36,8 +36,6 @@ pub(crate) fn set_deterministic_process_ids_for_tests(enabled: bool) {
 pub(crate) use errors::UnifiedExecError;
 pub(crate) use process::NoopSpawnLifecycle;
 #[cfg(unix)]
-pub(crate) use process::SpawnLifecycle;
-pub(crate) use process::SpawnLifecycleHandle;
 pub(crate) use process::UnifiedExecProcess;
 
 pub(crate) const MIN_YIELD_TIME_MS: u64 = 250;
@@ -47,6 +45,7 @@ pub(crate) const MAX_YIELD_TIME_MS: u64 = 30_000;
 pub(crate) const DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS: u64 = 300_000;
 pub(crate) const DEFAULT_MAX_OUTPUT_TOKENS: usize = 10_000;
 pub(crate) const UNIFIED_EXEC_OUTPUT_MAX_BYTES: usize = 1024 * 1024; // 1 MiB
+#[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
 pub(crate) const UNIFIED_EXEC_OUTPUT_MAX_TOKENS: usize = UNIFIED_EXEC_OUTPUT_MAX_BYTES / 4;
 pub(crate) const MAX_UNIFIED_EXEC_PROCESSES: usize = 64;
 
@@ -172,3 +171,5 @@ mod process_tests;
 #[cfg(unix)]
 #[path = "mod_tests.rs"]
 mod tests;
+#[cfg(test)]
+pub(crate) use process::SpawnLifecycle;

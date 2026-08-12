@@ -69,6 +69,7 @@ impl Overlay {
         Self::Static(StaticOverlay::with_title(lines, title, keymap))
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn new_static_with_renderables(
         renderables: Vec<Box<dyn Renderable>>,
         title: String,

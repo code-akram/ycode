@@ -90,7 +90,6 @@ pub(crate) use footer::GoalStatusIndicator;
 #[cfg(test)]
 pub(crate) use footer::goal_status_indicator_line;
 pub(crate) use list_selection_view::ColumnWidthMode;
-pub(crate) use list_selection_view::ListSelectionView;
 pub(crate) use list_selection_view::SelectionDescriptionLayout;
 pub(crate) use list_selection_view::SelectionRowDisplay;
 pub(crate) use list_selection_view::SelectionViewParams;
@@ -576,7 +575,6 @@ impl BottomPane {
     }
 
     pub fn handle_paste(&mut self, pasted: String) {
-        let has_pasted_text = !pasted.is_empty();
         if let Some(view) = self.view_stack.last_mut() {
             let needs_redraw = view.handle_paste(pasted);
             let view_complete = view.is_complete();
@@ -736,7 +734,10 @@ impl BottomPane {
     }
 
     /// Returns whether the composer currently accepts interactive draft edits.
+    #[allow(dead_code)] // Retained composer state query for alternate views.
     pub(crate) fn composer_input_enabled(&self) -> bool {
+        #[allow(dead_code)]
+        // Retained compatibility, test, or architectural seam for non-default consumers.
         self.composer.input_enabled()
     }
 
@@ -976,6 +977,7 @@ impl BottomPane {
     }
 
     /// Replace the active selection view when it matches `view_id`.
+    #[allow(dead_code)] // Retained stacked-view replacement seam.
     pub(crate) fn replace_selection_view_if_active(
         &mut self,
         view_id: &'static str,
@@ -1084,6 +1086,7 @@ impl BottomPane {
             .and_then(|view| view.selected_index())
     }
 
+    #[allow(dead_code)] // Retained active-view identity seam.
     pub(crate) fn active_tab_id_for_active_view(&self, view_id: &'static str) -> Option<&str> {
         self.view_stack
             .last()
@@ -1091,6 +1094,7 @@ impl BottomPane {
             .and_then(|view| view.active_tab_id())
     }
 
+    #[allow(dead_code)] // Retained active-view dismissal seam.
     pub(crate) fn dismiss_active_view_if_id(&mut self, view_id: &'static str) -> bool {
         let is_match = self
             .view_stack

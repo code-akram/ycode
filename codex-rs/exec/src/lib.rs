@@ -116,7 +116,6 @@ use std::path::PathBuf;
 use supports_color::Stream;
 use tokio::sync::mpsc;
 use tracing::Instrument;
-use tracing::error;
 use tracing::field;
 use tracing::info;
 use tracing::info_span;
@@ -212,7 +211,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         json: json_mode,
         prompt,
         output_schema: output_schema_path,
-        mut config_overrides,
+        config_overrides,
     } = cli;
     let shared = shared.into_inner();
     let SharedCliOptions {
@@ -795,7 +794,7 @@ where
 
 fn session_configured_from_thread_start_response(
     response: &ThreadStartResponse,
-    config: &Config,
+    _config: &Config,
 ) -> Result<SessionConfiguredEvent, String> {
     session_configured_from_thread_response(
         &response.thread.session_id,
@@ -814,7 +813,7 @@ fn session_configured_from_thread_start_response(
 
 fn session_configured_from_thread_resume_response(
     response: &ThreadResumeResponse,
-    config: &Config,
+    _config: &Config,
 ) -> Result<SessionConfiguredEvent, String> {
     session_configured_from_thread_response(
         &response.thread.session_id,
@@ -1199,6 +1198,7 @@ async fn request_shutdown(
         .map(|_| ())
 }
 
+#[allow(dead_code)] // Retained in-process server-request resolution seam.
 async fn resolve_server_request(
     client: &InProcessCliRuntimeClient,
     request_id: RequestId,

@@ -333,7 +333,7 @@ impl ExecServerClient {
             .next()
             .unwrap_or(websocket_url.as_str())
             .to_string();
-        let mut request = websocket_url
+        let request = websocket_url
             .as_str()
             .into_client_request()
             .map_err(|source| ExecServerError::WebSocketConnect {

@@ -41,6 +41,8 @@ pub(crate) enum AppCommand {
         id: String,
         response: ToolRequestUserInputResponse,
     },
+    #[allow(dead_code)]
+    // Retained compatibility, test, or architectural seam for non-default consumers.
     ReloadUserConfig,
     ListSkills {
         cwds: Vec<PathBuf>,
@@ -115,6 +117,7 @@ impl AppCommand {
         Self::UserInputAnswer { id, response }
     }
 
+    #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn reload_user_config() -> Self {
         Self::ReloadUserConfig
     }
