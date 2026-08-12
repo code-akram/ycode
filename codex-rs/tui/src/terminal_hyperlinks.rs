@@ -143,33 +143,6 @@ pub(crate) fn plain_hyperlink_lines(lines: Vec<Line<'static>>) -> Vec<HyperlinkL
     lines.into_iter().map(HyperlinkLine::new).collect()
 }
 
-pub(crate) fn prefix_hyperlink_lines(
-    lines: Vec<HyperlinkLine>,
-    initial_prefix: Span<'static>,
-    subsequent_prefix: Span<'static>,
-) -> Vec<HyperlinkLine> {
-    lines
-        .into_iter()
-        .enumerate()
-        .map(|(index, mut line)| {
-            let prefix = if index == 0 {
-                initial_prefix.clone()
-            } else {
-                subsequent_prefix.clone()
-            };
-            let shift = display_width(prefix.content.as_ref());
-            let mut spans = Vec::with_capacity(line.line.spans.len() + 1);
-            spans.push(prefix);
-            spans.extend(line.line.spans);
-            line.line = Line::from(spans).style(line.line.style);
-            for hyperlink in &mut line.hyperlinks {
-                hyperlink.columns = hyperlink.columns.start + shift..hyperlink.columns.end + shift;
-            }
-            line
-        })
-        .collect()
-}
-
 pub(crate) fn adaptive_wrap_hyperlink_lines(
     lines: &[HyperlinkLine],
     options: RtOptions<'static>,

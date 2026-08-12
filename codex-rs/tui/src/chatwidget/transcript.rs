@@ -12,10 +12,6 @@ pub(super) struct TranscriptState {
     pub(super) last_completed_agent_message: Option<(String, String)>,
     /// Whether this turn already produced a copyable response.
     pub(super) saw_copy_source_this_turn: bool,
-    /// Whether the next streamed assistant content should be preceded by a final message separator.
-    pub(super) needs_final_message_separator: bool,
-    /// Whether the current turn performed "work" (exec commands, tool calls, patch applications).
-    pub(super) had_work_activity: bool,
     /// Whether the current turn emitted a plan update.
     pub(super) saw_plan_update_this_turn: bool,
     /// Latest `update_plan` checklist task counts for terminal-title rendering.
@@ -50,7 +46,6 @@ impl TranscriptState {
         self.saw_copy_source_this_turn = false;
         self.last_completed_agent_message = None;
         self.saw_plan_update_this_turn = false;
-        self.had_work_activity = false;
     }
 }
 

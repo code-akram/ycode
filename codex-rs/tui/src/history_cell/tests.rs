@@ -152,6 +152,20 @@ fn source_backed_cells_render_raw_source_without_prefix_or_style() {
 }
 
 #[test]
+fn mini_transcript_uses_inline_user_prompt_and_plain_assistant_rows() {
+    let user = new_user_prompt("hello".to_string(), Vec::new(), Vec::new(), Vec::new());
+    let assistant = AgentMarkdownCell::new("answer".to_string(), &test_cwd());
+
+    let user_lines = user.display_lines(/*width*/ 80);
+    assert_eq!(render_lines(&user_lines), vec!["", "› hello", ""]);
+    assert!(user_lines.iter().all(|line| line.style.bg.is_none()));
+    assert_eq!(
+        render_lines(&assistant.display_lines(/*width*/ 80)),
+        vec!["answer"]
+    );
+}
+
+#[test]
 fn composite_cell_preserves_child_web_links() {
     let destination = "https://chatgpt.com/codex/settings/usage";
     let cell = CompositeHistoryCell::new(vec![
@@ -236,12 +250,12 @@ fn unified_exec_interaction_cell_renders_wait() {
 }
 
 #[test]
-fn final_message_separator_includes_worked_label_after_one_minute() {
-    let cell = FinalMessageSeparator::new(Some(61));
+fn final_message_separator_uses_mini_turn_summary_grammar() {
+    let cell = FinalMessageSeparator::new("gpt-5.6".to_string(), Some(61));
     let rendered = render_lines(&cell.display_lines(/*width*/ 200));
 
-    assert_eq!(rendered.len(), 1);
-    assert!(rendered[0].contains("Worked for"));
+    assert_eq!(rendered, vec!["▣ Build · gpt-5.6 · 1m 01s"]);
+    assert_eq!(render_lines(&cell.raw_lines()), rendered);
 }
 
 #[test]
@@ -563,43 +577,18 @@ fn web_search_history_cell_transcript_snapshot() {
 }
 
 #[test]
-fn session_header_includes_reasoning_level_when_present() {
+fn session_header_is_sparse_identity_and_cwd() {
     let cell = SessionHeaderHistoryCell::new(
         "gpt-4o".to_string(),
         Some(ReasoningEffortConfig::High),
         /*show_fast_status*/ true,
-        std::env::temp_dir(),
+        PathBuf::from("/repo"),
         "test",
     );
 
     let lines = render_lines(&cell.display_lines(/*width*/ 80));
-    let model_line = lines
-        .iter()
-        .find(|line| line.contains("model:"))
-        .expect("model line");
-
-    assert!(model_line.contains("gpt-4o high   fast"));
-    assert!(model_line.contains("/model to change"));
-}
-
-#[test]
-fn session_header_hides_fast_status_when_disabled() {
-    let cell = SessionHeaderHistoryCell::new(
-        "gpt-4o".to_string(),
-        Some(ReasoningEffortConfig::High),
-        /*show_fast_status*/ false,
-        std::env::temp_dir(),
-        "test",
-    );
-
-    let lines = render_lines(&cell.display_lines(/*width*/ 80));
-    let model_line = lines
-        .iter()
-        .find(|line| line.contains("model:"))
-        .expect("model line");
-
-    assert!(model_line.contains("gpt-4o high"));
-    assert!(!model_line.contains("fast"));
+    insta::assert_snapshot!("session_header_sparse", lines.join("\n"));
+    assert!(!lines.join("\n").contains("gpt-4o"));
 }
 
 #[test]
@@ -614,48 +603,32 @@ fn session_header_clamps_to_narrow_width() {
     );
 
     let lines = cell.display_lines(WIDTH);
-    let widths = lines.iter().map(line_width).collect::<Vec<_>>();
-
-    assert_eq!(widths, vec![usize::from(WIDTH); lines.len()]);
-    insta::assert_snapshot!(render_lines(&lines).join("\n"));
-}
-
-#[test]
-fn session_header_aligns_halfwidth_sound_marks() {
-    let cell: Box<dyn HistoryCell> = Box::new(SessionHeaderHistoryCell::new(
-        "gpt-5-ｶﾞ-ﾊﾟ".to_string(),
-        /*reasoning_effort*/ None,
-        /*show_fast_status*/ false,
-        PathBuf::from("project"),
-        "test",
-    ));
-
-    let width = 80;
-    let height = cell.desired_height(width);
-    let area = Rect::new(0, 0, width, height);
-    let mut buf = Buffer::empty(area);
-    cell.render(area, &mut buf);
-
-    insta::assert_snapshot!("session_header_halfwidth_sound_marks", format!("{buf:?}"));
+    assert!(
+        lines
+            .iter()
+            .all(|line| line_width(line) <= usize::from(WIDTH))
+    );
+    assert_eq!(render_lines(&lines), vec!["", "ycode", "project", ""]);
 }
 
 #[test]
 fn session_header_truncates_halfwidth_directory() {
-    let cell: Box<dyn HistoryCell> = Box::new(SessionHeaderHistoryCell::new(
+    let cell = SessionHeaderHistoryCell::new(
         "gpt-5".to_string(),
         /*reasoning_effort*/ None,
         /*show_fast_status*/ false,
         PathBuf::from("ｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟ-project"),
         "test",
-    ));
+    );
 
     let width = 42;
-    let height = cell.desired_height(width);
-    let area = Rect::new(0, 0, width, height);
-    let mut buf = Buffer::empty(area);
-    cell.render(area, &mut buf);
-
-    insta::assert_snapshot!("session_header_halfwidth_directory", format!("{buf:?}"));
+    let lines = cell.display_lines(width);
+    assert_eq!(lines.len(), 4);
+    assert!(
+        lines
+            .iter()
+            .all(|line| line_width(line) <= usize::from(width))
+    );
 }
 
 #[test]

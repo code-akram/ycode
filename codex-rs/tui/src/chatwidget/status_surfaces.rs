@@ -1,8 +1,6 @@
 //! Fixed built-in status-line and terminal-title rendering.
 
 use super::*;
-use crate::bottom_pane::StatusLineItem;
-use crate::bottom_pane::status_line_from_segments;
 use codex_config::ConfigLayerSource;
 
 use super::status_state::TerminalTitleStatusKind;
@@ -94,16 +92,9 @@ impl ChatWidget {
 
     fn refresh_fixed_status_line(&mut self) {
         self.bottom_pane.set_status_line_enabled(true);
-        self.set_status_line(status_line_from_segments([
-            (
-                StatusLineItem::ModelWithReasoning,
-                self.model_with_reasoning_display_name(),
-            ),
-            (
-                StatusLineItem::CurrentDir,
-                format_directory_display(self.status_line_cwd(), /*max_width*/ None),
-            ),
-        ]));
+        self.set_status_line(/*status_line*/ None);
+        self.bottom_pane
+            .set_model_label(Some(self.model_with_reasoning_display_name()));
         self.set_status_line_hyperlink(/*url*/ None);
     }
 

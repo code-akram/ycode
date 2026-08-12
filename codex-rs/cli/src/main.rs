@@ -321,24 +321,40 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
     let AppExitInfo {
         token_usage,
         thread_id: conversation_id,
+        session_title,
         resume_hint,
         ..
     } = exit_info;
 
     let mut lines = Vec::new();
-    if !token_usage.is_zero() {
-        lines.push(token_usage.to_string());
-    }
-
     if let Some(resume_cmd) = resume_hint {
         let command = if color_enabled {
             resume_cmd.cyan().to_string()
         } else {
             resume_cmd
         };
-        lines.push(format!("To continue this session, run {command}"));
+        let identity = if color_enabled {
+            "ycode".bold().to_string()
+        } else {
+            "ycode".to_string()
+        };
+        lines.push(String::new());
+        lines.push(identity);
+        if let Some(title) = session_title.filter(|title| !title.trim().is_empty()) {
+            lines.push(format!(
+                "Session   {}",
+                title.trim().replace(['\r', '\n'], " ")
+            ));
+        }
+        lines.push(format!("Continue  {command}"));
+        if !token_usage.is_zero() {
+            lines.push(format!("Usage     {token_usage}"));
+        }
+        lines.push(String::new());
     } else if is_fatal && let Some(conversation_id) = conversation_id {
         lines.push(format!("Session ID: {conversation_id}"));
+    } else if !token_usage.is_zero() {
+        lines.push(token_usage.to_string());
     }
 
     lines
@@ -1545,6 +1561,7 @@ mod tests {
         AppExitInfo {
             token_usage,
             thread_id,
+            session_title: thread_name.map(str::to_string),
             resume_hint: codex_utils_cli::resume_hint(thread_name, thread_id),
             exit_reason: ExitReason::UserRequested,
         }
@@ -1555,6 +1572,7 @@ mod tests {
         let exit_info = AppExitInfo {
             token_usage: TokenUsage::default(),
             thread_id: None,
+            session_title: None,
             resume_hint: None,
             exit_reason: ExitReason::UserRequested,
         };
@@ -1567,6 +1585,7 @@ mod tests {
         let exit_info = AppExitInfo {
             token_usage: TokenUsage::default(),
             thread_id: Some(ThreadId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap()),
+            session_title: None,
             resume_hint: None,
             exit_reason: ExitReason::Fatal("boom".to_string()),
         };
@@ -1588,9 +1607,11 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "Token usage: total=2 input=0 output=2".to_string(),
-                "To continue this session, run codex resume 123e4567-e89b-12d3-a456-426614174000"
-                    .to_string(),
+                "".to_string(),
+                "ycode".to_string(),
+                "Continue  codex resume 123e4567-e89b-12d3-a456-426614174000".to_string(),
+                "Usage     Token usage: total=2 input=0 output=2".to_string(),
+                "".to_string(),
             ]
         );
     }
@@ -1605,9 +1626,11 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "Token usage: total=2 input=0 output=2".to_string(),
-                "To continue this session, run codex resume 123e4567-e89b-12d3-a456-426614174000"
-                    .to_string(),
+                "".to_string(),
+                "ycode".to_string(),
+                "Continue  codex resume 123e4567-e89b-12d3-a456-426614174000".to_string(),
+                "Usage     Token usage: total=2 input=0 output=2".to_string(),
+                "".to_string(),
             ]
         );
     }
@@ -1619,8 +1642,9 @@ mod tests {
             /*thread_name*/ None,
         );
         let lines = format_exit_messages(exit_info, /*color_enabled*/ true);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[1].contains("\u{1b}[36m"));
+        assert_eq!(lines.len(), 5);
+        assert!(lines[1].contains("\u{1b}[1m"));
+        assert!(lines[2].contains("\u{1b}[36m"));
     }
 
     #[test]
@@ -1633,8 +1657,12 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "Token usage: total=2 input=0 output=2".to_string(),
-                "To continue this session, run codex resume, then select my-thread (123e4567-e89b-12d3-a456-426614174000)".to_string(),
+                "".to_string(),
+                "ycode".to_string(),
+                "Session   my-thread".to_string(),
+                "Continue  codex resume, then select my-thread (123e4567-e89b-12d3-a456-426614174000)".to_string(),
+                "Usage     Token usage: total=2 input=0 output=2".to_string(),
+                "".to_string(),
             ]
         );
     }

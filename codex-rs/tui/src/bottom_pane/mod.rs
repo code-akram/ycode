@@ -46,14 +46,13 @@ use crossterm::event::KeyEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
+use ratatui::widgets::Clear;
+use ratatui::widgets::Widget;
 use std::time::Duration;
 use std::time::Instant;
 
 mod request_user_input;
-mod status_line_setup;
-mod status_line_style;
 pub(crate) use request_user_input::RequestUserInputOverlay;
-pub(crate) use status_line_style::status_line_from_segments;
 mod bottom_pane_view;
 mod effort_ignition;
 
@@ -99,7 +98,6 @@ pub(crate) use memories_settings_view::MemoriesSettingsView;
 pub(crate) use skills_toggle_view::SkillsToggleItem;
 pub(crate) use skills_toggle_view::SkillsToggleView;
 use slash_commands::ServiceTierCommand;
-pub(crate) use status_line_setup::StatusLineItem;
 mod paste_burst;
 mod pending_input_preview;
 pub(crate) mod popup_consts;
@@ -371,6 +369,11 @@ impl BottomPane {
 
     pub(crate) fn set_placeholder_text(&mut self, placeholder: String) {
         self.composer.set_placeholder_text(placeholder);
+        self.request_redraw();
+    }
+
+    pub(crate) fn dismiss_initial_placeholder(&mut self) {
+        self.composer.dismiss_initial_placeholder();
         self.request_redraw();
     }
 
@@ -1429,9 +1432,6 @@ impl BottomPane {
             RenderableItem::Borrowed(view)
         } else {
             let mut flex = FlexRenderable::new();
-            if let Some(status) = &self.status {
-                flex.push(/*flex*/ 0, RenderableItem::Borrowed(status));
-            }
             // Avoid double-surfacing the same summary and avoid adding an extra
             // row while the status line is already visible.
             if self.status.is_none() && !self.unified_exec_footer.is_empty() {
@@ -1443,8 +1443,7 @@ impl BottomPane {
             let has_pending_input = !self.pending_input_preview.queued_messages.is_empty()
                 || !self.pending_input_preview.pending_steers.is_empty()
                 || !self.pending_input_preview.rejected_steers.is_empty();
-            let has_status_or_footer =
-                self.status.is_some() || !self.unified_exec_footer.is_empty();
+            let has_status_or_footer = !self.unified_exec_footer.is_empty();
             let has_inline_previews = has_pending_input;
             if has_inline_previews && has_status_or_footer {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
@@ -1458,14 +1457,16 @@ impl BottomPane {
             }
             let mut flex2 = FlexRenderable::new();
             flex2.push(/*flex*/ 1, RenderableItem::Owned(flex.into()));
-            let composer: RenderableItem<'_> = if composer_right_reserve == 0 {
-                RenderableItem::Borrowed(&self.composer)
-            } else {
-                RenderableItem::Owned(Box::new(ChatComposerRightReserveRenderable {
-                    composer: &self.composer,
-                    right_reserve: composer_right_reserve,
-                }))
-            };
+            let composer: RenderableItem<'_> =
+                if composer_right_reserve == 0 && self.status.is_none() {
+                    RenderableItem::Borrowed(&self.composer)
+                } else {
+                    RenderableItem::Owned(Box::new(ChatComposerRightReserveRenderable {
+                        composer: &self.composer,
+                        right_reserve: composer_right_reserve,
+                        status: self.status.as_ref(),
+                    }))
+                };
             flex2.push(/*flex*/ 0, composer);
             RenderableItem::Owned(Box::new(flex2))
         }
@@ -1485,6 +1486,12 @@ impl BottomPane {
 
     pub(crate) fn set_status_line_enabled(&mut self, enabled: bool) {
         if self.composer.set_status_line_enabled(enabled) {
+            self.request_redraw();
+        }
+    }
+
+    pub(crate) fn set_model_label(&mut self, model_label: Option<String>) {
+        if self.composer.set_model_label(model_label) {
             self.request_redraw();
         }
     }
@@ -1509,6 +1516,7 @@ impl BottomPane {
 struct ChatComposerRightReserveRenderable<'a> {
     composer: &'a chat_composer::ChatComposer,
     right_reserve: u16,
+    status: Option<&'a StatusIndicatorWidget>,
 }
 
 impl Renderable for ChatComposerRightReserveRenderable<'_> {
@@ -1519,6 +1527,18 @@ impl Renderable for ChatComposerRightReserveRenderable<'_> {
             /*mask_char*/ None,
             self.right_reserve,
         );
+        if let Some(status) = self.status
+            && !area.is_empty()
+        {
+            let rail = Rect::new(
+                area.x,
+                area.bottom().saturating_sub(1),
+                area.width,
+                /*height*/ 1,
+            );
+            Clear.render(rail, buf);
+            status.render(rail, buf);
+        }
     }
 
     fn desired_height(&self, width: u16) -> u16 {
@@ -1605,11 +1625,64 @@ mod tests {
             frame_requester: FrameRequester::test_dummy(),
             has_input_focus: true,
             enhanced_keys_supported: false,
-            placeholder_text: "Ask Codex to do anything".to_string(),
+            placeholder_text: "Ask anything... \"Fix a TODO in the codebase\"".to_string(),
             disable_paste_burst,
             animations_enabled: true,
             skills: Some(Vec::new()),
         })
+    }
+
+    #[test]
+    fn mini_idle_surface_snapshot() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let mut pane = test_pane(tx);
+        pane.set_context_window(Some(82), Some(18_000));
+        pane.set_model_label(Some("gpt-5.6-sol high".to_string()));
+        pane.set_status_line_enabled(true);
+
+        let width = 80;
+        let height = pane.desired_height(width);
+        assert_eq!(height, 2, "one input row plus one status rail");
+        let rendered = render_snapshot(&pane, Rect::new(0, 0, width, height))
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_snapshot!("mini_idle_surface", rendered);
+    }
+
+    #[test]
+    fn mini_idle_surface_degrades_at_narrow_width_snapshot() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let mut pane = test_pane(tx);
+        pane.set_context_window(Some(82), Some(18_000));
+        pane.set_model_label(Some("gpt-5.6-sol high".to_string()));
+        pane.set_status_line_enabled(true);
+
+        let width = 24;
+        let height = pane.desired_height(width);
+        let rendered = render_snapshot(&pane, Rect::new(0, 0, width, height))
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_snapshot!("mini_idle_surface_narrow", rendered);
+    }
+
+    #[test]
+    fn mini_initial_placeholder_does_not_return_after_dismissal() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let mut pane = test_pane(tx);
+        pane.set_status_line_enabled(true);
+        pane.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        pane.handle_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        let width = 80;
+        let rendered = render_snapshot(&pane, Rect::new(0, 0, width, pane.desired_height(width)));
+        assert!(!rendered.contains("Ask anything"));
     }
 
     #[derive(Default)]
@@ -1829,15 +1902,13 @@ mod tests {
             skills: Some(Vec::new()),
         });
 
-        // Activate spinner (status view replaces composer) with no live ring.
+        // Activate the status overlay on the shared footer rail after a prompt was submitted.
+        pane.dismiss_initial_placeholder();
         pane.set_task_running(/*running*/ true);
 
-        // Use height == desired_height; expect spacer + status + composer rows without trailing padding.
+        // Use height == desired_height; expect one editor row and one shared rail.
         let height = pane.desired_height(/*width*/ 30);
-        assert!(
-            height >= 3,
-            "expected at least 3 rows to render spacer, status, and composer; got {height}"
-        );
+        assert_eq!(height, 2);
         let area = Rect::new(0, 0, 30, height);
         assert_snapshot!(
             "status_and_composer_fill_height_without_bottom_padding",
@@ -1860,6 +1931,7 @@ mod tests {
             skills: Some(Vec::new()),
         });
 
+        pane.dismiss_initial_placeholder();
         pane.set_task_running(/*running*/ true);
 
         let width = 48;

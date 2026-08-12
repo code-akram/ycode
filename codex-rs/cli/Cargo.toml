@@ -92,8 +92,10 @@ assert_matches = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 futures = { workspace = true }
 insta = { workspace = true }
+libc = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
 sqlx = { workspace = true }
 wiremock = { workspace = true }
 zstd = { workspace = true }
+vt100 = { workspace = true }

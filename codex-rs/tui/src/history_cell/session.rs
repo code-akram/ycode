@@ -1,24 +1,8 @@
 //! Session headers, onboarding guidance, and transcript cards.
 
 use super::*;
-use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::width::display_width;
-
-pub(crate) const SESSION_HEADER_MAX_INNER_WIDTH: usize = 56; // Just an eyeballed value
-
-pub(crate) fn card_inner_width(width: u16, max_inner_width: usize) -> Option<usize> {
-    if width < 4 {
-        return None;
-    }
-    let inner_width = std::cmp::min(width.saturating_sub(4) as usize, max_inner_width);
-    Some(inner_width)
-}
-
-/// Render `lines` inside a border sized to the widest span in the content.
-pub(crate) fn with_border(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
-    with_border_internal(lines, /*forced_inner_width*/ None)
-}
 
 /// Render `lines` inside a border whose inner width is at least `inner_width`.
 ///
@@ -29,17 +13,10 @@ pub(crate) fn with_border_with_inner_width(
     lines: Vec<Line<'static>>,
     inner_width: usize,
 ) -> Vec<Line<'static>> {
-    with_border_internal(lines, Some(inner_width))
-}
+    use crate::line_truncation::line_width;
 
-fn with_border_internal(
-    lines: Vec<Line<'static>>,
-    forced_inner_width: Option<usize>,
-) -> Vec<Line<'static>> {
     let max_line_width = lines.iter().map(line_width).max().unwrap_or(0);
-    let content_width = forced_inner_width
-        .unwrap_or(max_line_width)
-        .max(max_line_width);
+    let content_width = inner_width.max(max_line_width);
 
     let mut out = Vec::with_capacity(lines.len() + 2);
     let border_inner_width = content_width + 2;
@@ -86,73 +63,28 @@ impl HistoryCell for SessionInfoCell {
 
 pub(crate) fn new_session_info(
     config: &Config,
-    requested_model: &str,
+    _requested_model: &str,
     session: &ThreadSessionState,
-    is_first_event: bool,
+    _is_first_event: bool,
     _auth_plan: Option<PlanType>,
-    show_fast_status: bool,
+    _show_fast_status: bool,
 ) -> SessionInfoCell {
-    // Header box rendered as history (so it appears at the very top)
+    // The initial identity is ordinary history, not application chrome. Once
+    // committed it belongs to native terminal scrollback like every other row.
     let header = SessionHeaderHistoryCell::new(
         session.model.clone(),
         session.reasoning_effort.clone(),
-        show_fast_status,
+        /*show_fast_status*/ false,
         config.cwd.to_path_buf(),
         CODEX_CLI_VERSION,
     );
-    let mut parts: Vec<Box<dyn HistoryCell>> = vec![Box::new(header)];
-
-    if is_first_event {
-        // Help lines below the header (new copy and list)
-        let help_lines: Vec<Line<'static>> = vec![
-            "  To get started, describe a task or try one of these commands:"
-                .dim()
-                .into(),
-            Line::from(""),
-            Line::from(vec![
-                "  ".into(),
-                "/init".into(),
-                " - create an AGENTS.md file with instructions for Codex".dim(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "/status".into(),
-                " - show current session configuration".dim(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "/model".into(),
-                " - choose what model and reasoning effort to use".dim(),
-            ]),
-            Line::from(vec![
-                "  ".into(),
-                "/review".into(),
-                " - review any changes and find issues".dim(),
-            ]),
-        ];
-
-        parts.push(Box::new(PlainHistoryCell { lines: help_lines }));
-    } else {
-        if requested_model != session.model.as_str() {
-            let lines = vec![
-                "model changed:".magenta().bold().into(),
-                format!("requested: {requested_model}").into(),
-                format!("used: {}", session.model).into(),
-            ];
-            parts.push(Box::new(PlainHistoryCell { lines }));
-        }
-    }
-
-    SessionInfoCell(CompositeHistoryCell { parts })
+    SessionInfoCell(CompositeHistoryCell {
+        parts: vec![Box::new(header)],
+    })
 }
 
 #[derive(Debug)]
 pub(crate) struct SessionHeaderHistoryCell {
-    version: &'static str,
-    model: String,
-    model_style: Style,
-    reasoning_effort: Option<ReasoningEffortConfig>,
-    show_fast_status: bool,
     directory: PathBuf,
 }
 
@@ -175,21 +107,14 @@ impl SessionHeaderHistoryCell {
     }
 
     pub(crate) fn new_with_style(
-        model: String,
-        model_style: Style,
-        reasoning_effort: Option<ReasoningEffortConfig>,
-        show_fast_status: bool,
+        _model: String,
+        _model_style: Style,
+        _reasoning_effort: Option<ReasoningEffortConfig>,
+        _show_fast_status: bool,
         directory: PathBuf,
-        version: &'static str,
+        _version: &'static str,
     ) -> Self {
-        Self {
-            version,
-            model,
-            model_style,
-            reasoning_effort,
-            show_fast_status,
-            directory,
-        }
+        Self { directory }
     }
 
     fn format_directory(&self, max_width: Option<usize>) -> String {
@@ -218,95 +143,28 @@ impl SessionHeaderHistoryCell {
 
         formatted
     }
-
-    fn reasoning_label(&self) -> Option<&str> {
-        self.reasoning_effort
-            .as_ref()
-            .map(ReasoningEffortConfig::as_str)
-    }
 }
 
 impl HistoryCell for SessionHeaderHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let Some(inner_width) = card_inner_width(width, SESSION_HEADER_MAX_INNER_WIDTH) else {
+        if width == 0 {
             return Vec::new();
-        };
+        }
 
-        let make_row = |spans: Vec<Span<'static>>| Line::from(spans);
-
-        // Title line rendered inside the box: ">_ OpenAI Codex (vX)"
-        let title_spans: Vec<Span<'static>> = vec![
-            Span::from(">_ ").dim(),
-            Span::from("OpenAI Codex").bold(),
-            Span::from(" ").dim(),
-            Span::from(format!("(v{})", self.version)).dim(),
-        ];
-
-        const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
-        const CHANGE_MODEL_HINT_EXPLANATION: &str = " to change";
-        const DIR_LABEL: &str = "directory:";
-        let label_width = DIR_LABEL.len();
-
-        let model_label = format!(
-            "{model_label:<label_width$}",
-            model_label = "model:",
-            label_width = label_width
-        );
-        let reasoning_label = self.reasoning_label();
-        let model_spans: Vec<Span<'static>> = {
-            let mut spans = vec![
-                Span::from(format!("{model_label} ")).dim(),
-                Span::styled(self.model.clone(), self.model_style),
-            ];
-            if let Some(reasoning) = reasoning_label {
-                spans.push(Span::from(" "));
-                spans.push(Span::from(reasoning.to_owned()));
-            }
-            if self.show_fast_status {
-                spans.push("   ".into());
-                spans.push(Span::styled("fast", self.model_style.magenta()));
-            }
-            spans.push("   ".dim());
-            spans.push(CHANGE_MODEL_HINT_COMMAND.cyan());
-            spans.push(CHANGE_MODEL_HINT_EXPLANATION.dim());
-            spans
-        };
-
-        let dir_label = format!("{DIR_LABEL:<label_width$}");
-        let dir_prefix = format!("{dir_label} ");
-        let dir_prefix_width = display_width(dir_prefix.as_str());
-        let dir_max_width = inner_width.saturating_sub(dir_prefix_width);
-        let dir = self.format_directory(Some(dir_max_width));
-        let dir_spans = vec![Span::from(dir_prefix).dim(), Span::from(dir)];
-
-        let lines = vec![
-            make_row(title_spans),
-            make_row(Vec::new()),
-            make_row(model_spans),
-            make_row(dir_spans),
-        ];
-
-        let lines = lines
-            .into_iter()
-            .map(|line| truncate_line_with_ellipsis_if_overflow(line, inner_width))
-            .collect();
-        with_border(lines)
+        let max_width = usize::from(width);
+        let directory = self.format_directory(Some(max_width));
+        vec![
+            Line::default(),
+            Line::from("ycode").bold(),
+            truncate_line_with_ellipsis_if_overflow(Line::from(directory).dim(), max_width),
+            Line::default(),
+        ]
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
         vec![
-            Line::from(format!("OpenAI Codex (v{})", self.version)),
-            Line::from(format!(
-                "model: {}{}",
-                self.model,
-                self.reasoning_label()
-                    .map(|reasoning| format!(" {reasoning}"))
-                    .unwrap_or_default()
-            )),
-            Line::from(format!(
-                "directory: {}",
-                self.format_directory(/*max_width*/ None)
-            )),
+            Line::from("ycode"),
+            Line::from(self.format_directory(/*max_width*/ None)),
         ]
     }
 }

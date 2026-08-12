@@ -120,7 +120,7 @@ impl HistoryCell for UserHistoryCell {
             )
             .max(1);
 
-        let style = user_message_style();
+        let style = Style::default();
         let element_style = style.fg(Color::Cyan);
 
         let wrapped_remote_images = if self.remote_image_urls.is_empty() {
@@ -318,13 +318,9 @@ impl HistoryCell for AgentMessageCell {
 
     fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         let mut wrapped = Vec::new();
-        for (index, line) in self.lines.iter().enumerate() {
-            let initial_indent = if index == 0 && self.is_first_line {
-                "• ".dim().into()
-            } else {
-                "  ".into()
-            };
-            let mut subsequent_indent = Line::from("  ");
+        for line in &self.lines {
+            let initial_indent = Line::default();
+            let mut subsequent_indent = Line::default();
             subsequent_indent
                 .spans
                 .extend(crate::insert_history::leading_whitespace_prefix(&line.line).spans);
@@ -430,28 +426,20 @@ impl HistoryCell for AgentMarkdownCell {
     fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         let render = || {
             let Some(wrap_width) =
-                crate::width::usable_content_width_u16(width, /*reserved_cols*/ 2)
+                crate::width::usable_content_width_u16(width, /*reserved_cols*/ 0)
             else {
-                return prefix_hyperlink_lines(
-                    vec![HyperlinkLine::new(Line::default())],
-                    "• ".dim(),
-                    "  ".into(),
-                );
+                return vec![HyperlinkLine::new(Line::default())];
             };
 
-            // Re-render markdown from source at the current width. Reserve 2 columns for the "• " /
-            // " " prefix prepended below.
+            // Re-render markdown from source at the current width. Mini transcript rows stream
+            // directly, without an assistant bullet or decorative left rail.
             let lines = crate::markdown::render_markdown_agent_with_links_cwd_and_visualizations(
                 &self.markdown_source,
                 Some(wrap_width),
                 Some(self.cwd.as_path()),
                 self.inline_visualization_context.as_ref(),
             );
-            normalize_whitespace_only_hyperlink_lines(prefix_hyperlink_lines(
-                lines,
-                "• ".dim(),
-                "  ".into(),
-            ))
+            normalize_whitespace_only_hyperlink_lines(lines)
         };
 
         if let Some(rendered_lines) = &self.rendered_lines {
@@ -506,15 +494,7 @@ impl HistoryCell for StreamingAgentTailCell {
     fn display_hyperlink_lines(&self, _width: u16) -> Vec<HyperlinkLine> {
         // Tail lines are already rendered at the controller's current stream width.
         // Re-wrapping them here can split table borders and produce malformed in-flight rows.
-        normalize_whitespace_only_hyperlink_lines(prefix_hyperlink_lines(
-            self.lines.clone(),
-            if self.is_first_line {
-                "• ".dim()
-            } else {
-                "  ".into()
-            },
-            "  ".into(),
-        ))
+        normalize_whitespace_only_hyperlink_lines(self.lines.clone())
     }
 
     fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {

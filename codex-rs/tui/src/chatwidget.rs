@@ -869,7 +869,6 @@ impl ChatWidget {
 
     fn flush_active_cell(&mut self) {
         if let Some(active) = self.transcript.active_cell.take() {
-            self.transcript.needs_final_message_separator = true;
             self.app_event_tx.send(AppEvent::InsertHistoryCell(active));
             self.request_pending_usage_output_insertion();
         }
@@ -894,7 +893,6 @@ impl ChatWidget {
             if !self.has_active_stream_tail() {
                 self.flush_active_cell();
             }
-            self.transcript.needs_final_message_separator = true;
         }
         self.app_event_tx.send(AppEvent::InsertHistoryCell(cell));
     }
@@ -952,9 +950,6 @@ impl ChatWidget {
                 display.remote_image_urls,
             ));
         }
-
-        // User messages reset separator state so the next agent response doesn't add a stray break.
-        self.transcript.needs_final_message_separator = false;
     }
 
     /// Exit the UI immediately without waiting for shutdown.
@@ -1454,17 +1449,6 @@ impl Drop for ChatWidget {
         self.stop_rate_limit_poller();
     }
 }
-
-const PLACEHOLDERS: [&str; 8] = [
-    "Explain this codebase",
-    "Summarize recent commits",
-    "Implement {feature}",
-    "Find and fix a bug in @filename",
-    "Write tests for @filename",
-    "Improve documentation in @filename",
-    "Review my current changes",
-    "Use /skills to list available skills",
-];
 
 const SIDE_PLACEHOLDERS: [&str; 3] = [
     "Check recently modified functions for compatibility",

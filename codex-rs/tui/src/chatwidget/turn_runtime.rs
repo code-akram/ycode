@@ -54,7 +54,7 @@ impl ChatWidget {
         &mut self,
         last_agent_message: Option<String>,
         duration_ms: Option<i64>,
-        from_replay: bool,
+        _from_replay: bool,
     ) {
         self.input_queue.submit_pending_steers_after_interrupt = false;
         let sanitized_last_agent_message = last_agent_message.as_deref().map(|message| {
@@ -78,23 +78,18 @@ impl ChatWidget {
         // If a stream is currently active, finalize it.
         self.flush_answer_stream_with_separator();
         self.flush_unified_exec_wait_streak();
-        if !from_replay {
-            let show_work_separator =
-                self.transcript.had_work_activity && self.transcript.needs_final_message_separator;
-            if show_work_separator {
-                let elapsed_seconds = duration_ms
-                    .and_then(|duration_ms| u64::try_from(duration_ms).ok())
-                    .map(|duration_ms| duration_ms / 1_000)
-                    .or_else(|| {
-                        self.bottom_pane.status_widget().map(
-                            crate::status_indicator_widget::StatusIndicatorWidget::elapsed_seconds,
-                        )
-                    });
-                self.add_to_history(history_cell::FinalMessageSeparator::new(elapsed_seconds));
-            }
-            self.transcript.needs_final_message_separator = false;
-            self.transcript.had_work_activity = false;
-        }
+        let elapsed_seconds = duration_ms
+            .and_then(|duration_ms| u64::try_from(duration_ms).ok())
+            .map(|duration_ms| duration_ms / 1_000)
+            .or_else(|| {
+                self.bottom_pane
+                    .status_widget()
+                    .map(crate::status_indicator_widget::StatusIndicatorWidget::elapsed_seconds)
+            });
+        self.add_to_history(history_cell::FinalMessageSeparator::new(
+            self.model_display_name().to_string(),
+            elapsed_seconds,
+        ));
         // Mark task stopped and request redraw now that all content is in history.
         self.status_state.pending_status_indicator_restore = false;
         self.input_queue.user_turn_pending_start = false;

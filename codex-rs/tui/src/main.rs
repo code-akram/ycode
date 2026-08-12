@@ -15,24 +15,40 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
     let AppExitInfo {
         token_usage,
         thread_id,
+        session_title,
         resume_hint,
         ..
     } = exit_info;
 
     let mut lines = Vec::new();
-    if !token_usage.is_zero() {
-        lines.push(token_usage.to_string());
-    }
-
     if let Some(resume_cmd) = resume_hint {
         let command = if color_enabled {
             format!("\u{1b}[36m{resume_cmd}\u{1b}[39m")
         } else {
             resume_cmd
         };
-        lines.push(format!("To continue this session, run {command}"));
+        let identity = if color_enabled {
+            "\u{1b}[1mycode\u{1b}[0m".to_string()
+        } else {
+            "ycode".to_string()
+        };
+        lines.push(String::new());
+        lines.push(identity);
+        if let Some(title) = session_title.filter(|title| !title.trim().is_empty()) {
+            lines.push(format!(
+                "Session   {}",
+                title.trim().replace(['\r', '\n'], " ")
+            ));
+        }
+        lines.push(format!("Continue  {command}"));
+        if !token_usage.is_zero() {
+            lines.push(format!("Usage     {token_usage}"));
+        }
+        lines.push(String::new());
     } else if is_fatal && let Some(thread_id) = thread_id {
         lines.push(format!("Session ID: {thread_id}"));
+    } else if !token_usage.is_zero() {
+        lines.push(token_usage.to_string());
     }
 
     lines

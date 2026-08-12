@@ -2,6 +2,19 @@ use super::*;
 use crate::history_cell::markdown_render_cache::MarkdownRenderCacheKey;
 use pretty_assertions::assert_eq;
 
+#[test]
+fn streaming_agent_tail_has_no_decorative_prefix() {
+    let cell = StreamingAgentTailCell::new(
+        vec![HyperlinkLine::from("streaming answer")],
+        /*is_first_line*/ true,
+    );
+
+    assert_eq!(
+        cell.display_lines(/*width*/ 80),
+        vec![Line::from("streaming answer")]
+    );
+}
+
 fn replace_cached_lines(
     cell: &AgentMarkdownCell,
     update_key: impl FnOnce(&mut MarkdownRenderCacheKey),

@@ -9,6 +9,15 @@
 //! - Turning raw key streams into explicit paste operations on platforms where terminals
 //!   don't provide reliable bracketed paste (notably Windows).
 //!
+//! # Mini Surface
+//!
+//! The editor is intentionally unframed: it renders no block background, border, or persistent
+//! prompt glyph. The initial empty session may show a one-shot placeholder; a successful submit
+//! or replayed prompt dismisses it permanently for that composer. The row beneath the editor is
+//! the only persistent rail. Idle state right-aligns context, model, and command-menu hints there;
+//! `BottomPane` overlays the same row with the working/interrupt indicator while a turn is active.
+//! Popups and request-user-input views remain temporary replacements driven by this state machine.
+//!
 //! # Key Event Routing
 //!
 //! Most key handling goes through [`ChatComposer::handle_key_event`], which dispatches to a
@@ -110,8 +119,8 @@
 //!
 //! # Remote Image Rows (Up/Down/Delete)
 //!
-//! Remote image URLs are rendered as non-editable `[Image #N]` rows above the textarea (inside the
-//! same composer block). These rows represent image attachments rehydrated from cli-runtime/backtrack
+//! Remote image URLs are rendered as non-editable `[Image #N]` rows above the bare textarea. These
+//! rows represent image attachments rehydrated from cli-runtime/backtrack
 //! history; TUI users can remove them, but cannot type into that row region.
 //!
 //! Keyboard behavior:
@@ -183,7 +192,6 @@ use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Constraint;
 use ratatui::layout::Layout;
-use ratatui::layout::Margin;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
@@ -258,7 +266,6 @@ use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
-use crate::style::user_message_style;
 use codex_protocol::ThreadId;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
@@ -293,7 +300,6 @@ use crate::clipboard_paste::pasted_image_format;
 use crate::history_cell;
 use crate::skills_helpers::skill_display_name;
 use crate::tui::FrameRequester;
-use crate::ui_consts::LIVE_PREFIX_COLS;
 use codex_cli_protocol::SkillMetadata;
 use codex_file_search::FileMatch;
 use std::cell::OnceCell;
@@ -305,6 +311,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
+#[cfg(test)]
 use ratatui::style::Color;
 
 /// If the pasted content exceeds this number of characters, replace it with a
@@ -448,6 +455,7 @@ pub(crate) struct ChatComposer {
     effort_observed: bool,
     attachments: AttachmentState,
     placeholder_text: String,
+    show_initial_placeholder: bool,
     blocks_direct_input: bool,
     is_task_running: bool,
     queue_submissions: bool,
@@ -582,6 +590,7 @@ impl ChatComposer {
                 status_line_enabled: false,
                 side_conversation_context_label: None,
                 active_agent_label: None,
+                model_label: None,
                 external_editor_key: default_keymap
                     .primary_hint(KeymapContext::Global, "open_external_editor"),
                 show_transcript_key: default_keymap
@@ -610,6 +619,7 @@ impl ChatComposer {
             effort_observed: false,
             attachments: AttachmentState::default(),
             placeholder_text,
+            show_initial_placeholder: true,
             blocks_direct_input: false,
             is_task_running: false,
             queue_submissions: false,
@@ -868,12 +878,12 @@ impl ChatComposer {
             ActivePopup::None => Constraint::Max(footer_total_height),
         };
         let [composer_rect, popup_rect] =
-            Layout::vertical([Constraint::Min(3), popup_constraint]).areas(area);
+            Layout::vertical([Constraint::Min(1), popup_constraint]).areas(area);
         let mut textarea_rect = composer_rect.inset(Insets::tlbr(
-            /*top*/ 1,
-            LIVE_PREFIX_COLS,
-            /*bottom*/ 1,
-            /*right*/ 1u16.saturating_add(textarea_right_reserve),
+            /*top*/ 0,
+            /*left*/ 0,
+            /*bottom*/ 0,
+            /*right*/ textarea_right_reserve,
         ));
         let remote_images_height = self
             .attachments
@@ -1240,11 +1250,8 @@ impl ChatComposer {
             })
     }
 
-    fn right_indicator_line(&self) -> Option<Line<'static>> {
+    fn right_indicator_line(&self, max_width: u16) -> Option<Line<'static>> {
         let mut spans: Vec<Span<'static>> = Vec::new();
-        if let Some(vim_mode) = self.vim_mode_indicator_span() {
-            spans.push(vim_mode);
-        }
         if let Some(indicators) = status_line_right_indicator_line(
             self.footer.goal_status_indicator.as_ref(),
             self.footer.ide_context_active,
@@ -1254,6 +1261,13 @@ impl ChatComposer {
             }
             spans.extend(indicators.spans);
         }
+        let mini = self.right_footer_line_with_context(max_width);
+        if !mini.spans.is_empty() {
+            if !spans.is_empty() {
+                spans.push(" · ".dim());
+            }
+            spans.extend(mini.spans);
+        }
         if spans.is_empty() {
             None
         } else {
@@ -1261,20 +1275,48 @@ impl ChatComposer {
         }
     }
 
-    fn right_footer_line_with_context(&self) -> Line<'static> {
-        let mut line = if self.footer.context_window_pending {
-            Line::default()
-        } else {
+    fn right_footer_line_with_context(&self, max_width: u16) -> Line<'static> {
+        let context = (!self.footer.context_window_pending).then(|| {
             context_window_line(
                 self.footer.context_window_percent,
                 self.footer.context_window_used_tokens,
             )
-        };
-        if let Some(vim_mode) = self.vim_mode_indicator_span() {
-            line.spans.push(" | ".dim());
-            line.spans.push(vim_mode);
+        });
+        let model = self
+            .footer
+            .model_label
+            .as_ref()
+            .map(|model| Line::from(model.clone()).dim());
+        let command = Line::from(vec!["/".bold(), " commands".dim()]);
+        let vim = self
+            .vim_mode_indicator_span()
+            .map(|span| Line::from(vec![span]));
+
+        let candidates = [
+            vec![
+                context.clone(),
+                model.clone(),
+                Some(command.clone()),
+                vim.clone(),
+            ],
+            vec![model.clone(), Some(command.clone()), vim.clone()],
+            vec![model.clone(), vim.clone()],
+            vec![Some(command), vim.clone()],
+            vec![vim],
+        ];
+        for parts in candidates {
+            let mut line = Line::default();
+            for part in parts.into_iter().flatten() {
+                if !line.spans.is_empty() {
+                    line.spans.push(" · ".dim());
+                }
+                line.spans.extend(part.spans);
+            }
+            if line.width() <= usize::from(max_width) {
+                return line;
+            }
         }
-        line
+        Line::default()
     }
 
     pub(crate) fn current_text_with_pending(&self) -> String {
@@ -1386,6 +1428,9 @@ impl ChatComposer {
         self.draft
             .textarea
             .set_text_with_elements(&text, &text_elements);
+        if !text.is_empty() {
+            self.show_initial_placeholder = false;
+        }
         self.attachments
             .reset_local_images(local_image_paths, &mut self.draft.textarea);
 
@@ -1484,6 +1529,10 @@ impl ChatComposer {
     /// Update the placeholder text without changing input enablement.
     pub(crate) fn set_placeholder_text(&mut self, placeholder: String) {
         self.placeholder_text = placeholder;
+    }
+
+    pub(crate) fn dismiss_initial_placeholder(&mut self) {
+        self.show_initial_placeholder = false;
     }
 
     pub(crate) fn set_parent_owned_thread(&mut self) {
@@ -1770,6 +1819,9 @@ impl ChatComposer {
 
     pub(crate) fn insert_str(&mut self, text: &str) {
         self.draft.textarea.insert_str(text);
+        if !text.is_empty() {
+            self.show_initial_placeholder = false;
+        }
         self.sync_bash_mode_from_text();
         self.sync_popups();
     }
@@ -1800,6 +1852,9 @@ impl ChatComposer {
             ActivePopup::None => self.handle_key_event_without_popup(key_event),
         };
         self.reset_vim_mode_after_successful_dispatch(&result.0);
+        if !self.draft.textarea.text().is_empty() {
+            self.show_initial_placeholder = false;
+        }
         // Update (or hide/show) popup after processing the key.
         self.sync_popups();
         result
@@ -2840,6 +2895,7 @@ impl ChatComposer {
             });
         }
         self.draft.pending_pastes.clear();
+        self.show_initial_placeholder = false;
         Some((text, text_elements))
     }
 
@@ -4015,6 +4071,14 @@ impl ChatComposer {
         true
     }
 
+    pub(crate) fn set_model_label(&mut self, model_label: Option<String>) -> bool {
+        if self.footer.model_label == model_label {
+            return false;
+        }
+        self.footer.model_label = model_label;
+        true
+    }
+
     pub(crate) fn set_side_conversation_context_label(&mut self, label: Option<String>) -> bool {
         if self.footer.side_conversation_context_label == label {
             return false;
@@ -4188,9 +4252,7 @@ impl ChatComposer {
             .unwrap_or_else(|| footer_height(&footer_props));
         let footer_spacing = Self::footer_spacing(footer_hint_height);
         let footer_total_height = footer_hint_height + footer_spacing;
-        const COLS_WITH_MARGIN: u16 = LIVE_PREFIX_COLS + 1;
-        let inner_width =
-            width.saturating_sub(COLS_WITH_MARGIN.saturating_add(textarea_right_reserve));
+        let inner_width = width.saturating_sub(textarea_right_reserve).max(1);
         let remote_images_height: u16 = self
             .attachments
             .remote_image_lines()
@@ -4201,7 +4263,6 @@ impl ChatComposer {
         self.draft.textarea.desired_height(inner_width)
             + remote_images_height
             + remote_images_separator
-            + 2
             + match &self.popups.active {
                 ActivePopup::None => footer_total_height,
                 ActivePopup::Command(c) => c.calculate_required_height(width),
@@ -4335,9 +4396,19 @@ impl ChatComposer {
                         } else if transition_active {
                             None
                         } else if status_line_active {
-                            self.right_indicator_line()
+                            self.right_indicator_line(
+                                hint_rect
+                                    .width
+                                    .saturating_sub((FOOTER_INDENT_COLS as u16) * 2),
+                            )
                         } else {
-                            Some(self.right_footer_line_with_context())
+                            Some(
+                                self.right_footer_line_with_context(
+                                    hint_rect
+                                        .width
+                                        .saturating_sub((FOOTER_INDENT_COLS as u16) * 2),
+                                ),
+                            )
                         };
                     let right_width = right_line.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                     if status_line_active
@@ -4458,38 +4529,10 @@ impl ChatComposer {
                 }
             }
         }
-        let style = user_message_style();
-        Block::default().style(style).render(composer_rect, buf);
+        Block::default().render(composer_rect, buf);
         if !remote_images_rect.is_empty() {
-            Paragraph::new(self.attachments.remote_image_lines())
-                .style(style)
-                .render(remote_images_rect, buf);
+            Paragraph::new(self.attachments.remote_image_lines()).render(remote_images_rect, buf);
         }
-        if !textarea_rect.is_empty() {
-            let prompt = if self.draft.input_enabled {
-                if self.draft.is_bash_mode {
-                    Span::from("!").light_red().bold()
-                } else if let Some(tier) = self.effort_tier {
-                    let charge = self
-                        .effort_ignition
-                        .as_ref()
-                        .map(EffortIgnition::charge_alpha)
-                        .unwrap_or(1.0);
-                    tier.prompt(charge)
-                } else {
-                    "›".bold()
-                }
-            } else {
-                "›".dim()
-            };
-            buf.set_span(
-                textarea_rect.x - LIVE_PREFIX_COLS,
-                textarea_rect.y,
-                &prompt,
-                textarea_rect.width,
-            );
-        }
-
         let mut state = self.draft.textarea_state.borrow_mut();
         let textarea_is_empty = self.draft.textarea.text().is_empty() && !self.draft.is_bash_mode;
         if self.draft.input_enabled {
@@ -4524,7 +4567,7 @@ impl ChatComposer {
                 }
             }
         }
-        if !self.draft.input_enabled || textarea_is_empty {
+        if !self.draft.input_enabled || textarea_is_empty && self.show_initial_placeholder {
             let text = if self.draft.input_enabled {
                 self.placeholder_text.as_str().to_string()
             } else {
@@ -4536,7 +4579,7 @@ impl ChatComposer {
             };
             if !textarea_rect.is_empty() {
                 let placeholder = Span::from(text).dim();
-                Line::from(vec![placeholder]).render(textarea_rect.inner(Margin::new(0, 0)), buf);
+                Line::from(vec![placeholder]).render(textarea_rect, buf);
             }
         }
         if matches!(self.popups.active, ActivePopup::None)
@@ -5034,15 +5077,15 @@ mod tests {
 
         composer.set_text_content("!git".to_string(), Vec::new(), Vec::new());
         composer.move_cursor_to_end();
-        assert_eq!(composer.cursor_pos(area), Some((5, 1)));
+        assert_eq!(composer.cursor_pos(area), Some((3, 0)));
 
         composer.set_text_content("! git".to_string(), Vec::new(), Vec::new());
         composer.move_cursor_to_end();
-        assert_eq!(composer.cursor_pos(area), Some((6, 1)));
+        assert_eq!(composer.cursor_pos(area), Some((4, 0)));
     }
 
     #[test]
-    fn shell_command_uses_shell_accent_style() {
+    fn shell_command_keeps_terse_shell_footer_without_a_prompt_glyph() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
         let mut composer = ChatComposer::new(
@@ -5062,9 +5105,7 @@ mod tests {
         let mut buf = Buffer::empty(area);
         composer.render(area, &mut buf);
 
-        let prompt_cell = &buf[(0, 1)];
-        assert_eq!(prompt_cell.symbol(), "!");
-        assert_eq!(prompt_cell.style().fg, Some(Color::LightRed));
+        assert_eq!(buf[(0, 0)].symbol(), "g");
 
         let footer_y = area.height - 1;
         let footer_text = (0..area.width)

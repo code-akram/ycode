@@ -264,6 +264,7 @@ pub(super) async fn handle_model_migration_prompt_if_needed(
                 return Some(AppExitInfo {
                     token_usage: TokenUsage::default(),
                     thread_id: None,
+                    session_title: None,
                     resume_hint: None,
                     exit_reason: ExitReason::UserRequested,
                 });

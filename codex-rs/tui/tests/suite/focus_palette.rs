@@ -14,6 +14,7 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
 use anyhow::ensure;
+use base64::Engine;
 use tempfile::TempDir;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 15);
@@ -83,13 +84,14 @@ impl PtyCodex {
 
         // SAFETY: a successful `openpty` transfers ownership of both unique file descriptors.
         let master = File::from(unsafe { OwnedFd::from_raw_fd(master_fd) });
+        set_nonblocking(&master)?;
         // SAFETY: `slave_fd` is the second unique descriptor initialized by `openpty`.
         let slave = File::from(unsafe { OwnedFd::from_raw_fd(slave_fd) });
         let stdin = slave.try_clone().context("clone pseudo-terminal stdin")?;
         let stdout = slave.try_clone().context("clone pseudo-terminal stdout")?;
 
-        let codex = codex_utils_cargo_bin::cargo_bin("codex")
-            .or_else(|_| codex_utils_cargo_bin::cargo_bin("codex-tui"))?;
+        let codex = codex_utils_cargo_bin::cargo_bin("codex-tui")
+            .or_else(|_| codex_utils_cargo_bin::cargo_bin("codex"))?;
         let child = Command::new(codex)
             .arg("-C")
             .arg(repo_root)
@@ -122,7 +124,10 @@ impl PtyCodex {
             self.read_output(Duration::from_millis(/*millis*/ 50))?;
             self.answer_startup_queries()?;
 
-            if self.palette_answered && self.screen_contains("OpenAI Codex") {
+            if self.palette_answered
+                && self.screen_contains("Ask anything...")
+                && self.screen_contains("gpt-5.6-terra")
+            {
                 return Ok(());
             }
 
@@ -214,7 +219,11 @@ impl PtyCodex {
         }
 
         let mut chunk = [0_u8; 8192];
-        let count = self.master.read(&mut chunk)?;
+        let count = match self.master.read(&mut chunk) {
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
+            Err(error) => return Err(error).context("read focus-test pseudo-terminal"),
+        };
         self.output.extend_from_slice(&chunk[..count]);
         self.parser.process(&chunk[..count]);
         Ok(())
@@ -246,6 +255,19 @@ fn contains_bytes(buffer: &[u8], needle: &[u8]) -> bool {
     buffer.windows(needle.len()).any(|window| window == needle)
 }
 
+fn set_nonblocking(file: &File) -> Result<()> {
+    // SAFETY: `file` owns a valid descriptor and F_GETFL/F_SETFL do not outlive this call.
+    let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
+    if flags == -1 {
+        return Err(std::io::Error::last_os_error()).context("read pseudo-terminal flags");
+    }
+    // SAFETY: the descriptor and flags are valid and O_NONBLOCK is a supported status flag.
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1 {
+        return Err(std::io::Error::last_os_error()).context("set pseudo-terminal nonblocking");
+    }
+    Ok(())
+}
+
 fn write_test_config(codex_home: &Path, repo_root: &Path) -> Result<()> {
     let repo_root = repo_root.display();
     let config = format!(
@@ -255,5 +277,30 @@ fn write_test_config(codex_home: &Path, repo_root: &Path) -> Result<()> {
     );
     std::fs::write(codex_home.join("config.toml"), config)
         .context("write focus-test Codex configuration")?;
+    // This isolated ChatGPT fixture lets the PTY smoke reach the frontend without running login
+    // or submitting a model request.
+    let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    let id_token = format!(
+        "{}.{}.{}",
+        encode(br#"{"alg":"none","typ":"JWT"}"#),
+        encode(
+            br#"{"email":"pty@example.com","https://api.openai.com/auth":{"chatgpt_user_id":"pty-user","user_id":"pty-user","chatgpt_plan_type":"pro","chatgpt_account_id":"pty-account"}}"#,
+        ),
+        encode(b"sig"),
+    );
+    let auth = serde_json::json!({
+        "OPENAI_API_KEY": null,
+        "tokens": {
+            "id_token": id_token,
+            "access_token": "pty-access-token",
+            "refresh_token": "pty-refresh-token"
+        },
+        "last_refresh": "2026-08-12T00:00:00Z"
+    });
+    std::fs::write(
+        codex_home.join("auth.json"),
+        serde_json::to_vec_pretty(&auth)?,
+    )
+    .context("write focus-test authentication fixture")?;
     Ok(())
 }

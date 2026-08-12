@@ -255,6 +255,7 @@ const COMMIT_ANIMATION_TICK: Duration = tui::TARGET_FRAME_INTERVAL;
 pub struct AppExitInfo {
     pub token_usage: TokenUsage,
     pub thread_id: Option<ThreadId>,
+    pub session_title: Option<String>,
     pub resume_hint: Option<String>,
     pub exit_reason: ExitReason,
 }
@@ -264,6 +265,7 @@ impl AppExitInfo {
         Self {
             token_usage: TokenUsage::default(),
             thread_id: None,
+            session_title: None,
             resume_hint: None,
             exit_reason: ExitReason::Fatal(message.into()),
         }
@@ -931,14 +933,16 @@ See the Codex keymap documentation for supported actions and examples."
             }
         };
         let thread_id = app.chat_widget.thread_id().or(app.primary_thread_id);
+        let session_title = app.chat_widget.thread_name();
         let resume_hint = resume_hint_for_resumable_thread(
             thread_id,
-            app.chat_widget.thread_name(),
+            session_title.clone(),
             app.chat_widget.rollout_path().as_deref(),
         );
         Ok(AppExitInfo {
             token_usage: app.token_usage(),
             thread_id,
+            session_title,
             resume_hint,
             exit_reason,
         })
