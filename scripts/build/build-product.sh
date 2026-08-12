@@ -26,6 +26,30 @@ if [ "$(uname -s)" != "Darwin" ] || [ "$(uname -m)" != "arm64" ]; then
   exit 1
 fi
 
+resolve_cargo() {
+  if cargo_path=$(command -v cargo 2>/dev/null) && [ -x "$cargo_path" ]; then
+    CARGO="$cargo_path"
+    return
+  fi
+
+  if command -v rustup >/dev/null 2>&1; then
+    if cargo_path=$(cd "$WORKSPACE" && rustup which cargo 2>/dev/null) &&
+      [ -x "$cargo_path" ]; then
+      CARGO="$cargo_path"
+      PATH="$(dirname -- "$cargo_path"):$PATH"
+      export PATH
+      return
+    fi
+    echo "Unable to resolve Cargo: rustup could not find cargo for $WORKSPACE/rust-toolchain.toml." >&2
+    exit 1
+  fi
+
+  echo "Unable to resolve Cargo: neither cargo nor rustup is available on PATH." >&2
+  exit 1
+}
+
+resolve_cargo
+
 if ! command -v curl >/dev/null 2>&1; then
   echo "curl is required to fetch the pinned sandboxed V8 build dependency." >&2
   exit 1
@@ -42,7 +66,7 @@ if [ -n "${RUSTY_V8_ARCHIVE:-}" ] || [ -n "${RUSTY_V8_SRC_BINDING_PATH:-}" ]; th
     exit 1
   fi
   cd "$WORKSPACE"
-  exec cargo "$CARGO_COMMAND" "$@"
+  exec "$CARGO" "$CARGO_COMMAND" "$@"
 fi
 
 CARGO_TARGET_ROOT="${CARGO_TARGET_DIR:-$WORKSPACE/target}"
@@ -100,4 +124,4 @@ verify "$BINDING" "$BINDING_NAME" || {
 cd "$WORKSPACE"
 RUSTY_V8_ARCHIVE="$ARCHIVE" \
   RUSTY_V8_SRC_BINDING_PATH="$BINDING" \
-  exec cargo "$CARGO_COMMAND" "$@"
+  exec "$CARGO" "$CARGO_COMMAND" "$@"
