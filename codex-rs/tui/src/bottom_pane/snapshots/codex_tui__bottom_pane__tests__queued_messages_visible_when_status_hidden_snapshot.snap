@@ -4,6 +4,4 @@ expression: "render_snapshot(&pane, area)"
 ---
 • Queued follow-up inputs                       
   ↳ Queued follow-up question                   
-    ⌥ + ↑ edit last queued message              
-                                                
-                100% context left · / commands
+    ⌥ + ↑ edit last queued message

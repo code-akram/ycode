@@ -1,5 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/exec_flow.rs
+assertion_line: 636
 expression: combined
 ---
 ↳ Interacted with background terminal · just fix
@@ -7,4 +8,4 @@ expression: combined
 
 • Waited for background terminal · just fix
 
-▣ Build · gpt-5.6-sol · 0s
+gpt-5.6-sol default · 0s

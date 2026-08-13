@@ -1,7 +1,9 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1672
 expression: snapshot
 ---
 "                                                                                "
+"• 0s                                                                            "
 "Ask anything... "Fix a TODO in the codebase"                                    "
-"Working (0s • esc to interrupt)                                                 "
+"                                                                                "

@@ -1,5 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 2679
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -50,4 +51,4 @@ printf 'fenced within fenced\n'
   "path": "C:\\Program Files\\App",
   "regex": "^foo.*(bar)?$"
 }
-▣ Build · gpt-5.6-sol · 0s
+gpt-5.6-sol default · 0s

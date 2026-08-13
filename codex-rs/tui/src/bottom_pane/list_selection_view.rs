@@ -1435,6 +1435,7 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::style::Color;
     use ratatui::style::Style;
+    use ratatui::style::Styled;
     use tokio::sync::mpsc::unbounded_channel;
 
     struct MarkerRenderable {

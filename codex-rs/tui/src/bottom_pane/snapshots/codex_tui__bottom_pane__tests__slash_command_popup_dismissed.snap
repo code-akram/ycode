@@ -1,10 +1,8 @@
 ---
 source: tui/src/bottom_pane/mod.rs
+assertion_line: 2213
 expression: "render_snapshot(&pane, area)"
 ---
-• Working (0s • esc to interrupt)                           
-                                                            
-                                                            
-› /rev                                                      
-                                                            
-  tab to queue message                   100% context left
+⠋ 0s
+/res
+  tab to queue message

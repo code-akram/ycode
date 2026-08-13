@@ -1,7 +1,9 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1636
 expression: normalize_snapshot_paths(terminal.backend().vt100().screen().contents())
 ---
+
 
 
 
@@ -11,4 +13,3 @@ expression: normalize_snapshot_paths(terminal.backend().vt100().screen().content
 1
 
 Ask anything... "Fix a TODO in the codeb
-            gpt-5 default · / commands

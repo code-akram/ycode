@@ -1,5 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/exec_flow.rs
+assertion_line: 485
 expression: combined
 ---
 • Ran echo preparing
@@ -7,4 +8,4 @@ expression: combined
 
 Final response.
 
-▣ Build · gpt-5.6-sol · 2m 05s
+gpt-5.6-sol default · 2m 05s

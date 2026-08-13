@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/mod.rs
-expression: "render_snapshot(&pane, Rect::new(0, 0, width, height))"
+expression: rendered
 ---
 Ask anything... "Fix a T
-      gpt-5.6-sol high

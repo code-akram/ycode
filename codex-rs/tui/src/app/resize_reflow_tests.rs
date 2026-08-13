@@ -42,7 +42,7 @@ async fn resize_reflow_preserves_configured_scrollback_beyond_the_visible_viewpo
     assert!(rendered.lines.len() > usize::from(visible_history_rows));
     assert_eq!(
         rendered.lines.last().map(rendered_line_text),
-        Some("cell 63".to_string())
+        Some("  cell 63".to_string())
     );
 }
 
@@ -123,7 +123,7 @@ async fn resize_reflow_preserves_configured_scrollback_when_the_terminal_height_
     );
     assert_eq!(
         larger.lines.last().map(rendered_line_text),
-        Some("cell 63".to_string())
+        Some("  cell 63".to_string())
     );
 }
 
@@ -140,11 +140,11 @@ async fn resize_reflow_preserves_explicitly_unlimited_history() {
     assert_eq!(rendered.lines.len(), 39);
     assert_eq!(
         rendered.lines.first().map(rendered_line_text),
-        Some("cell 0".to_string())
+        Some("  cell 0".to_string())
     );
     assert_eq!(
         rendered.lines.last().map(rendered_line_text),
-        Some("cell 19".to_string())
+        Some("  cell 19".to_string())
     );
 }
 
@@ -197,8 +197,8 @@ async fn capped_resize_reflow_counts_wrapped_notice_rows() {
         @r"
     Earlier messages are
     available — press ctrl + t
-    to view the full transcript
-    cell 9
+    to view the full
+    transcript
 
     cell 10
 
@@ -224,7 +224,7 @@ async fn one_row_history_cap_preserves_conversation_instead_of_notice() {
             .map(rendered_line_text)
             .collect::<Vec<_>>()
             .join("\n"),
-        @r"cell 1"
+        @r"  cell 1"
     );
 }
 

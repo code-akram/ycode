@@ -1,12 +1,12 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
+assertion_line: 1323
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
-/usage daily
+  /usage daily
 
- Token activity
-   Loading...
+   Token activity
+     Loading...
 
 Ask anything... "Fix a TODO in the codebase"
-                          100% context left · gpt-5.6-sol default · / commands

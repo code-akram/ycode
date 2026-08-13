@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/chat_composer.rs
+assertion_line: 4864
 expression: terminal.backend()
 ---
 "Test                "
@@ -10,4 +11,4 @@ expression: terminal.backend()
 "                    "
 "                    "
 "                    "
-"  tab to queue      "
+"  tab to queue messa"

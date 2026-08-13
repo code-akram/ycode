@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_with_working_header() {
+    fn renders_mini_status_line() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let mut w = StatusIndicatorWidget::new(
@@ -271,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_wrapped_details_panama_two_lines() {
+    fn operational_details_are_not_rendered() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let mut w = StatusIndicatorWidget::new(
@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_without_spinner_when_animations_disabled() {
+    fn renders_static_glyph_when_animations_disabled() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let mut w = StatusIndicatorWidget::new(

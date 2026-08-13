@@ -88,6 +88,8 @@ pub(crate) use footer::GoalStatusIndicator;
 #[cfg(test)]
 pub(crate) use footer::goal_status_indicator_line;
 pub(crate) use list_selection_view::ColumnWidthMode;
+#[cfg(test)]
+pub(crate) use list_selection_view::ListSelectionView;
 pub(crate) use list_selection_view::SelectionDescriptionLayout;
 pub(crate) use list_selection_view::SelectionRowDisplay;
 pub(crate) use list_selection_view::SelectionViewParams;
@@ -1635,12 +1637,15 @@ mod tests {
 
         let width = 80;
         let height = pane.desired_height(width);
-        assert_eq!(height, 2, "one input row plus one status rail");
+        assert_eq!(height, 1, "fresh idle renders only the input row");
         let rendered = render_snapshot(&pane, Rect::new(0, 0, width, height))
             .lines()
             .map(str::trim_end)
             .collect::<Vec<_>>()
             .join("\n");
+        assert!(!rendered.contains("context left"));
+        assert!(!rendered.contains("gpt-5.6-sol"));
+        assert!(!rendered.contains("/ commands"));
         assert_snapshot!("mini_idle_surface", rendered);
     }
 
@@ -1876,7 +1881,12 @@ mod tests {
         pane.render(area, &mut buf);
 
         let bufs = snapshot_buffer(&buf);
-        assert!(bufs.contains("• Working"), "expected Working header");
+        assert!(bufs.contains("0s"), "expected elapsed status row");
+        assert!(!bufs.contains("Working"), "status row must stay terse");
+        assert!(
+            !bufs.contains('('),
+            "status row must not render hint grammar"
+        );
     }
 
     #[test]
@@ -1894,11 +1904,11 @@ mod tests {
             skills: Some(Vec::new()),
         });
 
-        // Activate the status overlay on the shared footer rail after a prompt was submitted.
+        // Activate the Mini status row after a prompt was submitted.
         pane.dismiss_initial_placeholder();
         pane.set_task_running(/*running*/ true);
 
-        // Use height == desired_height; expect one editor row and one shared rail.
+        // Use height == desired_height; expect one editor row below the status row.
         let height = pane.desired_height(/*width*/ 30);
         assert_eq!(height, 2);
         let area = Rect::new(0, 0, 30, height);
@@ -1933,7 +1943,7 @@ mod tests {
     }
 
     #[test]
-    fn unified_exec_summary_does_not_increase_height_when_status_visible() {
+    fn unified_exec_summary_does_not_pollute_mini_status_row() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let mut pane = BottomPane::new(BottomPaneParams {
@@ -1958,7 +1968,9 @@ mod tests {
 
         let area = Rect::new(0, 0, width, after);
         let rendered = render_snapshot(&pane, area);
-        assert!(rendered.contains("background terminal running · /ps to view"));
+        assert!(rendered.contains("0s"));
+        assert!(!rendered.contains("background terminal running"));
+        assert!(!rendered.contains("/ps to view"));
     }
 
     #[test]
@@ -2182,10 +2194,10 @@ mod tests {
 
         // Repro: a running task + slash-command popup + Esc should dismiss the popup without
         // interrupting the task.
-        pane.insert_str("/rev");
+        pane.insert_str("/res");
         assert!(
             pane.composer.popup_active(),
-            "expected command popup after typing `/rev`"
+            "expected command popup after typing `/res`"
         );
 
         pane.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -2197,16 +2209,18 @@ mod tests {
             );
         }
         assert!(!pane.composer.popup_active());
-        assert_eq!(pane.composer_text(), "/rev");
+        assert_eq!(pane.composer_text(), "/res");
 
         let width = 60;
         let area = Rect::new(0, 0, width, pane.desired_height(width));
-        assert_snapshot!(
-            "slash_command_popup_dismissed",
-            render_snapshot(&pane, area)
-        );
+        let rendered = render_snapshot(&pane, area)
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_snapshot!("slash_command_popup_dismissed", rendered);
 
-        pane.insert_str("i");
+        pane.insert_str("u");
         assert!(pane.composer.popup_active());
     }
 

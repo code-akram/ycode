@@ -1,7 +1,8 @@
 ---
 source: tui/src/chatwidget/tests/exec_flow.rs
+assertion_line: 69
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
+"• 0s                                                                            "
 "Ask anything... "Fix a TODO in the codebase"                                    "
-"Working (0s • esc to interrupt) · 1 background terminal running · /ps to view ·…"

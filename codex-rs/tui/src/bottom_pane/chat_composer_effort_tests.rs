@@ -127,9 +127,9 @@ fn effort_transition_never_replaces_a_footer_flash() {
 }
 
 #[test]
-fn ultra_accent_upgrades_prompt_glyph() {
+fn ultra_accent_preserves_raw_mini_composer() {
     snapshot_composer_state_with_width(
-        "ultra_accent_upgrades_prompt_glyph",
+        "ultra_accent_preserves_raw_mini_composer",
         /*width*/ 60,
         /*enhanced_keys_supported*/ false,
         |composer| {
