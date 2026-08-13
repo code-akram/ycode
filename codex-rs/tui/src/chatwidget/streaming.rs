@@ -237,6 +237,27 @@ impl ChatWidget {
                 AgentMessageContent::Text { text } => message.push_str(text),
             }
         }
+        if self.active_native_code_mode_run.is_some() {
+            self.finalize_completed_assistant_message(/*final_markdown*/ None);
+            let cell = self.active_native_code_mode_outcome.map_or_else(
+                || {
+                    history_cell::native_code_mode_evidence_cell(
+                        &message,
+                        codex_cli_protocol::NativeCodeModePhase::Artifact,
+                    )
+                },
+                |outcome| history_cell::native_code_mode_evidence_cell(&message, outcome),
+            );
+            self.add_to_history(cell);
+            self.status_state.pending_status_indicator_restore = match item.phase {
+                Some(MessagePhase::FinalAnswer) | None => {
+                    !self.input_queue.pending_steers.is_empty()
+                }
+                Some(MessagePhase::Commentary) => true,
+            };
+            self.maybe_restore_status_indicator_after_stream_idle();
+            return;
+        }
         let parsed = parse_assistant_markdown(&message, self.config.cwd.as_path());
         self.finalize_completed_assistant_message(Some(parsed.visible_markdown.as_str()));
         if matches!(item.phase, Some(MessagePhase::FinalAnswer) | None)

@@ -96,7 +96,7 @@ pub(crate) use session::*;
 pub(crate) fn native_code_mode_lifecycle_cell(
     phase: codex_cli_protocol::NativeCodeModePhase,
     text: String,
-) -> PlainHistoryCell {
+) -> Option<PlainHistoryCell> {
     use codex_cli_protocol::NativeCodeModePhase;
     let line = match phase {
         NativeCodeModePhase::Invocation => {
@@ -109,8 +109,141 @@ pub(crate) fn native_code_mode_lifecycle_cell(
         NativeCodeModePhase::Artifact => {
             Line::from(format!("source: {text}")).style(crate::style::operational_reference_style())
         }
+        NativeCodeModePhase::Generating
+        | NativeCodeModePhase::Compiling
+        | NativeCodeModePhase::Repairing
+        | NativeCodeModePhase::Running
+        | NativeCodeModePhase::Succeeded
+        | NativeCodeModePhase::Failed
+        | NativeCodeModePhase::Interrupted => return None,
     };
-    PlainHistoryCell::new(vec![line])
+    Some(PlainHistoryCell::new(vec![line]))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct NativeEvidenceView {
+    version: u16,
+    summary: String,
+    verified: Vec<String>,
+    disputed: Vec<String>,
+    unresolved: Vec<String>,
+    artifact_refs: Vec<String>,
+    partial_failures: Vec<String>,
+    provenance_ids: Vec<String>,
+}
+
+const NATIVE_FAILURE_REASON_DISPLAY_BYTES: usize = 160;
+
+pub(crate) fn native_code_mode_evidence_cell(
+    text: &str,
+    outcome: codex_cli_protocol::NativeCodeModePhase,
+) -> PlainHistoryCell {
+    use codex_cli_protocol::NativeCodeModePhase;
+    let Ok(evidence) = serde_json::from_str::<NativeEvidenceView>(text) else {
+        return PlainHistoryCell::new(vec![Line::from(
+            "Code mode failed · invalid terminal Evidence",
+        )]);
+    };
+    if evidence.version != 1 {
+        return PlainHistoryCell::new(vec![Line::from(
+            "Code mode failed · unsupported terminal Evidence",
+        )]);
+    }
+    let mut lines = Vec::new();
+    match outcome {
+        NativeCodeModePhase::Succeeded => {
+            lines.push(Line::from(evidence.summary));
+            push_native_findings(&mut lines, "verified", "✓", evidence.verified);
+            push_native_findings(&mut lines, "disputed", "?", evidence.disputed);
+            push_native_findings(&mut lines, "unresolved", "·", evidence.unresolved);
+            push_native_findings(
+                &mut lines,
+                "partial failures",
+                "·",
+                evidence.partial_failures,
+            );
+        }
+        NativeCodeModePhase::Failed => {
+            let reason = evidence
+                .partial_failures
+                .first()
+                .or_else(|| evidence.unresolved.first())
+                .map_or_else(
+                    || "details retained locally".to_string(),
+                    |reason| compact_native_failure_reason(reason),
+                );
+            lines.push(Line::from(format!("Code mode failed · {reason}")));
+        }
+        NativeCodeModePhase::Interrupted => {
+            lines.push(Line::from("Code mode interrupted"));
+        }
+        _ => {
+            lines.push(Line::from("Code mode failed · invalid terminal outcome"));
+        }
+    }
+    // The complete verified refs stay in the bounded Evidence item for model history. The
+    // separate Artifact lifecycle item already renders the retained source URI, so repeating the
+    // full request/result collection here would turn the compact terminal outcome into a log.
+    let _ = (evidence.artifact_refs, evidence.provenance_ids);
+    PlainHistoryCell::new(lines)
+}
+
+pub(crate) fn native_code_mode_notification_text(
+    text: &str,
+    outcome: codex_cli_protocol::NativeCodeModePhase,
+) -> Option<String> {
+    use codex_cli_protocol::NativeCodeModePhase;
+    let evidence: NativeEvidenceView = serde_json::from_str(text).ok()?;
+    (evidence.version == 1).then_some(())?;
+    match outcome {
+        NativeCodeModePhase::Succeeded => Some(evidence.summary),
+        NativeCodeModePhase::Failed => {
+            let reason = evidence
+                .partial_failures
+                .first()
+                .or_else(|| evidence.unresolved.first())
+                .map_or_else(
+                    || "details retained locally".to_string(),
+                    |reason| compact_native_failure_reason(reason),
+                );
+            Some(format!("Code mode failed · {reason}"))
+        }
+        NativeCodeModePhase::Interrupted => Some("Code mode interrupted".to_string()),
+        _ => None,
+    }
+}
+
+fn compact_native_failure_reason(reason: &str) -> String {
+    let single_line = reason.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single_line.len() <= NATIVE_FAILURE_REASON_DISPLAY_BYTES {
+        return single_line;
+    }
+    let marker = "…";
+    let mut end = NATIVE_FAILURE_REASON_DISPLAY_BYTES - marker.len();
+    while !single_line.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut compact = single_line[..end].trim_end().to_string();
+    compact.push_str(marker);
+    compact
+}
+
+fn push_native_findings(
+    lines: &mut Vec<Line<'static>>,
+    heading: &str,
+    marker: &str,
+    findings: Vec<String>,
+) {
+    if findings.is_empty() {
+        return;
+    }
+    lines.push(Line::from(heading.to_string()).dim());
+    lines.extend(
+        findings
+            .into_iter()
+            .map(|finding| Line::from(format!("{marker} {finding}"))),
+    );
 }
 
 #[cfg(test)]

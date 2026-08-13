@@ -4542,8 +4542,7 @@ impl ChatComposer {
                     .render_ref_masked(textarea_rect, buf, &mut state, mask_char);
             } else {
                 let mut highlights = Vec::new();
-                let search_highlight_style =
-                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD);
+                let search_highlight_style = Style::default().add_modifier(Modifier::REVERSED);
                 highlights.extend(
                     self.history_search_highlight_ranges()
                         .into_iter()

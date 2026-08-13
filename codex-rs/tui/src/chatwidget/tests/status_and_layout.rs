@@ -1972,6 +1972,109 @@ async fn mini_enables_status_animation_without_enabling_general_bottom_pane_anim
 }
 
 #[tokio::test]
+async fn native_lifecycle_has_no_dark_interval_and_updates_the_padded_active_line() {
+    fn phase(chat: &mut ChatWidget, item_id: &str, phase: codex_cli_protocol::NativeCodeModePhase) {
+        chat.handle_server_notification(
+            ServerNotification::ItemCompleted(ItemCompletedNotification {
+                thread_id: chat.thread_id.map(|id| id.to_string()).unwrap_or_default(),
+                turn_id: "native-phase-turn".to_string(),
+                completed_at_ms: 0,
+                item: CliRuntimeThreadItem::NativeCodeMode {
+                    id: item_id.to_string(),
+                    run_id: "native-phase-run".to_string(),
+                    phase,
+                    text: String::new(),
+                },
+            }),
+            /*replay_kind*/ None,
+        );
+    }
+
+    fn render(chat: &ChatWidget) -> (String, (u16, u16)) {
+        let width = 80;
+        let area = Rect::new(0, 0, width, chat.desired_height(width));
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        chat.render(area, &mut buffer);
+        let text = (area.y..area.bottom())
+            .map(|row| {
+                (area.x..area.right())
+                    .map(|column| buffer[(column, row)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let cursor = chat.cursor_pos(area).expect("active composer cursor");
+        (text, cursor)
+    }
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    handle_turn_started(&mut chat, "native-phase-turn");
+    phase(
+        &mut chat,
+        "native-generating",
+        codex_cli_protocol::NativeCodeModePhase::Generating,
+    );
+    let (first, (_, first_cursor_y)) = render(&chat);
+    let first_status = first
+        .lines()
+        .nth(usize::from(first_cursor_y.saturating_sub(1)))
+        .expect("status immediately above cursor")
+        .trim_end()
+        .to_string();
+    assert!(first_status.starts_with("  ⠋ generating · 0.0s"));
+
+    tokio::time::sleep(std::time::Duration::from_millis(110)).await;
+    let (second, (_, second_cursor_y)) = render(&chat);
+    let second_status = second
+        .lines()
+        .nth(usize::from(second_cursor_y.saturating_sub(1)))
+        .expect("animated status immediately above cursor")
+        .trim_end()
+        .to_string();
+    assert!(second_status.contains(" generating · 0.1s"));
+    assert_ne!(first_status, second_status);
+
+    for (item_id, expected_phase) in [
+        (
+            "native-compiling",
+            codex_cli_protocol::NativeCodeModePhase::Compiling,
+        ),
+        (
+            "native-repairing",
+            codex_cli_protocol::NativeCodeModePhase::Repairing,
+        ),
+        (
+            "native-running",
+            codex_cli_protocol::NativeCodeModePhase::Running,
+        ),
+    ] {
+        phase(&mut chat, item_id, expected_phase);
+        let (rendered, (_, cursor_y)) = render(&chat);
+        let expected = match expected_phase {
+            codex_cli_protocol::NativeCodeModePhase::Compiling => " compiling · 0.0s",
+            codex_cli_protocol::NativeCodeModePhase::Repairing => " repairing · 0.0s",
+            codex_cli_protocol::NativeCodeModePhase::Running => " running · 0.0s",
+            _ => unreachable!(),
+        };
+        assert!(
+            rendered
+                .lines()
+                .nth(usize::from(cursor_y.saturating_sub(1)))
+                .expect("phase immediately above cursor")
+                .contains(expected)
+        );
+    }
+
+    handle_turn_interrupted(&mut chat, "native-phase-turn");
+    let width = 5;
+    let area = Rect::new(0, 0, width, chat.desired_height(width).max(1));
+    assert_eq!(
+        chat.cursor_pos(area).expect("restored cursor").0,
+        crate::transcript_gutter::layout(width).left
+    );
+}
+
+#[tokio::test]
 async fn terminal_outcomes_restore_the_padded_idle_composer() {
     fn assert_restored(chat: &ChatWidget, outcome: &str) {
         assert!(!chat.is_task_running_for_test(), "{outcome}");

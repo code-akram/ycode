@@ -621,6 +621,7 @@ impl Connection {
         &self,
         request: NativeExecute,
         delegate: Arc<dyn NativeCodeModeDelegate>,
+        progress_tx: Option<mpsc::UnboundedSender<crate::native::NativeProgress>>,
         cancellation: CancellationToken,
     ) -> Result<NativeExecution, String> {
         self.require_native_capability()?;
@@ -632,6 +633,7 @@ impl Connection {
         self.send(DriverCommand::NativeExecute {
             request,
             delegate,
+            progress_tx,
             caller_cancellation: caller.token(),
             response_tx,
         })

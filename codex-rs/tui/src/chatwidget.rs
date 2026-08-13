@@ -551,6 +551,8 @@ pub(crate) struct ChatWidget {
     external_editor_state: ExternalEditorState,
     last_rendered_user_message_display: Option<UserMessageDisplay>,
     last_non_retry_error: Option<(String, String)>,
+    active_native_code_mode_run: Option<String>,
+    active_native_code_mode_outcome: Option<codex_cli_protocol::NativeCodeModePhase>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]

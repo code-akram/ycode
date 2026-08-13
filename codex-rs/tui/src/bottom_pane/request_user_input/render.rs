@@ -124,7 +124,7 @@ impl RequestUserInputOverlay {
             if unanswered == 1 { "" } else { "s" }
         );
         UnansweredConfirmationData {
-            title_line: Line::from(super::UNANSWERED_CONFIRM_TITLE.bold()),
+            title_line: Line::from(super::UNANSWERED_CONFIRM_TITLE),
             subtitle_line: Line::from(subtitle.dim()),
             hint_line: standard_popup_hint_line(),
             rows: self.unanswered_confirmation_rows(),

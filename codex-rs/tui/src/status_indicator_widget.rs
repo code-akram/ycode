@@ -84,6 +84,15 @@ impl StatusIndicatorWidget {
         self.header = header;
     }
 
+    pub(crate) fn update_phase(&mut self, phase: &str) {
+        self.header.clear();
+        self.header.push_str(phase);
+        self.elapsed_running = Duration::ZERO;
+        self.last_resume_at = Instant::now();
+        self.is_paused = false;
+        self.frame_requester.schedule_frame();
+    }
+
     /// Retain the status update API while operational details remain in the transcript.
     pub(crate) fn update_details(
         &mut self,
@@ -152,10 +161,30 @@ impl StatusIndicatorWidget {
 
     fn status_line_at(&self, now: Instant) -> Line<'static> {
         let motion_mode = MotionMode::from_animations_enabled(self.animations_enabled);
+        let spinner = status_spinner(self.last_resume_at, now, motion_mode);
+        let native_phase = matches!(
+            self.header.as_str(),
+            "generating" | "compiling" | "repairing" | "running"
+        );
+        if !native_phase {
+            return Line::from(vec![
+                spinner,
+                " ".into(),
+                fmt_elapsed_compact(self.elapsed_seconds_at(now)).dim(),
+            ]);
+        }
+        let elapsed = self.elapsed_duration_at(now);
+        let elapsed = if elapsed < Duration::from_secs(1) {
+            format!("{:.1}s", elapsed.as_secs_f64())
+        } else {
+            fmt_elapsed_compact(elapsed.as_secs())
+        };
         Line::from(vec![
-            status_spinner(self.last_resume_at, now, motion_mode),
+            spinner,
             " ".into(),
-            fmt_elapsed_compact(self.elapsed_seconds_at(now)).dim(),
+            self.header.clone().into(),
+            " · ".dim(),
+            elapsed.dim(),
         ])
     }
 
@@ -411,6 +440,35 @@ mod tests {
         assert_eq!(
             widget.next_frame_delay_at(baseline + Duration::from_millis(250)),
             Some(SPINNER_FRAME_INTERVAL)
+        );
+    }
+
+    #[test]
+    fn native_phases_render_animated_phase_and_elapsed() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let mut widget = StatusIndicatorWidget::new(
+            tx,
+            crate::tui::FrameRequester::test_dummy(),
+            /*animations_enabled*/ true,
+        );
+        let baseline = Instant::now();
+        widget.last_resume_at = baseline;
+        for phase in ["generating", "compiling", "repairing", "running"] {
+            widget.header = phase.to_string();
+            assert_eq!(
+                widget
+                    .status_line_at(baseline + Duration::from_millis(80))
+                    .to_string(),
+                format!("⠙ {phase} · 0.1s")
+            );
+        }
+        widget.header = "running".to_string();
+        assert_eq!(
+            widget
+                .status_line_at(baseline + Duration::from_secs(3))
+                .to_string(),
+            "⠧ running · 3s"
         );
     }
 

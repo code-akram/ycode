@@ -279,6 +279,7 @@ async fn native_delegate_routes_only_to_exact_short_lived_owner() {
         thread_id: "00000000-0000-4000-8000-000000000001".to_string(),
         run_id: "00000000-0000-4000-8000-000000000002".to_string(),
     };
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
     let (response_tx, response_rx) = oneshot::channel();
     harness
         .command_tx
@@ -290,6 +291,7 @@ async fn native_delegate_routes_only_to_exact_short_lived_owner() {
                 source: "fn main() {}".to_string(),
             },
             delegate: Arc::new(NativeDelegate),
+            progress_tx: Some(progress_tx),
             caller_cancellation: CancellationToken::new(),
             response_tx,
         })
@@ -308,6 +310,22 @@ async fn native_delegate_routes_only_to_exact_short_lived_owner() {
             ..
         }
     ));
+
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::NativeProgress {
+            id: RequestId::new(1),
+            session_id: SessionId::new(identity.session_id.clone()).expect("session"),
+            thread_id: identity.thread_id.clone(),
+            run_id: identity.run_id.clone(),
+            phase: codex_code_mode_protocol::host::NativeProgressPhase::WorkflowStarted,
+        }))
+        .await
+        .expect("native workflow progress");
+    assert_eq!(
+        progress_rx.recv().await,
+        Some(crate::native::NativeProgress::WorkflowStarted)
+    );
 
     harness
         .event_tx
@@ -479,6 +497,7 @@ async fn native_client_disconnect_cancels_delegate_and_pending_request() {
                 started: Arc::clone(&started),
                 cancelled: Arc::clone(&cancelled),
             }),
+            progress_tx: None,
             caller_cancellation: CancellationToken::new(),
             response_tx,
         })
@@ -563,6 +582,7 @@ async fn non_cooperative_native_delegate_is_forcibly_settled_on_cancel_and_unreg
                     started: Arc::clone(&started),
                     dropped: Arc::clone(&dropped),
                 }),
+                progress_tx: None,
                 caller_cancellation: CancellationToken::new(),
                 response_tx,
             })
@@ -667,6 +687,7 @@ async fn non_cooperative_native_delegate_is_forcibly_settled_on_disconnect() {
                 started: Arc::clone(&started),
                 dropped: Arc::clone(&dropped),
             }),
+            progress_tx: None,
             caller_cancellation: CancellationToken::new(),
             response_tx,
         })

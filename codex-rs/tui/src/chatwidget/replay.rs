@@ -191,8 +191,47 @@ impl ChatWidget {
             ThreadItem::ContextCompaction { .. } => {
                 self.add_info_message("Context compacted".to_string(), /*hint*/ None);
             }
-            ThreadItem::NativeCodeMode { phase, text, .. } => {
-                self.add_to_history(history_cell::native_code_mode_lifecycle_cell(phase, text));
+            ThreadItem::NativeCodeMode {
+                run_id,
+                phase,
+                text,
+                ..
+            } => {
+                use codex_cli_protocol::NativeCodeModePhase;
+                if phase == NativeCodeModePhase::Invocation {
+                    self.active_native_code_mode_run = Some(run_id);
+                    self.active_native_code_mode_outcome = None;
+                }
+                if matches!(
+                    phase,
+                    NativeCodeModePhase::Succeeded
+                        | NativeCodeModePhase::Failed
+                        | NativeCodeModePhase::Interrupted
+                ) {
+                    self.active_native_code_mode_outcome = Some(phase);
+                }
+                if !from_replay {
+                    let phase_label = match phase {
+                        NativeCodeModePhase::Generating => Some("generating"),
+                        NativeCodeModePhase::Compiling => Some("compiling"),
+                        NativeCodeModePhase::Repairing => Some("repairing"),
+                        NativeCodeModePhase::Running => Some("running"),
+                        NativeCodeModePhase::Invocation
+                        | NativeCodeModePhase::Repair
+                        | NativeCodeModePhase::Artifact
+                        | NativeCodeModePhase::Succeeded
+                        | NativeCodeModePhase::Failed
+                        | NativeCodeModePhase::Interrupted => None,
+                    };
+                    if let Some(phase_label) = phase_label {
+                        self.bottom_pane.ensure_status_indicator();
+                        self.bottom_pane.update_native_code_mode_phase(phase_label);
+                        self.request_redraw();
+                    }
+                }
+                if let Some(cell) = history_cell::native_code_mode_lifecycle_cell(phase, text) {
+                    self.add_to_history(cell);
+                }
             }
             ThreadItem::CollabAgentToolCall {
                 id,

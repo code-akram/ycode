@@ -95,6 +95,40 @@ impl RequestTracker {
         self.pending.remove(&id)
     }
 
+    pub(super) fn native_workflow_started(
+        &mut self,
+        id: RequestId,
+        session_id: &SessionId,
+        thread_id: &str,
+        run_id: &str,
+    ) -> Result<(), String> {
+        let Some(PendingRequest::NativeExecute {
+            identity,
+            progress_tx,
+            workflow_started,
+            ..
+        }) = self.pending.get_mut(&id)
+        else {
+            return Err(format!(
+                "code-mode host returned native progress for unknown request ID {id:?}"
+            ));
+        };
+        if session_id.as_str() != identity.session_id
+            || thread_id != identity.thread_id
+            || run_id != identity.run_id
+        {
+            return Err("code-mode host returned mismatched native progress identity".to_string());
+        }
+        if *workflow_started {
+            return Err("code-mode host returned duplicate native workflow start".to_string());
+        }
+        *workflow_started = true;
+        if let Some(progress_tx) = progress_tx {
+            let _ = progress_tx.send(crate::native::NativeProgress::WorkflowStarted);
+        }
+        Ok(())
+    }
+
     pub(super) fn insert_initial_response(&mut self, id: RequestId, response: InitialResponse) {
         self.initial_responses.insert(id, response);
     }

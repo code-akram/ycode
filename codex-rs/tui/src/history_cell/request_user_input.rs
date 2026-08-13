@@ -25,7 +25,7 @@ impl HistoryCell for RequestUserInputResultCell {
             .count();
         let unanswered = total.saturating_sub(answered);
 
-        let mut header = vec!["•".dim(), " ".into(), "Questions".bold()];
+        let mut header = vec!["•".dim(), " ".into(), "Questions".into()];
         header.push(format!(" {answered}/{total} answered").dim());
         if self.interrupted {
             header.push(" (interrupted)".set_style(crate::style::operational_reference_style()));

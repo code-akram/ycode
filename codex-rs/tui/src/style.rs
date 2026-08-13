@@ -8,6 +8,7 @@ use crate::terminal_palette::default_fg;
 use crate::terminal_palette::rgb_color;
 use crate::terminal_palette::stdout_color_level;
 use ratatui::style::Color;
+use ratatui::style::Modifier;
 use ratatui::style::Style;
 
 const HUMAN_PROMPT_DARK_RGB: (u8, u8, u8) = (58, 139, 253);
@@ -42,7 +43,29 @@ pub(crate) fn operational_accent_style() -> Style {
 }
 
 pub(crate) fn operational_reference_style() -> Style {
-    operational_accent_style().remove_modifier(ratatui::style::Modifier::BOLD)
+    operational_accent_style()
+}
+
+/// Filters arbitrary ratatui styles to the modifiers ycode deliberately emits.
+///
+/// Bold is intentionally absent: semantic hierarchy uses color, underline, italic, and spacing.
+pub(crate) fn terminal_safe_modifiers(modifiers: Modifier) -> Modifier {
+    let mut safe = Modifier::empty();
+    for supported in [
+        Modifier::DIM,
+        Modifier::ITALIC,
+        Modifier::UNDERLINED,
+        Modifier::SLOW_BLINK,
+        Modifier::RAPID_BLINK,
+        Modifier::REVERSED,
+        Modifier::HIDDEN,
+        Modifier::CROSSED_OUT,
+    ] {
+        if modifiers.contains(supported) {
+            safe.insert(supported);
+        }
+    }
+    safe
 }
 
 /// Returns the style for a user-authored message using the provided terminal background.
@@ -73,7 +96,7 @@ fn human_prompt_style_for(
             best_color_for_level(target, color_level)
         }
     };
-    Style::default().fg(color).bold()
+    Style::default().fg(color)
 }
 
 fn operational_accent_style_for(
@@ -91,7 +114,7 @@ fn operational_accent_style_for(
             best_color_for_level(target, color_level)
         }
     };
-    Style::default().fg(color).bold()
+    Style::default().fg(color)
 }
 
 fn table_separator_style_for(
@@ -145,8 +168,8 @@ mod tests {
             let operational = operational_accent_style_for(Some((0, 0, 0)), level);
 
             assert_ne!(human.fg, operational.fg, "palette collision at {level:?}");
-            assert!(human.add_modifier.contains(Modifier::BOLD));
-            assert!(operational.add_modifier.contains(Modifier::BOLD));
+            assert!(!human.add_modifier.contains(Modifier::BOLD));
+            assert!(!operational.add_modifier.contains(Modifier::BOLD));
         }
     }
 
@@ -224,6 +247,10 @@ mod tests {
             if relative.ends_with("_tests.rs")
                 || relative.ends_with("/tests.rs")
                 || relative.contains("/tests/")
+                || matches!(
+                    relative.as_str(),
+                    "custom_terminal.rs" | "insert_history.rs"
+                )
             {
                 continue;
             }
@@ -283,6 +310,58 @@ mod tests {
             ["history_cell/messages.rs", "history_cell/mod.rs"],
             "exclusive human-prompt style escaped its two submitted-human renderers"
         );
+    }
+
+    #[test]
+    fn production_tui_source_contains_no_bold_rendering() {
+        let lib_rs = codex_utils_cargo_bin::find_resource!("src/lib.rs")
+            .expect("failed to locate TUI source");
+        let src_dir = lib_rs.parent().expect("lib.rs should have a parent");
+        let mut source_files = Vec::new();
+        collect_rust_files(src_dir, &mut source_files).expect("failed to collect TUI source files");
+
+        let mut violations = Vec::new();
+        let mut audited = std::collections::BTreeSet::new();
+        for path in source_files {
+            let relative = path
+                .strip_prefix(src_dir)
+                .expect("source under src")
+                .to_string_lossy()
+                .replace('\\', "/");
+            if relative.ends_with("_tests.rs")
+                || relative.ends_with("/tests.rs")
+                || relative.contains("/tests/")
+            {
+                continue;
+            }
+            audited.insert(relative.clone());
+            let contents = fs::read_to_string(&path).expect("read TUI source");
+            let production = contents.split("#[cfg(test)]").next().unwrap_or(&contents);
+            for (index, line) in production.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or_default();
+                if [
+                    ".bold()",
+                    "Modifier::BOLD",
+                    "FontStyle::BOLD",
+                    "Attribute::Bold",
+                    "\\x1b[1m",
+                    "\\u{1b}[1m",
+                    "\\033[1m",
+                ]
+                .iter()
+                .any(|needle| code.contains(needle))
+                {
+                    violations.push(format!("{relative}:{}: {code}", index + 1));
+                }
+            }
+        }
+
+        assert!(
+            violations.is_empty(),
+            "production bold rendering remains: {violations:?}"
+        );
+        assert!(audited.contains("custom_terminal.rs"));
+        assert!(audited.contains("insert_history.rs"));
     }
 
     fn collect_rust_files(dir: &Path, files: &mut Vec<PathBuf>) -> std::io::Result<()> {

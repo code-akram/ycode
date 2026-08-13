@@ -332,8 +332,15 @@ pub struct ContextCompactionItem {
 #[serde(rename_all = "snake_case")]
 pub enum NativeCodeModePhase {
     Invocation,
+    Generating,
+    Compiling,
+    Repairing,
+    Running,
     Repair,
     Artifact,
+    Succeeded,
+    Failed,
+    Interrupted,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
@@ -341,7 +348,7 @@ pub struct NativeCodeModeItem {
     pub id: String,
     pub run_id: String,
     pub phase: NativeCodeModePhase,
-    /// Invocation task or verified retained artifact URI; empty for repair.
+    /// Invocation task or verified retained artifact URI; empty for progress, repair, and outcome.
     pub text: String,
 }
 

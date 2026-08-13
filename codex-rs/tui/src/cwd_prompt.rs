@@ -281,7 +281,7 @@ impl WidgetRef for &CwdPromptScreen {
         column.push("");
         column.push(Line::from(vec![
             "Choose working directory to ".into(),
-            action_verb.bold(),
+            action_verb.into(),
             " this session".into(),
         ]));
         column.push("");

@@ -56,9 +56,7 @@ pub(crate) fn shimmer_spans(text: &str) -> Vec<Span<'static>> {
             // adjusting the level of the default foreground color.
             #[allow(clippy::disallowed_methods)]
             {
-                Style::default()
-                    .fg(Color::Rgb(r, g, b))
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(Color::Rgb(r, g, b))
             }
         } else {
             color_for_level(t)
@@ -72,9 +70,7 @@ fn color_for_level(intensity: f32) -> Style {
     // Tune fallback styling so the shimmer band reads even without RGB support.
     if intensity < 0.2 {
         Style::default().add_modifier(Modifier::DIM)
-    } else if intensity < 0.6 {
-        Style::default()
     } else {
-        Style::default().add_modifier(Modifier::BOLD)
+        Style::default()
     }
 }

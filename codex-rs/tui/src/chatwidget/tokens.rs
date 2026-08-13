@@ -127,13 +127,10 @@ impl HistoryCell for TokenActivityHistoryCell {
         let state = self.state.read().expect("token activity state poisoned");
         match &*state {
             TokenActivityState::Loading => {
-                vec![
-                    " Token activity".bold().into(),
-                    "   Loading...".dim().into(),
-                ]
+                vec![" Token activity".into(), "   Loading...".dim().into()]
             }
             TokenActivityState::Error => vec![
-                " Token activity".bold().into(),
+                " Token activity".into(),
                 "   Token activity unavailable".dim().into(),
             ],
             TokenActivityState::Loaded { response, today } => {

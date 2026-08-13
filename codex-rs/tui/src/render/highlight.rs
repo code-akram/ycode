@@ -5,14 +5,12 @@
 //! ANSI theme; there is no runtime theme selection or custom theme loading.
 
 use ratatui::style::Color as RtColor;
-use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use std::sync::OnceLock;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::Color as SyntectColor;
-use syntect::highlighting::FontStyle;
 use syntect::highlighting::Highlighter;
 use syntect::highlighting::Style as SyntectStyle;
 use syntect::highlighting::Theme;
@@ -107,9 +105,6 @@ fn convert_style(syn_style: SyntectStyle) -> Style {
     let mut rt_style = Style::default();
     if let Some(fg) = convert_syntect_color(syn_style.foreground) {
         rt_style = rt_style.fg(fg);
-    }
-    if syn_style.font_style.contains(FontStyle::BOLD) {
-        rt_style.add_modifier |= Modifier::BOLD;
     }
     rt_style
 }

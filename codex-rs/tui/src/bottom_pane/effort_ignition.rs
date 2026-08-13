@@ -19,7 +19,6 @@ use rand::Rng as _;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
-use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Span;
 
@@ -152,7 +151,7 @@ impl EffortTier {
         color_level: StdoutColorLevel,
     ) -> Span<'static> {
         let color = self.accent_color_for(charge, terminal_fg, terminal_bg, color_level);
-        let mut style = Style::default().add_modifier(Modifier::BOLD);
+        let mut style = Style::default();
         if let Some(color) = color {
             style = style.fg(color);
         }

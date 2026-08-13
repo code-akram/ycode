@@ -4,6 +4,7 @@ use super::styles::spark_frame;
 use super::*;
 use crate::terminal_palette::rgb_color;
 use pretty_assertions::assert_eq;
+use ratatui::style::Modifier;
 use ratatui::widgets::Widget;
 
 const WIDTH: u16 = 44;
@@ -181,7 +182,7 @@ fn max_and_ultra_prompts_render_their_accent_and_glyph() {
         let prompt = &buf[(0, 0)];
         assert_eq!(prompt.symbol(), glyph);
         assert_eq!(prompt.style().fg, Some(color));
-        assert!(prompt.style().add_modifier.contains(Modifier::BOLD));
+        assert!(!prompt.style().add_modifier.contains(Modifier::BOLD));
     }
 }
 

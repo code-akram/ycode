@@ -207,6 +207,28 @@ impl ProcessOwnedNativeCodeModeClient {
         delegate: Arc<dyn NativeCodeModeDelegate>,
         cancellation: CancellationToken,
     ) -> Result<NativeExecution, String> {
+        self.execute_inner(request, delegate, None, cancellation)
+            .await
+    }
+
+    pub async fn execute_with_progress(
+        &self,
+        request: NativeExecute,
+        delegate: Arc<dyn NativeCodeModeDelegate>,
+        progress_tx: tokio::sync::mpsc::UnboundedSender<crate::native::NativeProgress>,
+        cancellation: CancellationToken,
+    ) -> Result<NativeExecution, String> {
+        self.execute_inner(request, delegate, Some(progress_tx), cancellation)
+            .await
+    }
+
+    async fn execute_inner(
+        &self,
+        request: NativeExecute,
+        delegate: Arc<dyn NativeCodeModeDelegate>,
+        progress_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::native::NativeProgress>>,
+        cancellation: CancellationToken,
+    ) -> Result<NativeExecution, String> {
         validate_execute(&request)?;
         let HostEndpoint::Process(_) = &self.host.endpoint else {
             return Err(
@@ -217,7 +239,7 @@ impl ProcessOwnedNativeCodeModeClient {
             .connection()
             .await
             .map_err(|error| error.to_string())?
-            .native_execute(request, delegate, cancellation)
+            .native_execute(request, delegate, progress_tx, cancellation)
             .await
     }
 

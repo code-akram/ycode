@@ -181,7 +181,7 @@ fn tier_label_line(tier: EffortTier, width: usize, assemble: f32, opacity: f32) 
     let mut spans = vec![Span::raw(" ".repeat(left_padding))];
 
     for (index, letter) in letters.iter().enumerate() {
-        let mut style = Style::default().add_modifier(Modifier::BOLD);
+        let mut style = Style::default();
         let center = letters.len().saturating_sub(1);
         let edge = if center == 0 {
             0.0

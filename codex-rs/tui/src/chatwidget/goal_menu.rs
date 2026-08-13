@@ -84,7 +84,7 @@ impl ChatWidget {
 
 fn goal_summary_lines(goal: &AppThreadGoal) -> Vec<Line<'static>> {
     let mut lines = vec![
-        Line::from("Goal".bold()),
+        Line::from("Goal"),
         Line::from(vec![
             "Status: ".dim(),
             goal_status_label(goal.status).to_string().into(),

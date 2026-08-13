@@ -365,7 +365,7 @@ impl ListSelectionView {
     ) -> Self {
         let mut header = params.header;
         if params.title.is_some() || params.subtitle.is_some() {
-            let title = params.title.map(|title| Line::from(title.bold()));
+            let title = params.title.map(Line::from);
             let subtitle = params.subtitle.map(|subtitle| Line::from(subtitle.dim()));
             header = Box::new(ColumnRenderable::with([
                 header,

@@ -42,7 +42,7 @@ impl HistoryCell for PlanUpdateCell {
         };
 
         let mut lines: Vec<Line<'static>> = vec![];
-        lines.push(vec!["• ".dim(), "Updated Plan".bold()].into());
+        lines.push(vec!["• ".dim(), "Updated Plan".into()].into());
 
         let mut indented_lines = vec![];
         let note = self

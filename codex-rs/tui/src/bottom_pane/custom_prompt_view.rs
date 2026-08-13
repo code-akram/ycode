@@ -178,7 +178,7 @@ impl Renderable for CustomPromptView {
             width: area.width,
             height: 1,
         };
-        let title_spans: Vec<Span<'static>> = vec![gutter(), self.title.clone().bold()];
+        let title_spans: Vec<Span<'static>> = vec![gutter(), self.title.clone().into()];
         Paragraph::new(Line::from(title_spans)).render(title_area, buf);
 
         // Optional context line

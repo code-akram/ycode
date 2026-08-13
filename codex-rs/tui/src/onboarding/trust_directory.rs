@@ -42,7 +42,7 @@ impl WidgetRef for &TrustDirectoryWidget {
 
         column.push(Line::from(vec![
             "> ".into(),
-            "You are in ".bold(),
+            "You are in ".into(),
             self.cwd.to_string_lossy().to_string().into(),
         ]));
         column.push("");

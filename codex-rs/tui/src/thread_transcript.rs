@@ -90,6 +90,8 @@ pub(crate) fn thread_items_to_transcript_cells(
         thread_id.and_then(|thread_id| InlineVisualizationContext::new(codex_home, thread_id))
     });
     let mut cells: TranscriptCells = Vec::new();
+    let mut native_code_mode_active = false;
+    let mut native_code_mode_outcome = None;
     for item in items {
         match item {
             ThreadItem::UserMessage {
@@ -124,6 +126,18 @@ pub(crate) fn thread_items_to_transcript_cells(
                 }));
             }
             ThreadItem::AgentMessage { text, .. } => {
+                if native_code_mode_active {
+                    cells.push(Arc::new(
+                        crate::history_cell::native_code_mode_evidence_cell(
+                            &text,
+                            native_code_mode_outcome
+                                .unwrap_or(codex_cli_protocol::NativeCodeModePhase::Artifact),
+                        ),
+                    ));
+                    native_code_mode_active = false;
+                    native_code_mode_outcome = None;
+                    continue;
+                }
                 let parsed = parse_assistant_markdown(&text, cwd.as_path());
                 if !parsed.visible_markdown.trim().is_empty() {
                     cells.push(Arc::new(AgentMarkdownCell::new_with_inline_visualizations(
@@ -164,6 +178,26 @@ pub(crate) fn thread_items_to_transcript_cells(
                 }
             }
             other => {
+                if matches!(
+                    &other,
+                    ThreadItem::NativeCodeMode {
+                        phase: codex_cli_protocol::NativeCodeModePhase::Invocation,
+                        ..
+                    }
+                ) {
+                    native_code_mode_active = true;
+                    native_code_mode_outcome = None;
+                }
+                if let ThreadItem::NativeCodeMode { phase, .. } = &other
+                    && matches!(
+                        phase,
+                        codex_cli_protocol::NativeCodeModePhase::Succeeded
+                            | codex_cli_protocol::NativeCodeModePhase::Failed
+                            | codex_cli_protocol::NativeCodeModePhase::Interrupted
+                    )
+                {
+                    native_code_mode_outcome = Some(*phase);
+                }
                 if let Some(cell) = fallback_transcript_cell(&other) {
                     cells.push(Arc::new(cell));
                 }
@@ -256,10 +290,7 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
             vec!["context compacted".dim().into()]
         }
         ThreadItem::NativeCodeMode { phase, text, .. } => {
-            return Some(crate::history_cell::native_code_mode_lifecycle_cell(
-                *phase,
-                text.clone(),
-            ));
+            return crate::history_cell::native_code_mode_lifecycle_cell(*phase, text.clone());
         }
         ThreadItem::UserMessage { .. }
         | ThreadItem::AgentMessage { .. }

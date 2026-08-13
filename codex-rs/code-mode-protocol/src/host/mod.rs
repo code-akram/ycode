@@ -46,6 +46,7 @@ pub use message::HostToClient;
 pub use message::NativeEvidence;
 pub use message::NativeExecuteRequest;
 pub use message::NativeFailure;
+pub use message::NativeProgressPhase;
 pub use message::NativeToolOutcome;
 pub use message::NativeToolRequest;
 pub use message::WireResult;

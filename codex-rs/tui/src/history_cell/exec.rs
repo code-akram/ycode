@@ -27,9 +27,9 @@ impl HistoryCell for UnifiedExecInteractionCell {
         let waited_only = self.stdin.is_empty();
 
         let mut header_spans = if waited_only {
-            vec!["• Waited for background terminal".bold()]
+            vec!["• Waited for background terminal".into()]
         } else {
-            vec!["↳ ".dim(), "Interacted with background terminal".bold()]
+            vec!["↳ ".dim(), "Interacted with background terminal".into()]
         };
         if let Some(command) = &self.command_display
             && !command.is_empty()
@@ -129,7 +129,7 @@ impl HistoryCell for UnifiedExecProcessesCell {
         let wrap_width = width as usize;
         let max_processes = 16usize;
         let mut out: Vec<Line<'static>> = Vec::new();
-        out.push(vec!["Background terminals".bold()].into());
+        out.push(vec!["Background terminals".into()].into());
         out.push("".into());
 
         if self.processes.is_empty() {

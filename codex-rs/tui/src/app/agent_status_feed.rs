@@ -34,7 +34,7 @@ impl HistoryCell for AgentStatusHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = vec![
             "/agent".magenta().into(),
-            "Sub-agents running".bold().into(),
+            "Sub-agents running".into(),
             "".into(),
         ];
 

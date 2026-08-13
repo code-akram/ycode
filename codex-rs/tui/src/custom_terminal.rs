@@ -685,13 +685,14 @@ where
         last_pos = Some(Position { x: *x, y: *y });
         match &command {
             DrawCommand::Put { cell, .. } => {
-                if cell.modifier != modifier {
+                let cell_modifier = crate::style::terminal_safe_modifiers(cell.modifier);
+                if cell_modifier != modifier {
                     let diff = ModifierDiff {
                         from: modifier,
-                        to: cell.modifier,
+                        to: cell_modifier,
                     };
                     diff.queue(writer)?;
-                    modifier = cell.modifier;
+                    modifier = cell_modifier;
                 }
                 if cell.fg != fg || cell.bg != bg {
                     queue!(
@@ -748,15 +749,11 @@ struct ModifierDiff {
 impl ModifierDiff {
     fn queue<W: io::Write>(self, w: &mut W) -> io::Result<()> {
         use crossterm::style::Attribute as CAttribute;
-        let removed = self.from - self.to;
+        let from = crate::style::terminal_safe_modifiers(self.from);
+        let to = crate::style::terminal_safe_modifiers(self.to);
+        let removed = from - to;
         if removed.contains(Modifier::REVERSED) {
             queue!(w, SetAttribute(CAttribute::NoReverse))?;
-        }
-        if removed.contains(Modifier::BOLD) {
-            queue!(w, SetAttribute(CAttribute::NormalIntensity))?;
-            if self.to.contains(Modifier::DIM) {
-                queue!(w, SetAttribute(CAttribute::Dim))?;
-            }
         }
         if removed.contains(Modifier::ITALIC) {
             queue!(w, SetAttribute(CAttribute::NoItalic))?;
@@ -774,12 +771,9 @@ impl ModifierDiff {
             queue!(w, SetAttribute(CAttribute::NoBlink))?;
         }
 
-        let added = self.to - self.from;
+        let added = to - from;
         if added.contains(Modifier::REVERSED) {
             queue!(w, SetAttribute(CAttribute::Reverse))?;
-        }
-        if added.contains(Modifier::BOLD) {
-            queue!(w, SetAttribute(CAttribute::Bold))?;
         }
         if added.contains(Modifier::ITALIC) {
             queue!(w, SetAttribute(CAttribute::Italic))?;
@@ -924,6 +918,22 @@ mod tests {
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn modifier_diff_suppresses_bold_but_preserves_supported_attributes() {
+        let mut actual = Vec::new();
+        ModifierDiff {
+            from: Modifier::empty(),
+            to: Modifier::BOLD | Modifier::ITALIC | Modifier::UNDERLINED,
+        }
+        .queue(&mut actual)
+        .expect("queue supported modifiers");
+
+        let output = String::from_utf8(actual).expect("terminal attributes are UTF-8");
+        assert!(!output.contains("\u{1b}[1m"));
+        assert!(output.contains("\u{1b}[3m"));
+        assert!(output.contains("\u{1b}[4m"));
     }
 
     #[test]

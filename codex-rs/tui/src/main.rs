@@ -27,11 +27,7 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
         } else {
             resume_cmd
         };
-        let identity = if color_enabled {
-            "\u{1b}[1mycode\u{1b}[0m".to_string()
-        } else {
-            "ycode".to_string()
-        };
+        let identity = "ycode".to_string();
         lines.push(String::new());
         lines.push(identity);
         if let Some(title) = session_title.filter(|title| !title.trim().is_empty()) {
@@ -52,6 +48,30 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
     }
 
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_tui::TokenUsage;
+
+    #[test]
+    fn colored_exit_message_keeps_identity_regular_weight() {
+        let lines = format_exit_messages(
+            AppExitInfo {
+                token_usage: TokenUsage::default(),
+                thread_id: None,
+                session_title: None,
+                resume_hint: Some("ycode resume example".to_string()),
+                exit_reason: ExitReason::UserRequested,
+            },
+            true,
+        );
+
+        assert!(lines.iter().any(|line| line == "ycode"));
+        assert!(lines.iter().any(|line| line.contains("\u{1b}[36m")));
+        assert!(lines.iter().all(|line| !line.contains("\u{1b}[1m")));
+    }
 }
 
 #[derive(Parser, Debug)]

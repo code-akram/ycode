@@ -13,6 +13,7 @@ use codex_code_mode_protocol::host::NativeExecuteRequest;
 use codex_code_mode_protocol::host::SessionId;
 use codex_code_mode_protocol::host::WireSessionCellExecutionLimits;
 use codex_code_mode_protocol::host::WireWaitRequest;
+use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
@@ -73,9 +74,16 @@ impl ConnectionDriver {
             DriverCommand::NativeExecute {
                 request,
                 delegate,
+                progress_tx,
                 caller_cancellation,
                 response_tx,
-            } => self.native_execute(request, delegate, caller_cancellation, response_tx),
+            } => self.native_execute(
+                request,
+                delegate,
+                progress_tx,
+                caller_cancellation,
+                response_tx,
+            ),
             DriverCommand::NativeFinalize {
                 identity,
                 response_tx,
@@ -315,6 +323,7 @@ impl ConnectionDriver {
         &mut self,
         request: NativeExecute,
         delegate: Arc<dyn NativeCodeModeDelegate>,
+        progress_tx: Option<mpsc::UnboundedSender<crate::native::NativeProgress>>,
         caller_cancellation: CancellationToken,
         response_tx: oneshot::Sender<Result<NativeExecution, String>>,
     ) -> bool {
@@ -347,6 +356,8 @@ impl ConnectionDriver {
         let pending = PendingRequest::NativeExecute {
             key: key.clone(),
             identity: request.identity,
+            progress_tx,
+            workflow_started: false,
             cancellation: CancellableRequest::new(caller_cancellation),
             response_tx,
         };

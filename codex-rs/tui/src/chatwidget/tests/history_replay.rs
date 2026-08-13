@@ -88,10 +88,28 @@ async fn native_lifecycle_replays_without_reexecution() {
                 text: String::new(),
             },
             CliRuntimeThreadItem::NativeCodeMode {
+                id: "native-running".to_string(),
+                run_id: "run-1".to_string(),
+                phase: codex_cli_protocol::NativeCodeModePhase::Running,
+                text: String::new(),
+            },
+            CliRuntimeThreadItem::NativeCodeMode {
                 id: "native-artifact".to_string(),
                 run_id: "run-1".to_string(),
                 phase: codex_cli_protocol::NativeCodeModePhase::Artifact,
                 text: "native-code-mode://thread/run-1/attempt-2/source.rs".to_string(),
+            },
+            CliRuntimeThreadItem::NativeCodeMode {
+                id: "native-outcome".to_string(),
+                run_id: "run-1".to_string(),
+                phase: codex_cli_protocol::NativeCodeModePhase::Succeeded,
+                text: String::new(),
+            },
+            CliRuntimeThreadItem::AgentMessage {
+                id: "native-evidence".to_string(),
+                text: r#"{"version":1,"summary":"Audit complete","verified":["repository inspected"],"disputed":[],"unresolved":[],"artifactRefs":["native-code-mode://thread/run-1/attempt-2/source.rs","native-code-mode://thread/run-1/calls/call-1.request.bin","native-code-mode://thread/run-1/calls/call-1.result.bin","native-code-mode://thread/run-1/evidence.json"],"partialFailures":[],"provenanceIds":["call-1"]}"#.to_string(),
+                phase: None,
+                memory_citation: None,
             },
         ],
         ..cli_runtime_turn(
@@ -111,7 +129,19 @@ async fn native_lifecycle_replays_without_reexecution() {
         .join("\n");
     assert!(rendered.contains("/code-mode inspect retained evidence"));
     assert!(rendered.contains("compiler repair"));
-    assert!(rendered.contains("native-code-mode://thread/run-1/attempt-2/source.rs"));
+    assert_eq!(
+        rendered
+            .matches("native-code-mode://thread/run-1/attempt-2/source.rs")
+            .count(),
+        1,
+        "the Artifact lifecycle row is the only rendered retained URI"
+    );
+    assert!(!rendered.contains("call-1.request.bin"));
+    assert!(!rendered.contains("call-1.result.bin"));
+    assert!(!rendered.contains("evidence.json"));
+    assert!(rendered.contains("Audit complete"));
+    assert!(rendered.contains("verified"));
+    assert!(!rendered.contains(r#"{"version"#));
     assert!(ops.try_recv().is_err(), "replay must not submit an Op");
     assert!(
         !std::iter::from_fn(|| rx.try_recv().ok())

@@ -151,11 +151,11 @@ fn headings() {
     let md = "# Heading 1\n## Heading 2\n### Heading 3\n#### Heading 4\n##### Heading 5\n###### Heading 6\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["# ".bold().underlined(), "Heading 1".bold().underlined()]),
+        Line::from_iter(["# ".underlined(), "Heading 1".underlined()]),
         Line::default(),
-        Line::from_iter(["## ".bold(), "Heading 2".bold()]),
+        Line::from_iter(["## ".underlined().italic(), "Heading 2".underlined().italic()]),
         Line::default(),
-        Line::from_iter(["### ".bold().italic(), "Heading 3".bold().italic()]),
+        Line::from_iter(["### ".italic(), "Heading 3".italic()]),
         Line::default(),
         Line::from_iter(["#### ".italic(), "Heading 4".italic()]),
         Line::default(),
@@ -478,8 +478,8 @@ fn blockquote_heading_inherits_heading_style() {
         [
             Line::from_iter([
                 "> ".into(),
-                "# ".bold().underlined(),
-                "test header".bold().underlined(),
+                "# ".underlined(),
+                "test header".underlined(),
             ])
             .green(),
             Line::from_iter(["> "]).green(),
@@ -723,7 +723,7 @@ fn inline_code() {
 fn strong() {
     assert_eq!(
         render_markdown_text("**Strong**"),
-        Text::from(Line::from("Strong".bold()))
+        Text::from(Line::from("Strong".underlined()))
     );
 }
 
@@ -747,8 +747,8 @@ fn strikethrough() {
 fn strong_emphasis() {
     let text = render_markdown_text("**Strong *emphasis***");
     let expected = Text::from(Line::from_iter([
-        "Strong ".bold(),
-        "emphasis".bold().italic(),
+        "Strong ".underlined(),
+        "emphasis".underlined().italic(),
     ]));
     assert_eq!(text, expected);
 }
@@ -888,7 +888,7 @@ fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
         Path::new("/Users/example/code/codex"),
     );
     let expected = Text::from(Line::from_iter([
-        "bold".bold(),
+        "bold".into(),
         " plain ".into(),
         "codex-rs/tui/src/markdown_render.rs:74:3".light_cyan().not_bold(),
     ]));
@@ -1560,7 +1560,7 @@ fn code_block_preserves_trailing_blank_lines() {
 }
 
 #[test]
-fn table_renders_app_style_rows_with_themed_bold_header() {
+fn table_renders_app_style_rows_with_themed_regular_header() {
     let md = "| A | B |\n|---|---|\n| 1 | 2 |\n";
     let text = render_markdown_text(md);
     let lines: Vec<String> = text
@@ -1577,12 +1577,7 @@ fn table_renders_app_style_rows_with_themed_bold_header() {
             " 1      2".to_string(),
         ]
     );
-    assert!(
-        text.lines[0]
-            .style
-            .add_modifier
-            .contains(Modifier::BOLD)
-    );
+    assert!(!text.lines[0].style.add_modifier.contains(Modifier::BOLD));
     assert!(
         text.lines[0].style.fg.is_some(),
         "expected the syntax theme to provide a table header accent"
@@ -1804,7 +1799,7 @@ fn table_key_value_fallback_preserves_rich_values_and_themed_labels() {
             .spans
             .iter()
             .any(|span| span.content.contains("Key")
-                && span.style.add_modifier.contains(Modifier::BOLD)
+                && !span.style.add_modifier.contains(Modifier::BOLD)
                 && span.style.fg.is_some())
     );
     assert!(text.lines.iter().any(|line| {

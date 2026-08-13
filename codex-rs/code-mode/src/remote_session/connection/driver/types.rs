@@ -70,6 +70,7 @@ pub(in crate::remote_session::connection) enum DriverCommand {
     NativeExecute {
         request: NativeExecute,
         delegate: Arc<dyn NativeCodeModeDelegate>,
+        progress_tx: Option<mpsc::UnboundedSender<crate::native::NativeProgress>>,
         caller_cancellation: CancellationToken,
         response_tx: oneshot::Sender<Result<NativeExecution, String>>,
     },
@@ -190,6 +191,8 @@ pub(super) enum PendingRequest {
     NativeExecute {
         key: NativeRunKey,
         identity: NativeRunIdentity,
+        progress_tx: Option<mpsc::UnboundedSender<crate::native::NativeProgress>>,
+        workflow_started: bool,
         cancellation: CancellableRequest,
         response_tx: oneshot::Sender<Result<NativeExecution, String>>,
     },

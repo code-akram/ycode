@@ -1602,28 +1602,52 @@ impl NativeHost {
                         ));
                     }
                     if !pending.is_empty() {
-                        return Err((
-                            FailureKind::Protocol,
-                            "finish with unjoined capability tasks".into(),
-                        ));
+                        return Err(finish_protocol_failure(
+                            reader,
+                            writer,
+                            "finish with unjoined capability tasks",
+                        )
+                        .await);
                     }
                     if payload.is_empty() {
-                        return Err((FailureKind::Protocol, "final evidence is empty".into()));
-                    }
-                    let mut evidence = decode_evidence(&payload).map_err(|_| {
-                        (
-                            FailureKind::Protocol,
-                            "final evidence schema is invalid".into(),
+                        return Err(finish_protocol_failure(
+                            reader,
+                            writer,
+                            "final evidence is empty",
                         )
-                    })?;
-                    validate_and_normalize_evidence_artifacts(
+                        .await);
+                    }
+                    let mut evidence = match decode_evidence(&payload) {
+                        Ok(evidence) => evidence,
+                        Err(_) => {
+                            return Err(finish_protocol_failure(
+                                reader,
+                                writer,
+                                "final evidence schema is invalid",
+                            )
+                            .await);
+                        }
+                    };
+                    if let Err(error) = validate_and_normalize_evidence_artifacts(
                         &artifact.run_dir,
                         &joined_calls,
                         &mut evidence,
-                    )
-                    .map_err(|error| (FailureKind::Protocol, error.to_string()))?;
-                    let payload = encode_validated_evidence(&evidence)
-                        .map_err(|error| (FailureKind::Protocol, error.to_string()))?;
+                    ) {
+                        return Err(
+                            finish_protocol_failure(reader, writer, &error.to_string()).await
+                        );
+                    }
+                    let payload = match encode_validated_evidence(&evidence) {
+                        Ok(payload) => payload,
+                        Err(error) => {
+                            return Err(finish_protocol_failure(
+                                reader,
+                                writer,
+                                &error.to_string(),
+                            )
+                            .await);
+                        }
+                    };
                     if payload.len() > FINAL_EVIDENCE_BYTES {
                         return Err((
                             FailureKind::EvidenceLimit,
@@ -3022,6 +3046,24 @@ async fn write_failure(writer: &mut (impl AsyncWrite + Unpin), message: &str) ->
     write_frame(writer, FAILURE, message.as_bytes()).await
 }
 
+async fn finish_protocol_failure(
+    reader: &mut (impl AsyncRead + Unpin),
+    writer: &mut (impl AsyncWrite + Unpin),
+    message: &str,
+) -> (FailureKind, String) {
+    match write_failure(writer, message).await {
+        Ok(()) => {
+            // Give the child a bounded opportunity to observe the terminal FAILURE frame and
+            // close its protocol stream before process-group cleanup begins. No acknowledgement
+            // frame exists; EOF is the only expected post-FINISH signal.
+            let mut unexpected = [0_u8; 1];
+            let _ = tokio::time::timeout(TERMINATE_GRACE, reader.read(&mut unexpected)).await;
+            (FailureKind::Protocol, message.to_string())
+        }
+        Err(error) => protocol_failure(error),
+    }
+}
+
 fn parse_spawn(payload: &[u8]) -> io::Result<(u32, NativeRequest)> {
     let mut cursor = PayloadCursor::new(payload);
     let task = cursor.u32()?;
@@ -3509,6 +3551,34 @@ mod tests {
                     .contains(expected)
             );
         }
+    }
+
+    #[tokio::test]
+    async fn finish_protocol_failure_replies_before_settling() {
+        let (host, mut child) = tokio::io::duplex(256);
+        let (mut host_reader, mut host_writer) = tokio::io::split(host);
+        let failure = finish_protocol_failure(
+            &mut host_reader,
+            &mut host_writer,
+            "evidence provenance id does not identify a joined native call",
+        );
+        tokio::pin!(failure);
+        let (kind, payload, _) = tokio::select! {
+            frame = read_frame(&mut child, FRAME_BYTES + HEADER_BYTES) => frame.unwrap(),
+            _ = &mut failure => panic!("protocol failure settled before the child read it"),
+        };
+        drop(child);
+        let failure = failure.await;
+        assert_eq!(failure.0, FailureKind::Protocol);
+        assert_eq!(
+            failure.1,
+            "evidence provenance id does not identify a joined native call"
+        );
+        assert_eq!(kind, FAILURE);
+        assert_eq!(
+            payload,
+            b"evidence provenance id does not identify a joined native call"
+        );
     }
 
     #[test]

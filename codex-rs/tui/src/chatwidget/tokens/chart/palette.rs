@@ -136,7 +136,6 @@ impl TokenActivityPalette {
 fn theme_activity_style() -> Style {
     foreground_style_for_scopes(&["entity.name.type", "support.type", "variable"])
         .unwrap_or_else(accent_style)
-        .bold()
 }
 
 fn activity_anchor_rgb(style: Style) -> Option<(u8, u8, u8)> {

@@ -1826,11 +1826,13 @@ fn native_invocation_uses_human_blue_and_artifact_uses_operational_cyan() {
     let invocation = native_code_mode_lifecycle_cell(
         codex_cli_protocol::NativeCodeModePhase::Invocation,
         "inspect".to_string(),
-    );
+    )
+    .expect("invocation is retained");
     let artifact = native_code_mode_lifecycle_cell(
         codex_cli_protocol::NativeCodeModePhase::Artifact,
         "native-code-mode://thread/run/attempt-1/source.rs".to_string(),
-    );
+    )
+    .expect("artifact is retained");
 
     assert_eq!(
         invocation.display_lines(80)[0].style,
@@ -1844,4 +1846,169 @@ fn native_invocation_uses_human_blue_and_artifact_uses_operational_cyan() {
         invocation.display_lines(80)[0].style,
         artifact.display_lines(80)[0].style
     );
+    assert!(
+        native_code_mode_lifecycle_cell(
+            codex_cli_protocol::NativeCodeModePhase::Generating,
+            String::new(),
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn native_evidence_is_semantic_and_never_raw_json() {
+    let success = r#"{"version":1,"summary":"Found three failed checks","verified":["tests passed"],"disputed":["claim needs review"],"unresolved":["tool absent"],"artifactRefs":["native-code-mode://thread/run/attempt-1/source.rs"],"partialFailures":[],"provenanceIds":["call-1"]}"#;
+    let lines =
+        native_code_mode_evidence_cell(success, codex_cli_protocol::NativeCodeModePhase::Succeeded)
+            .display_lines(120);
+    let rendered = lines
+        .iter()
+        .map(Line::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Found three failed checks"));
+    assert!(rendered.contains("verified\n✓ tests passed"));
+    assert!(rendered.contains("disputed\n? claim needs review"));
+    assert!(rendered.contains("unresolved\n· tool absent"));
+    assert!(!rendered.contains("native-code-mode://"));
+    assert!(!rendered.contains("{\"version\""));
+    assert_eq!(
+        native_code_mode_notification_text(
+            success,
+            codex_cli_protocol::NativeCodeModePhase::Succeeded,
+        ),
+        Some("Found three failed checks".to_string())
+    );
+
+    let long_diagnostic = format!("first line\nsecond line {}", "x".repeat(4_000));
+    let failure = serde_json::json!({
+        "version": 1,
+        "summary": "ordinary summary",
+        "verified": [],
+        "disputed": [],
+        "unresolved": ["did not complete"],
+        "artifactRefs": ["native-code-mode://thread/run/attempt-1/source.rs"],
+        "partialFailures": [long_diagnostic],
+        "provenanceIds": []
+    })
+    .to_string();
+    let failure =
+        native_code_mode_evidence_cell(&failure, codex_cli_protocol::NativeCodeModePhase::Failed)
+            .display_lines(240);
+    assert_eq!(
+        failure[0].to_string().lines().count(),
+        1,
+        "failure copy must be a single line"
+    );
+    assert!(
+        failure[0]
+            .to_string()
+            .starts_with("Code mode failed · first line second line ")
+    );
+    assert!(failure[0].to_string().ends_with('…'));
+    assert!(failure[0].to_string().len() <= "Code mode failed · ".len() + 160);
+    assert!(!failure[0].to_string().contains('\n'));
+    assert!(!failure[0].to_string().contains(&"x".repeat(500)));
+    assert_eq!(failure.len(), 1);
+    let failure_notification = native_code_mode_notification_text(
+        &serde_json::json!({
+            "version": 1,
+            "summary": "ordinary summary",
+            "verified": [],
+            "disputed": [],
+            "unresolved": [],
+            "artifactRefs": [],
+            "partialFailures": [format!("first line\nsecond line {}", "x".repeat(4_000))],
+            "provenanceIds": []
+        })
+        .to_string(),
+        codex_cli_protocol::NativeCodeModePhase::Failed,
+    )
+    .expect("failure notification");
+    assert!(failure_notification.starts_with("Code mode failed · first line second line "));
+    assert!(failure_notification.ends_with('…'));
+    assert!(!failure_notification.contains('\n'));
+
+    let interrupted = r#"{"version":1,"summary":"ordinary summary","verified":[],"disputed":[],"unresolved":["cancelled"],"artifactRefs":["native-code-mode://thread/run/attempt-1/source.rs"],"partialFailures":["cancelled"],"provenanceIds":[]}"#;
+    let interrupted = native_code_mode_evidence_cell(
+        interrupted,
+        codex_cli_protocol::NativeCodeModePhase::Interrupted,
+    )
+    .display_lines(120);
+    assert_eq!(interrupted[0].to_string(), "Code mode interrupted");
+    assert_eq!(interrupted.len(), 1);
+    assert_eq!(
+        native_code_mode_notification_text(
+            r#"{"version":1,"summary":"ordinary summary","verified":[],"disputed":[],"unresolved":["cancelled"],"artifactRefs":[],"partialFailures":["cancelled"],"provenanceIds":[]}"#,
+            codex_cli_protocol::NativeCodeModePhase::Interrupted,
+        ),
+        Some("Code mode interrupted".to_string())
+    );
+
+    let invalid = native_code_mode_evidence_cell(
+        r#"{"summary":"raw"}"#,
+        codex_cli_protocol::NativeCodeModePhase::Succeeded,
+    )
+    .display_lines(120);
+    assert_eq!(
+        invalid[0].to_string(),
+        "Code mode failed · invalid terminal Evidence"
+    );
+    assert!(!invalid[0].to_string().contains('{'));
+}
+
+#[test]
+fn native_evidence_keeps_all_refs_internal_and_renders_only_the_lifecycle_source() {
+    let source_ref = "native-code-mode://thread/run/attempt-1/source.rs";
+    let mut artifact_refs = vec![
+        source_ref.to_string(),
+        "native-code-mode://thread/run/evidence.json".to_string(),
+    ];
+    for call in 1..=7 {
+        artifact_refs.push(format!(
+            "native-code-mode://thread/run/calls/call-{call}.request.bin"
+        ));
+        artifact_refs.push(format!(
+            "native-code-mode://thread/run/calls/call-{call}.result.bin"
+        ));
+    }
+    let evidence = serde_json::json!({
+        "version": 1,
+        "summary": "Audit complete",
+        "verified": ["seven calls settled"],
+        "disputed": [],
+        "unresolved": [],
+        "artifactRefs": artifact_refs,
+        "partialFailures": [],
+        "provenanceIds": (1..=7).map(|call| format!("call-{call}")).collect::<Vec<_>>()
+    })
+    .to_string();
+
+    let retained: NativeEvidenceView = serde_json::from_str(&evidence).expect("typed Evidence");
+    assert_eq!(retained.artifact_refs.len(), 16);
+    assert_eq!(retained.provenance_ids.len(), 7);
+
+    let lifecycle = native_code_mode_lifecycle_cell(
+        codex_cli_protocol::NativeCodeModePhase::Artifact,
+        source_ref.to_string(),
+    )
+    .expect("source lifecycle row");
+    let semantic = native_code_mode_evidence_cell(
+        &evidence,
+        codex_cli_protocol::NativeCodeModePhase::Succeeded,
+    );
+    let rendered = lifecycle
+        .display_lines(240)
+        .into_iter()
+        .chain(semantic.display_lines(240))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert_eq!(rendered.matches(source_ref).count(), 1);
+    assert!(!rendered.contains(".request.bin"));
+    assert!(!rendered.contains(".result.bin"));
+    assert!(!rendered.contains("evidence.json"));
+    assert!(rendered.contains("Audit complete\nverified\n✓ seven calls settled"));
+    assert!(!rendered.contains(r#"{"version"#));
 }

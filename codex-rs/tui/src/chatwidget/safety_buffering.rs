@@ -163,7 +163,7 @@ impl ChatWidget {
             .dismiss_view_by_id(SAFETY_BUFFERING_PROMPT_VIEW_ID);
 
         let mut header = vec![Box::new(
-            Paragraph::new(Line::from(SAFETY_BUFFERING_HEADER).bold()).wrap(Wrap { trim: false }),
+            Paragraph::new(Line::from(SAFETY_BUFFERING_HEADER)).wrap(Wrap { trim: false }),
         ) as Box<dyn Renderable>];
         if can_offer_retry {
             header.push(Box::new(

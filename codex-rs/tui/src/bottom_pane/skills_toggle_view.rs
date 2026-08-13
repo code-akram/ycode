@@ -63,7 +63,7 @@ impl SkillsToggleView {
         keymap: ListKeymap,
     ) -> Self {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Enable/Disable Skills".bold()));
+        header.push(Line::from("Enable/Disable Skills"));
         header.push(Line::from(
             "Turn skills on or off. Your changes are saved automatically.".dim(),
         ));

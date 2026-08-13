@@ -432,13 +432,13 @@ fn render_changes_block(rows: Vec<Row<'_>>, wrap_cols: usize, cwd: &Path) -> Vec
             FileChange::Delete { .. } => "Deleted",
             _ => "Edited",
         };
-        header_spans.push(verb.bold());
+        header_spans.push(verb.into());
         header_spans.push(" ".into());
         header_spans.extend(render_path(row));
         header_spans.push(" ".into());
         header_spans.extend(render_line_count_summary(row.added, row.removed));
     } else {
-        header_spans.push("Edited".bold());
+        header_spans.push("Edited".into());
         header_spans.push(format!(" {file_count} {noun} ").into());
         header_spans.extend(render_line_count_summary(total_added, total_removed));
     }

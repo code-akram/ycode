@@ -68,7 +68,7 @@ pub(super) fn loaded_lines(
 ) -> Vec<Line<'static>> {
     let mut lines = vec![
         vec![
-            Span::from(" Token activity").bold(),
+            Span::from(" Token activity"),
             Span::styled("   last 12 months", label_style()),
         ]
         .into(),
@@ -341,7 +341,7 @@ fn view_footer(active: TokenActivityView) -> Line<'static> {
             spans.push(Span::styled(" · ", label_style()));
         }
         let style = if view == active {
-            numeric_style().bold()
+            numeric_style()
         } else {
             label_style()
         };

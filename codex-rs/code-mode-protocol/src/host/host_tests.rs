@@ -20,6 +20,7 @@ use super::HostResponse;
 use super::HostToClient;
 use super::NativeEvidence;
 use super::NativeExecuteRequest;
+use super::NativeProgressPhase;
 use super::NativeToolOutcome;
 use super::NativeToolRequest;
 use super::ProtocolVersion;
@@ -95,6 +96,29 @@ fn dual_websocket_hello_preserves_the_pairing_token() {
             "selectedVersion": 1,
             "capabilities": ["dual-websocket-v1"],
             "bulkConnectionToken": "pairing-token",
+        }),
+    );
+}
+
+#[test]
+fn native_workflow_progress_round_trips_on_the_control_lane() {
+    let message = HostToClient::NativeProgress {
+        id: request_id(7),
+        session_id: session_id(),
+        thread_id: "thread-1".to_string(),
+        run_id: "run-1".to_string(),
+        phase: NativeProgressPhase::WorkflowStarted,
+    };
+    assert_eq!(message.transport_lane(), TransportLane::Control);
+    assert_wire_round_trip(
+        message,
+        json!({
+            "type": "native/progress",
+            "id": 7,
+            "sessionId": "session-1",
+            "threadId": "thread-1",
+            "runId": "run-1",
+            "phase": "workflowStarted",
         }),
     );
 }

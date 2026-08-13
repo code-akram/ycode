@@ -67,6 +67,119 @@ const LARGE_OUTCOME_SOURCE: &str = r#"#![forbid(unsafe_code)]
 use ycode_native_sdk::{run, Evidence, Outcome, Request};
 fn main() { run(|context| { let outcome = context.call(Request::Shell { command: "large".into(), workdir: None, timeout_ms: 100 })?; let failure = match outcome { Outcome::Failure { message, .. } => message, _ => "missing bound".into() }; context.finish(Evidence { version: 1, summary: "bounded".into(), verified: vec![], disputed: vec![], unresolved: vec![], artifact_refs: vec![], partial_failures: vec![failure], provenance_ids: vec![] }) }).unwrap(); }
 "#;
+const RETAINED_AUDIT_SHAPE_SOURCE: &str = r#"#![forbid(unsafe_code)]
+use ycode_native_sdk::{run, Evidence, Outcome, Request};
+
+fn main() {
+    run(|context| {
+        let mut verified = Vec::new();
+        let mut unresolved = Vec::new();
+        let mut provenance_ids = Vec::new();
+
+        let inventory = context.call(Request::Shell {
+            command: "find . -maxdepth 1 -mindepth 1 -print | LC_ALL=C sort".to_string(),
+            workdir: None,
+            timeout_ms: 5_000,
+        })?;
+        let inventory_id = match inventory {
+            Outcome::Success { call_id, .. }
+            | Outcome::Retry { call_id, .. }
+            | Outcome::Failure { call_id, .. } => call_id,
+        };
+        provenance_ids.push(inventory_id);
+
+        let cargo_probe = context.call(Request::Shell {
+            command: "command -v cargo".to_string(),
+            workdir: None,
+            timeout_ms: 5_000,
+        })?;
+        let (cargo_probe_id, cargo_available) = match cargo_probe {
+            Outcome::Success { call_id, output } => (call_id, !output.is_empty()),
+            Outcome::Retry { call_id, .. } | Outcome::Failure { call_id, .. } => {
+                (call_id, false)
+            }
+        };
+        provenance_ids.push(cargo_probe_id);
+
+        let mut commands = vec!["git status --short"];
+        if cargo_available {
+            commands.push("cargo test --workspace --all-targets --quiet");
+        }
+        commands.extend([
+            "git diff --check",
+            "git grep -n -I -E 'TODO|FIXME|XXX|HACK' -- . ':!target'",
+            "git grep -n -I -E 'shell=True|verify=False|subprocess' -- '*.py'",
+        ]);
+        for command in commands {
+            let outcome = context.call(Request::Shell {
+                command: command.to_string(),
+                workdir: None,
+                timeout_ms: 120_000,
+            })?;
+            match outcome {
+                Outcome::Success { call_id, .. } => {
+                    provenance_ids.push(call_id);
+                    verified.push(format!("completed: {command}"));
+                }
+                Outcome::Retry { call_id, reason } => {
+                    provenance_ids.push(call_id);
+                    unresolved.push(format!("retry: {reason}"));
+                }
+                Outcome::Failure { call_id, message } => {
+                    provenance_ids.push(call_id);
+                    unresolved.push(format!("failed: {message}"));
+                }
+            }
+        }
+        context.finish(Evidence {
+            version: 1,
+            summary: "Repository audit completed with five bounded calls".to_string(),
+            verified,
+            disputed: Vec::new(),
+            unresolved,
+            artifact_refs: Vec::new(),
+            partial_failures: Vec::new(),
+            provenance_ids,
+        })
+    })
+    .expect("retained audit shape failed");
+}
+"#;
+const RETAINED_INVALID_EVIDENCE_SOURCE: &str = r#"#![forbid(unsafe_code)]
+use ycode_native_sdk::{run, Evidence, Request};
+
+fn main() {
+    run(|context| {
+        for command in [
+            "git status --short",
+            "cargo test --workspace --all-targets --quiet",
+            "git diff --check",
+            "git grep TODO",
+            "git grep subprocess",
+        ] {
+            let _ = context.call(Request::Shell {
+                command: command.to_string(),
+                workdir: None,
+                timeout_ms: 5_000,
+            })?;
+        }
+        let result = context.finish(Evidence {
+            version: 1,
+            summary: "retained invalid evidence shape".to_string(),
+            verified: Vec::new(),
+            disputed: Vec::new(),
+            unresolved: Vec::new(),
+            artifact_refs: vec!["shell:git-status".to_string()],
+            partial_failures: Vec::new(),
+            provenance_ids: vec!["git-status".to_string()],
+        });
+        let error = result.expect_err("invented provenance must fail");
+        std::fs::write("finish-error.txt", format!("{error}"))?;
+        Ok(())
+    })
+    .expect("invalid-evidence workflow should receive the host failure");
+}
+"#;
 
 struct Tools {
     _root: TempDir,
@@ -172,6 +285,7 @@ impl Drop for ActiveGuard<'_> {
 
 struct LargeDelegate;
 struct MediumDelegate;
+struct RetainedAuditDelegate;
 
 impl NativeCapabilityDelegate for LargeDelegate {
     fn invoke<'a>(
@@ -190,6 +304,35 @@ impl NativeCapabilityDelegate for MediumDelegate {
         _cancellation: CancellationToken,
     ) -> NativeDelegateFuture<'a> {
         Box::pin(async { Ok(NativeOutcome::Success(vec![b'x'; 60 * 1024])) })
+    }
+}
+
+impl NativeCapabilityDelegate for RetainedAuditDelegate {
+    fn invoke<'a>(
+        &'a self,
+        call: NativeCall,
+        _cancellation: CancellationToken,
+    ) -> NativeDelegateFuture<'a> {
+        Box::pin(async move {
+            let NativeRequest::Shell { command, .. } = call.request else {
+                return Err("retained audit fixture only permits Shell".to_string());
+            };
+            if command == "command -v cargo" {
+                Ok(NativeOutcome::Success(b"/toolchain/bin/cargo".to_vec()))
+            } else if command.starts_with("cargo test") {
+                Ok(NativeOutcome::Failure(
+                    "cargo was unavailable after an explicit tool probe".to_string(),
+                ))
+            } else if command.contains("shell=True") {
+                Ok(NativeOutcome::Failure(
+                    "no matching Python files".to_string(),
+                ))
+            } else {
+                Ok(NativeOutcome::Success(
+                    format!("completed:{command}").into_bytes(),
+                ))
+            }
+        })
     }
 }
 
@@ -281,6 +424,75 @@ async fn typed_success_cache_artifacts_and_explicit_cleanup() {
     let run_dir = artifact.run_dir().to_path_buf();
     artifact.cleanup().unwrap();
     assert!(!run_dir.exists());
+}
+
+#[tokio::test]
+async fn retained_invalid_then_corrected_audit_shape_is_truthful() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime = NativeHost::new(
+        tools().rustc.clone(),
+        tools().sdk.clone(),
+        root.path().to_path_buf(),
+        Limits::default(),
+        Arc::new(RetainedAuditDelegate),
+    )
+    .await
+    .unwrap();
+    let invalid = prepare(&runtime, RETAINED_INVALID_EVIDENCE_SOURCE);
+    let failure = runtime
+        .execute(&invalid, CancellationToken::new())
+        .await
+        .expect_err("invented provenance must be rejected");
+    assert_eq!(failure.kind, FailureKind::Protocol);
+    assert!(failure.diagnostic.len() <= DIAGNOSTIC_BYTES);
+    assert_eq!(
+        failure.diagnostic,
+        format!(
+            "evidence provenance id does not identify a joined native call\n[source_hash={}]",
+            failure.source_hash
+        )
+    );
+    assert_eq!(failure.owned_tasks_after, 0);
+    assert_eq!(failure.process_reaped, Some(true));
+    assert_eq!(
+        std::fs::read_to_string(invalid.run_dir().join("finish-error.txt")).unwrap(),
+        "host error: evidence provenance id does not identify a joined native call"
+    );
+    assert_eq!(
+        std::fs::read_dir(invalid.run_dir().join("calls"))
+            .unwrap()
+            .count(),
+        10
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(invalid.run_dir().join("manifest.json")).unwrap())
+            .unwrap();
+    assert!(manifest["completed_at_unix_ms"].is_number());
+    invalid.cleanup().unwrap();
+
+    let artifact = prepare(&runtime, RETAINED_AUDIT_SHAPE_SOURCE);
+    let report = runtime
+        .execute(&artifact, CancellationToken::new())
+        .await
+        .unwrap();
+    let evidence = decode_evidence(&report.evidence).unwrap();
+    assert_eq!(report.total_calls, 7);
+    assert_eq!(evidence.provenance_ids.len(), 7);
+    assert_eq!(evidence.artifact_refs.len(), 14);
+    assert!(artifact.run_dir().join("evidence.json").is_file());
+    for provenance in &evidence.provenance_ids {
+        assert!(
+            evidence
+                .artifact_refs
+                .contains(&format!("calls/{provenance}.request.bin"))
+        );
+        assert!(
+            evidence
+                .artifact_refs
+                .contains(&format!("calls/{provenance}.result.bin"))
+        );
+    }
+    artifact.cleanup().unwrap();
 }
 
 #[tokio::test]

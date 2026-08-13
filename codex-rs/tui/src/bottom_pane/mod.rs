@@ -797,6 +797,15 @@ impl BottomPane {
         false
     }
 
+    pub(crate) fn update_native_code_mode_phase(&mut self, phase: &str) -> bool {
+        if let Some(status) = self.status.as_mut() {
+            status.update_phase(phase);
+            self.request_redraw();
+            return true;
+        }
+        false
+    }
+
     /// Show the transient "press again to quit" hint for `key`.
     ///
     /// `ChatWidget` owns the quit shortcut state machine (it decides when quit is

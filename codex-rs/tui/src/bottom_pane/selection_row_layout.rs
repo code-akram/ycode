@@ -102,7 +102,7 @@ fn build_name_spans(row: &GenericDisplayRow, name_limit: usize) -> Vec<Span<'sta
 
         let grapheme = grapheme.to_string();
         name_spans.push(if matched {
-            grapheme.bold()
+            grapheme.underlined()
         } else {
             grapheme.into()
         });

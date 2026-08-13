@@ -65,7 +65,7 @@ impl KeymapCaptureView {
     fn lines(&self, width: u16) -> Vec<Line<'static>> {
         let wrap_width = usize::from(width.max(1));
         let mut lines = vec![
-            Line::from("Remap Shortcut".bold()),
+            Line::from("Remap Shortcut"),
             Line::from(vec![
                 "Action: ".dim(),
                 self.label.clone().into(),

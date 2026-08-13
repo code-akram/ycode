@@ -210,6 +210,14 @@ pub enum HostToClient {
         session_id: SessionId,
         cell_id: WireCellId,
     },
+    #[serde(rename = "native/progress")]
+    NativeProgress {
+        id: RequestId,
+        session_id: SessionId,
+        thread_id: String,
+        run_id: String,
+        phase: NativeProgressPhase,
+    },
 }
 
 impl HostToClient {
@@ -230,7 +238,8 @@ impl HostToClient {
             | Self::HandshakeRejected { .. }
             | Self::Response { .. }
             | Self::InitialResponse { .. }
-            | Self::CellClosed { .. } => TransportLane::Control,
+            | Self::CellClosed { .. }
+            | Self::NativeProgress { .. } => TransportLane::Control,
         }
     }
 
@@ -308,6 +317,12 @@ pub enum HostResponse {
         thread_id: String,
         run_id: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NativeProgressPhase {
+    WorkflowStarted,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

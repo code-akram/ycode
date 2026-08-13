@@ -155,7 +155,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let directory = self.format_directory(Some(max_width));
         vec![
             Line::default(),
-            Line::from("ycode").bold(),
+            Line::from("ycode"),
             truncate_line_with_ellipsis_if_overflow(Line::from(directory).dim(), max_width),
             Line::default(),
         ]

@@ -224,12 +224,9 @@ impl HistoryCell for ExecCell {
                 if let Some(duration) = call.duration {
                     let duration = format_duration(duration);
                     let mut result: Line = if output.exit_code == 0 {
-                        Line::from("✓".green().bold())
+                        Line::from("✓".green())
                     } else {
-                        Line::from(vec![
-                            "✗".red().bold(),
-                            format!(" ({})", output.exit_code).into(),
-                        ])
+                        Line::from(vec!["✗".red(), format!(" ({})", output.exit_code).into()])
                     };
                     result.push_span(format!(" • {duration}").dim());
                     lines.push(result);
@@ -263,9 +260,9 @@ impl ExecCell {
             },
             " ".into(),
             if self.is_active() {
-                "Exploring".bold()
+                "Exploring".into()
             } else {
-                "Explored".bold()
+                "Explored".into()
             },
         ]));
 
@@ -362,8 +359,8 @@ impl ExecCell {
             .duration
             .and_then(|_| call.output.as_ref().map(|o| o.exit_code == 0));
         let bullet = match success {
-            Some(true) => "•".green().bold(),
-            Some(false) => "•".red().bold(),
+            Some(true) => "•".green(),
+            Some(false) => "•".red(),
             None => activity_marker(call.start_time, self.animations_enabled()),
         };
         let is_interaction = call.is_unified_exec_interaction();
@@ -380,7 +377,7 @@ impl ExecCell {
         let mut header_line = if is_interaction {
             Line::from(vec![bullet.clone(), " ".into()])
         } else {
-            Line::from(vec![bullet.clone(), " ".into(), title.bold(), " ".into()])
+            Line::from(vec![bullet.clone(), " ".into(), title.into(), " ".into()])
         };
         let header_prefix_width = header_line.width();
 

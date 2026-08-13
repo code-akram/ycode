@@ -34,7 +34,7 @@ impl ChatWidget {
         let title = title.to_string();
         let subtitle = subtitle.to_string();
         let mut header = ColumnRenderable::new();
-        header.push(Line::from(title.bold()));
+        header.push(Line::from(title));
         header.push(Line::from(subtitle.dim()));
         Box::new(header)
     }
@@ -357,9 +357,9 @@ impl ChatWidget {
         }
 
         let mut header = ColumnRenderable::new();
-        header.push(Line::from(
-            format!("Select Reasoning Level for {model_slug}").bold(),
-        ));
+        header.push(Line::from(format!(
+            "Select Reasoning Level for {model_slug}"
+        )));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
@@ -417,7 +417,7 @@ impl ChatWidget {
         }
 
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Advanced Reasoning".bold()));
+        header.push(Line::from("Advanced Reasoning"));
         header.push(Line::from(Span::styled(
             "⚠ Consumes usage limits faster",
             crate::style::operational_reference_style(),

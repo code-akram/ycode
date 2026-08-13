@@ -3,5 +3,5 @@ source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-"Ask anything... "Fix a TODO in the codebase"                                    "
-"Analyzing (0s • esc to interrupt)                                               "
+"  ⠋ 0s                                                                          "
+"  Ask anything... "Fix a TODO in the codebase"                                  "

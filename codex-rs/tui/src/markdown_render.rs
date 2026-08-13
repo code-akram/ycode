@@ -107,15 +107,15 @@ struct MarkdownStyles {
 impl Default for MarkdownStyles {
     fn default() -> Self {
         Self {
-            h1: Style::new().bold().underlined(),
-            h2: Style::new().bold(),
-            h3: Style::new().bold().italic(),
+            h1: Style::new().underlined(),
+            h2: Style::new().underlined().italic(),
+            h3: Style::new().italic(),
             h4: Style::new().italic(),
             h5: Style::new().italic(),
             h6: Style::new().italic(),
             code: crate::style::operational_reference_style(),
             emphasis: Style::new().italic(),
-            strong: Style::new().bold(),
+            strong: Style::new().underlined(),
             strikethrough: Style::new().crossed_out(),
             ordered_list_marker: crate::style::operational_reference_style(),
             unordered_list_marker: Style::new(),
@@ -1126,8 +1126,7 @@ where
             .collect();
         let header_style =
             foreground_style_for_scopes(&["entity.name.type", "support.type", "variable"])
-                .unwrap_or(self.styles.strong)
-                .bold();
+                .unwrap_or(self.styles.strong);
         let separator_style = table_separator_style();
 
         let Some(column_widths) = widths else {

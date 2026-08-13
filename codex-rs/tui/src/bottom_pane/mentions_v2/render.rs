@@ -190,10 +190,9 @@ fn primary_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
     if let Some(indices) = row.match_indices.as_ref() {
         let mut idx_iter = indices.iter().peekable();
         for (char_idx, ch) in row.display_name.chars().enumerate() {
-            let mut style = name_style;
+            let style = name_style;
             if idx_iter.peek().is_some_and(|next| **next == char_idx) {
                 idx_iter.next();
-                style = style.bold();
             }
             spans.push(ch.to_string().set_style(style));
         }
@@ -237,10 +236,9 @@ fn path_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
     } else if let Some(indices) = row.match_indices.as_ref() {
         let mut idx_iter = indices.iter().peekable();
         for (char_idx, ch) in row.display_name.chars().enumerate().take(file_name_start) {
-            let mut style = path_style;
+            let style = path_style;
             if idx_iter.peek().is_some_and(|next| **next == char_idx) {
                 idx_iter.next();
-                style = style.bold();
             }
             spans.push(ch.to_string().set_style(style));
         }

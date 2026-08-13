@@ -63,7 +63,7 @@ impl KeymapDebugView {
     fn lines_at(&self, width: u16, now: Instant) -> Vec<Line<'static>> {
         let wrap_width = usize::from(width.max(1));
         let mut lines = vec![
-            Line::from("Keypress Inspector".bold()),
+            Line::from("Keypress Inspector"),
             Line::from(
                 "Press any key to see what Codex receives. Esc is inspected; Ctrl+C closes.".dim(),
             ),

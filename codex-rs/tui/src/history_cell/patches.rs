@@ -39,7 +39,7 @@ pub(crate) fn new_patch_apply_failure(stderr: String) -> PlainHistoryCell {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     // Failure title
-    lines.push(Line::from("✘ Failed to apply patch".magenta().bold()));
+    lines.push(Line::from("✘ Failed to apply patch".magenta()));
 
     if !stderr.trim().is_empty() {
         let output = output_lines(
@@ -65,7 +65,7 @@ pub(crate) fn new_view_image_tool_call(path: LegacyAppPathString, cwd: &Path) ->
         .unwrap_or_else(|| path.into_string());
 
     let lines: Vec<Line<'static>> = vec![
-        vec!["• ".dim(), "Viewed Image".bold()].into(),
+        vec!["• ".dim(), "Viewed Image".into()].into(),
         vec!["  └ ".dim(), display_path.dim()].into(),
     ];
 
@@ -80,9 +80,9 @@ pub(crate) fn new_image_generation_call(
 ) -> PlainHistoryCell {
     let detail = revised_prompt.unwrap_or(call_id);
     let heading = if status == "failed" {
-        vec!["✗ ".red().bold(), "Image generation failed".bold()].into()
+        vec!["✗ ".red(), "Image generation failed".into()].into()
     } else {
-        vec!["• ".dim(), "Generated Image:".bold()].into()
+        vec!["• ".dim(), "Generated Image:".into()].into()
     };
     let mut lines: Vec<Line<'static>> = vec![heading, vec!["  └ ".dim(), detail.dim()].into()];
     if let Some(saved_path) = saved_path {

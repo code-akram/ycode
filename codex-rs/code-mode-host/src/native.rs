@@ -3,13 +3,17 @@ use std::sync::Arc;
 
 use codex_code_mode_protocol::host::DelegateRequest;
 use codex_code_mode_protocol::host::DelegateResponse;
+use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::NativeEvidence;
 use codex_code_mode_protocol::host::NativeExecuteRequest;
 use codex_code_mode_protocol::host::NativeFailure;
+use codex_code_mode_protocol::host::NativeProgressPhase;
 use codex_code_mode_protocol::host::NativeToolOutcome;
 use codex_code_mode_protocol::host::NativeToolRequest;
+use codex_code_mode_protocol::host::RequestId;
 use codex_code_mode_protocol::host::SessionId;
 use codex_native_code_mode_runtime::FINAL_EVIDENCE_BYTES;
+use codex_native_code_mode_runtime::HostEventKind;
 use codex_native_code_mode_runtime::Limits;
 use codex_native_code_mode_runtime::NativeCall;
 use codex_native_code_mode_runtime::NativeCapabilityDelegate;
@@ -46,13 +50,14 @@ pub(super) enum NativeExecutionResult {
 
 pub(super) async fn execute(
     peer: Arc<HostPeer>,
+    request_id: RequestId,
     request: NativeExecuteRequest,
     cancellation: CancellationToken,
 ) -> NativeExecutionResult {
     let session_id = request.session_id.clone();
     let thread_id = request.thread_id.clone();
     let run_id = request.run_id.clone();
-    let result = execute_inner(peer, &request, cancellation).await;
+    let result = execute_inner(peer, request_id, &request, cancellation).await;
     match result {
         Ok((source_hash, evidence)) => NativeExecutionResult::Completed {
             session_id,
@@ -72,6 +77,7 @@ pub(super) async fn execute(
 
 async fn execute_inner(
     peer: Arc<HostPeer>,
+    request_id: RequestId,
     request: &NativeExecuteRequest,
     cancellation: CancellationToken,
 ) -> Result<(String, NativeEvidence), RunFailure> {
@@ -80,11 +86,14 @@ async fn execute_inner(
         admission_failure(format!("failed to materialize embedded SDK: {error}"))
     })?;
     let delegate = Arc::new(RemoteNativeDelegate {
-        peer,
+        peer: Arc::clone(&peer),
         session_id: request.session_id.clone(),
         run_id: request.run_id.clone(),
     });
-    let host = NativeHost::discover(sdk, root, Limits::default(), delegate).await?;
+    let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+    let host = NativeHost::discover(sdk, root, Limits::default(), delegate)
+        .await?
+        .with_events(events_tx);
     let artifact = host.prepare_run(
         &request.thread_id,
         &request.run_id,
@@ -92,7 +101,30 @@ async fn execute_inner(
         request.attempt,
         request.source.as_bytes(),
     )?;
-    let report = host.execute(&artifact, cancellation).await?;
+    let mut execution = Box::pin(host.execute(&artifact, cancellation));
+    let report = loop {
+        tokio::select! {
+            biased;
+            event = events_rx.recv() => {
+                let Some(event) = event else {
+                    return Err(admission_failure(
+                        "native runtime progress channel closed before execution settled"
+                            .to_string(),
+                    ));
+                };
+                if matches!(event.kind, HostEventKind::WorkflowStarted(_)) {
+                    let _ = peer.send(HostToClient::NativeProgress {
+                        id: request_id,
+                        session_id: request.session_id.clone(),
+                        thread_id: request.thread_id.clone(),
+                        run_id: request.run_id.clone(),
+                        phase: NativeProgressPhase::WorkflowStarted,
+                    });
+                }
+            }
+            report = &mut execution => break report?,
+        }
+    };
     let evidence = decode_evidence(&report.evidence)
         .map_err(|error| admission_failure(format!("validated evidence decode failed: {error}")))?;
     let evidence = NativeEvidence {

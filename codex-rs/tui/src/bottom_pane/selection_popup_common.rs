@@ -845,7 +845,7 @@ mod tests {
             );
             let name = line.spans.first().expect("fuzzy-matched name span");
             assert_eq!(name.content.as_ref(), row.name);
-            assert!(name.style.add_modifier.contains(Modifier::BOLD));
+            assert!(!name.style.add_modifier.contains(Modifier::BOLD));
 
             let row_area = Rect::new(area.x, area.y + row_index as u16, area.width, 1);
             ratatui::widgets::Widget::render(
@@ -937,6 +937,6 @@ mod tests {
         let style = buf[(0, 0)].style();
         let expected = accent_style();
         assert_eq!(style.fg, expected.fg);
-        assert!(style.add_modifier.contains(Modifier::BOLD));
+        assert!(!style.add_modifier.contains(Modifier::BOLD));
     }
 }

@@ -605,33 +605,39 @@ impl HostState {
                     runs: &self.native_runs,
                     key,
                 };
-                let response =
-                    match native::execute(Arc::clone(&self.peer), request, cancellation).await {
-                        native::NativeExecutionResult::Completed {
-                            session_id,
-                            thread_id,
-                            run_id,
-                            source_hash,
-                            evidence,
-                        } => HostResponse::NativeCompleted {
-                            session_id,
-                            thread_id,
-                            run_id,
-                            source_hash,
-                            evidence: Box::new(evidence),
-                        },
-                        native::NativeExecutionResult::Failed {
-                            session_id,
-                            thread_id,
-                            run_id,
-                            failure,
-                        } => HostResponse::NativeFailed {
-                            session_id,
-                            thread_id,
-                            run_id,
-                            failure,
-                        },
-                    };
+                let response = match native::execute(
+                    Arc::clone(&self.peer),
+                    request_id,
+                    request,
+                    cancellation,
+                )
+                .await
+                {
+                    native::NativeExecutionResult::Completed {
+                        session_id,
+                        thread_id,
+                        run_id,
+                        source_hash,
+                        evidence,
+                    } => HostResponse::NativeCompleted {
+                        session_id,
+                        thread_id,
+                        run_id,
+                        source_hash,
+                        evidence: Box::new(evidence),
+                    },
+                    native::NativeExecutionResult::Failed {
+                        session_id,
+                        thread_id,
+                        run_id,
+                        failure,
+                    } => HostResponse::NativeFailed {
+                        session_id,
+                        thread_id,
+                        run_id,
+                        failure,
+                    },
+                };
                 self.respond(request_id, Ok(response));
             }
             HostRequest::NativeFinalize {

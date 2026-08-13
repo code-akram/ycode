@@ -41,6 +41,11 @@ pub enum NativeExecution {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeProgress {
+    WorkflowStarted,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativeToolInvocation {
     pub identity: NativeRunIdentity,

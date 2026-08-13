@@ -3,9 +3,13 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use codex_code_mode::NativeCodeModeDelegate;
 use codex_code_mode::NativeExecute;
 use codex_code_mode::NativeExecution;
+use codex_code_mode::NativeProgress;
 use codex_code_mode::NativeRunIdentity;
+use codex_code_mode::NativeToolFuture;
+use codex_code_mode::NativeToolInvocation;
 use codex_code_mode::ProcessOwnedNativeCodeModeClient;
 use codex_code_mode::host::NativeEvidence;
 use codex_protocol::items::NativeCodeModeItem;
@@ -56,6 +60,8 @@ const SDK_CONTRACT: &str = r#"SDK v1 (`ycode_native_sdk`, std only):
 - Outcome::Retry { call_id: String, reason: String }
 - Outcome::Failure { call_id: String, message: String }
 - Evidence { version: 1, summary, verified, disputed, unresolved, artifact_refs, partial_failures, provenance_ids }
+- Every provenance ID must be the exact `call_id` from a completed, joined Outcome used by the Evidence. Collect those IDs from Outcome variants; never invent labels.
+- Set `artifact_refs` empty. The host derives retained request/result artifact refs only from verified provenance IDs.
 - Context operations: call(Request) -> Result<Outcome>, spawn(Request) -> Result<Task>, join(Task) -> Result<Outcome>, budget() -> Result<u32>, cancelled() -> Result<bool>, finish(Evidence) -> Result<()>
 - Public concepts: Request, Task, Outcome, Evidence, Error, Result, Context"#;
 
@@ -70,24 +76,24 @@ impl NativeCodeModeTask {
     }
 }
 
-trait RepairLifecycle: Send + Sync {
-    fn repaired<'a>(&'a self) -> BoxFuture<'a, ()>;
+trait NativeLifecycle: Send + Sync {
+    fn transition<'a>(&'a self, phase: NativeCodeModePhase) -> BoxFuture<'a, ()>;
 }
 
-struct SessionRepairLifecycle {
+struct SessionNativeLifecycle {
     session: Arc<Session>,
     turn: Arc<TurnContext>,
     identity: NativeRunIdentity,
 }
 
-impl RepairLifecycle for SessionRepairLifecycle {
-    fn repaired<'a>(&'a self) -> BoxFuture<'a, ()> {
+impl NativeLifecycle for SessionNativeLifecycle {
+    fn transition<'a>(&'a self, phase: NativeCodeModePhase) -> BoxFuture<'a, ()> {
         Box::pin(async move {
             emit_native_lifecycle(
                 self.session.as_ref(),
                 self.turn.as_ref(),
                 &self.identity,
-                NativeCodeModePhase::Repair,
+                phase,
                 String::new(),
             )
             .await;
@@ -142,12 +148,13 @@ impl SessionTask for NativeCodeModeTask {
         )
         .await;
 
-        let repair_lifecycle = SessionRepairLifecycle {
+        let lifecycle = SessionNativeLifecycle {
             session: Arc::clone(&session),
             turn: Arc::clone(&ctx),
             identity: identity.clone(),
         };
-        let evidence = match prepare_live_backends(
+        lifecycle.transition(NativeCodeModePhase::Generating).await;
+        let terminal = match prepare_live_backends(
             Arc::clone(&session),
             Arc::clone(&ctx),
             identity.clone(),
@@ -162,19 +169,20 @@ impl SessionTask for NativeCodeModeTask {
                     &self.task,
                     &identity,
                     cancellation,
-                    Some(&repair_lifecycle),
+                    Some(&lifecycle),
                 )
                 .await
             }
-            Err(message) => failure_evidence(
+            Err(message) => terminal_failure(
                 &identity,
                 "Native Rust Code Mode could not start",
                 &message,
                 None,
+                /*interrupted*/ false,
             ),
         };
 
-        if let Some(reference) = evidence.artifact_refs.first().cloned() {
+        if let Some(reference) = terminal.evidence.artifact_refs.first().cloned() {
             emit_native_lifecycle(
                 session.as_ref(),
                 ctx.as_ref(),
@@ -194,7 +202,15 @@ impl SessionTask for NativeCodeModeTask {
             ));
         }
 
-        let (evidence_text, item) = terminal_evidence_item(evidence, &identity);
+        let (evidence_text, item, outcome) = terminal_evidence_item(terminal, &identity);
+        emit_native_lifecycle(
+            session.as_ref(),
+            ctx.as_ref(),
+            &identity,
+            outcome,
+            String::new(),
+        )
+        .await;
         session
             .record_response_item_and_emit_turn_item(ctx.as_ref(), item)
             .await;
@@ -401,6 +417,37 @@ struct ProcessNativeExecutor {
     identity: NativeRunIdentity,
 }
 
+struct WorkflowStartedDelegate {
+    worker: Arc<dyn NativeCodeModeDelegate>,
+    workflow_started: tokio::sync::watch::Receiver<bool>,
+}
+
+impl NativeCodeModeDelegate for WorkflowStartedDelegate {
+    fn invoke<'a>(
+        &'a self,
+        invocation: NativeToolInvocation,
+        cancellation: CancellationToken,
+    ) -> NativeToolFuture<'a> {
+        Box::pin(async move {
+            let mut workflow_started = self.workflow_started.clone();
+            while !*workflow_started.borrow() {
+                tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => {
+                        return Err("native workflow cancelled before tool dispatch".to_string());
+                    }
+                    changed = workflow_started.changed() => {
+                        if changed.is_err() {
+                            return Err("native workflow start ownership closed".to_string());
+                        }
+                    }
+                }
+            }
+            self.worker.invoke(invocation, cancellation).await
+        })
+    }
+}
+
 impl NativeExecutor for ProcessNativeExecutor {
     fn execute<'a>(
         &'a self,
@@ -419,7 +466,35 @@ impl NativeExecutor for ProcessNativeExecutor {
                 Arc::clone(&self.tracker),
                 cancellation.clone(),
             );
-            self.client.execute(request, worker, cancellation).await
+            let worker: Arc<dyn NativeCodeModeDelegate> = worker;
+            let (workflow_started_tx, workflow_started_rx) = tokio::sync::watch::channel(false);
+            let delegate: Arc<dyn NativeCodeModeDelegate> = Arc::new(WorkflowStartedDelegate {
+                worker,
+                workflow_started: workflow_started_rx,
+            });
+            let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+            let execution =
+                self.client
+                    .execute_with_progress(request, delegate, progress_tx, cancellation);
+            tokio::pin!(execution);
+            tokio::select! {
+                biased;
+                progress = progress_rx.recv() => {
+                    if matches!(progress, Some(NativeProgress::WorkflowStarted)) {
+                        emit_native_lifecycle(
+                            self.session.as_ref(),
+                            self.step.turn.as_ref(),
+                            &self.identity,
+                            NativeCodeModePhase::Running,
+                            String::new(),
+                        )
+                        .await;
+                        let _ = workflow_started_tx.send(true);
+                    }
+                    execution.await
+                }
+                result = &mut execution => result,
+            }
         })
     }
 
@@ -474,7 +549,14 @@ async fn orchestrate(
     identity: &NativeRunIdentity,
     cancellation: CancellationToken,
 ) -> NativeEvidence {
-    orchestrate_inner(generator, executor, task, identity, cancellation, None).await
+    orchestrate_inner(generator, executor, task, identity, cancellation, None)
+        .await
+        .evidence
+}
+
+struct TerminalEvidence {
+    evidence: NativeEvidence,
+    outcome: NativeCodeModePhase,
 }
 
 async fn orchestrate_inner(
@@ -483,14 +565,15 @@ async fn orchestrate_inner(
     task: &str,
     identity: &NativeRunIdentity,
     cancellation: CancellationToken,
-    repair_lifecycle: Option<&dyn RepairLifecycle>,
-) -> NativeEvidence {
+    lifecycle: Option<&dyn NativeLifecycle>,
+) -> TerminalEvidence {
     if task.len() > TASK_BYTES {
-        return failure_evidence(
+        return terminal_failure(
             identity,
             "Native Rust Code Mode rejected the task",
             "task exceeded the 16 KiB admission limit",
             None,
+            /*interrupted*/ false,
         );
     }
     let source = match generator
@@ -509,7 +592,7 @@ async fn orchestrate_inner(
         Ok(source) => source,
         Err(error) => {
             let interrupted = cancellation.is_cancelled();
-            return failure_evidence(
+            return terminal_failure(
                 identity,
                 if interrupted {
                     "Native Rust Code Mode interrupted"
@@ -522,10 +605,14 @@ async fn orchestrate_inner(
                     &error
                 },
                 None,
+                interrupted,
             );
         }
     };
 
+    if let Some(lifecycle) = lifecycle {
+        lifecycle.transition(NativeCodeModePhase::Compiling).await;
+    }
     let first = executor
         .execute(
             NativeExecute {
@@ -544,20 +631,27 @@ async fn orchestrate_inner(
         Ok(NativeExecution::Failed { failure, .. }) if failure.kind == "Compile" => failure,
         Ok(NativeExecution::Failed { failure, .. }) => {
             let attempt = retained_attempt_for_failure(&failure, 1);
-            return failure_evidence(
+            return terminal_failure(
                 identity,
                 "Native Rust workflow failed",
-                &format!("{} failure; details retained locally", failure.kind),
+                &native_failure_detail(&failure),
                 attempt,
+                failure.kind == "Cancelled",
             );
         }
         Err(error) => {
             let detail = finalize_after_ambiguous_delivery(executor, identity, error).await;
-            return failure_evidence(
+            let interrupted = cancellation.is_cancelled();
+            return terminal_failure(
                 identity,
-                "Native Rust workflow could not execute",
+                if interrupted {
+                    "Native Rust Code Mode interrupted"
+                } else {
+                    "Native Rust workflow could not execute"
+                },
                 &detail,
                 None,
+                interrupted,
             );
         }
     };
@@ -565,6 +659,9 @@ async fn orchestrate_inner(
     let repair = if cancellation.is_cancelled() {
         Err("native repair cancelled".to_string())
     } else {
+        if let Some(lifecycle) = lifecycle {
+            lifecycle.transition(NativeCodeModePhase::Repairing).await;
+        }
         generator
             .generate(
                 GenerationRequest {
@@ -580,8 +677,8 @@ async fn orchestrate_inner(
     };
     let repaired_source = match repair {
         Ok(source) => {
-            if let Some(repair_lifecycle) = repair_lifecycle {
-                repair_lifecycle.repaired().await;
+            if let Some(lifecycle) = lifecycle {
+                lifecycle.transition(NativeCodeModePhase::Repair).await;
             }
             source
         }
@@ -599,7 +696,7 @@ async fn orchestrate_inner(
                     format!("{error}; run finalization failed: {finalize_error}")
                 }
             };
-            return failure_evidence(
+            return terminal_failure(
                 identity,
                 if interrupted {
                     "Native Rust Code Mode interrupted"
@@ -608,10 +705,14 @@ async fn orchestrate_inner(
                 },
                 &detail,
                 Some(1),
+                interrupted,
             );
         }
     };
 
+    if let Some(lifecycle) = lifecycle {
+        lifecycle.transition(NativeCodeModePhase::Compiling).await;
+    }
     match executor
         .execute(
             NativeExecute {
@@ -620,29 +721,45 @@ async fn orchestrate_inner(
                 task: task.to_string(),
                 source: repaired_source,
             },
-            cancellation,
+            cancellation.clone(),
         )
         .await
     {
         Ok(NativeExecution::Completed { evidence, .. }) => complete_evidence(evidence, identity, 2),
         Ok(NativeExecution::Failed { failure, .. }) => {
             let attempt = retained_attempt_for_failure(&failure, 2);
-            failure_evidence(
+            terminal_failure(
                 identity,
                 "Native Rust workflow failed after the single repair attempt",
-                &format!("{} failure; details retained locally", failure.kind),
+                &native_failure_detail(&failure),
                 attempt,
+                failure.kind == "Cancelled",
             )
         }
         Err(error) => {
             let detail = finalize_after_ambiguous_delivery(executor, identity, error).await;
-            failure_evidence(
+            let interrupted = cancellation.is_cancelled();
+            terminal_failure(
                 identity,
-                "Native Rust repaired workflow could not execute",
+                if interrupted {
+                    "Native Rust Code Mode interrupted"
+                } else {
+                    "Native Rust repaired workflow could not execute"
+                },
                 &detail,
                 Some(1),
+                interrupted,
             )
         }
+    }
+}
+
+fn native_failure_detail(failure: &codex_code_mode::host::NativeFailure) -> String {
+    let diagnostic = failure.diagnostic.trim();
+    if diagnostic.is_empty() {
+        format!("{} failure", failure.kind)
+    } else {
+        format!("{} · {diagnostic}", failure.kind)
     }
 }
 
@@ -700,7 +817,10 @@ fn generation_prompt(
 No JavaScript, Cargo, dependencies, build scripts, proc macros, unsafe, Tokio, shell orchestration, \
 or external crates. Use only std plus the SDK below. Runtime loops, branches, retry, spawn/join, \
 aggregation, typed outcomes, and final Evidence must remain in the generated Rust. The program must \
-call sdk::run and finish exactly once. Source is limited to {SOURCE_BYTES} UTF-8 bytes and \
+call sdk::run and finish exactly once. For repository audits, first use bounded Shell calls to inspect \
+the deterministic top-level inventory and probe required tools with `command -v`; only then branch to \
+ecosystem-specific checks. Never assume Cargo or another build system from the task or cwd alone. \
+Source is limited to {SOURCE_BYTES} UTF-8 bytes and \
 {SOURCE_LINES} lines. Current cwd: {cwd}\n\n{SDK_CONTRACT}\n\nApplicable AGENTS instructions:\n{applicable_instructions}"
     );
     Ok(Prompt {
@@ -830,16 +950,21 @@ fn complete_evidence(
     mut evidence: NativeEvidence,
     identity: &NativeRunIdentity,
     attempt: u8,
-) -> NativeEvidence {
+) -> TerminalEvidence {
     evidence.artifact_refs.push("evidence.json".to_string());
-    normalize_evidence(evidence, identity, Some(attempt)).unwrap_or_else(|error| {
-        failure_evidence(
+    match normalize_evidence(evidence, identity, Some(attempt)) {
+        Ok(evidence) => TerminalEvidence {
+            evidence,
+            outcome: NativeCodeModePhase::Succeeded,
+        },
+        Err(error) => terminal_failure(
             identity,
             "Native Rust workflow returned invalid Evidence",
             &error,
             Some(attempt),
-        )
-    })
+            /*interrupted*/ false,
+        ),
+    }
 }
 
 fn normalize_evidence(
@@ -933,12 +1058,34 @@ fn failure_evidence(
     }
 }
 
-fn terminal_evidence_item(
-    evidence: NativeEvidence,
+fn terminal_failure(
     identity: &NativeRunIdentity,
-) -> (String, ResponseItem) {
-    let evidence = validate_terminal_evidence(evidence, identity)
-        .unwrap_or_else(|_| fixed_fallback_evidence("terminal Evidence validation failed"));
+    summary: &str,
+    detail: &str,
+    attempt: Option<u8>,
+    interrupted: bool,
+) -> TerminalEvidence {
+    TerminalEvidence {
+        evidence: failure_evidence(identity, summary, detail, attempt),
+        outcome: if interrupted {
+            NativeCodeModePhase::Interrupted
+        } else {
+            NativeCodeModePhase::Failed
+        },
+    }
+}
+
+fn terminal_evidence_item(
+    terminal: TerminalEvidence,
+    identity: &NativeRunIdentity,
+) -> (String, ResponseItem, NativeCodeModePhase) {
+    let (evidence, mut outcome) = match validate_terminal_evidence(terminal.evidence, identity) {
+        Ok(evidence) => (evidence, terminal.outcome),
+        Err(_) => (
+            fixed_fallback_evidence("terminal Evidence validation failed"),
+            NativeCodeModePhase::Failed,
+        ),
+    };
     let mut text = serde_json::to_string(&evidence).unwrap_or_else(|_| {
         serde_json::to_string(&fixed_fallback_evidence(
             "terminal Evidence encoding failed",
@@ -947,6 +1094,7 @@ fn terminal_evidence_item(
     });
     let mut item = assistant_item(text.clone());
     if serde_json::to_vec(&item).map_or(true, |encoded| encoded.len() > FINAL_EVIDENCE_BYTES) {
+        outcome = NativeCodeModePhase::Failed;
         text = serde_json::to_string(&fixed_fallback_evidence(
             "terminal Evidence exceeded the 16 KiB boundary",
         ))
@@ -957,7 +1105,7 @@ fn terminal_evidence_item(
         serde_json::to_vec(&item).is_ok_and(|encoded| encoded.len() <= FINAL_EVIDENCE_BYTES),
         "fixed native Evidence must fit its history boundary"
     );
-    (text, item)
+    (text, item, outcome)
 }
 
 fn validate_terminal_evidence(
@@ -1562,6 +1710,49 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn retained_provenance_protocol_failure_surfaces_concrete_host_diagnostic() {
+        let identity = identity();
+        let source_hash = "c".repeat(64);
+        let diagnostic = format!(
+            "evidence provenance id does not identify a joined native call\n[source_hash={source_hash}]"
+        );
+        let generator = FakeGenerator::new([Ok("fn main() {}".to_string())]);
+        let executor = FakeExecutor::new([Ok(NativeExecution::Failed {
+            identity: identity.clone(),
+            failure: NativeFailure {
+                kind: "Protocol".to_string(),
+                source_hash,
+                diagnostic: diagnostic.clone(),
+                process_reaped: Some(true),
+            },
+        })]);
+
+        let evidence = orchestrate(
+            &generator,
+            &executor,
+            "inspect the repository",
+            &identity,
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(generator.calls.load(Ordering::Acquire), 1);
+        assert_eq!(*executor.attempts.lock().expect("attempt lock"), [1]);
+        assert_eq!(executor.finalized.load(Ordering::Acquire), 0);
+        assert_eq!(
+            evidence.partial_failures,
+            [format!("Protocol · {diagnostic}")]
+        );
+        assert!(evidence.summary.contains("workflow failed"));
+        assert!(
+            evidence
+                .artifact_refs
+                .iter()
+                .any(|reference| reference.ends_with("/attempt-1/source.rs"))
+        );
+    }
+
     #[test]
     fn prompt_is_history_free_tools_empty_and_strict_with_complete_repair_input() {
         let initial = generation_prompt(
@@ -1601,6 +1792,36 @@ mod tests {
         );
         assert!(initial.base_instructions.text.contains(SDK_CONTRACT));
         assert!(initial.base_instructions.text.contains("output: Vec<u8>"));
+        assert!(
+            initial
+                .base_instructions
+                .text
+                .contains("inspect the deterministic top-level inventory")
+        );
+        assert!(
+            initial
+                .base_instructions
+                .text
+                .contains("probe required tools with `command -v`")
+        );
+        assert!(
+            initial
+                .base_instructions
+                .text
+                .contains("Never assume Cargo")
+        );
+        assert!(
+            initial
+                .base_instructions
+                .text
+                .contains("exact `call_id` from a completed, joined Outcome")
+        );
+        assert!(
+            initial
+                .base_instructions
+                .text
+                .contains("Set `artifact_refs` empty")
+        );
         assert!(
             initial
                 .base_instructions
@@ -1646,9 +1867,16 @@ mod tests {
             partial_failures: Vec::new(),
             provenance_ids: Vec::new(),
         };
-        let (text, item) = terminal_evidence_item(evidence, &identity);
+        let (text, item, outcome) = terminal_evidence_item(
+            TerminalEvidence {
+                evidence,
+                outcome: NativeCodeModePhase::Succeeded,
+            },
+            &identity,
+        );
         assert!(serde_json::to_vec(&item).expect("encode item").len() <= FINAL_EVIDENCE_BYTES);
         assert!(text.contains("failed to produce bounded Evidence"));
+        assert_eq!(outcome, NativeCodeModePhase::Failed);
         let ResponseItem::Message { role, content, .. } = item else {
             panic!("expected assistant Evidence item")
         };
@@ -1701,9 +1929,10 @@ mod tests {
             &identity,
             1,
         );
-        assert!(rejected.summary.contains("invalid Evidence"));
+        assert!(rejected.evidence.summary.contains("invalid Evidence"));
         assert!(
             rejected
+                .evidence
                 .artifact_refs
                 .iter()
                 .all(|reference| reference.ends_with("/attempt-1/source.rs"))
@@ -2241,7 +2470,7 @@ mod tests {
             .mount(&server)
             .await;
         let base_url = format!("{}/v1", server.uri());
-        let (mut session, turn, _events) =
+        let (mut session, turn, events) =
             crate::session::tests::make_session_and_context_with_auth_and_config_and_rx(
                 CodexAuth::from_api_key("test-api-key"),
                 Vec::new(),
@@ -2337,6 +2566,17 @@ mod tests {
         assert!(encoded.contains("Native Rust Code Mode interrupted"));
         assert!(encoded.contains("native source generation cancelled"));
         assert!(!encoded.contains("task text must stay out of history"));
+        let lifecycle = std::iter::from_fn(|| events.try_recv().ok())
+            .filter_map(|event| match event.msg {
+                EventMsg::ItemCompleted(completed) => match completed.item {
+                    TurnItem::NativeCodeMode(item) => Some(item.phase),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(lifecycle.contains(&NativeCodeModePhase::Generating));
+        assert!(!lifecycle.contains(&NativeCodeModePhase::Compiling));
 
         // Starting another task is possible immediately: no mode bit or retained task owner needs
         // resetting. Abort it at the same mocked generation boundary to keep the test bounded.
@@ -2589,6 +2829,36 @@ mod tests {
             recorded_events.push(event);
         }
         let events = recorded_events;
+        let phase_positions = |phase| {
+            events
+                .iter()
+                .enumerate()
+                .filter_map(|(index, event)| match &event.msg {
+                    EventMsg::ItemCompleted(completed)
+                        if matches!(
+                            &completed.item,
+                            TurnItem::NativeCodeMode(NativeCodeModeItem {
+                                phase: observed,
+                                ..
+                            }) if *observed == phase
+                        ) =>
+                    {
+                        Some(index)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let generating_positions = phase_positions(NativeCodeModePhase::Generating);
+        let compiling_positions = phase_positions(NativeCodeModePhase::Compiling);
+        let repairing_positions = phase_positions(NativeCodeModePhase::Repairing);
+        let running_positions = phase_positions(NativeCodeModePhase::Running);
+        let succeeded_positions = phase_positions(NativeCodeModePhase::Succeeded);
+        assert_eq!(generating_positions.len(), 1);
+        assert_eq!(compiling_positions.len(), 2);
+        assert_eq!(repairing_positions.len(), 1);
+        assert_eq!(running_positions.len(), 1);
+        assert_eq!(succeeded_positions.len(), 1);
         let repair_positions = events
             .iter()
             .enumerate()
@@ -2652,9 +2922,16 @@ mod tests {
                 )
             })
             .expect("terminal Evidence lifecycle settles");
+        assert!(generating_positions[0] < compiling_positions[0]);
+        assert!(compiling_positions[0] < repairing_positions[0]);
+        assert!(repairing_positions[0] < repair_index);
+        assert!(repair_index < compiling_positions[1]);
+        assert!(compiling_positions[1] < running_positions[0]);
+        assert!(running_positions[0] < attempt_two_tool_index);
         assert!(repair_index < attempt_two_tool_index);
         assert!(attempt_two_tool_index < artifact_index);
-        assert!(artifact_index < evidence_index);
+        assert!(artifact_index < succeeded_positions[0]);
+        assert!(succeeded_positions[0] < evidence_index);
         drop(provider);
     }
 

@@ -183,9 +183,9 @@ pub(crate) fn build_keymap_action_menu_params(
         "Default keymap".dim()
     };
     let mut header = ColumnRenderable::new();
-    header.push(Line::from("Edit Shortcut".bold()));
+    header.push(Line::from("Edit Shortcut"));
     header.push(Line::from(vec![
-        label.bold(),
+        label.into(),
         " · ".dim(),
         context_label.dim(),
     ]));
@@ -349,9 +349,9 @@ pub(crate) fn build_keymap_replace_binding_menu_params(
     let bindings = active_binding_specs(runtime_keymap, &context, &action).unwrap_or_default();
     let label = action_label(&action);
     let mut header = ColumnRenderable::new();
-    header.push(Line::from("Replace Binding".bold()));
+    header.push(Line::from("Replace Binding"));
     header.push(Line::from(vec![
-        label.bold(),
+        label.into(),
         " · ".dim(),
         format!("{context}.{action}").dim(),
     ]));

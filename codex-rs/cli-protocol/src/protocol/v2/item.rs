@@ -399,8 +399,15 @@ impl ThreadItem {
 #[ts(rename_all = "camelCase", export_to = "v2/")]
 pub enum NativeCodeModePhase {
     Invocation,
+    Generating,
+    Compiling,
+    Repairing,
+    Running,
     Repair,
     Artifact,
+    Succeeded,
+    Failed,
+    Interrupted,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
@@ -866,11 +873,32 @@ impl From<CoreTurnItem> for ThreadItem {
                     codex_protocol::items::NativeCodeModePhase::Invocation => {
                         NativeCodeModePhase::Invocation
                     }
+                    codex_protocol::items::NativeCodeModePhase::Generating => {
+                        NativeCodeModePhase::Generating
+                    }
+                    codex_protocol::items::NativeCodeModePhase::Compiling => {
+                        NativeCodeModePhase::Compiling
+                    }
+                    codex_protocol::items::NativeCodeModePhase::Repairing => {
+                        NativeCodeModePhase::Repairing
+                    }
+                    codex_protocol::items::NativeCodeModePhase::Running => {
+                        NativeCodeModePhase::Running
+                    }
                     codex_protocol::items::NativeCodeModePhase::Repair => {
                         NativeCodeModePhase::Repair
                     }
                     codex_protocol::items::NativeCodeModePhase::Artifact => {
                         NativeCodeModePhase::Artifact
+                    }
+                    codex_protocol::items::NativeCodeModePhase::Succeeded => {
+                        NativeCodeModePhase::Succeeded
+                    }
+                    codex_protocol::items::NativeCodeModePhase::Failed => {
+                        NativeCodeModePhase::Failed
+                    }
+                    codex_protocol::items::NativeCodeModePhase::Interrupted => {
+                        NativeCodeModePhase::Interrupted
                     }
                 },
                 text: item.text,

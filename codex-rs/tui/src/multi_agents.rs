@@ -308,7 +308,7 @@ fn sub_agent_activity_title(kind: SubAgentActivityKind, agent_path: &str) -> Lin
         SubAgentActivityKind::Interrupted => ("Interrupted ", agent_path),
     };
     title_spans_line(vec![
-        Span::from(prefix).bold(),
+        Span::from(prefix),
         Span::styled(
             format!("`{path}`"),
             crate::style::operational_reference_style(),
@@ -450,7 +450,7 @@ fn collab_event(title: Line<'static>, details: Vec<Line<'static>>) -> PlainHisto
 }
 
 fn title_text(title: impl Into<String>) -> Line<'static> {
-    title_spans_line(vec![Span::from(title.into()).bold()])
+    title_spans_line(vec![Span::from(title.into())])
 }
 
 fn title_with_agent(
@@ -458,7 +458,7 @@ fn title_with_agent(
     agent: AgentLabel<'_>,
     spawn_request: Option<&SpawnRequestSummary>,
 ) -> Line<'static> {
-    let mut spans = vec![Span::from(format!("{prefix} ")).bold()];
+    let mut spans = vec![Span::from(format!("{prefix} "))];
     spans.extend(agent_label_spans(agent));
     spans.extend(spawn_request_spans(spawn_request));
     title_spans_line(spans)
@@ -867,7 +867,7 @@ mod tests {
             title.spans[2].style.fg,
             crate::style::operational_accent_style().fg
         );
-        assert!(title.spans[2].style.add_modifier.contains(Modifier::BOLD));
+        assert!(!title.spans[2].style.add_modifier.contains(Modifier::BOLD));
         assert_eq!(title.spans[4].content.as_ref(), "[explorer]");
         assert_eq!(title.spans[4].style.fg, None);
         assert!(!title.spans[4].style.add_modifier.contains(Modifier::DIM));

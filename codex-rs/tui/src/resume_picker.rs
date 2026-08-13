@@ -1942,7 +1942,7 @@ fn draw_picker(tui: &mut Tui, state: &PickerState, screen_size: Size) -> std::io
 
         // Header
         let header_title = if default_bg().is_some_and(is_light) {
-            state.action.title().bold().fg(best_color((0, 100, 0)))
+            state.action.title().fg(best_color((0, 100, 0)))
         } else {
             state
                 .action
@@ -2394,7 +2394,7 @@ fn render_transcript_loading_overlay(frame: &mut crate::custom_terminal::Frame, 
         message_width.min(overlay.width),
         1,
     );
-    frame.render_widget_ref(&Line::from(message.bold()), line);
+    frame.render_widget_ref(&Line::from(message), line);
 }
 
 fn transcript_loading_overlay_style() -> Style {
@@ -2707,8 +2707,8 @@ fn dense_column_text(text: &str, width: usize) -> String {
 
 fn selection_marker(is_selected: bool, is_expanded: bool) -> Span<'static> {
     match (is_selected, is_expanded) {
-        (true, true) => "⌄ ".set_style(selected_session_style().bold()),
-        (true, false) => "❯ ".set_style(selected_session_style().bold()),
+        (true, true) => "⌄ ".set_style(selected_session_style()),
+        (true, false) => "❯ ".set_style(selected_session_style()),
         (false, _) => "  ".into(),
     }
 }

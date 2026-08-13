@@ -72,7 +72,7 @@ fn search_mode_indicator_line(active_search_mode: SearchMode) -> Line<'static> {
                 SearchMode::Results | SearchMode::FilesystemOnly => {
                     label.set_style(crate::style::operational_accent_style())
                 }
-                SearchMode::Tools => label.magenta().bold(),
+                SearchMode::Tools => label.magenta(),
             };
             spans.push(span);
         } else {

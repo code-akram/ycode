@@ -183,6 +183,8 @@ impl ChatWidget {
             external_editor_state: ExternalEditorState::Closed,
             last_rendered_user_message_display: None,
             last_non_retry_error: None,
+            active_native_code_mode_run: None,
+            active_native_code_mode_outcome: None,
         };
 
         widget.prefetch_rate_limits();

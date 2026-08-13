@@ -437,7 +437,7 @@ pub(crate) fn status_line_right_indicator_line(
 
 pub(crate) fn side_conversation_context_line(label: &str) -> Line<'static> {
     if let Some(rest) = label.strip_prefix("Side ") {
-        Line::from(vec!["Side".magenta().bold(), format!(" {rest}").magenta()])
+        Line::from(vec!["Side".magenta(), format!(" {rest}").magenta()])
     } else {
         Line::from(vec![Span::from(label.to_string()).magenta()])
     }
@@ -656,7 +656,7 @@ fn footer_hint_items_line(items: &[(String, String)]) -> Line<'static> {
     let mut spans = Vec::with_capacity(items.len() * 4);
     for (idx, (key, label)) in items.iter().enumerate() {
         spans.push(" ".into());
-        spans.push(key.clone().bold());
+        spans.push(key.clone().into());
         spans.push(format!(" {label}").into());
         if idx + 1 != items.len() {
             spans.push("   ".into());

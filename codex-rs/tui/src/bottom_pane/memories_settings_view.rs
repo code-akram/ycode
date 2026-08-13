@@ -120,7 +120,7 @@ impl MemoriesSettingsView {
 
     fn settings_header(&self) -> ColumnRenderable<'_> {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Memories".bold()));
+        header.push(Line::from("Memories"));
         header.push(Line::from(
             "Choose how Codex uses and creates memories. Changes are saved to config.toml".dim(),
         ));
@@ -129,7 +129,7 @@ impl MemoriesSettingsView {
 
     fn reset_confirmation_header(&self) -> ColumnRenderable<'_> {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Reset all memories?".bold()));
+        header.push(Line::from("Reset all memories?"));
         header.push(Line::from(
             "This clears local memory files and rollout summaries for the current Codex home."
                 .dim(),

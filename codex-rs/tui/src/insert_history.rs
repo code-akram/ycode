@@ -358,15 +358,11 @@ impl ModifierDiff {
         W: io::Write,
     {
         use crossterm::style::Attribute as CAttribute;
-        let removed = self.from - self.to;
+        let from = crate::style::terminal_safe_modifiers(self.from);
+        let to = crate::style::terminal_safe_modifiers(self.to);
+        let removed = from - to;
         if removed.contains(Modifier::REVERSED) {
             queue!(w, SetAttribute(CAttribute::NoReverse))?;
-        }
-        if removed.contains(Modifier::BOLD) {
-            queue!(w, SetAttribute(CAttribute::NormalIntensity))?;
-            if self.to.contains(Modifier::DIM) {
-                queue!(w, SetAttribute(CAttribute::Dim))?;
-            }
         }
         if removed.contains(Modifier::ITALIC) {
             queue!(w, SetAttribute(CAttribute::NoItalic))?;
@@ -384,12 +380,9 @@ impl ModifierDiff {
             queue!(w, SetAttribute(CAttribute::NoBlink))?;
         }
 
-        let added = self.to - self.from;
+        let added = to - from;
         if added.contains(Modifier::REVERSED) {
             queue!(w, SetAttribute(CAttribute::Reverse))?;
-        }
-        if added.contains(Modifier::BOLD) {
-            queue!(w, SetAttribute(CAttribute::Bold))?;
         }
         if added.contains(Modifier::ITALIC) {
             queue!(w, SetAttribute(CAttribute::Italic))?;
@@ -425,6 +418,7 @@ where
         let mut modifier = Modifier::empty();
         modifier.insert(span.style.add_modifier);
         modifier.remove(span.style.sub_modifier);
+        let modifier = crate::style::terminal_safe_modifiers(modifier);
         if modifier != last_modifier {
             let diff = ModifierDiff {
                 from: last_modifier,
@@ -467,10 +461,14 @@ mod tests {
     use ratatui::style::Color;
 
     #[test]
-    fn writes_bold_then_regular_spans() {
+    fn suppresses_bold_while_preserving_other_modifiers_and_colors() {
         use ratatui::style::Stylize;
 
-        let spans = ["A".bold(), "B".into()];
+        let spans = [
+            "A".bold().italic().cyan(),
+            "B".underlined().yellow(),
+            "C".into(),
+        ];
 
         let mut actual: Vec<u8> = Vec::new();
         write_spans(&mut actual, spans.iter()).unwrap();
@@ -478,10 +476,16 @@ mod tests {
         let mut expected: Vec<u8> = Vec::new();
         queue!(
             expected,
-            SetAttribute(crossterm::style::Attribute::Bold),
+            SetAttribute(crossterm::style::Attribute::Italic),
+            SetColors(Colors::new(CColor::Cyan, CColor::Reset)),
             Print("A"),
-            SetAttribute(crossterm::style::Attribute::NormalIntensity),
+            SetAttribute(crossterm::style::Attribute::NoItalic),
+            SetAttribute(crossterm::style::Attribute::Underlined),
+            SetColors(Colors::new(CColor::Yellow, CColor::Reset)),
             Print("B"),
+            SetAttribute(crossterm::style::Attribute::NoUnderline),
+            SetColors(Colors::new(CColor::Reset, CColor::Reset)),
+            Print("C"),
             SetForegroundColor(CColor::Reset),
             SetBackgroundColor(CColor::Reset),
             SetAttribute(crossterm::style::Attribute::Reset),

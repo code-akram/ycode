@@ -3,7 +3,6 @@ use std::time::Duration;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
-use ratatui::style::Modifier;
 use ratatui::style::Style;
 
 use crate::color::blend;
@@ -81,7 +80,7 @@ impl Canvas<'_> {
         if color != Color::default() {
             self.buf[(x, y)]
                 .set_symbol(glyph)
-                .set_style(Style::default().fg(color).add_modifier(Modifier::BOLD));
+                .set_style(Style::default().fg(color));
         }
     }
 }

@@ -740,7 +740,7 @@ mod tests {
 
         let enter_style = line.spans[3].style;
         assert_eq!(enter_style.fg, crate::style::operational_accent_style().fg);
-        assert!(enter_style.add_modifier.contains(Modifier::BOLD));
+        assert!(!enter_style.add_modifier.contains(Modifier::BOLD));
         assert!(enter_style.sub_modifier.contains(Modifier::DIM));
 
         let accept_style = line.spans[4].style;
@@ -751,7 +751,7 @@ mod tests {
 
         let esc_style = line.spans[6].style;
         assert_eq!(esc_style.fg, crate::style::operational_accent_style().fg);
-        assert!(esc_style.add_modifier.contains(Modifier::BOLD));
+        assert!(!esc_style.add_modifier.contains(Modifier::BOLD));
         assert!(esc_style.sub_modifier.contains(Modifier::DIM));
 
         let cancel_style = line.spans[7].style;
@@ -791,7 +791,7 @@ mod tests {
         for offset in 0..3 {
             let modifier = buf[(x + offset, y)].style().add_modifier;
             assert!(modifier.contains(Modifier::REVERSED));
-            assert!(modifier.contains(Modifier::BOLD));
+            assert!(!modifier.contains(Modifier::BOLD));
         }
         assert!(
             !buf[(x + 3, y)]

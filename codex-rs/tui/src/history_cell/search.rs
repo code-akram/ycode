@@ -102,10 +102,10 @@ impl HistoryCell for WebSearchCell {
         let header = web_search_header(self.completed);
         let detail = web_search_detail(self.action.as_ref(), &self.query);
         let text: Text<'static> = if detail.is_empty() {
-            Line::from(vec![header.bold()]).into()
+            Line::from(vec![header.into()]).into()
         } else {
             let separator = if self.completed { " for " } else { " " };
-            Line::from(vec![header.bold(), separator.into(), detail.into()]).into()
+            Line::from(vec![header.into(), separator.into(), detail.into()]).into()
         };
         PrefixedWrappedHistoryCell::new(text, vec![bullet, " ".into()], "  ").display_lines(width)
     }

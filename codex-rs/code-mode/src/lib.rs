@@ -5,6 +5,7 @@ pub use codex_code_mode_protocol::*;
 pub use native::NativeCodeModeDelegate;
 pub use native::NativeExecute;
 pub use native::NativeExecution;
+pub use native::NativeProgress;
 pub use native::NativeRunIdentity;
 pub use native::NativeToolFuture;
 pub use native::NativeToolInvocation;

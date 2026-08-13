@@ -29,6 +29,8 @@ impl ChatWidget {
     // Raw reasoning uses the same flow as summarized reasoning
 
     pub(super) fn on_task_started(&mut self) {
+        self.active_native_code_mode_run = None;
+        self.active_native_code_mode_outcome = None;
         self.input_queue.user_turn_pending_start = false;
         self.reset_safety_buffering_for_turn_start();
         self.turn_lifecycle.start(Instant::now());
@@ -58,7 +60,15 @@ impl ChatWidget {
     ) {
         self.input_queue.submit_pending_steers_after_interrupt = false;
         let sanitized_last_agent_message = last_agent_message.as_deref().map(|message| {
-            parse_assistant_markdown(message, self.config.cwd.as_path()).visible_markdown
+            if self.active_native_code_mode_run.is_some() {
+                self.active_native_code_mode_outcome
+                    .and_then(|outcome| {
+                        history_cell::native_code_mode_notification_text(message, outcome)
+                    })
+                    .unwrap_or_else(|| "Code mode failed · invalid terminal Evidence".to_string())
+            } else {
+                parse_assistant_markdown(message, self.config.cwd.as_path()).visible_markdown
+            }
         });
         // For desktop notifications: prefer the notification payload, fall back to
         // the item-level copy source if present, otherwise send an empty string.
@@ -94,6 +104,8 @@ impl ChatWidget {
         self.status_state.pending_status_indicator_restore = false;
         self.input_queue.user_turn_pending_start = false;
         self.turn_lifecycle.finish();
+        self.active_native_code_mode_run = None;
+        self.active_native_code_mode_outcome = None;
         self.clear_safety_buffering();
         self.update_task_running_state();
         self.running_commands.clear();
@@ -151,6 +163,8 @@ impl ChatWidget {
         // Reset running state and clear streaming buffers.
         self.input_queue.user_turn_pending_start = false;
         self.turn_lifecycle.finish();
+        self.active_native_code_mode_run = None;
+        self.active_native_code_mode_outcome = None;
         self.update_task_running_state();
         self.running_commands.clear();
         self.suppressed_exec_calls.clear();

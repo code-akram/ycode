@@ -113,6 +113,7 @@ impl ConnectionDriver {
             | HostToClient::InitialResponse { .. }
             | HostToClient::CellClosed { .. }
             | HostToClient::CancelDelegateRequest { .. }
+            | HostToClient::NativeProgress { .. }
             | HostToClient::HostHello(_)
             | HostToClient::HandshakeRejected { .. } => false,
         }
@@ -146,6 +147,22 @@ impl ConnectionDriver {
                 session_id,
                 cell_id,
             } => self.close_cell(session_id, cell_id),
+            HostToClient::NativeProgress {
+                id,
+                session_id,
+                thread_id,
+                run_id,
+                phase: codex_code_mode_protocol::host::NativeProgressPhase::WorkflowStarted,
+            } => match self
+                .requests
+                .native_workflow_started(id, &session_id, &thread_id, &run_id)
+            {
+                Ok(()) => true,
+                Err(error) => {
+                    self.fail(error);
+                    false
+                }
+            },
             HostToClient::HostHello(_) | HostToClient::HandshakeRejected { .. } => {
                 self.fail("code-mode host sent a second handshake response".to_string());
                 false
@@ -342,6 +359,7 @@ impl ConnectionDriver {
                 identity,
                 cancellation: _,
                 response_tx,
+                ..
             } => {
                 self.native_delegates.unregister(&key);
                 let response = match result {
