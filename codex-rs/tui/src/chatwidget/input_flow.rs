@@ -69,6 +69,14 @@ impl ChatWidget {
             InputResult::CommandWithArgs(cmd, args, text_elements) => {
                 self.handle_slash_command_with_args_dispatch(cmd, args, text_elements);
             }
+            InputResult::NativeCodeMode(task) => {
+                self.start_native_code_mode_from_live_composer(task);
+            }
+            InputResult::NativeCodeModeBlocked => {
+                self.add_error_message(
+                    "'/code-mode' is available only while the active composer is idle.".to_string(),
+                );
+            }
             InputResult::ParentOwnedInputBlocked => {
                 self.add_error_message(PARENT_OWNED_INPUT_MESSAGE.to_string());
             }

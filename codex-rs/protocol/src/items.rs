@@ -66,6 +66,8 @@ pub enum TurnItem {
     ExitedReviewMode(ExitedReviewModeItem),
     FileChange(FileChangeItem),
     ContextCompaction(ContextCompactionItem),
+    /// Transcript-only native Code Mode lifecycle metadata. It is never model context.
+    NativeCodeMode(NativeCodeModeItem),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
@@ -326,6 +328,23 @@ pub struct ContextCompactionItem {
     pub id: String,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeCodeModePhase {
+    Invocation,
+    Repair,
+    Artifact,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
+pub struct NativeCodeModeItem {
+    pub id: String,
+    pub run_id: String,
+    pub phase: NativeCodeModePhase,
+    /// Invocation task or verified retained artifact URI; empty for repair.
+    pub text: String,
+}
+
 fn new_item_id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
@@ -483,6 +502,7 @@ impl TurnItem {
             TurnItem::ExitedReviewMode(item) => item.id.clone(),
             TurnItem::FileChange(item) => item.id.clone(),
             TurnItem::ContextCompaction(item) => item.id.clone(),
+            TurnItem::NativeCodeMode(item) => item.id.clone(),
         }
     }
 }

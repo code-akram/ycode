@@ -20,6 +20,22 @@ impl App {
         event: AppEvent,
     ) -> Result<AppRunControl> {
         match event {
+            AppEvent::StartNativeCodeMode { thread_id, task } => {
+                if self.chat_widget.thread_id() != Some(thread_id)
+                    || self.chat_widget.is_active_side_conversation()
+                {
+                    self.chat_widget.handle_turn_start_rejection(
+                        "Native Code Mode requires the active human composer.".to_string(),
+                    );
+                } else if let Err(err) = cli_runtime
+                    .start_native_code_mode_from_interactive_composer(thread_id, task)
+                    .await
+                {
+                    self.chat_widget.handle_turn_start_rejection(format!(
+                        "Native Code Mode could not start: {err}"
+                    ));
+                }
+            }
             AppEvent::NewSession { name } => {
                 self.start_fresh_session_with_summary_hint(
                     tui,

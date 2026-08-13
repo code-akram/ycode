@@ -30,6 +30,7 @@ use codex_cli_runtime_client::CliRuntimeClient;
 use codex_cli_runtime_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
 use codex_cli_runtime_client::InProcessCliRuntimeClient;
 use codex_cli_runtime_client::InProcessClientStartArgs;
+use codex_cli_runtime_client::InteractiveTuiNativeCodeModeHandle;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadError;
 use codex_config::LoaderOverrides;
@@ -191,7 +192,10 @@ async fn start_embedded_cli_runtime(
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
-) -> color_eyre::Result<InProcessCliRuntimeClient> {
+) -> color_eyre::Result<(
+    InProcessCliRuntimeClient,
+    InteractiveTuiNativeCodeModeHandle,
+)> {
     start_embedded_cli_runtime_with(
         arg0_paths,
         config,
@@ -202,7 +206,7 @@ async fn start_embedded_cli_runtime(
         log_db,
         state_db,
         environment_manager,
-        InProcessCliRuntimeClient::start,
+        InProcessCliRuntimeClient::start_for_interactive_tui,
     )
     .await
 }
@@ -269,9 +273,9 @@ async fn start_cli_runtime(
     log_db: Option<log_db::LogDbLayer>,
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
-) -> color_eyre::Result<CliRuntimeClient> {
+) -> color_eyre::Result<CliRuntimeSession> {
     let CliRuntimeTarget::Embedded = target;
-    start_embedded_cli_runtime(
+    let (client, native_code_mode) = start_embedded_cli_runtime(
         arg0_paths,
         config,
         cli_kv_overrides,
@@ -282,8 +286,12 @@ async fn start_cli_runtime(
         state_db,
         environment_manager,
     )
-    .await
-    .map(CliRuntimeClient::InProcess)
+    .await?;
+    Ok(CliRuntimeSession::new_interactive_tui(
+        CliRuntimeClient::InProcess(client),
+        target.thread_params_mode(),
+        native_code_mode,
+    ))
 }
 
 pub(crate) async fn start_cli_runtime_for_picker(
@@ -292,7 +300,7 @@ pub(crate) async fn start_cli_runtime_for_picker(
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
 ) -> color_eyre::Result<CliRuntimeSession> {
-    let cli_runtime = start_cli_runtime(
+    start_cli_runtime(
         target,
         Arg0DispatchPaths::default(),
         config.clone(),
@@ -304,11 +312,7 @@ pub(crate) async fn start_cli_runtime_for_picker(
         state_db,
         environment_manager,
     )
-    .await?;
-    Ok(CliRuntimeSession::new(
-        cli_runtime,
-        target.thread_params_mode(),
-    ))
+    .await
 }
 
 #[cfg(test)]
@@ -338,10 +342,18 @@ async fn start_embedded_cli_runtime_with<F, Fut>(
     state_db: Option<StateDbHandle>,
     environment_manager: Arc<EnvironmentManager>,
     start_client: F,
-) -> color_eyre::Result<InProcessCliRuntimeClient>
+) -> color_eyre::Result<(
+    InProcessCliRuntimeClient,
+    InteractiveTuiNativeCodeModeHandle,
+)>
 where
     F: FnOnce(InProcessClientStartArgs) -> Fut,
-    Fut: Future<Output = std::io::Result<InProcessCliRuntimeClient>>,
+    Fut: Future<
+        Output = std::io::Result<(
+            InProcessCliRuntimeClient,
+            InteractiveTuiNativeCodeModeHandle,
+        )>,
+    >,
 {
     let config_warnings = config
         .startup_warnings
@@ -873,9 +885,7 @@ async fn run_ratatui_app(
     )
     .await
     {
-        Ok(cli_runtime) => {
-            CliRuntimeSession::new(cli_runtime, cli_runtime_target.thread_params_mode())
-        }
+        Ok(cli_runtime) => cli_runtime,
         Err(err) => {
             terminal_restore_guard.restore_silently();
             session_log::log_session_end();
@@ -1178,10 +1188,7 @@ async fn run_ratatui_app(
         )
         .await
         {
-            Ok(cli_runtime) => {
-                CliRuntimeSession::new(cli_runtime, cli_runtime_target.thread_params_mode())
-                    .with_remote_cwd_override(remote_cwd_override.clone())
-            }
+            Ok(cli_runtime) => cli_runtime.with_remote_cwd_override(remote_cwd_override.clone()),
             Err(err) => {
                 terminal_restore_guard.restore_silently();
                 session_log::log_session_end();
@@ -1579,7 +1586,7 @@ mod tests {
     ) -> color_eyre::Result<InProcessCliRuntimeClient> {
         let state_db =
             init_state_db_for_cli_runtime_target(&config, &CliRuntimeTarget::Embedded).await?;
-        start_embedded_cli_runtime(
+        let (client, native_code_mode) = start_embedded_cli_runtime(
             Arg0DispatchPaths::default(),
             config,
             Vec::new(),
@@ -1590,7 +1597,9 @@ mod tests {
             state_db,
             Arc::new(EnvironmentManager::default_for_tests()),
         )
-        .await
+        .await?;
+        drop(native_code_mode);
+        Ok(client)
     }
 
     #[tokio::test]
@@ -2024,6 +2033,32 @@ mod tests {
             .expect("thread/start should succeed");
         assert!(!response.thread.id.is_empty());
 
+        cli_runtime.shutdown().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ordinary_cli_source_client_cannot_invoke_native_code_mode() -> color_eyre::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config = build_config(&temp_dir).await?;
+        let client = start_test_embedded_cli_runtime(config.clone()).await?;
+        let mut cli_runtime = CliRuntimeSession::new(
+            CliRuntimeClient::InProcess(client),
+            ThreadParamsMode::Embedded,
+        );
+        let started = cli_runtime.start_thread(&config).await?;
+        let error = cli_runtime
+            .start_native_code_mode_from_interactive_composer(
+                started.session.thread_id,
+                "ordinary clients must not invoke native work".to_string(),
+            )
+            .await
+            .expect_err("ordinary client must lack the native TUI capability");
+        assert!(
+            error
+                .to_string()
+                .contains("outside the live embedded TUI composer")
+        );
         cli_runtime.shutdown().await?;
         Ok(())
     }

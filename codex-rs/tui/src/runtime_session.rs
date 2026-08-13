@@ -98,6 +98,7 @@ use codex_cli_runtime_client::CliRuntimeClient;
 use codex_cli_runtime_client::CliRuntimeEvent;
 use codex_cli_runtime_client::CliRuntimePath;
 use codex_cli_runtime_client::CliRuntimeRequestHandle;
+use codex_cli_runtime_client::InteractiveTuiNativeCodeModeHandle;
 use codex_cli_runtime_client::TypedRequestError;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -235,6 +236,7 @@ pub(crate) struct CliRuntimeBootstrap {
 
 pub(crate) struct CliRuntimeSession {
     client: CliRuntimeClient,
+    native_code_mode: Option<InteractiveTuiNativeCodeModeHandle>,
     next_request_id: i64,
     history_pagination: HashMap<ThreadId, history::ThreadHistoryPagination>,
     remote_cwd_override: Option<PathBuf>,
@@ -287,6 +289,7 @@ impl CliRuntimeSession {
     pub(crate) fn new(client: CliRuntimeClient, thread_params_mode: ThreadParamsMode) -> Self {
         Self {
             client,
+            native_code_mode: None,
             next_request_id: 1,
             history_pagination: HashMap::new(),
             remote_cwd_override: None,
@@ -295,6 +298,17 @@ impl CliRuntimeSession {
             thread_settings_update_supported: true,
             default_model: None,
             available_models: Vec::new(),
+        }
+    }
+
+    pub(crate) fn new_interactive_tui(
+        client: CliRuntimeClient,
+        thread_params_mode: ThreadParamsMode,
+        native_code_mode: InteractiveTuiNativeCodeModeHandle,
+    ) -> Self {
+        Self {
+            native_code_mode: Some(native_code_mode),
+            ..Self::new(client, thread_params_mode)
         }
     }
 
@@ -313,6 +327,23 @@ impl CliRuntimeSession {
 
     pub(crate) fn uses_embedded_cli_runtime(&self) -> bool {
         matches!(&self.client, CliRuntimeClient::InProcess(_))
+    }
+
+    /// Starts a one-shot native task through the private embedded-only lane.
+    pub(crate) async fn start_native_code_mode_from_interactive_composer(
+        &self,
+        thread_id: ThreadId,
+        task: String,
+    ) -> Result<String> {
+        let native_code_mode = self.native_code_mode.as_ref().ok_or_else(|| {
+            color_eyre::eyre::eyre!(
+                "native Code Mode is unavailable outside the live embedded TUI composer"
+            )
+        })?;
+        native_code_mode
+            .start(thread_id, task)
+            .await
+            .map_err(Into::into)
     }
 
     pub(crate) fn codex_home_path(

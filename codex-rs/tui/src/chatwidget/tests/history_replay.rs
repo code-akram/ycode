@@ -71,6 +71,55 @@ async fn resumed_initial_messages_render_history() {
 }
 
 #[tokio::test]
+async fn native_lifecycle_replays_without_reexecution() {
+    let (mut chat, mut rx, mut ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let turn = CliRuntimeTurn {
+        items: vec![
+            CliRuntimeThreadItem::NativeCodeMode {
+                id: "native-invocation".to_string(),
+                run_id: "run-1".to_string(),
+                phase: codex_cli_protocol::NativeCodeModePhase::Invocation,
+                text: "inspect retained evidence".to_string(),
+            },
+            CliRuntimeThreadItem::NativeCodeMode {
+                id: "native-repair".to_string(),
+                run_id: "run-1".to_string(),
+                phase: codex_cli_protocol::NativeCodeModePhase::Repair,
+                text: String::new(),
+            },
+            CliRuntimeThreadItem::NativeCodeMode {
+                id: "native-artifact".to_string(),
+                run_id: "run-1".to_string(),
+                phase: codex_cli_protocol::NativeCodeModePhase::Artifact,
+                text: "native-code-mode://thread/run-1/attempt-2/source.rs".to_string(),
+            },
+        ],
+        ..cli_runtime_turn(
+            "turn-native",
+            CliRuntimeTurnStatus::Completed,
+            /*duration_ms*/ Some(20),
+            /*error*/ None,
+        )
+    };
+
+    chat.replay_thread_turns(vec![turn], ReplayKind::ResumeInitialMessages);
+
+    let rendered = drain_insert_history(&mut rx)
+        .into_iter()
+        .map(|lines| lines_to_single_string(&lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("/code-mode inspect retained evidence"));
+    assert!(rendered.contains("compiler repair"));
+    assert!(rendered.contains("native-code-mode://thread/run-1/attempt-2/source.rs"));
+    assert!(ops.try_recv().is_err(), "replay must not submit an Op");
+    assert!(
+        !std::iter::from_fn(|| rx.try_recv().ok())
+            .any(|event| matches!(event, AppEvent::StartNativeCodeMode { .. }))
+    );
+}
+
+#[tokio::test]
 async fn replayed_failed_turns_preserve_overload_warnings_between_retries() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
     let prompt = "The workspace also looks super confusing with its separator.";

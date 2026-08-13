@@ -6,6 +6,8 @@
 //! - Routing keys to the active popup (slash commands, file search, skill/apps mentions).
 //! - Promoting typed slash commands into atomic elements when the command name is completed.
 //! - Handling submit vs newline on Enter.
+//! - Emitting `/code-mode <task>` as a dedicated live-only result; queued or replayed slash text
+//!   is never promoted into executable native work.
 //! - Turning raw key streams into explicit paste operations on platforms where terminals
 //!   don't provide reliable bracketed paste (notably Windows).
 //!
@@ -349,6 +351,13 @@ pub enum InputResult {
     /// command-history entry still represents the original command invocation that should be
     /// committed only if dispatch accepts it.
     CommandWithArgs(SlashCommand, String, Vec<TextElement>),
+    /// A one-shot native Rust task admitted only by a live, idle composer submission.
+    ///
+    /// Queued slash text is deliberately kept out of this variant so replay, queue draining,
+    /// model/tool output, and restored drafts cannot acquire the human-composer origin.
+    NativeCodeMode(String),
+    /// Native slash text submitted while another task owns the composer.
+    NativeCodeModeBlocked,
     /// Agent-directed input was attempted while viewing a parent-owned spawned child thread.
     ParentOwnedInputBlocked,
     None,
@@ -2879,6 +2888,8 @@ impl ChatComposer {
                 | InputResult::Command(_)
                 | InputResult::ServiceTierCommand(_)
                 | InputResult::CommandWithArgs(_, _, _)
+                | InputResult::NativeCodeMode(_)
+                | InputResult::NativeCodeModeBlocked
         ) {
             self.draft.textarea.enter_vim_normal_mode();
         }
@@ -2931,6 +2942,17 @@ impl ChatComposer {
                 self.handle_paste(pasted);
             }
             let raw_text = self.draft.textarea.text();
+            if parse_slash_name(raw_text)
+                .is_some_and(|(name, _, _)| name == SlashCommand::CodeMode.command())
+            {
+                self.stage_slash_command_history(&SlashCommandItem::Builtin(
+                    SlashCommand::CodeMode,
+                ));
+                self.record_pending_slash_command_history();
+                self.draft.textarea.set_text_clearing_elements("");
+                self.draft.is_bash_mode = false;
+                return (InputResult::NativeCodeModeBlocked, true);
+            }
             let defer_slash_validation = self.slash_input().should_parse_on_dequeue(raw_text);
             let preserve_pending_pastes = defer_slash_validation
                 && !self.draft.pending_pastes.is_empty()
@@ -3090,6 +3112,11 @@ impl ChatComposer {
         let SlashCommandItem::Builtin(cmd) = command else {
             return None;
         };
+        if cmd == SlashCommand::CodeMode {
+            self.draft.textarea.set_text_clearing_elements("");
+            self.draft.is_bash_mode = false;
+            return Some(InputResult::NativeCodeMode(trimmed_rest.to_string()));
+        }
         Some(InputResult::CommandWithArgs(
             cmd,
             trimmed_rest.to_string(),
@@ -8274,6 +8301,9 @@ mod tests {
             InputResult::ParentOwnedInputBlocked => {
                 panic!("expected command dispatch, but parent-owned input was blocked")
             }
+            InputResult::NativeCodeMode(_) | InputResult::NativeCodeModeBlocked => {
+                panic!("expected '/init', not native Code Mode")
+            }
             InputResult::None => panic!("expected Command result for '/init'"),
         }
         assert!(
@@ -8431,6 +8461,37 @@ mod tests {
                 pending_pastes: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn live_code_mode_submission_has_dedicated_non_user_input_result() {
+        let (mut composer, _rx) = new_test_composer();
+        composer
+            .draft
+            .textarea
+            .set_text_clearing_elements("/code-mode inspect the workspace");
+
+        let (result, _) = composer.handle_submission(/*should_queue*/ false);
+
+        assert_eq!(
+            result,
+            InputResult::NativeCodeMode("inspect the workspace".to_string())
+        );
+        assert!(composer.draft.textarea.is_empty());
+    }
+
+    #[test]
+    fn queued_code_mode_text_is_rejected_instead_of_becoming_work() {
+        let (mut composer, _rx) = new_test_composer();
+        composer
+            .draft
+            .textarea
+            .set_text_clearing_elements("/code-mode must never queue");
+
+        let (result, _) = composer.handle_submission(/*should_queue*/ true);
+
+        assert_eq!(result, InputResult::NativeCodeModeBlocked);
+        assert!(composer.draft.textarea.is_empty());
     }
 
     #[test]
@@ -8784,6 +8845,9 @@ mod tests {
             InputResult::ParentOwnedInputBlocked => {
                 panic!("expected command dispatch, but parent-owned input was blocked")
             }
+            InputResult::NativeCodeMode(_) | InputResult::NativeCodeModeBlocked => {
+                panic!("expected '/diff', not native Code Mode")
+            }
             InputResult::None => panic!("expected Command result for '/diff'"),
         }
         assert!(composer.draft.textarea.is_empty());
@@ -8981,6 +9045,9 @@ mod tests {
             }
             InputResult::ParentOwnedInputBlocked => {
                 panic!("expected command dispatch, but parent-owned input was blocked")
+            }
+            InputResult::NativeCodeMode(_) | InputResult::NativeCodeModeBlocked => {
+                panic!("expected '/mention', not native Code Mode")
             }
             InputResult::None => panic!("expected Command result for '/mention'"),
         }

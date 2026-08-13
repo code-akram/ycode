@@ -49,6 +49,7 @@ use codex_config::ThreadConfigLoader;
 use codex_core::config::Config;
 pub use codex_exec_server::EnvironmentManager;
 pub use codex_exec_server::ExecServerRuntimePaths;
+use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::de::DeserializeOwned;
@@ -398,6 +399,45 @@ enum ClientCommand {
     },
 }
 
+struct InteractiveTuiNativeCommand {
+    thread_id: ThreadId,
+    task: String,
+    response_tx: oneshot::Sender<IoResult<String>>,
+}
+
+/// Opaque, non-cloneable authority retained by the embedded interactive TUI session.
+///
+/// Native Code Mode is intentionally absent from [`CliRuntimeClient`],
+/// [`InProcessCliRuntimeClient`], and their ordinary request handles.
+pub struct InteractiveTuiNativeCodeModeHandle {
+    command_tx: mpsc::Sender<InteractiveTuiNativeCommand>,
+}
+
+impl InteractiveTuiNativeCodeModeHandle {
+    pub async fn start(&self, thread_id: ThreadId, task: String) -> IoResult<String> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(InteractiveTuiNativeCommand {
+                thread_id,
+                task,
+                response_tx,
+            })
+            .await
+            .map_err(|_| {
+                IoError::new(
+                    ErrorKind::BrokenPipe,
+                    "interactive TUI native Code Mode channel is closed",
+                )
+            })?;
+        response_rx.await.map_err(|_| {
+            IoError::new(
+                ErrorKind::BrokenPipe,
+                "native Code Mode response channel is closed",
+            )
+        })?
+    }
+}
+
 /// Async facade over the in-process cli-runtime runtime.
 ///
 /// This type owns a worker task that bridges between:
@@ -421,10 +461,28 @@ pub struct InProcessCliRuntimeRequestHandle {
 }
 
 #[derive(Clone)]
+/// Ordinary request handles cannot invoke the native interactive lane.
+///
+/// ```compile_fail
+/// use codex_cli_runtime_client::CliRuntimeRequestHandle;
+/// use codex_protocol::ThreadId;
+/// async fn cannot_start_native(handle: &CliRuntimeRequestHandle, thread_id: ThreadId) {
+///     handle.start_native_code_mode_from_interactive_tui(thread_id, String::new()).await;
+/// }
+/// ```
 pub enum CliRuntimeRequestHandle {
     InProcess(InProcessCliRuntimeRequestHandle),
 }
 
+/// Ordinary runtime clients expose only protocol request/notification operations.
+///
+/// ```compile_fail
+/// use codex_cli_runtime_client::CliRuntimeClient;
+/// use codex_protocol::ThreadId;
+/// async fn cannot_start_native(client: &CliRuntimeClient, thread_id: ThreadId) {
+///     client.start_native_code_mode_from_interactive_tui(thread_id, String::new()).await;
+/// }
+/// ```
 pub enum CliRuntimeClient {
     InProcess(InProcessCliRuntimeClient),
 }
@@ -436,15 +494,51 @@ impl InProcessCliRuntimeClient {
     /// internal event queue is saturated later, server requests are rejected
     /// with overload error instead of being silently dropped.
     pub async fn start(args: InProcessClientStartArgs) -> IoResult<Self> {
+        let (client, native) = Self::start_inner(args, false).await?;
+        debug_assert!(native.is_none());
+        Ok(client)
+    }
+
+    /// Starts the embedded runtime with a separate live-composer capability.
+    pub async fn start_for_interactive_tui(
+        args: InProcessClientStartArgs,
+    ) -> IoResult<(Self, InteractiveTuiNativeCodeModeHandle)> {
+        let (client, native) = Self::start_inner(args, true).await?;
+        let native = native.ok_or_else(|| {
+            IoError::other("interactive TUI native Code Mode capability was not created")
+        })?;
+        Ok((client, native))
+    }
+
+    async fn start_inner(
+        args: InProcessClientStartArgs,
+        interactive_tui: bool,
+    ) -> IoResult<(Self, Option<InteractiveTuiNativeCodeModeHandle>)> {
         let channel_capacity = args.channel_capacity.max(1);
-        let mut handle =
-            codex_cli_runtime::in_process::start(args.into_runtime_start_args()).await?;
+        let (mut handle, native_runtime) = if interactive_tui {
+            let (handle, native) = codex_cli_runtime::in_process::start_for_interactive_tui(
+                args.into_runtime_start_args(),
+            )
+            .await?;
+            (handle, Some(native))
+        } else {
+            (
+                codex_cli_runtime::in_process::start(args.into_runtime_start_args()).await?,
+                None,
+            )
+        };
         let request_sender = handle.sender();
         let (command_tx, mut command_rx) = mpsc::channel::<ClientCommand>(channel_capacity);
+        let (native_command_tx, mut native_command_rx) =
+            mpsc::channel::<InteractiveTuiNativeCommand>(channel_capacity);
         let (event_tx, event_rx) = mpsc::channel::<InProcessServerEvent>(channel_capacity);
+        let native_handle = interactive_tui.then_some(InteractiveTuiNativeCodeModeHandle {
+            command_tx: native_command_tx,
+        });
 
         let worker_handle = tokio::spawn(async move {
             let mut event_stream_enabled = true;
+            let mut native_stream_enabled = native_runtime.is_some();
             let mut skipped_events = 0usize;
             loop {
                 tokio::select! {
@@ -493,6 +587,23 @@ impl InProcessCliRuntimeClient {
                                 let _ = handle.shutdown().await;
                                 break;
                             }
+                        }
+                    }
+                    native = native_command_rx.recv(), if native_stream_enabled => {
+                        match native {
+                            Some(InteractiveTuiNativeCommand { thread_id, task, response_tx }) => {
+                                let result = match native_runtime.as_ref() {
+                                    Some(native_runtime) => {
+                                        native_runtime.start(thread_id, task).await
+                                    }
+                                    None => Err(IoError::new(
+                                        ErrorKind::PermissionDenied,
+                                        "interactive TUI native Code Mode capability is unavailable",
+                                    )),
+                                };
+                                let _ = response_tx.send(result);
+                            }
+                            None => native_stream_enabled = false,
                         }
                     }
                     event = handle.next_event(), if event_stream_enabled => {
@@ -547,11 +658,14 @@ impl InProcessCliRuntimeClient {
             }
         });
 
-        Ok(Self {
-            command_tx,
-            event_rx,
-            worker_handle,
-        })
+        Ok((
+            Self {
+                command_tx,
+                event_rx,
+                worker_handle,
+            },
+            native_handle,
+        ))
     }
 
     pub fn request_handle(&self) -> InProcessCliRuntimeRequestHandle {

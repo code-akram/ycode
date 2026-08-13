@@ -189,7 +189,9 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
         // Legacy decode-only markers are intentionally absent from the live status feed.
         ThreadItem::EnteredReviewMode { .. } | ThreadItem::ExitedReviewMode { .. } => return None,
         ThreadItem::ContextCompaction { .. } => return Some("Compacted context".to_string()),
-        ThreadItem::UserMessage { .. } | ThreadItem::Sleep(_) => return None,
+        ThreadItem::UserMessage { .. }
+        | ThreadItem::NativeCodeMode { .. }
+        | ThreadItem::Sleep(_) => return None,
     };
     bounded_summary(summary)
 }

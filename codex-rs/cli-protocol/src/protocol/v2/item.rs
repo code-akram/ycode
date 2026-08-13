@@ -360,6 +360,14 @@ pub enum ThreadItem {
     ContextCompaction {
         id: String,
     },
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    NativeCodeMode {
+        id: String,
+        run_id: String,
+        phase: NativeCodeModePhase,
+        text: String,
+    },
 }
 
 impl ThreadItem {
@@ -378,11 +386,21 @@ impl ThreadItem {
             | ThreadItem::EnteredReviewMode { id, .. }
             | ThreadItem::ExitedReviewMode { id, .. }
             | ThreadItem::ContextCompaction { id, .. } => id,
+            ThreadItem::NativeCodeMode { id, .. } => id,
             ThreadItem::WebSearch(item) => &item.id,
             ThreadItem::Sleep(item) => &item.id,
             ThreadItem::ImageGeneration(item) => &item.id,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "v2/")]
+pub enum NativeCodeModePhase {
+    Invocation,
+    Repair,
+    Artifact,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
@@ -841,6 +859,22 @@ impl From<CoreTurnItem> for ThreadItem {
             CoreTurnItem::ContextCompaction(compaction) => {
                 ThreadItem::ContextCompaction { id: compaction.id }
             }
+            CoreTurnItem::NativeCodeMode(item) => ThreadItem::NativeCodeMode {
+                id: item.id,
+                run_id: item.run_id,
+                phase: match item.phase {
+                    codex_protocol::items::NativeCodeModePhase::Invocation => {
+                        NativeCodeModePhase::Invocation
+                    }
+                    codex_protocol::items::NativeCodeModePhase::Repair => {
+                        NativeCodeModePhase::Repair
+                    }
+                    codex_protocol::items::NativeCodeModePhase::Artifact => {
+                        NativeCodeModePhase::Artifact
+                    }
+                },
+                text: item.text,
+            },
         }
     }
 }

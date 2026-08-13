@@ -83,6 +83,7 @@ pub(crate) struct MessageProcessor {
     thread_goal_processor: ThreadGoalRequestProcessor,
     thread_processor: ThreadRequestProcessor,
     turn_processor: TurnRequestProcessor,
+    thread_manager: Arc<ThreadManager>,
     request_serialization_queues: RequestSerializationQueues,
 }
 
@@ -357,8 +358,21 @@ impl MessageProcessor {
             thread_goal_processor,
             thread_processor,
             turn_processor,
+            thread_manager,
             request_serialization_queues,
         }
+    }
+
+    pub(crate) async fn start_native_code_mode_from_interactive_tui(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+        task: String,
+    ) -> codex_protocol::error::Result<String> {
+        self.thread_manager
+            .get_thread(thread_id)
+            .await?
+            .start_native_code_mode_from_interactive_tui(task)
+            .await
     }
 
     pub(crate) fn clear_runtime_references(&self) {

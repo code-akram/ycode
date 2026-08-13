@@ -6,6 +6,9 @@ use codex_code_mode::NativeExecution;
 use codex_code_mode::NativeRunIdentity;
 use codex_code_mode::ProcessOwnedNativeCodeModeClient;
 use codex_code_mode::host::NativeEvidence;
+use codex_protocol::items::NativeCodeModeItem;
+use codex_protocol::items::NativeCodeModePhase;
+use codex_protocol::items::TurnItem;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -61,6 +64,31 @@ impl NativeCodeModeTask {
     }
 }
 
+trait RepairLifecycle: Send + Sync {
+    fn repaired<'a>(&'a self) -> BoxFuture<'a, ()>;
+}
+
+struct SessionRepairLifecycle {
+    session: Arc<Session>,
+    turn: Arc<TurnContext>,
+    identity: NativeRunIdentity,
+}
+
+impl RepairLifecycle for SessionRepairLifecycle {
+    fn repaired<'a>(&'a self) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            emit_native_lifecycle(
+                self.session.as_ref(),
+                self.turn.as_ref(),
+                &self.identity,
+                NativeCodeModePhase::Repair,
+                String::new(),
+            )
+            .await;
+        })
+    }
+}
+
 impl SessionTask for NativeCodeModeTask {
     fn kind(&self) -> TaskKind {
         TaskKind::NativeCodeMode
@@ -99,7 +127,20 @@ impl SessionTask for NativeCodeModeTask {
             thread_id: session.thread_id.to_string(),
             run_id: uuid::Uuid::new_v4().to_string(),
         };
+        emit_native_lifecycle(
+            session.as_ref(),
+            ctx.as_ref(),
+            &identity,
+            NativeCodeModePhase::Invocation,
+            self.task.clone(),
+        )
+        .await;
 
+        let repair_lifecycle = SessionRepairLifecycle {
+            session: Arc::clone(&session),
+            turn: Arc::clone(&ctx),
+            identity: identity.clone(),
+        };
         let evidence = match prepare_live_backends(
             Arc::clone(&session),
             Arc::clone(&ctx),
@@ -109,7 +150,15 @@ impl SessionTask for NativeCodeModeTask {
         .await
         {
             Ok((generator, executor)) => {
-                orchestrate(&generator, &executor, &self.task, &identity, cancellation).await
+                orchestrate_inner(
+                    &generator,
+                    &executor,
+                    &self.task,
+                    &identity,
+                    cancellation,
+                    Some(&repair_lifecycle),
+                )
+                .await
             }
             Err(message) => failure_evidence(
                 &identity,
@@ -118,6 +167,17 @@ impl SessionTask for NativeCodeModeTask {
                 None,
             ),
         };
+
+        if let Some(reference) = evidence.artifact_refs.first().cloned() {
+            emit_native_lifecycle(
+                session.as_ref(),
+                ctx.as_ref(),
+                &identity,
+                NativeCodeModePhase::Artifact,
+                reference,
+            )
+            .await;
+        }
 
         // No generation, repair, source, diagnostic, or native tool payload is recorded through
         // the normal turn/history builders. This equality is checked immediately before the one
@@ -136,16 +196,58 @@ impl SessionTask for NativeCodeModeTask {
     }
 }
 
+async fn emit_native_lifecycle(
+    session: &Session,
+    ctx: &TurnContext,
+    identity: &NativeRunIdentity,
+    phase: NativeCodeModePhase,
+    text: String,
+) {
+    let item = TurnItem::NativeCodeMode(NativeCodeModeItem {
+        id: uuid::Uuid::now_v7().to_string(),
+        run_id: identity.run_id.clone(),
+        phase,
+        text,
+    });
+    session.emit_turn_item_started(ctx, &item).await;
+    session.emit_turn_item_completed(ctx, item).await;
+}
+
 impl Session {
-    /// Phase-III internal-only entry point. No submission `Op`, user input, replay item, model
-    /// output, tool output, slash command, or TUI dispatcher can construct this task.
-    #[allow(dead_code)]
-    pub(crate) async fn start_native_code_mode_task(self: &Arc<Self>, task: String) -> String {
+    /// Reserves an idle turn and starts one native task without replacing existing work.
+    pub(crate) async fn start_native_code_mode_task(
+        self: &Arc<Self>,
+        task: String,
+    ) -> codex_protocol::error::Result<String> {
+        if task.trim().is_empty() {
+            return Err(codex_protocol::error::CodexErr::InvalidRequest(
+                "native Code Mode requires a task".to_string(),
+            ));
+        }
+        if task.len() > TASK_BYTES {
+            return Err(codex_protocol::error::CodexErr::InvalidRequest(format!(
+                "native Code Mode task exceeds {TASK_BYTES} bytes"
+            )));
+        }
+        {
+            let mut active_turn = self.active_turn.lock().await;
+            if active_turn.is_some() {
+                return Err(codex_protocol::error::CodexErr::InvalidRequest(
+                    "native Code Mode is available only while the thread is idle".to_string(),
+                ));
+            }
+            *active_turn = Some(super::ActiveTurn::default());
+        }
         let turn = self.new_default_turn().await;
         let turn_id = turn.sub_id.clone();
-        self.spawn_task(turn, Vec::new(), NativeCodeModeTask::new(task))
-            .await;
-        turn_id
+        self.start_task(
+            turn,
+            Vec::new(),
+            NativeCodeModeTask::new(task),
+            super::MailboxParentProvenance::Ignore,
+        )
+        .await;
+        Ok(turn_id)
     }
 }
 
@@ -322,12 +424,24 @@ async fn prepare_live_backends(
     ))
 }
 
+#[cfg(test)]
 async fn orchestrate(
     generator: &dyn SourceGenerator,
     executor: &dyn NativeExecutor,
     task: &str,
     identity: &NativeRunIdentity,
     cancellation: CancellationToken,
+) -> NativeEvidence {
+    orchestrate_inner(generator, executor, task, identity, cancellation, None).await
+}
+
+async fn orchestrate_inner(
+    generator: &dyn SourceGenerator,
+    executor: &dyn NativeExecutor,
+    task: &str,
+    identity: &NativeRunIdentity,
+    cancellation: CancellationToken,
+    repair_lifecycle: Option<&dyn RepairLifecycle>,
 ) -> NativeEvidence {
     if task.len() > TASK_BYTES {
         return failure_evidence(
@@ -414,7 +528,12 @@ async fn orchestrate(
             .await
     };
     let repaired_source = match repair {
-        Ok(source) => source,
+        Ok(source) => {
+            if let Some(repair_lifecycle) = repair_lifecycle {
+                repair_lifecycle.repaired().await;
+            }
+            source
+        }
         Err(error) => {
             let finalize = executor.finalize(identity.clone()).await;
             let detail = match finalize {
@@ -2054,7 +2173,17 @@ mod tests {
 
         session
             .start_native_code_mode_task("task text must stay out of history".to_string())
+            .await
+            .expect("native task starts");
+        let duplicate = session
+            .start_native_code_mode_task("must not replace active native work".to_string())
             .await;
+        let duplicate = duplicate.expect_err("active native task cannot be replaced");
+        assert!(
+            duplicate
+                .to_string()
+                .contains("only while the thread is idle")
+        );
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             loop {
                 if server
@@ -2104,7 +2233,8 @@ mod tests {
         // resetting. Abort it at the same mocked generation boundary to keep the test bounded.
         session
             .start_native_code_mode_task("second isolated task".to_string())
-            .await;
+            .await
+            .expect("second native task starts after reset");
         assert!(session.active_turn.lock().await.is_some());
         session
             .abort_all_tasks(codex_protocol::protocol::TurnAbortReason::Interrupted)
@@ -2172,7 +2302,8 @@ mod tests {
             .start_native_code_mode_task(
                 "create and patch the deterministic proof file".to_string(),
             )
-            .await;
+            .await
+            .expect("native task starts");
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {
                 if session.active_turn.lock().await.is_none() {
@@ -2282,7 +2413,7 @@ mod tests {
         )
         .await;
         let base_url = format!("{}/v1", server.uri());
-        let (mut session, _turn, _events) =
+        let (mut session, _turn, events) =
             crate::session::tests::make_session_and_context_with_auth_config_home_and_rx(
                 CodexAuth::from_api_key("test-api-key"),
                 Vec::new(),
@@ -2311,7 +2442,8 @@ mod tests {
         let history_before = session.clone_history().await.into_raw_items();
         session
             .start_native_code_mode_task("repair and run the native fixture".to_string())
-            .await;
+            .await
+            .expect("native repair task starts");
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {
                 if session.active_turn.lock().await.is_none() {
@@ -2343,6 +2475,77 @@ mod tests {
                 .expect("repaired fixture output"),
             "seed\npatched\n"
         );
+        let mut recorded_events = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            recorded_events.push(event);
+        }
+        let events = recorded_events;
+        let repair_positions = events
+            .iter()
+            .enumerate()
+            .filter_map(|(index, event)| match &event.msg {
+                EventMsg::ItemCompleted(completed)
+                    if matches!(
+                        &completed.item,
+                        TurnItem::NativeCodeMode(NativeCodeModeItem {
+                            phase: NativeCodeModePhase::Repair,
+                            ..
+                        })
+                    ) =>
+                {
+                    Some(index)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            repair_positions.len(),
+            1,
+            "repair lifecycle emits exactly once"
+        );
+        let repair_index = repair_positions[0];
+        let attempt_two_tool_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    &event.msg,
+                    EventMsg::ItemStarted(started)
+                        if matches!(
+                            &started.item,
+                            TurnItem::CommandExecution(_) | TurnItem::FileChange(_)
+                        )
+                )
+            })
+            .expect("attempt-two real tool lifecycle starts");
+        let artifact_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    &event.msg,
+                    EventMsg::ItemCompleted(completed)
+                        if matches!(
+                            &completed.item,
+                            TurnItem::NativeCodeMode(NativeCodeModeItem {
+                                phase: NativeCodeModePhase::Artifact,
+                                ..
+                            })
+                        )
+                )
+            })
+            .expect("verified artifact lifecycle settles");
+        let evidence_index = events
+            .iter()
+            .rposition(|event| {
+                matches!(
+                    &event.msg,
+                    EventMsg::ItemCompleted(completed)
+                        if matches!(&completed.item, TurnItem::AgentMessage(_))
+                )
+            })
+            .expect("terminal Evidence lifecycle settles");
+        assert!(repair_index < attempt_two_tool_index);
+        assert!(attempt_two_tool_index < artifact_index);
+        assert!(artifact_index < evidence_index);
         drop(provider);
     }
 
@@ -2404,7 +2607,8 @@ mod tests {
         let history_before = session.clone_history().await.into_raw_items();
         session
             .start_native_code_mode_task("start the cancellable native workflow".to_string())
-            .await;
+            .await
+            .expect("cancellable native task starts");
         let pid_path = workspace.path().join("phase-three-cancel.pid");
         let pid = tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {

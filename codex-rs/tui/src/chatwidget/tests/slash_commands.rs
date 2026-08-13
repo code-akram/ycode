@@ -86,6 +86,52 @@ fn next_add_to_history_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEv
 }
 
 #[tokio::test]
+async fn code_mode_live_composer_emits_only_private_native_app_event() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let thread_id = ThreadId::new();
+    chat.thread_id = Some(thread_id);
+
+    submit_composer_text(&mut chat, "/code-mode inspect safely");
+
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        AppEvent::StartNativeCodeMode { thread_id: observed, task }
+            if *observed == thread_id && task == "inspect safely"
+    )));
+    assert!(
+        op_rx.try_recv().is_err(),
+        "native invocation must not become an Op"
+    );
+    assert!(chat.is_user_turn_pending_or_running());
+}
+
+#[tokio::test]
+async fn bare_and_active_code_mode_never_start_native_work() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    submit_composer_text(&mut chat, "/code-mode");
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Usage: /code-mode <task>"));
+    assert!(op_rx.try_recv().is_err());
+
+    handle_turn_started(&mut chat, "active-turn");
+    submit_composer_text(&mut chat, "/code-mode must not queue");
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, AppEvent::StartNativeCodeMode { .. }))
+    );
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn service_tier_commands_lowercase_catalog_names() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     let mut preset = get_available_model(&chat, "gpt-5.4");

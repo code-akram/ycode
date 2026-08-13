@@ -219,6 +219,24 @@ impl CodexThread {
         self.io.submit(op).await
     }
 
+    /// Starts the private one-shot native lane admitted by the live interactive TUI composer.
+    ///
+    /// This is intentionally not an [`Op`]: protocol clients, replay, model/tool output, and
+    /// non-interactive execution cannot construct it. The session-source check is a second
+    /// fail-closed boundary behind the in-process-only transport.
+    #[doc(hidden)]
+    pub async fn start_native_code_mode_from_interactive_tui(
+        &self,
+        task: String,
+    ) -> CodexResult<String> {
+        if self.session_source != SessionSource::Cli {
+            return Err(CodexErr::InvalidRequest(
+                "native Code Mode requires the interactive TUI".to_string(),
+            ));
+        }
+        self.session.start_native_code_mode_task(task).await
+    }
+
     pub async fn shutdown_and_wait(&self) -> CodexResult<()> {
         self.io.shutdown_and_wait().await
     }

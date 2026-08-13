@@ -343,10 +343,7 @@ async fn start_cli_runtime_for_archive_command(
         environment_manager,
     )
     .await?;
-    Ok(CliRuntimeSession::new(
-        cli_runtime,
-        cli_runtime_target.thread_params_mode(),
-    ))
+    Ok(cli_runtime)
 }
 
 #[cfg(test)]

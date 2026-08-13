@@ -191,6 +191,9 @@ impl ChatWidget {
             ThreadItem::ContextCompaction { .. } => {
                 self.add_info_message("Context compacted".to_string(), /*hint*/ None);
             }
+            ThreadItem::NativeCodeMode { phase, text, .. } => {
+                self.add_to_history(history_cell::native_code_mode_lifecycle_cell(phase, text));
+            }
             ThreadItem::CollabAgentToolCall {
                 id,
                 tool,

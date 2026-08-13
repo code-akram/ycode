@@ -255,6 +255,12 @@ fn fallback_transcript_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
         ThreadItem::ContextCompaction { .. } => {
             vec!["context compacted".dim().into()]
         }
+        ThreadItem::NativeCodeMode { phase, text, .. } => {
+            return Some(crate::history_cell::native_code_mode_lifecycle_cell(
+                *phase,
+                text.clone(),
+            ));
+        }
         ThreadItem::UserMessage { .. }
         | ThreadItem::AgentMessage { .. }
         | ThreadItem::Plan { .. }

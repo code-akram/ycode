@@ -93,6 +93,26 @@ pub(crate) use search::*;
 pub(crate) use separators::*;
 pub(crate) use session::*;
 
+pub(crate) fn native_code_mode_lifecycle_cell(
+    phase: codex_cli_protocol::NativeCodeModePhase,
+    text: String,
+) -> PlainHistoryCell {
+    use codex_cli_protocol::NativeCodeModePhase;
+    let line = match phase {
+        NativeCodeModePhase::Invocation => {
+            Line::from(format!("› /code-mode {}", sanitize_user_text(&text)))
+                .style(crate::style::human_prompt_style())
+        }
+        NativeCodeModePhase::Repair => {
+            Line::from("↳ compiler repair").style(crate::style::operational_reference_style())
+        }
+        NativeCodeModePhase::Artifact => {
+            Line::from(format!("source: {text}")).style(crate::style::operational_reference_style())
+        }
+    };
+    PlainHistoryCell::new(vec![line])
+}
+
 #[cfg(test)]
 mod tests;
 

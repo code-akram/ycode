@@ -1820,3 +1820,28 @@ fn consolidation_walker_replaces_agent_message_cells() {
         "second cell should be AgentMarkdownCell"
     );
 }
+
+#[test]
+fn native_invocation_uses_human_teal_and_artifact_uses_operational_blue() {
+    let invocation = native_code_mode_lifecycle_cell(
+        codex_cli_protocol::NativeCodeModePhase::Invocation,
+        "inspect".to_string(),
+    );
+    let artifact = native_code_mode_lifecycle_cell(
+        codex_cli_protocol::NativeCodeModePhase::Artifact,
+        "native-code-mode://thread/run/attempt-1/source.rs".to_string(),
+    );
+
+    assert_eq!(
+        invocation.display_lines(80)[0].style,
+        crate::style::human_prompt_style()
+    );
+    assert_eq!(
+        artifact.display_lines(80)[0].style,
+        crate::style::operational_reference_style()
+    );
+    assert_ne!(
+        invocation.display_lines(80)[0].style,
+        artifact.display_lines(80)[0].style
+    );
+}

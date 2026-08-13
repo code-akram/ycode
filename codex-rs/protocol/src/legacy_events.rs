@@ -456,7 +456,7 @@ impl TurnItem {
         match self {
             TurnItem::UserMessage(item) => vec![item.as_legacy_event()],
             TurnItem::AgentMessage(item) => item.as_legacy_events(),
-            TurnItem::Plan(_) => Vec::new(),
+            TurnItem::Plan(_) | TurnItem::NativeCodeMode(_) => Vec::new(),
             TurnItem::CommandExecution(_)
             | TurnItem::DynamicToolCall(_)
             | TurnItem::CollabAgentToolCall(_) => Vec::new(),

@@ -37,8 +37,54 @@ const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
+const CODE_MODE_USAGE: &str = "Usage: /code-mode <task>";
 
 impl ChatWidget {
+    pub(super) fn start_native_code_mode_from_live_composer(&mut self, task: String) {
+        let task = task.trim().to_string();
+        if task.is_empty() {
+            self.add_info_message(CODE_MODE_USAGE.to_string(), None);
+            self.bottom_pane.record_pending_slash_command_history();
+            return;
+        }
+        if task.len() > 16 * 1024 {
+            self.add_error_message("Native Code Mode task exceeds 16 KiB.".to_string());
+            self.bottom_pane.record_pending_slash_command_history();
+            return;
+        }
+        let Some(thread_id) = self.thread_id else {
+            self.add_error_message(
+                "'/code-mode' is unavailable before the session starts.".to_string(),
+            );
+            self.bottom_pane.record_pending_slash_command_history();
+            return;
+        };
+        if self.active_side_conversation || self.blocks_direct_input {
+            self.add_error_message(
+                "'/code-mode' is available only in the active human-owned thread.".to_string(),
+            );
+            self.bottom_pane.record_pending_slash_command_history();
+            return;
+        }
+        if self.is_user_turn_pending_or_running() {
+            self.add_error_message(
+                "'/code-mode' is available only while the active composer is idle.".to_string(),
+            );
+            self.bottom_pane.record_pending_slash_command_history();
+            return;
+        }
+
+        self.bottom_pane.drain_pending_submission_state();
+        self.bottom_pane.record_pending_slash_command_history();
+        self.input_queue.user_turn_pending_start = true;
+        if !self.bottom_pane.is_task_running() {
+            self.bottom_pane.set_task_running(true);
+        }
+        self.app_event_tx
+            .send(AppEvent::StartNativeCodeMode { thread_id, task });
+        self.request_redraw();
+    }
+
     /// Dispatch a bare slash command and record its staged local-history entry.
     ///
     /// The composer stages history before returning `InputResult::Command`; this wrapper commits
@@ -208,6 +254,9 @@ impl ChatWidget {
             SlashCommand::Init => {
                 const INIT_PROMPT: &str = include_str!("../../prompt_for_init_command.md");
                 self.submit_user_message(INIT_PROMPT.to_string().into());
+            }
+            SlashCommand::CodeMode => {
+                self.add_info_message(CODE_MODE_USAGE.to_string(), None);
             }
             SlashCommand::Compact => {
                 if self.blocks_direct_input {
@@ -844,6 +893,7 @@ impl ChatWidget {
             | SlashCommand::Model
             | SlashCommand::Personality
             | SlashCommand::Goal
+            | SlashCommand::CodeMode
             | SlashCommand::Side
             | SlashCommand::Btw
             | SlashCommand::Keymap

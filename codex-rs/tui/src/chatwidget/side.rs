@@ -7,6 +7,10 @@
 use super::*;
 
 impl ChatWidget {
+    pub(crate) fn is_active_side_conversation(&self) -> bool {
+        self.active_side_conversation
+    }
+
     pub(crate) fn submit_user_message_as_plain_user_turn(
         &mut self,
         user_message: UserMessage,

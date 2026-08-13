@@ -28,6 +28,7 @@ pub enum SlashCommand {
     Init,
     Compact,
     Goal,
+    CodeMode,
     Agent,
     Side,
     Btw,
@@ -86,6 +87,7 @@ impl SlashCommand {
             }
             SlashCommand::Personality => "choose a communication style for Codex",
             SlashCommand::Goal => "set or view the goal for a long-running task",
+            SlashCommand::CodeMode => "run one native Rust workflow",
             SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
             SlashCommand::Side | SlashCommand::Btw => {
                 "start a side conversation in an ephemeral fork"
@@ -114,6 +116,7 @@ impl SlashCommand {
                 | SlashCommand::Clear
                 | SlashCommand::Fork
                 | SlashCommand::Goal
+                | SlashCommand::CodeMode
                 | SlashCommand::Ide
                 | SlashCommand::Keymap
                 | SlashCommand::Raw
@@ -174,6 +177,7 @@ impl SlashCommand {
             | SlashCommand::Exit
             | SlashCommand::Side
             | SlashCommand::Btw => true,
+            SlashCommand::CodeMode => false,
             SlashCommand::Rollout => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
         }
@@ -220,6 +224,19 @@ mod tests {
         assert!(SlashCommand::Raw.available_during_task());
         assert!(SlashCommand::Raw.available_in_side_conversation());
         assert!(SlashCommand::Raw.supports_inline_args());
+    }
+
+    #[test]
+    fn code_mode_is_inline_idle_main_composer_only() {
+        assert_eq!(SlashCommand::CodeMode.command(), "code-mode");
+        assert!(SlashCommand::CodeMode.supports_inline_args());
+        assert!(!SlashCommand::CodeMode.available_during_task());
+        assert!(!SlashCommand::CodeMode.available_in_side_conversation());
+        assert!(
+            super::built_in_slash_commands()
+                .iter()
+                .any(|(name, command)| *name == "code-mode" && *command == SlashCommand::CodeMode)
+        );
     }
 
     #[test]

@@ -148,6 +148,12 @@ pub(crate) enum AppEvent {
         user_message: Option<UserMessage>,
     },
 
+    /// Private one-shot request produced only by the live active human composer.
+    StartNativeCodeMode {
+        thread_id: ThreadId,
+        task: String,
+    },
+
     /// Submit an op to the specified thread, regardless of current focus.
     #[allow(dead_code)]
     // Retained compatibility, test, or architectural seam for non-default consumers.

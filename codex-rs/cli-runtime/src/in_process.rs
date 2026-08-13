@@ -82,6 +82,7 @@ use codex_core::config::Config;
 use codex_core::resolve_installation_id;
 use codex_exec_server::EnvironmentManager;
 use codex_login::AuthManager;
+use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 pub use codex_rollout::StateDbHandle;
 pub use codex_state::log_db::LogDbLayer;
@@ -179,6 +180,11 @@ enum InProcessClientMessage {
         request_id: RequestId,
         error: JSONRPCErrorError,
     },
+    StartNativeCodeMode {
+        thread_id: ThreadId,
+        task: String,
+        response_tx: oneshot::Sender<IoResult<String>>,
+    },
     Shutdown {
         done_tx: oneshot::Sender<()>,
     },
@@ -187,11 +193,58 @@ enum InProcessClientMessage {
 enum ProcessorCommand {
     Request(Box<ClientRequest>),
     Notification(ClientNotification),
+    StartNativeCodeMode {
+        thread_id: ThreadId,
+        task: String,
+        response_tx: oneshot::Sender<IoResult<String>>,
+    },
 }
 
 #[derive(Clone)]
 pub struct InProcessClientSender {
     client_tx: mpsc::Sender<InProcessClientMessage>,
+}
+
+/// Opaque authority for the live embedded TUI to start one native Code Mode task.
+///
+/// Ordinary [`InProcessClientHandle`] and [`InProcessClientSender`] values do not expose this
+/// operation. The handle is deliberately non-cloneable so its ownership remains with the TUI
+/// runtime session that received it from [`start_for_interactive_tui`].
+pub struct InteractiveTuiNativeCodeModeHandle {
+    client_tx: mpsc::Sender<InProcessClientMessage>,
+}
+
+impl InteractiveTuiNativeCodeModeHandle {
+    pub async fn start(&self, thread_id: ThreadId, task: String) -> IoResult<String> {
+        let (response_tx, response_rx) = oneshot::channel();
+        match self
+            .client_tx
+            .try_send(InProcessClientMessage::StartNativeCodeMode {
+                thread_id,
+                task,
+                response_tx,
+            }) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                return Err(IoError::new(
+                    ErrorKind::WouldBlock,
+                    "in-process cli-runtime client queue is full",
+                ));
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                return Err(IoError::new(
+                    ErrorKind::BrokenPipe,
+                    "in-process cli-runtime runtime is closed",
+                ));
+            }
+        }
+        response_rx.await.map_err(|err| {
+            IoError::new(
+                ErrorKind::BrokenPipe,
+                format!("native Code Mode response channel closed: {err}"),
+            )
+        })?
+    }
 }
 
 impl InProcessClientSender {
@@ -365,6 +418,19 @@ pub async fn start(args: InProcessStartArgs) -> IoResult<InProcessClientHandle> 
     Ok(client)
 }
 
+/// Starts the embedded runtime and returns a separate live-composer capability.
+///
+/// The ordinary handle cannot start native Code Mode, even when its session source is `Cli`.
+pub async fn start_for_interactive_tui(
+    args: InProcessStartArgs,
+) -> IoResult<(InProcessClientHandle, InteractiveTuiNativeCodeModeHandle)> {
+    let client = start(args).await?;
+    let native = InteractiveTuiNativeCodeModeHandle {
+        client_tx: client.client.client_tx.clone(),
+    };
+    Ok((client, native))
+}
+
 async fn run_outbound_router(
     mut outgoing_rx: mpsc::Receiver<OutgoingEnvelope>,
     mut outbound_connections: HashMap<ConnectionId, OutboundConnectionState>,
@@ -490,6 +556,17 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                             Some(ProcessorCommand::Notification(notification)) => {
                                 processor.process_client_notification(notification).await;
                             }
+                            Some(ProcessorCommand::StartNativeCodeMode {
+                                thread_id,
+                                task,
+                                response_tx,
+                            }) => {
+                                let result = processor
+                                    .start_native_code_mode_from_interactive_tui(thread_id, task)
+                                    .await
+                                    .map_err(|err| IoError::new(ErrorKind::InvalidInput, err.to_string()));
+                                let _ = response_tx.send(result);
+                            }
                             None => {
                                 break;
                             }
@@ -596,6 +673,36 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                             outgoing_message_sender
                                 .notify_client_error(request_id, error)
                                 .await;
+                        }
+                        Some(InProcessClientMessage::StartNativeCodeMode {
+                            thread_id,
+                            task,
+                            response_tx,
+                        }) => {
+                            match processor_tx.try_send(ProcessorCommand::StartNativeCodeMode {
+                                thread_id,
+                                task,
+                                response_tx,
+                            }) {
+                                Ok(()) => {}
+                                Err(mpsc::error::TrySendError::Full(command)) => {
+                                    if let ProcessorCommand::StartNativeCodeMode { response_tx, .. } = command {
+                                        let _ = response_tx.send(Err(IoError::new(
+                                            ErrorKind::WouldBlock,
+                                            "in-process native Code Mode queue is full",
+                                        )));
+                                    }
+                                }
+                                Err(mpsc::error::TrySendError::Closed(command)) => {
+                                    if let ProcessorCommand::StartNativeCodeMode { response_tx, .. } = command {
+                                        let _ = response_tx.send(Err(IoError::new(
+                                            ErrorKind::BrokenPipe,
+                                            "in-process native Code Mode processor is closed",
+                                        )));
+                                    }
+                                    break;
+                                }
+                            }
                         }
                         Some(InProcessClientMessage::Shutdown { done_tx }) => {
                             shutdown_ack = Some(done_tx);
@@ -774,10 +881,10 @@ mod tests {
         }
     }
 
-    async fn start_test_client_with_capacity(
+    async fn test_start_args(
         session_source: SessionSource,
         channel_capacity: usize,
-    ) -> InProcessClientHandle {
+    ) -> (InProcessStartArgs, TempDir) {
         let codex_home = TempDir::new().expect("temp dir");
         let config = Arc::new(build_test_config(codex_home.path()).await);
         let state_db = codex_rollout::state_db::try_init(config.as_ref())
@@ -807,6 +914,14 @@ mod tests {
             },
             channel_capacity,
         };
+        (args, codex_home)
+    }
+
+    async fn start_test_client_with_capacity(
+        session_source: SessionSource,
+        channel_capacity: usize,
+    ) -> InProcessClientHandle {
+        let (args, codex_home) = test_start_args(session_source, channel_capacity).await;
         let mut client = start(args).await.expect("in-process runtime should start");
         client._test_codex_home = Some(codex_home);
         client
@@ -842,6 +957,41 @@ mod tests {
                 .await
                 .expect("in-process runtime should shutdown cleanly");
         }
+    }
+
+    #[tokio::test]
+    async fn native_lane_rejects_noninteractive_session_source() {
+        let (args, codex_home) =
+            test_start_args(SessionSource::Exec, DEFAULT_IN_PROCESS_CHANNEL_CAPACITY).await;
+        let (mut client, native_code_mode) = start_for_interactive_tui(args)
+            .await
+            .expect("interactive runtime starts");
+        client._test_codex_home = Some(codex_home);
+        let response = client
+            .request(ClientRequest::ThreadStart {
+                request_id: RequestId::Integer(12),
+                params: ThreadStartParams {
+                    ephemeral: Some(true),
+                    ..ThreadStartParams::default()
+                },
+            })
+            .await
+            .expect("request transport should work")
+            .expect("thread/start should succeed");
+        let parsed: ThreadStartResponse =
+            serde_json::from_value(response).expect("thread/start response should parse");
+        let thread_id = ThreadId::from_string(&parsed.thread.id).expect("thread id");
+
+        let error = native_code_mode
+            .start(thread_id, "must not run from exec".to_string())
+            .await
+            .expect_err("exec session cannot acquire interactive native origin");
+
+        assert!(error.to_string().contains("requires the interactive TUI"));
+        client
+            .shutdown()
+            .await
+            .expect("in-process runtime should shutdown cleanly");
     }
 
     #[tokio::test]
