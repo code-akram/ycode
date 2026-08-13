@@ -87,7 +87,7 @@ impl ChatWidget {
                     .map(crate::status_indicator_widget::StatusIndicatorWidget::elapsed_seconds)
             });
         self.add_to_history(history_cell::FinalMessageSeparator::new(
-            self.model_display_name().to_string(),
+            self.model_with_reasoning_display_name(),
             elapsed_seconds,
         ));
         // Mark task stopped and request redraw now that all content is in history.

@@ -8,6 +8,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
@@ -144,9 +145,14 @@ impl AttachmentState {
             .map(|(index, _)| {
                 let label = local_image_label_text(index + 1);
                 if self.selected_remote_image_index == Some(index) {
-                    label.cyan().reversed().into()
+                    label
+                        .set_style(crate::style::operational_reference_style())
+                        .reversed()
+                        .into()
                 } else {
-                    label.cyan().into()
+                    label
+                        .set_style(crate::style::operational_reference_style())
+                        .into()
                 }
             })
             .collect()

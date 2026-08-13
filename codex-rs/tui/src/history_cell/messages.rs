@@ -120,8 +120,8 @@ impl HistoryCell for UserHistoryCell {
             )
             .max(1);
 
-        let style = Style::default();
-        let element_style = style.fg(Color::Cyan);
+        let style = crate::style::human_prompt_style();
+        let element_style = style;
 
         let wrapped_remote_images = if self.remote_image_urls.is_empty() {
             None
@@ -188,8 +188,8 @@ impl HistoryCell for UserHistoryCell {
         if let Some(wrapped_message) = wrapped_message {
             lines.extend(prefix_lines(
                 wrapped_message,
-                "› ".bold().dim(),
-                "  ".into(),
+                Span::styled("› ", style),
+                Span::styled("  ", style),
             ));
         }
 

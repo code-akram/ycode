@@ -27,6 +27,7 @@ use crossterm::event::KeyModifiers;
 use ratatui::layout::Constraint;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -356,7 +357,10 @@ impl ChatComposer {
         let search = self.history_search.as_ref()?;
         let mut line = Line::from(vec![
             "reverse-i-search: ".dim(),
-            search.query.clone().cyan(),
+            search
+                .query
+                .clone()
+                .set_style(crate::style::operational_reference_style()),
         ]);
         match search.status {
             HistorySearchStatus::Idle => {}
@@ -375,7 +379,9 @@ impl ChatComposer {
     }
 
     fn history_search_action_key_span(key: KeyCode) -> Span<'static> {
-        Span::from(key_hint::plain(key)).cyan().bold().not_dim()
+        Span::from(key_hint::plain(key))
+            .set_style(crate::style::operational_accent_style())
+            .not_dim()
     }
 
     /// Returns byte ranges that should be highlighted in the current composer preview.
@@ -727,10 +733,13 @@ mod tests {
         );
 
         let query_style = line.spans[1].style;
-        assert_eq!(query_style.fg, Some(ratatui::style::Color::Cyan));
+        assert_eq!(
+            query_style.fg,
+            crate::style::operational_reference_style().fg
+        );
 
         let enter_style = line.spans[3].style;
-        assert_eq!(enter_style.fg, Some(ratatui::style::Color::Cyan));
+        assert_eq!(enter_style.fg, crate::style::operational_accent_style().fg);
         assert!(enter_style.add_modifier.contains(Modifier::BOLD));
         assert!(enter_style.sub_modifier.contains(Modifier::DIM));
 
@@ -741,7 +750,7 @@ mod tests {
         assert!(separator_style.add_modifier.contains(Modifier::DIM));
 
         let esc_style = line.spans[6].style;
-        assert_eq!(esc_style.fg, Some(ratatui::style::Color::Cyan));
+        assert_eq!(esc_style.fg, crate::style::operational_accent_style().fg);
         assert!(esc_style.add_modifier.contains(Modifier::BOLD));
         assert!(esc_style.sub_modifier.contains(Modifier::DIM));
 

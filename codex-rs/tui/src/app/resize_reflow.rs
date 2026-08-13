@@ -88,8 +88,14 @@ impl App {
         cell: &dyn HistoryCell,
         width: u16,
     ) -> Vec<HyperlinkLine> {
-        let mut display =
-            cell.display_hyperlink_lines_for_mode(width, self.chat_widget.history_render_mode());
+        let content_width = self.chat_widget.history_wrap_width(width);
+        let mut display = crate::transcript_gutter::prefix_hyperlink_lines(
+            cell.display_hyperlink_lines_for_mode(
+                content_width,
+                self.chat_widget.history_render_mode(),
+            ),
+            width,
+        );
         if !display.is_empty() && !cell.is_stream_continuation() {
             if self.has_emitted_history_lines {
                 display.insert(/*index*/ 0, HyperlinkLine::new(Line::from("")));
@@ -170,9 +176,7 @@ impl App {
         }
 
         let mut retained_lines = buffer.retained_lines.into_iter().collect::<Vec<_>>();
-        let width = self
-            .chat_widget
-            .history_wrap_width(tui.terminal.last_known_screen_size.width);
+        let width = tui.terminal.last_known_screen_size.width;
         self.prepend_scrollback_history_notice(&mut retained_lines, buffer.was_truncated, width);
         let retained_rows = retained_lines.len();
         tui.insert_history_hyperlink_lines_with_wrap_policy(
@@ -457,7 +461,7 @@ impl App {
         tui: &mut tui::Tui,
         terminal_width: TerminalWidth,
     ) -> Result<TerminalWidth> {
-        let width = self.chat_widget.history_wrap_width(terminal_width.0);
+        let width = terminal_width.0;
         if self.transcript_cells.is_empty() {
             // Drop any queued pre-resize/pre-consolidation inserts before rebuilding from cells.
             tui.clear_pending_history_lines();
@@ -519,7 +523,7 @@ impl App {
         tui: &mut tui::Tui,
         terminal_width: TerminalWidth,
     ) -> Result<()> {
-        let width = self.chat_widget.history_wrap_width(terminal_width.0);
+        let width = terminal_width.0;
         let reflowed_lines = if self.transcript_cells.is_empty() {
             self.reset_history_emission_state();
             Vec::new()
@@ -549,6 +553,7 @@ impl App {
     /// were a new top-level history item. The final row trim happens after separators are restored,
     /// so the returned rows obey the cap exactly.
     pub(super) fn render_transcript_lines_for_reflow(&mut self, width: u16) -> ReflowRenderResult {
+        let content_width = self.chat_widget.history_wrap_width(width);
         let row_cap = self.resize_reflow_max_rows();
         let mut cell_displays = VecDeque::new();
         let mut rendered_rows = 0usize;
@@ -558,8 +563,13 @@ impl App {
         while start > 0 {
             start -= 1;
             let cell = self.transcript_cells[start].clone();
-            let lines = cell
-                .display_hyperlink_lines_for_mode(width, self.chat_widget.history_render_mode());
+            let lines = crate::transcript_gutter::prefix_hyperlink_lines(
+                cell.display_hyperlink_lines_for_mode(
+                    content_width,
+                    self.chat_widget.history_render_mode(),
+                ),
+                width,
+            );
             rendered_rows += lines.len();
             cell_displays.push_front(ReflowCellDisplay {
                 lines,
@@ -580,9 +590,12 @@ impl App {
             start -= 1;
             let cell = self.transcript_cells[start].clone();
             cell_displays.push_front(ReflowCellDisplay {
-                lines: cell.display_hyperlink_lines_for_mode(
+                lines: crate::transcript_gutter::prefix_hyperlink_lines(
+                    cell.display_hyperlink_lines_for_mode(
+                        content_width,
+                        self.chat_widget.history_render_mode(),
+                    ),
                     width,
-                    self.chat_widget.history_render_mode(),
                 ),
                 is_stream_continuation: cell.is_stream_continuation(),
             });
@@ -632,8 +645,16 @@ impl App {
             binding.display_label()
         ))
         .dim();
-        let notice_lines =
-            crate::wrapping::word_wrap_lines([notice], usize::from(width.max(/*other*/ 1)));
+        let notice_lines = crate::transcript_gutter::prefix_hyperlink_lines(
+            crate::wrapping::word_wrap_lines(
+                [notice],
+                usize::from(self.chat_widget.history_wrap_width(width)),
+            )
+            .into_iter()
+            .map(HyperlinkLine::new)
+            .collect(),
+            width,
+        );
         if let Some(max_rows) = self.resize_reflow_max_rows() {
             let available_history_rows = max_rows.saturating_sub(notice_lines.len());
             if available_history_rows == 0 {
@@ -643,7 +664,7 @@ impl App {
                 lines.drain(..lines.len() - available_history_rows);
             }
         }
-        lines.splice(0..0, notice_lines.into_iter().map(HyperlinkLine::new));
+        lines.splice(0..0, notice_lines);
     }
 
     /// Return whether current transcript state should be treated as stream-time resize state.

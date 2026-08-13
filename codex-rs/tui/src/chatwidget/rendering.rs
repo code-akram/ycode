@@ -59,7 +59,7 @@ struct TranscriptAreaRenderable<'a> {
 
 impl Renderable for TranscriptAreaRenderable<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        let area = self.child_area(area);
+        let area = crate::transcript_gutter::inset_rect(self.child_area(area));
         let lines = self.child.display_lines(area.width);
         let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false });
         let y = if area.height == 0 {
@@ -75,7 +75,8 @@ impl Renderable for TranscriptAreaRenderable<'_> {
     }
 
     fn desired_height(&self, width: u16) -> u16 {
-        let child_width = width.saturating_sub(self.right).max(1);
+        let child_width =
+            crate::transcript_gutter::layout(width.saturating_sub(self.right)).content_width;
         HistoryCell::desired_height(self.child, child_width) + self.top
     }
 }

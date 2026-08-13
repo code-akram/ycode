@@ -1666,7 +1666,7 @@ mod tests {
         }];
         let footer_note = Line::from(vec![
             "Note: ".dim(),
-            "Use /setup-default-sandbox".cyan(),
+            "Use /setup-default-sandbox".set_style(crate::style::operational_reference_style()),
             " to allow network access.".dim(),
         ]);
         let view = new_view(

@@ -28,7 +28,6 @@ impl MotionMode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ReducedMotionIndicator {
-    Hidden,
     StaticBullet,
 }
 
@@ -40,7 +39,6 @@ pub(crate) fn activity_indicator(
     match motion_mode {
         MotionMode::Animated => Some(animated_activity_indicator(start_time)),
         MotionMode::Reduced => match reduced_motion_indicator {
-            ReducedMotionIndicator::Hidden => None,
             ReducedMotionIndicator::StaticBullet => Some("•".dim()),
         },
     }
@@ -56,6 +54,24 @@ pub(crate) fn shimmer_text(text: &str, motion_mode: MotionMode) -> Vec<Span<'sta
                 vec![text.to_string().into()]
             }
         }
+    }
+}
+
+pub(crate) fn status_spinner(
+    started_at: Instant,
+    now: Instant,
+    motion_mode: MotionMode,
+) -> Span<'static> {
+    match motion_mode {
+        MotionMode::Animated => {
+            const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let frame = (now.saturating_duration_since(started_at).as_millis() / 80) as usize;
+            Span::styled(
+                FRAMES[frame % FRAMES.len()],
+                crate::style::operational_accent_style(),
+            )
+        }
+        MotionMode::Reduced => Span::styled("•", crate::style::operational_reference_style().dim()),
     }
 }
 
@@ -91,14 +107,6 @@ mod tests {
             activity_indicator(
                 /*start_time*/ None,
                 MotionMode::Reduced,
-                ReducedMotionIndicator::Hidden,
-            ),
-            None
-        );
-        assert_eq!(
-            activity_indicator(
-                /*start_time*/ None,
-                MotionMode::Reduced,
                 ReducedMotionIndicator::StaticBullet,
             ),
             Some("•".dim())
@@ -114,6 +122,28 @@ mod tests {
         assert_eq!(
             shimmer_text("", MotionMode::Reduced),
             Vec::<Span<'static>>::new()
+        );
+    }
+
+    #[test]
+    fn status_spinner_has_a_static_reduced_motion_fallback() {
+        let started_at = Instant::now();
+        assert_eq!(
+            status_spinner(started_at, started_at, MotionMode::Reduced).content,
+            "•"
+        );
+        assert_eq!(
+            status_spinner(started_at, started_at, MotionMode::Animated).content,
+            "⠋"
+        );
+        assert_eq!(
+            status_spinner(
+                started_at,
+                started_at + std::time::Duration::from_millis(160),
+                MotionMode::Animated,
+            )
+            .content,
+            "⠹"
         );
     }
 

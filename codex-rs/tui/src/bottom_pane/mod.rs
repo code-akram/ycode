@@ -46,8 +46,6 @@ use crossterm::event::KeyEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
-use ratatui::widgets::Clear;
-use ratatui::widgets::Widget;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -1463,16 +1461,17 @@ impl BottomPane {
             }
             let mut flex2 = FlexRenderable::new();
             flex2.push(/*flex*/ 1, RenderableItem::Owned(flex.into()));
-            let composer: RenderableItem<'_> =
-                if composer_right_reserve == 0 && self.status.is_none() {
-                    RenderableItem::Borrowed(&self.composer)
-                } else {
-                    RenderableItem::Owned(Box::new(ChatComposerRightReserveRenderable {
-                        composer: &self.composer,
-                        right_reserve: composer_right_reserve,
-                        status: self.status.as_ref(),
-                    }))
-                };
+            if let Some(status) = self.status.as_ref() {
+                flex2.push(/*flex*/ 0, RenderableItem::Borrowed(status));
+            }
+            let composer: RenderableItem<'_> = if composer_right_reserve == 0 {
+                RenderableItem::Borrowed(&self.composer)
+            } else {
+                RenderableItem::Owned(Box::new(ChatComposerRightReserveRenderable {
+                    composer: &self.composer,
+                    right_reserve: composer_right_reserve,
+                }))
+            };
             flex2.push(/*flex*/ 0, composer);
             RenderableItem::Owned(Box::new(flex2))
         }
@@ -1522,7 +1521,6 @@ impl BottomPane {
 struct ChatComposerRightReserveRenderable<'a> {
     composer: &'a chat_composer::ChatComposer,
     right_reserve: u16,
-    status: Option<&'a StatusIndicatorWidget>,
 }
 
 impl Renderable for ChatComposerRightReserveRenderable<'_> {
@@ -1533,18 +1531,6 @@ impl Renderable for ChatComposerRightReserveRenderable<'_> {
             /*mask_char*/ None,
             self.right_reserve,
         );
-        if let Some(status) = self.status
-            && !area.is_empty()
-        {
-            let rail = Rect::new(
-                area.x,
-                area.bottom().saturating_sub(1),
-                area.width,
-                /*height*/ 1,
-            );
-            Clear.render(rail, buf);
-            status.render(rail, buf);
-        }
     }
 
     fn desired_height(&self, width: u16) -> u16 {

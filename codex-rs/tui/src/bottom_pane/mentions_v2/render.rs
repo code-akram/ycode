@@ -1,6 +1,5 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
@@ -176,7 +175,7 @@ fn content_line(
 fn primary_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
     if let Some(file_name) = file_name(row) {
         let style = if row.mention_type == MentionType::File {
-            base_style.fg(Color::Cyan)
+            base_style.patch(crate::style::operational_reference_style())
         } else {
             base_style
         };

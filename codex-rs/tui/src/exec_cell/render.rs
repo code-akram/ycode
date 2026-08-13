@@ -24,6 +24,7 @@ use codex_utils_elapsed::format_duration;
 use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::style::Modifier;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
@@ -333,7 +334,10 @@ impl ExecCell {
 
             for (title, line) in call_lines {
                 let line = Line::from(line);
-                let initial_indent = Line::from(vec![title.cyan(), " ".into()]);
+                let initial_indent = Line::from(vec![
+                    title.set_style(crate::style::operational_reference_style()),
+                    " ".into(),
+                ]);
                 let subsequent_indent = " ".repeat(initial_indent.width()).into();
                 let wrapped = adaptive_wrap_line(
                     &line,

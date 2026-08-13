@@ -8,6 +8,7 @@ use super::*;
 use crate::config_update::format_config_error;
 use crate::pager_overlay::TranscriptHistoryState;
 use crate::runtime_session::ForkGoalContinuation;
+use ratatui::style::Styled;
 
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
@@ -226,7 +227,9 @@ impl App {
                                         if let Some(command) = summary.resume_hint {
                                             let spans = vec![
                                                 "To continue this session, run ".into(),
-                                                command.cyan(),
+                                                command.set_style(
+                                                    crate::style::operational_reference_style(),
+                                                ),
                                             ];
                                             lines.push(spans.into());
                                         }

@@ -40,11 +40,13 @@ use crate::key_hint;
 use crate::key_hint::KeyBinding;
 use crate::key_hint::ShortcutHint;
 use crate::render::line_utils::prefix_lines;
+#[cfg(test)]
 use crate::status::format_tokens_compact;
 use crate::ui_consts::FOOTER_INDENT_COLS;
 use crossterm::event::KeyCode;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -409,7 +411,11 @@ pub(crate) fn status_line_right_indicator_line(
     ide_context_active: bool,
 ) -> Option<Line<'static>> {
     let primary_indicator = goal_status_indicator_line(goal_status_indicator);
-    let ide_context_indicator = ide_context_active.then(|| Line::from(vec!["IDE context".cyan()]));
+    let ide_context_indicator = ide_context_active.then(|| {
+        Line::from(vec![
+            "IDE context".set_style(crate::style::operational_reference_style()),
+        ])
+    });
     let mut line: Option<Line<'static>> = None;
 
     for indicator in [primary_indicator, ide_context_indicator]
@@ -538,7 +544,7 @@ pub(crate) fn render_footer_hint_items(area: Rect, buf: &mut Buffer, items: &[(S
 /// formats the chosen/default content.
 fn footer_from_props_lines(
     props: &FooterProps,
-    show_shortcuts_hint: bool,
+    _show_shortcuts_hint: bool,
     show_queue_hint: bool,
 ) -> Vec<Line<'static>> {
     let key_hints = props.key_hints;
@@ -552,16 +558,7 @@ fn footer_from_props_lines(
             vec![quit_shortcut_reminder_line(props.quit_shortcut_key)]
         }
         FooterMode::HistorySearch => vec![Line::from("reverse-i-search: ").dim()],
-        FooterMode::ComposerEmpty => {
-            let state = LeftSideState {
-                hint: if show_shortcuts_hint {
-                    SummaryHintKind::Shortcuts
-                } else {
-                    SummaryHintKind::None
-                },
-            };
-            vec![left_side_line(state, key_hints)]
-        }
+        FooterMode::ComposerEmpty => Vec::new(),
         FooterMode::ShortcutOverlay => {
             let state = ShortcutsState {
                 use_shift_enter_hint: props.use_shift_enter_hint,
@@ -574,14 +571,11 @@ fn footer_from_props_lines(
         }
         FooterMode::EscHint => vec![esc_hint_line(props.esc_backtrack_hint)],
         FooterMode::ComposerHasDraft => {
+            if !show_queue_hint {
+                return Vec::new();
+            }
             let state = LeftSideState {
-                hint: if show_queue_hint {
-                    SummaryHintKind::QueueMessage
-                } else if show_shortcuts_hint {
-                    SummaryHintKind::Shortcuts
-                } else {
-                    SummaryHintKind::None
-                },
+                hint: SummaryHintKind::QueueMessage,
             };
             vec![left_side_line(state, key_hints)]
         }
@@ -754,7 +748,7 @@ fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         "customize shortcuts with ".into(),
-        "/keymap".cyan(),
+        "/keymap".set_style(crate::style::operational_reference_style()),
     ]));
     lines
 }
@@ -806,6 +800,7 @@ fn build_columns(entries: Vec<Line<'static>>) -> Vec<Line<'static>> {
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn context_window_line(percent: Option<i64>, used_tokens: Option<i64>) -> Line<'static> {
     if let Some(percent) = percent {
         let percent = percent.clamp(0, 100);

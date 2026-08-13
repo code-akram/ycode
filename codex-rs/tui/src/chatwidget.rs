@@ -120,6 +120,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Text;
@@ -656,7 +657,7 @@ fn token_usage_info_from_cli_runtime(token_usage: ThreadTokenUsage) -> TokenUsag
 
 impl ChatWidget {
     pub(crate) fn history_wrap_width(&self, width: u16) -> u16 {
-        width.max(1)
+        crate::transcript_gutter::layout(width).content_width
     }
 
     /// Stores or overwrites the cached nickname and role for a collab agent thread.
@@ -789,7 +790,9 @@ impl ChatWidget {
             subtitle: Some("Memories are currently disabled in your config.".to_string()),
             footer_note: Some(Line::from(vec![
                 "Learn more: ".dim(),
-                MEMORIES_DOC_URL.cyan().underlined(),
+                MEMORIES_DOC_URL
+                    .set_style(crate::style::operational_reference_style())
+                    .underlined(),
             ])),
             footer_hint: Some(standard_popup_hint_line()),
             items,
@@ -1100,10 +1103,14 @@ impl ChatWidget {
         let mut line = vec![
             "• ".into(),
             "Session renamed to ".into(),
-            name.to_string().cyan(),
+            name.to_string()
+                .set_style(crate::style::operational_reference_style()),
         ];
         if let Some(hint) = resume_hint(Some(name), thread_id) {
-            line.extend([". To resume this session run ".into(), hint.cyan()]);
+            line.extend([
+                ". To resume this session run ".into(),
+                hint.set_style(crate::style::operational_reference_style()),
+            ]);
         }
         PlainHistoryCell::new(vec![line.into()])
     }

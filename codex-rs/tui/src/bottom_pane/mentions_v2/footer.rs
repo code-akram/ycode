@@ -1,6 +1,7 @@
 use crossterm::event::KeyCode;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Widget;
@@ -68,7 +69,9 @@ fn search_mode_indicator_line(active_search_mode: SearchMode) -> Line<'static> {
         if search_mode == active_search_mode {
             let label = format!("[{}]", search_mode.label());
             let span = match search_mode {
-                SearchMode::Results | SearchMode::FilesystemOnly => label.cyan().bold(),
+                SearchMode::Results | SearchMode::FilesystemOnly => {
+                    label.set_style(crate::style::operational_accent_style())
+                }
                 SearchMode::Tools => label.magenta().bold(),
             };
             spans.push(span);

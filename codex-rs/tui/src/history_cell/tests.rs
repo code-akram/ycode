@@ -254,7 +254,7 @@ fn final_message_separator_uses_mini_turn_summary_grammar() {
     let cell = FinalMessageSeparator::new("gpt-5.6".to_string(), Some(61));
     let rendered = render_lines(&cell.display_lines(/*width*/ 200));
 
-    assert_eq!(rendered, vec!["▣ Build · gpt-5.6 · 1m 01s"]);
+    assert_eq!(rendered, vec!["gpt-5.6 · 1m 01s"]);
     assert_eq!(render_lines(&cell.raw_lines()), rendered);
 }
 
@@ -1149,6 +1149,37 @@ fn user_history_cell_trims_trailing_blank_message_lines_with_text_elements() {
         .count();
     assert_eq!(trailing_blank_count, 1);
     assert!(rendered.iter().any(|line| line.contains("tokenized")));
+}
+
+#[test]
+fn user_prompt_chevron_wrapped_multiline_text_and_elements_share_human_teal() {
+    let message = "human intent with a styled reference\nand a wide 界 continuation".to_string();
+    let cell = UserHistoryCell {
+        message,
+        text_elements: vec![TextElement::new(
+            (20..36).into(),
+            Some("a styled reference".to_string()),
+        )],
+        local_image_paths: Vec::new(),
+        remote_image_urls: Vec::new(),
+    };
+
+    let rendered = cell.display_lines(/*width*/ 24);
+    let prompt_lines = rendered
+        .iter()
+        .filter(|line| !line.to_string().trim().is_empty())
+        .collect::<Vec<_>>();
+    assert!(prompt_lines.len() >= 3, "expected wrapped multiline prompt");
+    assert!(prompt_lines[0].to_string().starts_with("› "));
+    let expected = prompt_lines[0].spans[0]
+        .style
+        .fg
+        .or(prompt_lines[0].style.fg);
+    for line in prompt_lines {
+        for span in &line.spans {
+            assert_eq!(span.style.fg.or(line.style.fg), expected, "span={span:?}");
+        }
+    }
 }
 
 #[test]

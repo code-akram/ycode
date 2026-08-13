@@ -1,6 +1,7 @@
 //! Model and reasoning popups for `ChatWidget`.
 
 use super::*;
+use ratatui::text::Span;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 
@@ -417,7 +418,10 @@ impl ChatWidget {
 
         let mut header = ColumnRenderable::new();
         header.push(Line::from("Advanced Reasoning".bold()));
-        header.push(Line::from("⚠ Consumes usage limits faster".cyan()));
+        header.push(Line::from(Span::styled(
+            "⚠ Consumes usage limits faster",
+            crate::style::operational_reference_style(),
+        )));
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
             footer_hint: Some(standard_popup_hint_line()),

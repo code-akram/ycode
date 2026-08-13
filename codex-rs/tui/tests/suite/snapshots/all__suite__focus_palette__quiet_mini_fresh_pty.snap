@@ -1,0 +1,7 @@
+---
+source: tui/tests/suite/focus_palette.rs
+expression: fresh
+---
+  ycode
+  ~/code/ycode
+Ask anything... "Fix a TODO in the codebase"

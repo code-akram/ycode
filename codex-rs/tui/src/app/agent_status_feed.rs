@@ -9,6 +9,7 @@ use codex_cli_protocol::CollabAgentTool;
 use codex_cli_protocol::ServerNotification;
 use codex_cli_protocol::SubAgentActivityKind;
 use codex_cli_protocol::ThreadItem;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::collections::HashSet;
@@ -112,7 +113,11 @@ impl AgentStatusThreadPreview {
     }
 
     fn title_line(&self) -> Line<'static> {
-        vec!["  • ".dim(), format!("`{}`", self.agent_path).cyan()].into()
+        vec![
+            "  • ".dim(),
+            format!("`{}`", self.agent_path).set_style(crate::style::operational_reference_style()),
+        ]
+        .into()
     }
 
     fn preview_lines(&self, width: u16) -> Vec<Line<'static>> {

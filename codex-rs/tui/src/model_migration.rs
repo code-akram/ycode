@@ -110,7 +110,7 @@ pub(crate) fn migration_copy_for_models(
     if let Some(model_link) = model_link {
         content.push(Line::from(vec![
             format!("{description_line} Learn more about {target_display_name} at ").into(),
-            model_link.cyan().underlined(),
+            Span::styled(model_link, crate::style::operational_reference_style()).underlined(),
         ]));
         content.push(Line::from(""));
     } else {

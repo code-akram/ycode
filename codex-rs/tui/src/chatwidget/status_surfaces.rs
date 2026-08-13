@@ -71,7 +71,7 @@ impl ChatWidget {
         Self::status_line_reasoning_effort_label(effort.as_ref())
     }
 
-    fn model_with_reasoning_display_name(&self) -> String {
+    pub(super) fn model_with_reasoning_display_name(&self) -> String {
         let service_tier_label = self
             .current_service_tier()
             .and_then(|service_tier| {
@@ -83,18 +83,17 @@ impl ChatWidget {
             .filter(|_| self.has_chatgpt_account)
             .map(|tier| format!(" {tier}"))
             .unwrap_or_default();
-        format!(
-            "{} {}{service_tier_label}",
+        format_model_reasoning_label(
             self.model_display_name(),
-            self.reasoning_display_name()
+            &self.reasoning_display_name(),
+            &service_tier_label,
         )
     }
 
     fn refresh_fixed_status_line(&mut self) {
-        self.bottom_pane.set_status_line_enabled(true);
+        self.bottom_pane.set_status_line_enabled(false);
         self.set_status_line(/*status_line*/ None);
-        self.bottom_pane
-            .set_model_label(Some(self.model_with_reasoning_display_name()));
+        self.bottom_pane.set_model_label(/*model_label*/ None);
         self.set_status_line_hyperlink(/*url*/ None);
     }
 
@@ -152,6 +151,34 @@ impl ChatWidget {
             TerminalTitleStatusKind::WaitingForBackgroundTerminal => "Waiting".to_string(),
             TerminalTitleStatusKind::Thinking => "Thinking".to_string(),
         }
+    }
+}
+
+fn format_model_reasoning_label(model: &str, reasoning: &str, service_tier_label: &str) -> String {
+    let already_contains_reasoning = model
+        .split(|character: char| !character.is_alphanumeric())
+        .any(|part| part.eq_ignore_ascii_case(reasoning));
+    if already_contains_reasoning {
+        format!("{model}{service_tier_label}")
+    } else {
+        format!("{model} {reasoning}{service_tier_label}")
+    }
+}
+
+#[cfg(test)]
+mod completed_turn_metadata_tests {
+    use super::format_model_reasoning_label;
+
+    #[test]
+    fn reasoning_is_added_once_and_service_tier_is_preserved() {
+        assert_eq!(
+            format_model_reasoning_label("gpt-5.6-luna", "medium", " Fast"),
+            "gpt-5.6-luna medium Fast"
+        );
+        assert_eq!(
+            format_model_reasoning_label("gpt-5.6-luna medium", "medium", " Fast"),
+            "gpt-5.6-luna medium Fast"
+        );
     }
 }
 

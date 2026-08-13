@@ -237,11 +237,7 @@ impl App {
                 .rposition(|cell| cell.as_any().is::<SessionInfoCell>())
                 .map_or(/*default*/ 0, |index| index.saturating_add(/*rhs*/ 1));
             self.transcript_cells.splice(index..index, cells);
-            let wrap_width = self.chat_widget.history_wrap_width(width);
-            let rendered_rows = self
-                .render_transcript_lines_for_reflow(wrap_width)
-                .lines
-                .len();
+            let rendered_rows = self.render_transcript_lines_for_reflow(width).lines.len();
             self.schedule_immediate_resize_reflow(tui);
             if self.scrollback_history_needs_top_up(rendered_rows)
                 && self.request_older_history_page(cli_runtime, thread_id)

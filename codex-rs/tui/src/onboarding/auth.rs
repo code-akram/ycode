@@ -24,6 +24,7 @@ use ratatui::prelude::Widget;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -349,8 +350,11 @@ impl AuthModeWidget {
 
             let line1 = if is_selected {
                 Line::from(vec![
-                    format!("{caret} {index}. ", index = idx + 1).cyan().dim(),
-                    text.to_string().cyan(),
+                    format!("{caret} {index}. ", index = idx + 1)
+                        .set_style(crate::style::operational_reference_style())
+                        .dim(),
+                    text.to_string()
+                        .set_style(crate::style::operational_accent_style()),
                 ])
             } else {
                 format!("  {index}. {text}", index = idx + 1).into()
@@ -358,8 +362,7 @@ impl AuthModeWidget {
 
             let line2 = if is_selected {
                 Line::from(format!("     {description}"))
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::DIM)
+                    .style(crate::style::operational_reference_style().dim())
             } else {
                 Line::from(format!("     {description}"))
                     .style(Style::default().add_modifier(Modifier::DIM))
@@ -435,14 +438,18 @@ impl AuthModeWidget {
             lines.push("".into());
             lines.push(Line::from(vec![
                 "  ".into(),
-                state.auth_url.as_str().cyan().underlined(),
+                state
+                    .auth_url
+                    .as_str()
+                    .set_style(crate::style::operational_reference_style())
+                    .underlined(),
             ]));
             lines.push("".into());
             lines.push(Line::from(vec![
                 "  On a remote or headless machine? Press ".into(),
                 self.cancel_binding().into(),
                 " and choose ".into(),
-                "Sign in with Device Code".cyan(),
+                "Sign in with Device Code".set_style(crate::style::operational_reference_style()),
                 ".".into(),
             ]));
             lines.push("".into());
@@ -460,7 +467,7 @@ impl AuthModeWidget {
             .wrap(Wrap { trim: false })
             .render(area, buf);
 
-        // Wrap cyan+underlined URL cells with OSC 8 so the terminal treats
+        // Wrap operational-blue underlined URL cells with OSC 8 so the terminal treats
         // the entire region as a single clickable hyperlink.
         if let Some(url) = &auth_url {
             mark_url_hyperlink(buf, area, url);
@@ -503,9 +510,9 @@ impl AuthModeWidget {
             preferences_line,
             "".into(),
             HyperlinkLine::new(Line::from(vec![
-                "  Press ".fg(Color::Cyan),
+                "  Press ".set_style(crate::style::operational_reference_style()),
                 self.confirm_binding().into(),
-                " to continue".fg(Color::Cyan),
+                " to continue".set_style(crate::style::operational_reference_style()),
             ])),
         ];
 
@@ -996,16 +1003,19 @@ mod tests {
     }
 
     #[test]
-    fn mark_url_hyperlink_wraps_cyan_underlined_cells() {
+    fn mark_url_hyperlink_wraps_operational_blue_underlined_cells() {
         let url = "https://example.com";
         let area = Rect::new(0, 0, 20, 1);
         let mut buf = Buffer::empty(area);
 
-        // Manually write some cyan+underlined characters to simulate a rendered URL.
+        // Manually write operational-blue underlined characters to simulate a rendered URL.
+        let link_color = crate::style::operational_reference_style()
+            .fg
+            .expect("operational style has a foreground");
         for (i, ch) in "example".chars().enumerate() {
             let cell = &mut buf[(i as u16, 0)];
             cell.set_symbol(&ch.to_string());
-            cell.fg = Color::Cyan;
+            cell.fg = link_color;
             cell.modifier = Modifier::UNDERLINED;
         }
         // Leave a plain cell that should NOT be marked.
@@ -1013,7 +1023,7 @@ mod tests {
 
         mark_url_hyperlink(&mut buf, area, url);
 
-        // Each cyan+underlined cell should now carry the OSC 8 wrapper.
+        // Each operational-blue underlined cell should now carry the OSC 8 wrapper.
         let found = collect_osc8_chars(&buf, area, url);
         assert_eq!(found, "example");
 
@@ -1026,10 +1036,12 @@ mod tests {
         let area = Rect::new(0, 0, 10, 1);
         let mut buf = Buffer::empty(area);
 
-        // One cyan+underlined cell to mark.
+        // One operational-blue underlined cell to mark.
         let cell = &mut buf[(0, 0)];
         cell.set_symbol("a");
-        cell.fg = Color::Cyan;
+        cell.fg = crate::style::operational_reference_style()
+            .fg
+            .expect("operational style has a foreground");
         cell.modifier = Modifier::UNDERLINED;
 
         // URL contains ESC and BEL that could break the OSC 8 sequence.

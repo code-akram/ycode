@@ -17,15 +17,13 @@ impl App {
             self.insert_history_cell_lines_with_initial_replay_buffer(
                 tui,
                 cell.as_ref(),
-                self.chat_widget
-                    .history_wrap_width(tui.terminal.last_known_screen_size.width),
+                tui.terminal.last_known_screen_size.width,
             );
         } else {
             self.insert_history_cell_lines(
                 tui,
                 cell.as_ref(),
-                self.chat_widget
-                    .history_wrap_width(tui.terminal.last_known_screen_size.width),
+                tui.terminal.last_known_screen_size.width,
             );
         }
         // A committed cell can unblock a settled /usage card that was waiting
@@ -98,10 +96,11 @@ impl App {
     }
 
     pub(super) fn queue_clear_ui_header(&mut self, tui: &mut tui::Tui) {
-        let width = self
-            .chat_widget
-            .history_wrap_width(tui.terminal.last_known_screen_size.width);
-        let header_lines = self.clear_ui_header_lines(width);
+        let width = tui.terminal.last_known_screen_size.width;
+        let header_lines = crate::transcript_gutter::prefix_lines(
+            self.clear_ui_header_lines(self.chat_widget.history_wrap_width(width)),
+            width,
+        );
         if !header_lines.is_empty() {
             tui.insert_history_lines(header_lines);
             self.has_emitted_history_lines = true;

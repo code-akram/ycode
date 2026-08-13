@@ -36,7 +36,11 @@ impl HistoryCell for SafetyAccessBlockCell {
 
     fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         let mut lines = vec![HyperlinkLine::new(
-            vec!["ⓘ ".cyan(), SAFETY_ACCESS_BLOCK_TITLE.bold()].into(),
+            vec![
+                Span::styled("ⓘ ", crate::style::operational_reference_style()),
+                SAFETY_ACCESS_BLOCK_TITLE.bold(),
+            ]
+            .into(),
         )];
         let body = Line::from(vec!["  ".into(), self.body.dim()]);
         let wrap_width = width.saturating_sub(2).max(1) as usize;
@@ -53,7 +57,11 @@ impl HistoryCell for SafetyAccessBlockCell {
             ("Learn more", SAFETY_ACCESS_BLOCK_LEARN_MORE_URL),
         ] {
             let source = crate::terminal_hyperlinks::annotate_web_urls_in_line(
-                vec![format!("  {label}: ").dim(), url.cyan().underlined()].into(),
+                vec![
+                    format!("  {label}: ").dim(),
+                    Span::styled(url, crate::style::operational_reference_style()).underlined(),
+                ]
+                .into(),
             );
             let wrapped = crate::wrapping::word_wrap_line(
                 &source.line,

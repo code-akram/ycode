@@ -4,6 +4,7 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -76,20 +77,27 @@ impl KeymapDebugView {
 
         let Some(report) = &self.last_report else {
             lines.push(Line::from(""));
-            lines.push(Line::from("Waiting for a keypress...".cyan()));
+            lines.push(Line::from(
+                "Waiting for a keypress...".set_style(crate::style::operational_reference_style()),
+            ));
             return lines;
         };
 
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             "Detected: ".dim(),
-            report.detected.display_label().cyan(),
+            report
+                .detected
+                .display_label()
+                .set_style(crate::style::operational_reference_style()),
         ]));
         match &report.config_key {
             Ok(config_key) => {
                 lines.push(Line::from(vec![
                     "Config key: ".dim(),
-                    config_key.clone().cyan(),
+                    config_key
+                        .clone()
+                        .set_style(crate::style::operational_reference_style()),
                 ]));
             }
             Err(error) => {

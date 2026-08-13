@@ -40,6 +40,7 @@ use codex_config::types::TuiKeymap;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
@@ -84,15 +85,17 @@ fn key_binding_span(binding: &str) -> ratatui::text::Span<'static> {
     if binding == "unbound" {
         binding.to_string().dim()
     } else {
-        binding.to_string().cyan()
+        binding
+            .to_string()
+            .set_style(crate::style::operational_reference_style())
     }
 }
 
 fn keymap_action_menu_hint_line() -> Line<'static> {
     Line::from(vec![
-        "enter".cyan(),
+        "enter".set_style(crate::style::operational_reference_style()),
         " select · ".dim(),
-        "esc".cyan(),
+        "esc".set_style(crate::style::operational_reference_style()),
         " back".dim(),
     ])
 }
@@ -175,7 +178,7 @@ pub(crate) fn build_keymap_action_menu_params(
     let remove_action = action.clone();
     let config_path = format!("tui.keymap.{context}.{action}");
     let source = if custom_binding {
-        "Custom root override".cyan()
+        "Custom root override".set_style(crate::style::operational_reference_style())
     } else {
         "Default keymap".dim()
     };
@@ -194,7 +197,7 @@ pub(crate) fn build_keymap_action_menu_params(
     ]));
     header.push(Line::from(vec![
         "Config ".dim(),
-        format!("`{config_path}`").cyan(),
+        format!("`{config_path}`").set_style(crate::style::operational_reference_style()),
     ]));
     header.push(Line::from(description.to_string().dim()));
 
@@ -325,7 +328,7 @@ pub(crate) fn build_keymap_action_menu_params(
         header: Box::new(header),
         footer_note: Some(Line::from(vec![
             "Changes write the root ".dim(),
-            "`tui.keymap.*`".cyan(),
+            "`tui.keymap.*`".set_style(crate::style::operational_reference_style()),
             " override.".dim(),
         ])),
         footer_hint: Some(keymap_action_menu_hint_line()),

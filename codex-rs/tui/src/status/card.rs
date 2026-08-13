@@ -589,13 +589,21 @@ impl HistoryCell for StatusHistoryCell {
         let value_width = formatter.value_width(available_inner_width);
 
         let note_first_line = Line::from(vec![
-            Span::from("Visit ").cyan(),
-            CHATGPT_USAGE_URL.cyan().underlined(),
-            Span::from(" for up-to-date").cyan(),
+            Span::styled("Visit ", crate::style::operational_reference_style()),
+            Span::styled(
+                CHATGPT_USAGE_URL,
+                crate::style::operational_reference_style(),
+            )
+            .underlined(),
+            Span::styled(
+                " for up-to-date",
+                crate::style::operational_reference_style(),
+            ),
         ]);
-        let note_second_line = Line::from(vec![
-            Span::from("information on rate limits and credits").cyan(),
-        ]);
+        let note_second_line = Line::from(vec![Span::styled(
+            "information on rate limits and credits",
+            crate::style::operational_reference_style(),
+        )]);
         let note_lines = adaptive_wrap_lines(
             [note_first_line, note_second_line],
             RtOptions::new(available_inner_width),

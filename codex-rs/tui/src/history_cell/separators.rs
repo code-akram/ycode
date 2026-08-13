@@ -22,7 +22,7 @@ impl FinalMessageSeparator {
         let duration = crate::status_indicator_widget::fmt_elapsed_compact(
             self.elapsed_seconds.unwrap_or_default(),
         );
-        Line::from(format!("▣ Build · {} · {duration}", self.model)).dim()
+        Line::from(format!("{} · {duration}", self.model)).dim()
     }
 }
 impl HistoryCell for FinalMessageSeparator {
@@ -35,7 +35,7 @@ impl HistoryCell for FinalMessageSeparator {
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
         vec![Line::from(format!(
-            "▣ Build · {} · {}",
+            "{} · {}",
             self.model,
             crate::status_indicator_widget::fmt_elapsed_compact(
                 self.elapsed_seconds.unwrap_or_default(),

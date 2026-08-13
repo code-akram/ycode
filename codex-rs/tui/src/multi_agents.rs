@@ -309,7 +309,10 @@ fn sub_agent_activity_title(kind: SubAgentActivityKind, agent_path: &str) -> Lin
     };
     title_spans_line(vec![
         Span::from(prefix).bold(),
-        Span::from(format!("`{path}`")).cyan(),
+        Span::styled(
+            format!("`{path}`"),
+            crate::style::operational_reference_style(),
+        ),
     ])
 }
 
@@ -493,11 +496,20 @@ fn agent_label_spans(agent: AgentLabel<'_>) -> Vec<Span<'static>> {
     let role = agent.role.map(str::trim).filter(|role| !role.is_empty());
 
     if let Some(nickname) = nickname {
-        spans.push(Span::from(nickname.to_string()).cyan().bold());
+        spans.push(Span::styled(
+            nickname.to_string(),
+            crate::style::operational_accent_style(),
+        ));
     } else if let Some(thread_id) = agent.thread_id {
-        spans.push(Span::from(thread_id.to_string()).cyan());
+        spans.push(Span::styled(
+            thread_id.to_string(),
+            crate::style::operational_reference_style(),
+        ));
     } else {
-        spans.push(Span::from("agent").cyan());
+        spans.push(Span::styled(
+            "agent",
+            crate::style::operational_reference_style(),
+        ));
     }
 
     if let Some(role) = role {
@@ -605,8 +617,14 @@ fn status_summary_line(status: Option<&CollabAgentState>, fallback_error: &str) 
 
 fn status_summary_spans(status: &CollabAgentState) -> Vec<Span<'static>> {
     match status.status {
-        CollabAgentStatus::PendingInit => vec![Span::from("Pending init").cyan()],
-        CollabAgentStatus::Running => vec![Span::from("Running").cyan().bold()],
+        CollabAgentStatus::PendingInit => vec![Span::styled(
+            "Pending init",
+            crate::style::operational_reference_style(),
+        )],
+        CollabAgentStatus::Running => vec![Span::styled(
+            "Running",
+            crate::style::operational_accent_style(),
+        )],
         // Allow `.yellow()`
         #[allow(clippy::disallowed_methods)]
         CollabAgentStatus::Interrupted => vec![Span::from("Interrupted").yellow()],
@@ -845,7 +863,10 @@ mod tests {
         let lines = cell.display_lines(/*width*/ 200);
         let title = &lines[0];
         assert_eq!(title.spans[2].content.as_ref(), "Robie");
-        assert_eq!(title.spans[2].style.fg, Some(Color::Cyan));
+        assert_eq!(
+            title.spans[2].style.fg,
+            crate::style::operational_accent_style().fg
+        );
         assert!(title.spans[2].style.add_modifier.contains(Modifier::BOLD));
         assert_eq!(title.spans[4].content.as_ref(), "[explorer]");
         assert_eq!(title.spans[4].style.fg, None);

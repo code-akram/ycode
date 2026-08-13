@@ -54,8 +54,6 @@ use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::user_input::TextElement;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use ratatui::prelude::*;
-use ratatui::style::Color;
-use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;

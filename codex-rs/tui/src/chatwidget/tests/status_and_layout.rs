@@ -1959,7 +1959,7 @@ async fn stream_error_updates_status_indicator() {
         .status_widget()
         .expect("status indicator should be visible");
     assert_eq!(status.header(), msg);
-    assert_eq!(status.details(), Some(details));
+    assert_eq!(status.details(), None);
 }
 
 #[tokio::test]
@@ -1980,7 +1980,7 @@ async fn stream_error_restores_hidden_status_indicator() {
         .status_widget()
         .expect("status indicator should be visible");
     assert_eq!(status.header(), msg);
-    assert_eq!(status.details(), Some(details));
+    assert_eq!(status.details(), None);
 }
 
 #[tokio::test]

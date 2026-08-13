@@ -1,6 +1,7 @@
 //! Session configuration and thread-header orchestration for `ChatWidget`.
 
 use super::*;
+use ratatui::style::Styled;
 
 impl ChatWidget {
     fn on_session_configured_with_display_and_fork_parent_title(
@@ -148,9 +149,9 @@ impl ChatWidget {
             vec![
                 "• ".dim(),
                 "Thread forked from ".into(),
-                name.cyan(),
+                name.set_style(crate::style::operational_reference_style()),
                 " (".into(),
-                forked_from_id_text.cyan(),
+                forked_from_id_text.set_style(crate::style::operational_reference_style()),
                 ")".into(),
             ]
             .into()
@@ -158,7 +159,7 @@ impl ChatWidget {
             vec![
                 "• ".dim(),
                 "Thread forked from ".into(),
-                forked_from_id_text.cyan(),
+                forked_from_id_text.set_style(crate::style::operational_reference_style()),
             ]
             .into()
         };

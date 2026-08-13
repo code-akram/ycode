@@ -30,7 +30,7 @@ impl MentionType {
     pub(super) fn span(self, base_style: Style) -> Span<'static> {
         let style = match self {
             Self::Skill => base_style.dim(),
-            Self::File => base_style.cyan(),
+            Self::File => base_style.patch(crate::style::operational_reference_style()),
             Self::Directory => base_style,
         };
         format!("{:<width$}", self.label(), width = TAG_WIDTH).set_style(style)

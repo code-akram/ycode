@@ -30,6 +30,7 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+#[cfg(test)]
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::widgets::StatefulWidgetRef;
@@ -2069,7 +2070,7 @@ impl TextArea {
                 }
                 let styled = &self.text[overlap_start..overlap_end];
                 let x_off = display_width(&self.text[line_range.start..overlap_start]) as u16;
-                let style = base_style.fg(Color::Cyan);
+                let style = base_style.patch(crate::style::operational_reference_style());
                 buf.set_stringn(
                     area.x + x_off,
                     y,

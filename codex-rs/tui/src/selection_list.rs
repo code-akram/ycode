@@ -26,7 +26,7 @@ pub(crate) fn selection_option_row_with_dim(
         format!("  {}. ", index + 1)
     };
     let style = if is_selected {
-        Style::default().cyan()
+        crate::style::operational_reference_style()
     } else if dim {
         Style::default().dim()
     } else {

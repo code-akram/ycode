@@ -1,5 +1,6 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -288,7 +289,7 @@ impl RequestUserInputOverlay {
             let question_line = if answered {
                 Line::from(line.clone())
             } else {
-                Line::from(line.clone()).cyan()
+                Line::from(line.clone()).style(crate::style::operational_reference_style())
             };
             Paragraph::new(question_line).render(
                 Rect {
@@ -363,7 +364,11 @@ impl RequestUserInputOverlay {
                     spans.push(TIP_SEPARATOR.into());
                 }
                 if tip.highlight {
-                    spans.push(tip.text.cyan().bold().not_dim());
+                    spans.push(
+                        tip.text
+                            .set_style(crate::style::operational_accent_style())
+                            .not_dim(),
+                    );
                 } else {
                     spans.push(tip.text.into());
                 }

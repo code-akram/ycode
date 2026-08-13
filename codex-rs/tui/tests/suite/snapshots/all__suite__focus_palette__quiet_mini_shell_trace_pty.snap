@@ -1,0 +1,9 @@
+---
+source: tui/tests/suite/focus_palette.rs
+expression: completed
+---
+  ycode
+  ~/code/ycode
+  • You ran sleep 2.4
+    └ (no output)
+  gpt-5.6-terra default · 2s

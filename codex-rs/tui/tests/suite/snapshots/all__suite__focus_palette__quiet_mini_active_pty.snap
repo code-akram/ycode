@@ -1,0 +1,8 @@
+---
+source: tui/tests/suite/focus_palette.rs
+expression: compact_screen(&terminal.screen_contents())
+---
+  ycode
+  ~/code/ycode
+  • Running sleep 2.4
+• 2s

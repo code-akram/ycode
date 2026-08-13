@@ -20,6 +20,7 @@ use tempfile::TempDir;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 15);
 const FOCUS_INPUT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 5);
 const FOCUS_PROBE_INPUT: &str = "focus-palette-24527";
+const STATUS_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 8);
 
 #[test]
 fn focus_gained_with_unanswered_palette_queries_preserves_immediate_input() -> Result<()> {
@@ -45,6 +46,100 @@ fn focus_gained_with_unanswered_palette_queries_preserves_immediate_input() -> R
     Ok(())
 }
 
+#[test]
+fn quiet_mini_pty_lifecycle_ticks_without_backend_events_and_restores_terminal() -> Result<()> {
+    let repo_root = codex_utils_cargo_bin::repo_root()?;
+    let codex_home = tempfile::tempdir()?;
+    write_test_config(codex_home.path(), &repo_root)?;
+
+    let mut terminal = PtyCodex::start(&repo_root, codex_home)?;
+    terminal.wait_for_startup()?;
+
+    let fresh = compact_screen(&terminal.screen_contents());
+    insta::assert_snapshot!("quiet_mini_fresh_pty", fresh);
+    ensure!(!terminal.screen_contains("context left"));
+    ensure!(!terminal.screen_contains("/ commands"));
+    ensure!(!terminal.screen_contains("gpt-5.6-terra"));
+    ensure!(
+        !contains_bytes(&terminal.output, b"\x1b[?1049h"),
+        "fresh inline chat unexpectedly entered the alternate screen"
+    );
+
+    terminal.write_input(b"!sleep 2.4\r")?;
+    let started = Instant::now();
+    let mut observed = [None, None, None];
+    while started.elapsed() < STATUS_TIMEOUT && observed[2].is_none() {
+        terminal.read_output(Duration::from_millis(/*millis*/ 20))?;
+        let screen = terminal.screen_contents();
+        for second in 0..=2 {
+            let suffix = format!(" {second}s");
+            if status_line(&screen).is_some_and(|line| line.ends_with(&suffix))
+                && observed[second].is_none()
+            {
+                observed[second] = Some(started.elapsed());
+            }
+        }
+    }
+    ensure!(
+        observed.iter().all(Option::is_some),
+        "silent shell work did not visibly progress through 0s/1s/2s: {observed:?}; screen:\n{}",
+        terminal.screen_contents(),
+    );
+    let zero_seconds = observed[0].expect("checked above");
+    let one_second = observed[1].expect("checked above");
+    let two_seconds = observed[2].expect("checked above");
+    ensure!(
+        (Duration::from_millis(850)..=Duration::from_millis(1_250))
+            .contains(&(one_second - zero_seconds)),
+        "0s→1s tick cadence was not near one second: {:?}",
+        one_second - zero_seconds,
+    );
+    ensure!(
+        (Duration::from_millis(850)..=Duration::from_millis(1_250))
+            .contains(&(two_seconds - one_second)),
+        "2s tick cadence was not near one second: {:?}",
+        two_seconds - one_second,
+    );
+
+    let screen = terminal.screen_contents();
+    let status = status_line(&screen).context("missing Mini status line")?;
+    ensure!(
+        status.starts_with('•'),
+        "reduced-motion glyph missing: {status:?}"
+    );
+    ensure!(!status.contains("Working"));
+    ensure!(!status.contains('(') && !status.contains(')'));
+    let status_row = screen
+        .lines()
+        .position(|line| line.trim() == status)
+        .context("status row not found")?;
+    let (cursor_row, _) = terminal.parser.screen().cursor_position();
+    ensure!(
+        status_row + 1 == usize::from(cursor_row),
+        "status row must sit immediately above editor cursor: status={status_row}, cursor={cursor_row}"
+    );
+    insta::assert_snapshot!(
+        "quiet_mini_active_pty",
+        compact_screen(&terminal.screen_contents())
+    );
+
+    terminal.resize(/*rows*/ 24, /*cols*/ 80)?;
+    terminal.read_output(Duration::from_millis(/*millis*/ 250))?;
+    ensure!(terminal.parser.screen().size() == (24, 80));
+    ensure!(!contains_bytes(&terminal.output, b"\x1b[?1049h"));
+
+    terminal.wait_for_screen_text("(no output)", STATUS_TIMEOUT)?;
+    terminal.wait_for_screen_text("gpt-5.6-terra default ·", STATUS_TIMEOUT)?;
+    ensure!(
+        status_line(&terminal.screen_contents()).is_none(),
+        "status row remained visible after the completed turn"
+    );
+    let completed = compact_screen(&terminal.screen_contents());
+    insta::assert_snapshot!("quiet_mini_shell_trace_pty", completed);
+    terminal.exit_and_verify_restoration()?;
+    Ok(())
+}
+
 struct PtyCodex {
     master: File,
     child: Child,
@@ -53,6 +148,8 @@ struct PtyCodex {
     cursor_answered: bool,
     palette_answered: bool,
     keyboard_answered: bool,
+    slave_probe: File,
+    initial_lflag: libc::tcflag_t,
     _codex_home: TempDir,
 }
 
@@ -89,6 +186,10 @@ impl PtyCodex {
         let slave = File::from(unsafe { OwnedFd::from_raw_fd(slave_fd) });
         let stdin = slave.try_clone().context("clone pseudo-terminal stdin")?;
         let stdout = slave.try_clone().context("clone pseudo-terminal stdout")?;
+        let slave_probe = slave
+            .try_clone()
+            .context("clone pseudo-terminal restoration probe")?;
+        let initial_lflag = terminal_lflag(&slave_probe)?;
 
         let codex = codex_utils_cargo_bin::cargo_bin("codex-tui")
             .or_else(|_| codex_utils_cargo_bin::cargo_bin("codex"))?;
@@ -114,6 +215,8 @@ impl PtyCodex {
             cursor_answered: false,
             palette_answered: false,
             keyboard_answered: false,
+            slave_probe,
+            initial_lflag,
             _codex_home: codex_home,
         })
     }
@@ -124,10 +227,7 @@ impl PtyCodex {
             self.read_output(Duration::from_millis(/*millis*/ 50))?;
             self.answer_startup_queries()?;
 
-            if self.palette_answered
-                && self.screen_contains("Ask anything...")
-                && self.screen_contains("gpt-5.6-terra")
-            {
+            if self.palette_answered && self.screen_contains("Ask anything...") {
                 return Ok(());
             }
 
@@ -171,6 +271,64 @@ impl PtyCodex {
             FOCUS_INPUT_TIMEOUT,
             self.screen_contents(),
         );
+    }
+
+    fn wait_for_screen_text(&mut self, text: &str, timeout: Duration) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            self.read_output(Duration::from_millis(/*millis*/ 20))?;
+            if self.screen_contains(text) {
+                return Ok(());
+            }
+        }
+        bail!(
+            "screen never contained {text:?}:\n{}",
+            self.screen_contents()
+        )
+    }
+
+    fn resize(&mut self, rows: u16, cols: u16) -> Result<()> {
+        let window_size = libc::winsize {
+            ws_row: rows,
+            ws_col: cols,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        // SAFETY: the master is a valid PTY and `window_size` lives through the ioctl.
+        if unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &window_size) } == -1 {
+            return Err(std::io::Error::last_os_error()).context("resize pseudo-terminal");
+        }
+        // SAFETY: the child pid is live and SIGWINCH requests the ordinary terminal resize path.
+        if unsafe { libc::kill(self.child.id() as libc::pid_t, libc::SIGWINCH) } == -1 {
+            return Err(std::io::Error::last_os_error()).context("signal terminal resize");
+        }
+        self.parser.screen_mut().set_size(rows, cols);
+        Ok(())
+    }
+
+    fn exit_and_verify_restoration(&mut self) -> Result<()> {
+        self.write_input(b"\x03")?;
+        self.read_output(Duration::from_millis(/*millis*/ 100))?;
+        if self.child.try_wait()?.is_none() {
+            self.write_input(b"\x03")?;
+        }
+        let deadline = Instant::now() + Duration::from_secs(/*secs*/ 5);
+        while Instant::now() < deadline {
+            self.read_output(Duration::from_millis(/*millis*/ 20))?;
+            if self.child.try_wait()?.is_some() {
+                let restored = terminal_lflag(&self.slave_probe)?;
+                let restored_bits = libc::ICANON | libc::ECHO;
+                ensure!(
+                    restored & restored_bits == self.initial_lflag & restored_bits,
+                    "terminal canonical/echo flags were not restored"
+                );
+                return Ok(());
+            }
+        }
+        bail!(
+            "Codex did not exit normally after Ctrl-C; screen:\n{}",
+            self.screen_contents()
+        )
     }
 
     fn answer_startup_queries(&mut self) -> Result<()> {
@@ -244,6 +402,32 @@ impl PtyCodex {
     }
 }
 
+fn compact_screen(screen: &str) -> String {
+    screen
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn status_line(screen: &str) -> Option<String> {
+    screen.lines().find_map(|line| {
+        let line = line.trim();
+        let has_activity_glyph = line.starts_with('•')
+            || line
+                .chars()
+                .next()
+                .is_some_and(|character| ('⠁'..='⣿').contains(&character));
+        (has_activity_glyph
+            && line
+                .split_whitespace()
+                .nth(1)
+                .is_some_and(|elapsed| elapsed.ends_with('s')))
+        .then(|| line.to_string())
+    })
+}
+
 impl Drop for PtyCodex {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -266,6 +450,16 @@ fn set_nonblocking(file: &File) -> Result<()> {
         return Err(std::io::Error::last_os_error()).context("set pseudo-terminal nonblocking");
     }
     Ok(())
+}
+
+fn terminal_lflag(file: &File) -> Result<libc::tcflag_t> {
+    let mut attributes = std::mem::MaybeUninit::<libc::termios>::uninit();
+    // SAFETY: `attributes` points to writable storage and the file owns a valid terminal fd.
+    if unsafe { libc::tcgetattr(file.as_raw_fd(), attributes.as_mut_ptr()) } == -1 {
+        return Err(std::io::Error::last_os_error()).context("read pseudo-terminal attributes");
+    }
+    // SAFETY: tcgetattr succeeded and initialized the structure.
+    Ok(unsafe { attributes.assume_init() }.c_lflag)
 }
 
 fn write_test_config(codex_home: &Path, repo_root: &Path) -> Result<()> {

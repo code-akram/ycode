@@ -7,6 +7,7 @@ use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::Widget;
 
@@ -101,7 +102,11 @@ impl MemoriesSettingsView {
             app_event_tx,
             docs_link: Line::from(vec![
                 "Learn more: ".dim(),
-                MEMORIES_DOC_URL.cyan().underlined(),
+                Span::styled(
+                    MEMORIES_DOC_URL,
+                    crate::style::operational_reference_style(),
+                )
+                .underlined(),
             ]),
             keymap,
         };

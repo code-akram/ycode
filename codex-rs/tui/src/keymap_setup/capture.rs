@@ -13,6 +13,7 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -71,7 +72,12 @@ impl KeymapCaptureView {
                 "  ".into(),
                 format!("{}.{}", self.context, self.action).dim(),
             ]),
-            Line::from(vec!["Current: ".dim(), self.current_binding.clone().cyan()]),
+            Line::from(vec![
+                "Current: ".dim(),
+                self.current_binding
+                    .clone()
+                    .set_style(crate::style::operational_reference_style()),
+            ]),
         ];
 
         let instructions = match (self.capture_mode, self.first_stroke.as_deref()) {

@@ -508,7 +508,7 @@ async fn unified_exec_wait_status_header_updates_on_late_command_display() {
         .status_widget()
         .expect("status indicator should be visible");
     assert_eq!(status.header(), "Waiting for background terminal");
-    assert_eq!(status.details(), Some("sleep 5"));
+    assert_eq!(status.details(), None);
 }
 
 #[tokio::test]
@@ -544,7 +544,7 @@ async fn unified_exec_waiting_multiple_empty_snapshots() {
         .status_widget()
         .expect("status indicator should be visible");
     assert_eq!(status.header(), "Waiting for background terminal");
-    assert_eq!(status.details(), Some("just fix"));
+    assert_eq!(status.details(), None);
 
     handle_turn_completed(&mut chat, "turn-wait-3", /*duration_ms*/ None);
 
@@ -610,7 +610,7 @@ async fn unified_exec_non_empty_then_empty_snapshots() {
         .status_widget()
         .expect("status indicator should be visible");
     assert_eq!(status.header(), "Waiting for background terminal");
-    assert_eq!(status.details(), Some("just fix"));
+    assert_eq!(status.details(), None);
     let pre_cells = drain_insert_history(&mut rx);
     let active_combined = pre_cells
         .iter()

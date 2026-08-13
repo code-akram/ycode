@@ -152,6 +152,7 @@ mod terminal_visualization_instructions;
 mod text_formatting;
 mod thread_transcript;
 mod token_usage;
+mod transcript_gutter;
 mod transcript_reflow;
 mod tui;
 mod ui_consts;

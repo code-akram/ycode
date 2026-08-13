@@ -28,7 +28,7 @@ impl HistoryCell for RequestUserInputResultCell {
         let mut header = vec!["•".dim(), " ".into(), "Questions".bold()];
         header.push(format!(" {answered}/{total} answered").dim());
         if self.interrupted {
-            header.push(" (interrupted)".cyan());
+            header.push(" (interrupted)".set_style(crate::style::operational_reference_style()));
         }
 
         let mut lines: Vec<Line<'static>> = vec![header.into()];
@@ -60,7 +60,7 @@ impl HistoryCell for RequestUserInputResultCell {
                     width,
                     "    answer: ".dim(),
                     "            ".dim(),
-                    Style::default().fg(Color::Cyan),
+                    crate::style::operational_reference_style(),
                 ));
                 continue;
             }
@@ -73,7 +73,7 @@ impl HistoryCell for RequestUserInputResultCell {
                     width,
                     "    answer: ".dim(),
                     "            ".dim(),
-                    Style::default().fg(Color::Cyan),
+                    crate::style::operational_reference_style(),
                 ));
             }
             if let Some(note) = note {
@@ -81,13 +81,13 @@ impl HistoryCell for RequestUserInputResultCell {
                     (
                         "    note: ".dim(),
                         "          ".dim(),
-                        Style::default().fg(Color::Cyan),
+                        crate::style::operational_reference_style(),
                     )
                 } else {
                     (
                         "    answer: ".dim(),
                         "            ".dim(),
-                        Style::default().fg(Color::Cyan),
+                        crate::style::operational_reference_style(),
                     )
                 };
                 lines.extend(wrap_with_prefix(&note, width, label, continuation, style));
@@ -99,9 +99,11 @@ impl HistoryCell for RequestUserInputResultCell {
             lines.extend(wrap_with_prefix(
                 &summary,
                 width,
-                "  ↳ ".cyan().dim(),
+                "  ↳ "
+                    .set_style(crate::style::operational_reference_style())
+                    .dim(),
                 "    ".dim(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM),
+                crate::style::operational_reference_style().dim(),
             ));
         }
 

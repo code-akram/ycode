@@ -224,7 +224,6 @@ use super::footer::FooterProps;
 use super::footer::GoalStatusIndicator;
 use super::footer::SummaryLeft;
 use super::footer::can_show_left_with_context;
-use super::footer::context_window_line;
 use super::footer::esc_hint_mode;
 use super::footer::footer_height;
 use super::footer::footer_hint_items_width;
@@ -1276,47 +1275,11 @@ impl ChatComposer {
     }
 
     fn right_footer_line_with_context(&self, max_width: u16) -> Line<'static> {
-        let context = (!self.footer.context_window_pending).then(|| {
-            context_window_line(
-                self.footer.context_window_percent,
-                self.footer.context_window_used_tokens,
-            )
-        });
-        let model = self
-            .footer
-            .model_label
-            .as_ref()
-            .map(|model| Line::from(model.clone()).dim());
-        let command = Line::from(vec!["/".bold(), " commands".dim()]);
         let vim = self
             .vim_mode_indicator_span()
             .map(|span| Line::from(vec![span]));
-
-        let candidates = [
-            vec![
-                context.clone(),
-                model.clone(),
-                Some(command.clone()),
-                vim.clone(),
-            ],
-            vec![model.clone(), Some(command.clone()), vim.clone()],
-            vec![model.clone(), vim.clone()],
-            vec![Some(command), vim.clone()],
-            vec![vim],
-        ];
-        for parts in candidates {
-            let mut line = Line::default();
-            for part in parts.into_iter().flatten() {
-                if !line.spans.is_empty() {
-                    line.spans.push(" · ".dim());
-                }
-                line.spans.extend(part.spans);
-            }
-            if line.width() <= usize::from(max_width) {
-                return line;
-            }
-        }
-        Line::default()
+        vim.filter(|line| line.width() <= usize::from(max_width))
+            .unwrap_or_default()
     }
 
     pub(crate) fn current_text_with_pending(&self) -> String {
@@ -3665,6 +3628,15 @@ impl ChatComposer {
 
     fn custom_footer_height(&self) -> Option<u16> {
         if self.footer.flash_visible() {
+            return Some(1);
+        }
+        if self.footer.side_conversation_context_label.is_some()
+            || self.footer.goal_status_indicator.is_some()
+            || self.footer.ide_context_active
+            || self.footer.active_agent_label.is_some()
+            || self.vim_mode_indicator_span().is_some()
+            || self.shell_mode_footer_line().is_some()
+        {
             return Some(1);
         }
         self.footer

@@ -11,6 +11,7 @@ use super::*;
 use crate::runtime_session::source_agent_path;
 use crate::runtime_session::thread_blocks_direct_input;
 use codex_config::types::ResumeCwdMode;
+use ratatui::style::Styled;
 use std::collections::HashSet;
 
 #[derive(Clone, Copy)]
@@ -710,8 +711,10 @@ impl App {
                             lines.push(usage_line.into());
                         }
                         if let Some(command) = summary.resume_hint {
-                            let spans =
-                                vec!["To continue this session, run ".into(), command.cyan()];
+                            let spans = vec![
+                                "To continue this session, run ".into(),
+                                command.set_style(crate::style::operational_reference_style()),
+                            ];
                             lines.push(spans.into());
                         }
                         self.chat_widget.add_plain_history_lines(lines);
@@ -1028,8 +1031,10 @@ impl App {
                                 lines.push(usage_line.into());
                             }
                             if let Some(command) = summary.resume_hint {
-                                let spans =
-                                    vec!["To continue this session, run ".into(), command.cyan()];
+                                let spans = vec![
+                                    "To continue this session, run ".into(),
+                                    command.set_style(crate::style::operational_reference_style()),
+                                ];
                                 lines.push(spans.into());
                             }
                             self.chat_widget.add_plain_history_lines(lines);
