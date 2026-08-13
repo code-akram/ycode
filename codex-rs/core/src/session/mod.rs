@@ -189,6 +189,7 @@ pub enum SteerInputError {
     NoActiveTurn(Vec<UserInput>),
     ExpectedTurnMismatch { expected: String, actual: String },
     ActiveTurnNotSteerable { turn_kind: NonSteerableTurnKind },
+    NativeCodeModeNotSteerable,
     EmptyInput,
 }
 
@@ -214,6 +215,10 @@ impl SteerInputError {
                     }),
                 }
             }
+            Self::NativeCodeModeNotSteerable => ErrorEvent {
+                message: "cannot steer a native Code Mode task".to_string(),
+                codex_error_info: Some(CodexErrorInfo::BadRequest),
+            },
             Self::EmptyInput => ErrorEvent {
                 message: "input must not be empty".to_string(),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
@@ -334,6 +339,7 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) environment_manager: Arc<EnvironmentManager>,
     pub(crate) skills_service: Arc<HostSkillsService>,
     pub(crate) code_mode_session_provider: Arc<dyn codex_code_mode::CodeModeSessionProvider>,
+    pub(crate) native_code_mode_client: Option<codex_code_mode::ProcessOwnedNativeCodeModeClient>,
     pub(crate) extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
     pub(crate) conversation_history: InitialHistory,
     pub(crate) requested_history_mode: Option<ThreadHistoryMode>,
@@ -408,6 +414,7 @@ impl Session {
             environment_manager,
             skills_service,
             code_mode_session_provider,
+            native_code_mode_client,
             extensions,
             conversation_history,
             requested_history_mode,
@@ -580,6 +587,7 @@ impl Session {
             session_source_clone,
             skills_service,
             code_mode_session_provider,
+            native_code_mode_client,
             extensions,
             thread_extension_init,
             agent_control,
@@ -3468,6 +3476,9 @@ impl Session {
                 return Err(SteerInputError::ActiveTurnNotSteerable {
                     turn_kind: NonSteerableTurnKind::Compact,
                 });
+            }
+            crate::state::TaskKind::NativeCodeMode => {
+                return Err(SteerInputError::NativeCodeModeNotSteerable);
             }
         }
 

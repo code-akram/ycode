@@ -56,6 +56,7 @@ impl Default for ActiveTurn {
 pub(crate) enum TaskKind {
     Regular,
     Compact,
+    NativeCodeMode,
 }
 
 pub(crate) struct RunningTask {

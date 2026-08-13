@@ -768,6 +768,9 @@ impl TurnRequestProcessor {
                         };
                         (message, data)
                     }
+                    SteerInputError::NativeCodeModeNotSteerable => {
+                        ("cannot steer a native Code Mode task".to_string(), None)
+                    }
                     SteerInputError::EmptyInput => ("input must not be empty".to_string(), None),
                 };
                 let mut error = invalid_request(message);

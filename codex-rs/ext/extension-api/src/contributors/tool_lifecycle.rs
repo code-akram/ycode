@@ -20,6 +20,13 @@ pub enum ToolCallSource {
         /// Code-mode's per-cell tool invocation id.
         runtime_tool_call_id: String,
     },
+    /// A compiled native Rust workflow invoked the tool.
+    NativeCodeMode {
+        /// Canonical native run identity.
+        run_id: String,
+        /// Generated runtime's per-run call identity.
+        runtime_call_id: String,
+    },
 }
 
 /// Extension-facing outcome for a finished tool call.

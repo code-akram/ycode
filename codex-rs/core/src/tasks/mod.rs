@@ -1,5 +1,6 @@
 mod compact;
 mod lifecycle;
+mod native_code_mode;
 mod regular;
 mod user_shell;
 
@@ -240,8 +241,11 @@ impl Session {
         let cancellation_token = CancellationToken::new();
         let done = Arc::new(Notify::new());
 
-        let (pending_items, parent_turn_id) =
-            self.input_queue.get_pending_input(&self.active_turn).await;
+        let (pending_items, parent_turn_id) = if task_kind == TaskKind::NativeCodeMode {
+            (Vec::new(), None)
+        } else {
+            self.input_queue.get_pending_input(&self.active_turn).await
+        };
         if let (MailboxParentProvenance::Attribute, Some(id)) =
             (mailbox_parent_provenance, parent_turn_id)
         {
@@ -667,6 +671,7 @@ impl Session {
         task.turn_context
             .turn_metadata_state
             .cancel_git_enrichment_task();
+        let record_interrupted_marker = task.kind != TaskKind::NativeCodeMode;
         let session_task = task.task;
 
         select! {
@@ -683,7 +688,8 @@ impl Session {
             .abort(Arc::clone(self), Arc::clone(&task.turn_context))
             .await;
 
-        if reason == TurnAbortReason::Interrupted
+        if record_interrupted_marker
+            && reason == TurnAbortReason::Interrupted
             && let Some(marker) = interrupted_turn_history_marker(
                 InterruptedTurnHistoryMarker::from_config_and_version(
                     task.turn_context.config.as_ref(),

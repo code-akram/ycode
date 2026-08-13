@@ -217,7 +217,8 @@ impl HostToClient {
     pub fn transport_lane(&self) -> TransportLane {
         match self {
             Self::DelegateRequest {
-                request: DelegateRequest::InvokeTool { .. },
+                request:
+                    DelegateRequest::InvokeTool { .. } | DelegateRequest::NativeInvokeTool { .. },
                 ..
             }
             | Self::CancelDelegateRequest { .. } => TransportLane::Bulk,
@@ -265,6 +266,14 @@ pub enum HostRequest {
     },
     #[serde(rename = "session/shutdown")]
     ShutdownSession { session_id: SessionId },
+    #[serde(rename = "native/execute")]
+    NativeExecute { request: NativeExecuteRequest },
+    #[serde(rename = "native/finalize")]
+    NativeFinalize {
+        session_id: SessionId,
+        thread_id: String,
+        run_id: String,
+    },
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -278,6 +287,90 @@ pub enum HostResponse {
     WaitCompleted { outcome: WireWaitOutcome },
     #[serde(rename = "session/closed")]
     SessionClosed { session_id: SessionId },
+    #[serde(rename = "native/completed")]
+    NativeCompleted {
+        session_id: SessionId,
+        thread_id: String,
+        run_id: String,
+        source_hash: String,
+        evidence: Box<NativeEvidence>,
+    },
+    #[serde(rename = "native/failed")]
+    NativeFailed {
+        session_id: SessionId,
+        thread_id: String,
+        run_id: String,
+        failure: NativeFailure,
+    },
+    #[serde(rename = "native/finalized")]
+    NativeFinalized {
+        session_id: SessionId,
+        thread_id: String,
+        run_id: String,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct NativeExecuteRequest {
+    pub session_id: SessionId,
+    pub thread_id: String,
+    pub run_id: String,
+    pub attempt: u8,
+    pub task: String,
+    pub source: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct NativeEvidence {
+    pub version: u16,
+    pub summary: String,
+    pub verified: Vec<String>,
+    pub disputed: Vec<String>,
+    pub unresolved: Vec<String>,
+    pub artifact_refs: Vec<String>,
+    pub partial_failures: Vec<String>,
+    pub provenance_ids: Vec<String>,
+}
+
+impl NativeEvidence {
+    pub fn exact_json_wire_len(&self) -> Result<usize, serde_json::Error> {
+        serde_json::to_vec(self).map(|bytes| bytes.len())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct NativeFailure {
+    pub kind: String,
+    pub source_hash: String,
+    pub diagnostic: String,
+    pub process_reaped: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, tag = "tool", rename_all_fields = "camelCase")]
+pub enum NativeToolRequest {
+    #[serde(rename = "shell")]
+    Shell {
+        command: String,
+        workdir: Option<String>,
+        timeout_ms: u32,
+    },
+    #[serde(rename = "applyPatch")]
+    ApplyPatch { patch: String },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, tag = "status", rename_all_fields = "camelCase")]
+pub enum NativeToolOutcome {
+    #[serde(rename = "success")]
+    Success { output: Vec<u8> },
+    #[serde(rename = "retry")]
+    Retry { reason: String },
+    #[serde(rename = "failure")]
+    Failure { message: String },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -291,6 +384,12 @@ pub enum DelegateRequest {
         cell_id: WireCellId,
         text: String,
     },
+    #[serde(rename = "native/tool/invoke")]
+    NativeInvokeTool {
+        run_id: String,
+        call_id: String,
+        request: NativeToolRequest,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -300,6 +399,8 @@ pub enum DelegateResponse {
     ToolResult { result: JsonValue },
     #[serde(rename = "notification/delivered")]
     NotificationDelivered,
+    #[serde(rename = "native/tool/result")]
+    NativeToolResult { outcome: NativeToolOutcome },
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]

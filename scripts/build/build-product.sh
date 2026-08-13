@@ -50,13 +50,66 @@ resolve_cargo() {
 
 resolve_cargo
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "curl is required to fetch the pinned sandboxed V8 build dependency." >&2
+if ! command -v shasum >/dev/null 2>&1; then
+  echo "shasum is required to verify build dependencies." >&2
   exit 1
 fi
 
-if ! command -v shasum >/dev/null 2>&1; then
-  echo "shasum is required to verify the pinned sandboxed V8 build dependency." >&2
+RUSTC="$(dirname -- "$CARGO")/rustc"
+if [ ! -x "$RUSTC" ]; then
+  echo "Unable to resolve rustc adjacent to the repository-pinned Cargo." >&2
+  exit 1
+fi
+if ! RUSTC_VERSION=$($RUSTC -vV 2>&1); then
+  echo "Unable to probe repository-pinned rustc at $RUSTC." >&2
+  exit 1
+fi
+case "$RUSTC_VERSION" in
+  *"release: 1.95.0"*) ;;
+  *)
+    echo "Repository-pinned rustc must report release 1.95.0." >&2
+    exit 1
+    ;;
+esac
+case "$RUSTC_VERSION" in
+  *"commit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860"*) ;;
+  *)
+    echo "Repository-pinned rustc must report commit 59807616e1fa2540724bfbac14d7976d7e4a3860." >&2
+    exit 1
+    ;;
+esac
+case "$RUSTC_VERSION" in
+  *"host: aarch64-apple-darwin"*) ;;
+  *)
+    echo "Repository-pinned rustc must target host aarch64-apple-darwin." >&2
+    exit 1
+    ;;
+esac
+
+CARGO_TARGET_ROOT="${CARGO_TARGET_DIR:-$WORKSPACE/target}"
+NATIVE_SDK_DIR="$CARGO_TARGET_ROOT/native-code-mode-sdk"
+NATIVE_SDK="$NATIVE_SDK_DIR/libycode_native_sdk.rlib"
+NATIVE_SDK_TMP="$NATIVE_SDK.tmp.$$"
+mkdir -p "$NATIVE_SDK_DIR"
+trap 'rm -f "$NATIVE_SDK_TMP"' EXIT HUP INT TERM
+"$RUSTC" \
+  --crate-name ycode_native_sdk \
+  --crate-type rlib \
+  --edition=2024 \
+  --target=aarch64-apple-darwin \
+  -Copt-level=0 \
+  -Cdebuginfo=0 \
+  -Cmetadata=ycode-native-sdk-v1 \
+  -o "$NATIVE_SDK_TMP" \
+  "$WORKSPACE/native-code-mode-sdk/src/lib.rs"
+mv "$NATIVE_SDK_TMP" "$NATIVE_SDK"
+trap - EXIT HUP INT TERM
+YCODE_NATIVE_SDK_RLIB="$NATIVE_SDK"
+YCODE_NATIVE_SDK_HASH=$(shasum -a 256 "$NATIVE_SDK" | awk '{ print $1 }')
+export YCODE_NATIVE_SDK_RLIB YCODE_NATIVE_SDK_HASH
+
+if ! command -v curl >/dev/null 2>&1; then
+  echo "curl is required to fetch the pinned sandboxed V8 build dependency." >&2
   exit 1
 fi
 
@@ -69,7 +122,6 @@ if [ -n "${RUSTY_V8_ARCHIVE:-}" ] || [ -n "${RUSTY_V8_SRC_BINDING_PATH:-}" ]; th
   exec "$CARGO" "$CARGO_COMMAND" "$@"
 fi
 
-CARGO_TARGET_ROOT="${CARGO_TARGET_DIR:-$WORKSPACE/target}"
 V8_CACHE="$CARGO_TARGET_ROOT/rusty-v8-$V8_VERSION-$TARGET"
 ARCHIVE="$V8_CACHE/$ARCHIVE_NAME"
 BINDING="$V8_CACHE/$BINDING_NAME"

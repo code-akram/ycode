@@ -18,6 +18,10 @@ use super::HostHello;
 use super::HostRequest;
 use super::HostResponse;
 use super::HostToClient;
+use super::NativeEvidence;
+use super::NativeExecuteRequest;
+use super::NativeToolOutcome;
+use super::NativeToolRequest;
 use super::ProtocolVersion;
 use super::RequestId;
 use super::SessionId;
@@ -384,6 +388,148 @@ fn open_session_serializes_optional_cell_execution_limits() {
             },
         }),
     );
+}
+
+#[test]
+fn additive_native_v1_wire_shapes_are_typed_and_pinned() {
+    assert_wire_round_trip(
+        HostRequest::NativeExecute {
+            request: NativeExecuteRequest {
+                session_id: session_id(),
+                thread_id: "10000000-0000-4000-8000-000000000001".into(),
+                run_id: "20000000-0000-4000-8000-000000000002".into(),
+                attempt: 1,
+                task: "inspect files".into(),
+                source: "fn main() {}".into(),
+            },
+        },
+        json!({
+            "method": "native/execute",
+            "request": {
+                "sessionId": "session-1",
+                "threadId": "10000000-0000-4000-8000-000000000001",
+                "runId": "20000000-0000-4000-8000-000000000002",
+                "attempt": 1,
+                "task": "inspect files",
+                "source": "fn main() {}",
+            },
+        }),
+    );
+    assert_wire_round_trip(
+        HostRequest::NativeFinalize {
+            session_id: session_id(),
+            thread_id: "10000000-0000-4000-8000-000000000001".into(),
+            run_id: "20000000-0000-4000-8000-000000000002".into(),
+        },
+        json!({
+            "method": "native/finalize",
+            "sessionId": "session-1",
+            "threadId": "10000000-0000-4000-8000-000000000001",
+            "runId": "20000000-0000-4000-8000-000000000002",
+        }),
+    );
+    assert_wire_round_trip(
+        DelegateRequest::NativeInvokeTool {
+            run_id: "20000000-0000-4000-8000-000000000002".into(),
+            call_id: "native-call-1".into(),
+            request: NativeToolRequest::Shell {
+                command: "pwd".into(),
+                workdir: None,
+                timeout_ms: 1_000,
+            },
+        },
+        json!({
+            "type": "native/tool/invoke",
+            "runId": "20000000-0000-4000-8000-000000000002",
+            "callId": "native-call-1",
+            "request": { "tool": "shell", "command": "pwd", "workdir": null, "timeoutMs": 1000 },
+        }),
+    );
+    assert_wire_round_trip(
+        DelegateResponse::NativeToolResult {
+            outcome: NativeToolOutcome::Success {
+                output: b"ok".to_vec(),
+            },
+        },
+        json!({
+            "type": "native/tool/result",
+            "outcome": { "status": "success", "output": [111, 107] },
+        }),
+    );
+    assert_wire_round_trip(
+        HostResponse::NativeCompleted {
+            session_id: session_id(),
+            thread_id: "thread".into(),
+            run_id: "run".into(),
+            source_hash: "hash".into(),
+            evidence: Box::new(NativeEvidence {
+                version: 1,
+                summary: "done".into(),
+                verified: vec!["verified".into()],
+                disputed: Vec::new(),
+                unresolved: Vec::new(),
+                artifact_refs: vec!["attempt-1/source.rs".into()],
+                partial_failures: Vec::new(),
+                provenance_ids: vec!["call-1".into()],
+            }),
+        },
+        json!({
+            "type": "native/completed",
+            "sessionId": "session-1",
+            "threadId": "thread",
+            "runId": "run",
+            "sourceHash": "hash",
+            "evidence": {
+                "version": 1,
+                "summary": "done",
+                "verified": ["verified"],
+                "disputed": [],
+                "unresolved": [],
+                "artifactRefs": ["attempt-1/source.rs"],
+                "partialFailures": [],
+                "provenanceIds": ["call-1"],
+            },
+        }),
+    );
+    assert_wire_round_trip(
+        HostResponse::NativeFinalized {
+            session_id: session_id(),
+            thread_id: "thread".into(),
+            run_id: "run".into(),
+        },
+        json!({
+            "type": "native/finalized",
+            "sessionId": "session-1",
+            "threadId": "thread",
+            "runId": "run",
+        }),
+    );
+}
+
+#[test]
+fn native_evidence_reports_exact_compact_json_wire_size() {
+    let normal = NativeEvidence {
+        version: 1,
+        summary: "done".into(),
+        verified: vec!["ok".into()],
+        disputed: Vec::new(),
+        unresolved: Vec::new(),
+        artifact_refs: vec!["evidence.json".into()],
+        partial_failures: Vec::new(),
+        provenance_ids: vec!["call-1".into()],
+    };
+    assert_eq!(
+        normal.exact_json_wire_len().unwrap(),
+        serde_json::to_vec(&normal).unwrap().len()
+    );
+    assert!(normal.exact_json_wire_len().unwrap() < 16 * 1024);
+
+    let escaping = NativeEvidence {
+        summary: "\0".repeat(3_000),
+        ..normal
+    };
+    assert!(escaping.summary.len() < 16 * 1024);
+    assert!(escaping.exact_json_wire_len().unwrap() > 16 * 1024);
 }
 
 #[test]

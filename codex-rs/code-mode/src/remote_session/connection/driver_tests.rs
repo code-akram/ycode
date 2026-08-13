@@ -23,6 +23,9 @@ use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
+use codex_code_mode_protocol::host::NativeEvidence;
+use codex_code_mode_protocol::host::NativeToolOutcome;
+use codex_code_mode_protocol::host::NativeToolRequest;
 use codex_code_mode_protocol::host::RequestId;
 use codex_code_mode_protocol::host::SessionId;
 use codex_code_mode_protocol::host::WireNestedToolCall;
@@ -32,6 +35,7 @@ use codex_code_mode_protocol::host::WireSessionCellExecutionLimits;
 use codex_code_mode_protocol::host::WireWaitOutcome;
 use codex_protocol::ToolName;
 use pretty_assertions::assert_eq;
+use tokio::sync::Notify;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -44,6 +48,74 @@ use super::DriverEvent;
 use super::DriverLifecycle;
 use super::RemoteSession;
 use super::SessionCleanup;
+use crate::NativeCodeModeDelegate;
+use crate::NativeExecute;
+use crate::NativeRunIdentity;
+use crate::NativeToolFuture;
+use crate::NativeToolInvocation;
+
+struct NativeDelegate;
+
+impl NativeCodeModeDelegate for NativeDelegate {
+    fn invoke<'a>(
+        &'a self,
+        invocation: NativeToolInvocation,
+        _cancellation: CancellationToken,
+    ) -> NativeToolFuture<'a> {
+        Box::pin(async move {
+            Ok(NativeToolOutcome::Success {
+                output: invocation.runtime_call_id.into_bytes(),
+            })
+        })
+    }
+}
+
+struct DisconnectNativeDelegate {
+    started: Arc<Notify>,
+    cancelled: Arc<Notify>,
+}
+
+struct NonCooperativeNativeDelegate {
+    started: Arc<Notify>,
+    dropped: Arc<Notify>,
+}
+
+struct DropSignal(Arc<Notify>);
+
+impl Drop for DropSignal {
+    fn drop(&mut self) {
+        self.0.notify_one();
+    }
+}
+
+impl NativeCodeModeDelegate for NonCooperativeNativeDelegate {
+    fn invoke<'a>(
+        &'a self,
+        _invocation: NativeToolInvocation,
+        _cancellation: CancellationToken,
+    ) -> NativeToolFuture<'a> {
+        Box::pin(async move {
+            let _dropped = DropSignal(Arc::clone(&self.dropped));
+            self.started.notify_one();
+            std::future::pending().await
+        })
+    }
+}
+
+impl NativeCodeModeDelegate for DisconnectNativeDelegate {
+    fn invoke<'a>(
+        &'a self,
+        _invocation: NativeToolInvocation,
+        cancellation: CancellationToken,
+    ) -> NativeToolFuture<'a> {
+        Box::pin(async move {
+            self.started.notify_one();
+            cancellation.cancelled().await;
+            self.cancelled.notify_one();
+            Err("client disconnected".to_string())
+        })
+    }
+}
 
 struct DriverHarness {
     command_tx: mpsc::Sender<DriverCommand>,
@@ -53,6 +125,7 @@ struct DriverHarness {
     cancellation: CancellationToken,
     alive: Arc<AtomicBool>,
     failure: Arc<StdMutex<Option<String>>>,
+    native_tasks: Arc<AtomicUsize>,
     driver_task: tokio::task::JoinHandle<()>,
 }
 
@@ -64,6 +137,7 @@ impl DriverHarness {
         let cancellation = CancellationToken::new();
         let alive = Arc::new(AtomicBool::new(true));
         let failure = Arc::new(StdMutex::new(None));
+        let native_tasks = Arc::new(AtomicUsize::new(0));
         let (driver, execute_claim_tx) = ConnectionDriver::new(
             command_rx,
             event_rx,
@@ -73,6 +147,7 @@ impl DriverHarness {
                 alive: Arc::clone(&alive),
                 failure: Arc::clone(&failure),
                 cancellation: cancellation.clone(),
+                native_tasks: Arc::clone(&native_tasks),
             },
         );
         let driver_task = tokio::spawn(driver.run());
@@ -84,6 +159,7 @@ impl DriverHarness {
             cancellation,
             alive,
             failure,
+            native_tasks,
             driver_task,
         }
     }
@@ -193,6 +269,466 @@ impl Drop for DriverHarness {
     fn drop(&mut self) {
         self.cancellation.cancel();
     }
+}
+
+#[tokio::test]
+async fn native_delegate_routes_only_to_exact_short_lived_owner() {
+    let mut harness = DriverHarness::start();
+    let identity = NativeRunIdentity {
+        session_id: "native-session".to_string(),
+        thread_id: "00000000-0000-4000-8000-000000000001".to_string(),
+        run_id: "00000000-0000-4000-8000-000000000002".to_string(),
+    };
+    let (response_tx, response_rx) = oneshot::channel();
+    harness
+        .command_tx
+        .send(DriverCommand::NativeExecute {
+            request: NativeExecute {
+                identity: identity.clone(),
+                attempt: 1,
+                task: "task".to_string(),
+                source: "fn main() {}".to_string(),
+            },
+            delegate: Arc::new(NativeDelegate),
+            caller_cancellation: CancellationToken::new(),
+            response_tx,
+        })
+        .await
+        .expect("native execute command");
+    let execute = harness
+        .outgoing_rx
+        .recv()
+        .await
+        .expect("native execute frame");
+    assert!(matches!(
+        EncodedFrame::decode_framed::<ClientToHost>(&execute.into_framed_bytes())
+            .expect("decode native execute"),
+        ClientToHost::Request {
+            request: HostRequest::NativeExecute { .. },
+            ..
+        }
+    ));
+
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::DelegateRequest {
+            id: DelegateRequestId::new(7),
+            session_id: SessionId::new("wrong-session").expect("session"),
+            request: DelegateRequest::NativeInvokeTool {
+                run_id: identity.run_id.clone(),
+                call_id: "call-1".to_string(),
+                request: NativeToolRequest::ApplyPatch {
+                    patch: "*** Begin Patch\n*** End Patch".to_string(),
+                },
+            },
+        }))
+        .await
+        .expect("mismatched native delegate");
+    assert_delegate_error(
+        harness.outgoing_rx.recv().await.expect("mismatch response"),
+        "unknown or mismatched native delegate target",
+    );
+
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::DelegateRequest {
+            id: DelegateRequestId::new(8),
+            session_id: SessionId::new(identity.session_id.clone()).expect("session"),
+            request: DelegateRequest::NativeInvokeTool {
+                run_id: identity.run_id.clone(),
+                call_id: "call-1".to_string(),
+                request: NativeToolRequest::Shell {
+                    command: "true".to_string(),
+                    workdir: None,
+                    timeout_ms: 1_000,
+                },
+            },
+        }))
+        .await
+        .expect("native delegate");
+    let result = harness.outgoing_rx.recv().await.expect("native result");
+    let ClientToHost::DelegateResponse { id, result } =
+        EncodedFrame::decode_framed::<ClientToHost>(&result.into_framed_bytes())
+            .expect("decode native result")
+    else {
+        panic!("expected native delegate response")
+    };
+    assert_eq!(id, DelegateRequestId::new(8));
+    assert_eq!(
+        result.into_result().expect("native result"),
+        DelegateResponse::NativeToolResult {
+            outcome: NativeToolOutcome::Success {
+                output: b"call-1".to_vec(),
+            },
+        }
+    );
+
+    for (id, expected) in [
+        (8, "duplicate native delegate request ID"),
+        (10, "duplicate native runtime call ID"),
+    ] {
+        harness
+            .event_tx
+            .send(DriverEvent::HostMessage(HostToClient::DelegateRequest {
+                id: DelegateRequestId::new(id),
+                session_id: SessionId::new(identity.session_id.clone()).expect("session"),
+                request: DelegateRequest::NativeInvokeTool {
+                    run_id: identity.run_id.clone(),
+                    call_id: "call-1".to_string(),
+                    request: NativeToolRequest::Shell {
+                        command: "true".to_string(),
+                        workdir: None,
+                        timeout_ms: 1_000,
+                    },
+                },
+            }))
+            .await
+            .expect("duplicate native delegate");
+        assert_delegate_error(
+            harness
+                .outgoing_rx
+                .recv()
+                .await
+                .expect("duplicate response"),
+            expected,
+        );
+    }
+
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::Response {
+            id: RequestId::new(1),
+            result: WireResult::Ok {
+                value: HostResponse::NativeCompleted {
+                    session_id: SessionId::new(identity.session_id.clone()).expect("session"),
+                    thread_id: identity.thread_id.clone(),
+                    run_id: identity.run_id.clone(),
+                    source_hash: "a".repeat(64),
+                    evidence: Box::new(NativeEvidence {
+                        version: 1,
+                        summary: "done".to_string(),
+                        verified: Vec::new(),
+                        disputed: Vec::new(),
+                        unresolved: Vec::new(),
+                        artifact_refs: Vec::new(),
+                        partial_failures: Vec::new(),
+                        provenance_ids: vec!["call-1".to_string()],
+                    }),
+                },
+            },
+        }))
+        .await
+        .expect("native completed response");
+    response_rx
+        .await
+        .expect("native response channel")
+        .expect("native completed result");
+
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::DelegateRequest {
+            id: DelegateRequestId::new(9),
+            session_id: SessionId::new(identity.session_id).expect("session"),
+            request: DelegateRequest::NativeInvokeTool {
+                run_id: identity.run_id,
+                call_id: "call-2".to_string(),
+                request: NativeToolRequest::ApplyPatch {
+                    patch: "*** Begin Patch\n*** End Patch".to_string(),
+                },
+            },
+        }))
+        .await
+        .expect("late native delegate");
+    assert_delegate_error(
+        harness.outgoing_rx.recv().await.expect("late response"),
+        "unknown or mismatched native delegate target",
+    );
+}
+
+fn assert_delegate_error(frame: EncodedFrame, expected: &str) {
+    let ClientToHost::DelegateResponse { result, .. } =
+        EncodedFrame::decode_framed::<ClientToHost>(&frame.into_framed_bytes())
+            .expect("decode delegate error")
+    else {
+        panic!("expected delegate error")
+    };
+    assert!(result.into_result().unwrap_err().contains(expected));
+}
+
+#[tokio::test]
+async fn native_client_disconnect_cancels_delegate_and_pending_request() {
+    let mut harness = DriverHarness::start();
+    let identity = NativeRunIdentity {
+        session_id: "native-session".to_string(),
+        thread_id: "00000000-0000-4000-8000-000000000001".to_string(),
+        run_id: "00000000-0000-4000-8000-000000000003".to_string(),
+    };
+    let started = Arc::new(Notify::new());
+    let cancelled = Arc::new(Notify::new());
+    let (response_tx, response_rx) = oneshot::channel();
+    harness
+        .command_tx
+        .send(DriverCommand::NativeExecute {
+            request: NativeExecute {
+                identity: identity.clone(),
+                attempt: 1,
+                task: "disconnect".to_string(),
+                source: "fn main() {}".to_string(),
+            },
+            delegate: Arc::new(DisconnectNativeDelegate {
+                started: Arc::clone(&started),
+                cancelled: Arc::clone(&cancelled),
+            }),
+            caller_cancellation: CancellationToken::new(),
+            response_tx,
+        })
+        .await
+        .expect("native execute command");
+    harness.outgoing_rx.recv().await.expect("execute frame");
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::DelegateRequest {
+            id: DelegateRequestId::new(7),
+            session_id: SessionId::new(identity.session_id).expect("session"),
+            request: DelegateRequest::NativeInvokeTool {
+                run_id: identity.run_id,
+                call_id: "call-1".to_string(),
+                request: NativeToolRequest::Shell {
+                    command: "sleep 30".to_string(),
+                    workdir: None,
+                    timeout_ms: 30_000,
+                },
+            },
+        }))
+        .await
+        .expect("native delegate request");
+    tokio::time::timeout(Duration::from_secs(1), started.notified())
+        .await
+        .expect("delegate should start");
+    harness
+        .event_tx
+        .send(DriverEvent::Failed("injected host disconnect".to_string()))
+        .await
+        .expect("disconnect event");
+    tokio::time::timeout(Duration::from_secs(1), cancelled.notified())
+        .await
+        .expect("disconnect should cancel delegate");
+    assert_eq!(
+        response_rx
+            .await
+            .expect("native response channel")
+            .unwrap_err(),
+        "injected host disconnect"
+    );
+    tokio::time::timeout(Duration::from_secs(1), &mut harness.driver_task)
+        .await
+        .expect("driver should stop")
+        .expect("driver join");
+    assert!(!harness.alive.load(Ordering::Acquire));
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while harness.native_tasks.load(Ordering::Acquire) != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("disconnect must leave zero native client tasks");
+}
+
+#[tokio::test]
+async fn non_cooperative_native_delegate_is_forcibly_settled_on_cancel_and_unregister() {
+    for settle_by_completion in [false, true] {
+        let mut harness = DriverHarness::start();
+        let identity = NativeRunIdentity {
+            session_id: "native-session".to_string(),
+            thread_id: "00000000-0000-4000-8000-000000000021".to_string(),
+            run_id: if settle_by_completion {
+                "00000000-0000-4000-8000-000000000022".to_string()
+            } else {
+                "00000000-0000-4000-8000-000000000023".to_string()
+            },
+        };
+        let started = Arc::new(Notify::new());
+        let dropped = Arc::new(Notify::new());
+        let (response_tx, response_rx) = oneshot::channel();
+        harness
+            .command_tx
+            .send(DriverCommand::NativeExecute {
+                request: NativeExecute {
+                    identity: identity.clone(),
+                    attempt: 1,
+                    task: "non-cooperative delegate".to_string(),
+                    source: "fn main() {}".to_string(),
+                },
+                delegate: Arc::new(NonCooperativeNativeDelegate {
+                    started: Arc::clone(&started),
+                    dropped: Arc::clone(&dropped),
+                }),
+                caller_cancellation: CancellationToken::new(),
+                response_tx,
+            })
+            .await
+            .expect("native execute command");
+        harness.outgoing_rx.recv().await.expect("execute frame");
+        let delegate_id = DelegateRequestId::new(71);
+        harness
+            .event_tx
+            .send(DriverEvent::HostMessage(HostToClient::DelegateRequest {
+                id: delegate_id,
+                session_id: SessionId::new(identity.session_id.clone()).expect("session"),
+                request: DelegateRequest::NativeInvokeTool {
+                    run_id: identity.run_id.clone(),
+                    call_id: "call-1".to_string(),
+                    request: NativeToolRequest::ApplyPatch {
+                        patch: "*** Begin Patch\n*** End Patch".to_string(),
+                    },
+                },
+            }))
+            .await
+            .expect("native delegate request");
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("non-cooperative delegate should start");
+
+        if settle_by_completion {
+            harness
+                .event_tx
+                .send(DriverEvent::HostMessage(HostToClient::Response {
+                    id: RequestId::new(1),
+                    result: WireResult::Ok {
+                        value: HostResponse::NativeCompleted {
+                            session_id: SessionId::new(identity.session_id.clone())
+                                .expect("session"),
+                            thread_id: identity.thread_id.clone(),
+                            run_id: identity.run_id.clone(),
+                            source_hash: "a".repeat(64),
+                            evidence: Box::new(NativeEvidence {
+                                version: 1,
+                                summary: "completed".to_string(),
+                                verified: Vec::new(),
+                                disputed: Vec::new(),
+                                unresolved: Vec::new(),
+                                artifact_refs: Vec::new(),
+                                partial_failures: Vec::new(),
+                                provenance_ids: Vec::new(),
+                            }),
+                        },
+                    },
+                }))
+                .await
+                .expect("native completed response");
+            response_rx
+                .await
+                .expect("native response channel")
+                .expect("native completion");
+        } else {
+            harness
+                .event_tx
+                .send(DriverEvent::HostMessage(
+                    HostToClient::CancelDelegateRequest { id: delegate_id },
+                ))
+                .await
+                .expect("cancel delegate request");
+        }
+
+        tokio::time::timeout(Duration::from_secs(1), dropped.notified())
+            .await
+            .expect("non-cooperative delegate future must be forcibly dropped");
+        wait_for_native_tasks(&harness.native_tasks).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(150), harness.outgoing_rx.recv())
+                .await
+                .is_err(),
+            "revoked native delegate emitted a late response"
+        );
+    }
+}
+
+#[tokio::test]
+async fn non_cooperative_native_delegate_is_forcibly_settled_on_disconnect() {
+    let mut harness = DriverHarness::start();
+    let identity = NativeRunIdentity {
+        session_id: "native-session".to_string(),
+        thread_id: "00000000-0000-4000-8000-000000000024".to_string(),
+        run_id: "00000000-0000-4000-8000-000000000025".to_string(),
+    };
+    let started = Arc::new(Notify::new());
+    let dropped = Arc::new(Notify::new());
+    let (response_tx, response_rx) = oneshot::channel();
+    harness
+        .command_tx
+        .send(DriverCommand::NativeExecute {
+            request: NativeExecute {
+                identity: identity.clone(),
+                attempt: 1,
+                task: "disconnect non-cooperative delegate".to_string(),
+                source: "fn main() {}".to_string(),
+            },
+            delegate: Arc::new(NonCooperativeNativeDelegate {
+                started: Arc::clone(&started),
+                dropped: Arc::clone(&dropped),
+            }),
+            caller_cancellation: CancellationToken::new(),
+            response_tx,
+        })
+        .await
+        .expect("native execute command");
+    harness.outgoing_rx.recv().await.expect("execute frame");
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::DelegateRequest {
+            id: DelegateRequestId::new(72),
+            session_id: SessionId::new(identity.session_id).expect("session"),
+            request: DelegateRequest::NativeInvokeTool {
+                run_id: identity.run_id,
+                call_id: "call-1".to_string(),
+                request: NativeToolRequest::Shell {
+                    command: "true".to_string(),
+                    workdir: None,
+                    timeout_ms: 1_000,
+                },
+            },
+        }))
+        .await
+        .expect("native delegate request");
+    tokio::time::timeout(Duration::from_secs(1), started.notified())
+        .await
+        .expect("non-cooperative delegate should start");
+    harness
+        .event_tx
+        .send(DriverEvent::Failed(
+            "injected non-cooperative disconnect".to_string(),
+        ))
+        .await
+        .expect("disconnect event");
+    assert_eq!(
+        response_rx
+            .await
+            .expect("native response channel")
+            .unwrap_err(),
+        "injected non-cooperative disconnect"
+    );
+    tokio::time::timeout(Duration::from_secs(1), dropped.notified())
+        .await
+        .expect("disconnect must forcibly drop non-cooperative delegate");
+    tokio::time::timeout(Duration::from_secs(1), &mut harness.driver_task)
+        .await
+        .expect("driver should settle non-cooperative delegate")
+        .expect("driver join");
+    assert_eq!(harness.native_tasks.load(Ordering::Acquire), 0);
+    assert!(harness.outgoing_rx.try_recv().is_err());
+}
+
+async fn wait_for_native_tasks(tasks: &AtomicUsize) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if tasks.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("native client task ownership must settle to zero");
 }
 
 #[tokio::test]
@@ -703,6 +1239,7 @@ async fn concurrent_large_delegate_results_do_not_disconnect_a_backpressured_bul
     let cancellation = CancellationToken::new();
     let alive = Arc::new(AtomicBool::new(true));
     let failure = Arc::new(StdMutex::new(None));
+    let native_tasks = Arc::new(AtomicUsize::new(0));
     let (driver, execute_claim_tx) = ConnectionDriver::new(
         command_rx,
         event_rx,
@@ -712,6 +1249,7 @@ async fn concurrent_large_delegate_results_do_not_disconnect_a_backpressured_bul
             alive: Arc::clone(&alive),
             failure: Arc::clone(&failure),
             cancellation: cancellation.clone(),
+            native_tasks: Arc::clone(&native_tasks),
         },
     );
     let driver_task = tokio::spawn(driver.with_bulk_sender(bulk_tx).run());
@@ -723,6 +1261,7 @@ async fn concurrent_large_delegate_results_do_not_disconnect_a_backpressured_bul
         cancellation,
         alive,
         failure,
+        native_tasks,
         driver_task,
     };
     let session = remote_session();

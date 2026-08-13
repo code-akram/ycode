@@ -135,6 +135,9 @@ impl ExecutedToolCallRecorder {
                     original_bytes,
                 );
             }
+            ToolCallSource::NativeCodeMode { .. } => {
+                // Native inputs/results remain run-local and never enter model history metadata.
+            }
         }
     }
 

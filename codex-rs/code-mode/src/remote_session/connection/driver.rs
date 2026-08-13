@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 pub(in crate::remote_session) use self::cleanup::SessionCleanup;
 use self::delegate_runtime::DelegateRuntime;
+use self::native_delegate_runtime::NativeDelegateRuntime;
 use self::request_tracker::RequestTracker;
 use self::session_registry::SessionRegistry;
 pub(super) use self::types::DriverCommand;
@@ -25,6 +26,7 @@ mod cell_ids;
 mod cleanup;
 mod commands;
 mod delegate_runtime;
+mod native_delegate_runtime;
 mod request_tracker;
 mod responses;
 mod session_registry;
@@ -34,6 +36,7 @@ pub(super) struct DriverLifecycle {
     pub(super) alive: Arc<AtomicBool>,
     pub(super) failure: Arc<std::sync::Mutex<Option<String>>>,
     pub(super) cancellation: CancellationToken,
+    pub(super) native_tasks: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 pub(super) struct ConnectionDriver {
@@ -47,6 +50,7 @@ pub(super) struct ConnectionDriver {
     deferred_host_messages: VecDeque<HostToClient>,
     sessions: SessionRegistry,
     delegates: DelegateRuntime,
+    native_delegates: NativeDelegateRuntime,
     alive: Arc<AtomicBool>,
     failure: Arc<std::sync::Mutex<Option<String>>>,
     cancellation: CancellationToken,
@@ -73,7 +77,8 @@ impl ConnectionDriver {
                 requests: RequestTracker::new(),
                 deferred_host_messages: VecDeque::new(),
                 sessions: SessionRegistry::new(),
-                delegates: DelegateRuntime::new(event_tx),
+                delegates: DelegateRuntime::new(event_tx.clone()),
+                native_delegates: NativeDelegateRuntime::new(event_tx, lifecycle.native_tasks),
                 alive: lifecycle.alive,
                 failure: lifecycle.failure,
                 cancellation: lifecycle.cancellation,
@@ -89,41 +94,45 @@ impl ConnectionDriver {
                 biased;
                 _ = self.cancellation.cancelled() => {
                     self.fail("code-mode host connection closed".to_string());
-                    return;
+                    break;
                 }
                 event = self.event_rx.recv() => {
                     let Some(event) = event else {
                         self.fail("code-mode host event stream closed".to_string());
-                        return;
+                        break;
                     };
                     if !self.cancel_dropped_callers() || !self.handle_event(event) {
-                        return;
+                        break;
                     }
                 }
                 claim = self.execute_claim_rx.recv() => {
                     let Some(request_id) = claim else {
                         self.fail("code-mode execute claim stream closed".to_string());
-                        return;
+                        break;
                     };
                     self.requests.claim_execute(request_id);
                 }
                 command = self.command_rx.recv() => {
                     let Some(command) = command else {
                         self.fail("code-mode host command stream closed".to_string());
-                        return;
+                        break;
                     };
                     if !self.cancel_dropped_callers() || !self.handle_command(command) {
-                        return;
+                        break;
                     }
                 }
             }
         }
+        self.native_delegates.settle_all().await;
     }
 
     fn handle_event(&mut self, event: DriverEvent) -> bool {
         let keep_running = match event {
             DriverEvent::HostMessage(message) => self.handle_host_message(message),
             DriverEvent::DelegateCompleted { id, result } => self.complete_delegate(id, result),
+            DriverEvent::NativeDelegateCompleted { id, result } => {
+                self.complete_native_delegate(id, result)
+            }
             DriverEvent::RequestCancelled(id) => self.cancel_request(id),
             DriverEvent::Failed(reason) => {
                 self.fail(reason);
@@ -176,6 +185,7 @@ impl ConnectionDriver {
         self.requests.fail_all(&reason);
         let failed_sessions = self.sessions.drain();
         self.delegates.fail_all(failed_sessions);
+        self.native_delegates.fail_all();
         self.cancellation.cancel();
     }
 }

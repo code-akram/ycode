@@ -3996,6 +3996,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         SessionSource::Exec,
         skills_service,
         Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
+        /*native_code_mode_client*/ None,
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
         AgentControl::default(),
@@ -4341,6 +4342,7 @@ async fn make_session_with_config_and_rx(
         SessionSource::Exec,
         skills_service,
         Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
+        /*native_code_mode_client*/ None,
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
         AgentControl::default(),
@@ -4445,6 +4447,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         session_source,
         skills_service,
         Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
+        /*native_code_mode_client*/ None,
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
         agent_control,
@@ -5124,7 +5127,7 @@ async fn shutdown_and_wait_waits_when_shutdown_is_already_in_progress() {
         .expect("shutdown waiter");
 }
 
-async fn make_session_and_context_with_auth_and_config_and_rx<F>(
+pub(crate) async fn make_session_and_context_with_auth_and_config_and_rx<F>(
     auth: CodexAuth,
     dynamic_tools: Vec<DynamicToolSpec>,
     configure_config: F,
@@ -5146,7 +5149,7 @@ where
     .await
 }
 
-async fn make_session_and_context_with_auth_config_home_and_rx<F>(
+pub(crate) async fn make_session_and_context_with_auth_config_home_and_rx<F>(
     auth: CodexAuth,
     dynamic_tools: Vec<DynamicToolSpec>,
     codex_home: &Path,
@@ -5355,6 +5358,23 @@ where
     });
 
     (session, turn_context, rx_event)
+}
+
+pub(crate) async fn make_session_and_context_in_cwd_for_tests(
+    codex_home: &Path,
+    cwd: codex_utils_absolute_path::AbsolutePathBuf,
+) -> (
+    Arc<Session>,
+    Arc<TurnContext>,
+    async_channel::Receiver<Event>,
+) {
+    make_session_and_context_with_auth_config_home_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        codex_home,
+        |config| config.cwd = cwd,
+    )
+    .await
 }
 
 pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(

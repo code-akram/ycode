@@ -496,6 +496,7 @@ impl Session {
         session_source: SessionSource,
         skills_service: Arc<HostSkillsService>,
         code_mode_session_provider: Arc<dyn codex_code_mode::CodeModeSessionProvider>,
+        native_code_mode_client: Option<codex_code_mode::ProcessOwnedNativeCodeModeClient>,
         extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
         mut thread_extension_init: ExtensionDataInit,
         agent_control: AgentControl,
@@ -924,8 +925,9 @@ impl Session {
                     config.http_client_factory(),
                 ),
                 executed_tool_calls,
-                code_mode_service: crate::tools::code_mode::CodeModeService::new(
+                code_mode_service: crate::tools::code_mode::CodeModeService::new_with_native_client(
                     Arc::clone(&code_mode_session_provider),
+                    native_code_mode_client,
                     &config.features,
                 ),
                 tool_search_handler_cache: Default::default(),

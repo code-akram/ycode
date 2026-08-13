@@ -9,12 +9,17 @@ use tokio::sync::mpsc;
 use super::types::DeferredWait;
 use super::types::DriverEvent;
 use super::types::InitialResponse;
+use super::types::NativeRunKey;
 use super::types::PendingRequest;
 use super::types::RemoteSession;
 use super::types::UnclaimedExecute;
 
 pub(super) enum CancellationAction {
     Send(RequestId),
+    Native {
+        request_id: RequestId,
+        key: NativeRunKey,
+    },
     Terminate {
         request_id: RequestId,
         execute: UnclaimedExecute,
@@ -112,8 +117,16 @@ impl RequestTracker {
             .iter_mut()
             .filter_map(|(id, pending)| {
                 let cancellation = pending.cancellation_mut()?;
-                (cancellation.is_cancelled() && cancellation.mark_reported())
-                    .then_some(CancellationAction::Send(*id))
+                if !cancellation.is_cancelled() || !cancellation.mark_reported() {
+                    return None;
+                }
+                match pending {
+                    PendingRequest::NativeExecute { key, .. } => Some(CancellationAction::Native {
+                        request_id: *id,
+                        key: key.clone(),
+                    }),
+                    _ => Some(CancellationAction::Send(*id)),
+                }
             })
             .collect::<Vec<_>>();
         actions.extend(
@@ -135,9 +148,18 @@ impl RequestTracker {
             .get_mut(&id)
             .and_then(PendingRequest::cancellation_mut)
         {
-            return cancellation
-                .mark_reported()
-                .then_some(CancellationAction::Send(id));
+            if !cancellation.mark_reported() {
+                return None;
+            }
+            return match self.pending.get(&id) {
+                Some(PendingRequest::NativeExecute { key, .. }) => {
+                    Some(CancellationAction::Native {
+                        request_id: id,
+                        key: key.clone(),
+                    })
+                }
+                _ => Some(CancellationAction::Send(id)),
+            };
         }
         let execute = self.unclaimed_executes.get_mut(&id)?;
         if !execute.cancellation.mark_reported() {

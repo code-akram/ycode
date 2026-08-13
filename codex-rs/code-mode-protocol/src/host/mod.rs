@@ -19,6 +19,9 @@ pub const DUAL_WEBSOCKET_CAPABILITY: &str = "dual-websocket-v1";
 /// Negotiated support for cell execution resource limits on `session/open`.
 pub const SESSION_RESOURCE_LIMITS_CAPABILITY: &str = "session-cell-execution-resource-limits";
 
+/// Additive native Rust execution lane. It is advertised only on process-owned stdio.
+pub const NATIVE_RUST_V1_CAPABILITY: &str = "native-rust-v1";
+
 /// Selects one socket of a negotiated dual-WebSocket connection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TransportLane {
@@ -40,6 +43,11 @@ pub use message::HostHello;
 pub use message::HostRequest;
 pub use message::HostResponse;
 pub use message::HostToClient;
+pub use message::NativeEvidence;
+pub use message::NativeExecuteRequest;
+pub use message::NativeFailure;
+pub use message::NativeToolOutcome;
+pub use message::NativeToolRequest;
 pub use message::WireResult;
 pub use payload::WireCellId;
 pub use payload::WireContentItem;

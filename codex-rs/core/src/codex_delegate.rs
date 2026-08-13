@@ -76,6 +76,7 @@ pub(crate) async fn run_codex_thread_interactive(
             .environment_manager(),
         skills_service: Arc::clone(&parent_session.services.skills_service),
         code_mode_session_provider: parent_session.services.code_mode_service.session_provider(),
+        native_code_mode_client: parent_session.services.code_mode_service.native_client(),
         extensions: Arc::clone(&parent_session.services.extensions),
         conversation_history,
         requested_history_mode: None,

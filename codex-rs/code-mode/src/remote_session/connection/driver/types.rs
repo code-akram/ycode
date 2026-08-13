@@ -20,6 +20,16 @@ use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
 use super::cleanup::SessionCleanup;
+use crate::native::NativeCodeModeDelegate;
+use crate::native::NativeExecute;
+use crate::native::NativeExecution;
+use crate::native::NativeRunIdentity;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(super) struct NativeRunKey {
+    pub(super) session_id: SessionId,
+    pub(super) run_id: String,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::remote_session) struct RemoteSession {
@@ -57,6 +67,16 @@ pub(in crate::remote_session::connection) enum DriverCommand {
         session: RemoteSession,
         response_tx: oneshot::Sender<Result<(), String>>,
     },
+    NativeExecute {
+        request: NativeExecute,
+        delegate: Arc<dyn NativeCodeModeDelegate>,
+        caller_cancellation: CancellationToken,
+        response_tx: oneshot::Sender<Result<NativeExecution, String>>,
+    },
+    NativeFinalize {
+        identity: NativeRunIdentity,
+        response_tx: oneshot::Sender<Result<(), String>>,
+    },
 }
 
 pub(in crate::remote_session::connection) enum DriverEvent {
@@ -64,6 +84,10 @@ pub(in crate::remote_session::connection) enum DriverEvent {
     DelegateCompleted {
         id: DelegateRequestId,
         result: Result<DelegateResponse, String>,
+    },
+    NativeDelegateCompleted {
+        id: DelegateRequestId,
+        result: Result<codex_code_mode_protocol::host::NativeToolOutcome, String>,
     },
     RequestCancelled(RequestId),
     Failed(String),
@@ -163,6 +187,16 @@ pub(super) enum PendingRequest {
         session: RemoteSession,
         response_tx: oneshot::Sender<Result<(), String>>,
     },
+    NativeExecute {
+        key: NativeRunKey,
+        identity: NativeRunIdentity,
+        cancellation: CancellableRequest,
+        response_tx: oneshot::Sender<Result<NativeExecution, String>>,
+    },
+    NativeFinalize {
+        identity: NativeRunIdentity,
+        response_tx: oneshot::Sender<Result<(), String>>,
+    },
 }
 
 pub(super) struct DeferredWait {
@@ -177,17 +211,25 @@ impl PendingRequest {
         match self {
             Self::OpenSession { cancellation, .. }
             | Self::Execute { cancellation, .. }
-            | Self::Wait { cancellation, .. } => Some(cancellation),
-            Self::Terminate { .. } | Self::ShutdownSession { .. } => None,
+            | Self::Wait { cancellation, .. }
+            | Self::NativeExecute { cancellation, .. } => Some(cancellation),
+            Self::Terminate { .. } | Self::ShutdownSession { .. } | Self::NativeFinalize { .. } => {
+                None
+            }
         }
     }
 
     pub(super) fn fail(self, reason: String) {
         match self {
-            Self::OpenSession { response_tx, .. } | Self::ShutdownSession { response_tx, .. } => {
+            Self::OpenSession { response_tx, .. }
+            | Self::ShutdownSession { response_tx, .. }
+            | Self::NativeFinalize { response_tx, .. } => {
                 let _ = response_tx.send(Err(reason));
             }
             Self::Execute { response_tx, .. } => {
+                let _ = response_tx.send(Err(reason));
+            }
+            Self::NativeExecute { response_tx, .. } => {
                 let _ = response_tx.send(Err(reason));
             }
             Self::Wait { response_tx, .. } | Self::Terminate { response_tx, .. } => {

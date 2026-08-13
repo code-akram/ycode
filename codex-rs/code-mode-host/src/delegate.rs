@@ -45,6 +45,9 @@ impl CodeModeSessionDelegate for RemoteDelegate {
                 DelegateResponse::NotificationDelivered => {
                     Err("code-mode client returned an invalid tool result".to_string())
                 }
+                DelegateResponse::NativeToolResult { .. } => {
+                    Err("code-mode client returned a native result to a V8 tool call".to_string())
+                }
             }
         })
     }
@@ -74,6 +77,9 @@ impl CodeModeSessionDelegate for RemoteDelegate {
                 DelegateResponse::ToolResult { .. } => {
                     Err("code-mode client returned an invalid notification result".to_string())
                 }
+                DelegateResponse::NativeToolResult { .. } => Err(
+                    "code-mode client returned a native result to a V8 notification".to_string(),
+                ),
             }
         })
     }

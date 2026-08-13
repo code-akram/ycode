@@ -51,6 +51,12 @@ pub enum ToolCallSource {
         /// because the runtime id only needs to be unique within one cell.
         runtime_tool_call_id: String,
     },
+    NativeCodeMode {
+        /// Canonical native run that issued the request.
+        run_id: String,
+        /// Generated runtime's call identifier within the run.
+        runtime_call_id: String,
+    },
 }
 
 #[derive(Clone)]

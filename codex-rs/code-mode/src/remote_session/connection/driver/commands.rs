@@ -9,6 +9,8 @@ use codex_code_mode_protocol::WaitRequest;
 use codex_code_mode_protocol::host::ClientToHost;
 use codex_code_mode_protocol::host::EncodedFrame;
 use codex_code_mode_protocol::host::HostRequest;
+use codex_code_mode_protocol::host::NativeExecuteRequest;
+use codex_code_mode_protocol::host::SessionId;
 use codex_code_mode_protocol::host::WireSessionCellExecutionLimits;
 use codex_code_mode_protocol::host::WireWaitRequest;
 use tokio::sync::oneshot;
@@ -21,8 +23,13 @@ use super::types::CancellableRequest;
 use super::types::DeferredWait;
 use super::types::DeliveredExecute;
 use super::types::DriverCommand;
+use super::types::NativeRunKey;
 use super::types::PendingRequest;
 use super::types::RemoteSession;
+use crate::native::NativeCodeModeDelegate;
+use crate::native::NativeExecute;
+use crate::native::NativeExecution;
+use crate::native::NativeRunIdentity;
 
 impl ConnectionDriver {
     pub(super) fn handle_command(&mut self, command: DriverCommand) -> bool {
@@ -63,6 +70,16 @@ impl ConnectionDriver {
                 session,
                 response_tx,
             } => self.shutdown_session(session, response_tx),
+            DriverCommand::NativeExecute {
+                request,
+                delegate,
+                caller_cancellation,
+                response_tx,
+            } => self.native_execute(request, delegate, caller_cancellation, response_tx),
+            DriverCommand::NativeFinalize {
+                identity,
+                response_tx,
+            } => self.native_finalize(identity, response_tx),
         }
     }
 
@@ -289,6 +306,82 @@ impl ConnectionDriver {
             },
             PendingRequest::ShutdownSession {
                 session,
+                response_tx,
+            },
+        )
+    }
+
+    fn native_execute(
+        &mut self,
+        request: NativeExecute,
+        delegate: Arc<dyn NativeCodeModeDelegate>,
+        caller_cancellation: CancellationToken,
+        response_tx: oneshot::Sender<Result<NativeExecution, String>>,
+    ) -> bool {
+        let session_id = match SessionId::new(request.identity.session_id.clone()) {
+            Ok(session_id) => session_id,
+            Err(error) => {
+                let _ = response_tx.send(Err(format!("invalid native session ID: {error}")));
+                return true;
+            }
+        };
+        let key = NativeRunKey {
+            session_id: session_id.clone(),
+            run_id: request.identity.run_id.clone(),
+        };
+        if let Err(error) =
+            self.native_delegates
+                .register(key.clone(), request.identity.clone(), delegate)
+        {
+            let _ = response_tx.send(Err(error));
+            return true;
+        }
+        let wire_request = NativeExecuteRequest {
+            session_id,
+            thread_id: request.identity.thread_id.clone(),
+            run_id: request.identity.run_id.clone(),
+            attempt: request.attempt,
+            task: request.task,
+            source: request.source,
+        };
+        let pending = PendingRequest::NativeExecute {
+            key: key.clone(),
+            identity: request.identity,
+            cancellation: CancellableRequest::new(caller_cancellation),
+            response_tx,
+        };
+        if !self.send_request(
+            HostRequest::NativeExecute {
+                request: wire_request,
+            },
+            pending,
+        ) {
+            self.native_delegates.unregister(&key);
+            return false;
+        }
+        true
+    }
+
+    fn native_finalize(
+        &mut self,
+        identity: NativeRunIdentity,
+        response_tx: oneshot::Sender<Result<(), String>>,
+    ) -> bool {
+        let session_id = match SessionId::new(identity.session_id.clone()) {
+            Ok(session_id) => session_id,
+            Err(error) => {
+                let _ = response_tx.send(Err(format!("invalid native session ID: {error}")));
+                return true;
+            }
+        };
+        self.send_request(
+            HostRequest::NativeFinalize {
+                session_id,
+                thread_id: identity.thread_id.clone(),
+                run_id: identity.run_id.clone(),
+            },
+            PendingRequest::NativeFinalize {
+                identity,
                 response_tx,
             },
         )

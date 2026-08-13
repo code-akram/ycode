@@ -39,8 +39,8 @@ members = [
     "exec-server",
     "exec-server/tests/support",
     "execpolicy",
-    "experimental/native-code-mode-host",
-    "experimental/native-code-mode-sdk",
+    "native-code-mode-runtime",
+    "native-code-mode-sdk",
     "ext/agent",
     "ext/extension-api",
     "ext/goal",
@@ -165,6 +165,8 @@ codex-model-provider-info = { path = "model-provider-info" }
 codex-models-manager = { path = "models-manager" }
 codex-network-proxy = { path = "network-proxy" }
 codex-model-provider = { path = "model-provider" }
+codex-native-code-mode-runtime = { path = "native-code-mode-runtime" }
+codex-native-code-mode-sdk = { path = "native-code-mode-sdk" }
 codex-protocol = { path = "protocol" }
 codex-prompts = { path = "prompts" }
 codex-response-debug-context = { path = "response-debug-context" }

@@ -27,6 +27,7 @@ use codex_code_mode_protocol::host::FramedWriter;
 use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
 use codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
+use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::RequestId;
 use codex_code_mode_protocol::host::SESSION_RESOURCE_LIMITS_CAPABILITY;
@@ -48,6 +49,11 @@ use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::warn;
+
+use crate::native::NativeCodeModeDelegate;
+use crate::native::NativeExecute;
+use crate::native::NativeExecution;
+use crate::native::NativeRunIdentity;
 
 use self::driver::ConnectionDriver;
 use self::driver::DriverCommand;
@@ -256,6 +262,7 @@ impl Connection {
             ConnectionWriter::Stdio(FramedWriter::new(stdin)),
             ConnectionOwner::Process(Box::new(child)),
             /*bulk_connection_options*/ None,
+            /*native_allowed*/ true,
         )
         .await
     }
@@ -275,6 +282,7 @@ impl Connection {
                 websocket_url: websocket_url.to_string(),
                 http_client_factory: http_client_factory.clone(),
             }),
+            /*native_allowed*/ false,
         )
         .await
     }
@@ -284,14 +292,20 @@ impl Connection {
         mut writer: ConnectionWriter,
         mut owner: ConnectionOwner,
         bulk_connection_options: Option<BulkConnectionOptions>,
+        native_allowed: bool,
     ) -> Result<Self, ConnectionError> {
         let handshake = async {
             let dual_capability =
                 Capability::new(DUAL_WEBSOCKET_CAPABILITY).map_err(|error| error.to_string())?;
             let session_limits_capability = Capability::new(SESSION_RESOURCE_LIMITS_CAPABILITY)
                 .map_err(|error| error.to_string())?;
+            let native_capability =
+                Capability::new(NATIVE_RUST_V1_CAPABILITY).map_err(|error| error.to_string())?;
             let optional_capabilities = if bulk_connection_options.is_some() {
                 CapabilitySet::try_new([dual_capability.clone(), session_limits_capability])
+                    .map_err(|error| error.to_string())?
+            } else if native_allowed {
+                CapabilitySet::try_new([session_limits_capability, native_capability])
                     .map_err(|error| error.to_string())?
             } else {
                 CapabilitySet::try_new([session_limits_capability])
@@ -395,6 +409,7 @@ impl Connection {
         let cancellation = CancellationToken::new();
         let alive = Arc::new(AtomicBool::new(true));
         let failure = Arc::new(std::sync::Mutex::new(None));
+        let owned_native_tasks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         let writer_cancellation = cancellation.clone();
         let writer_task = tokio::spawn(async move {
@@ -443,6 +458,7 @@ impl Connection {
                 alive: Arc::clone(&alive),
                 failure: Arc::clone(&failure),
                 cancellation: cancellation.clone(),
+                native_tasks: Arc::clone(&owned_native_tasks),
             },
         );
         let driver = match bulk_tx {
@@ -601,6 +617,58 @@ impl Connection {
         self.receive(response_rx).await
     }
 
+    pub(super) async fn native_execute(
+        &self,
+        request: NativeExecute,
+        delegate: Arc<dyn NativeCodeModeDelegate>,
+        cancellation: CancellationToken,
+    ) -> Result<NativeExecution, String> {
+        self.require_native_capability()?;
+        let caller = CallerCancellation {
+            token: cancellation,
+            armed: true,
+        };
+        let (response_tx, response_rx) = oneshot::channel();
+        self.send(DriverCommand::NativeExecute {
+            request,
+            delegate,
+            caller_cancellation: caller.token(),
+            response_tx,
+        })
+        .await?;
+        let result = self.receive(response_rx).await;
+        caller.disarm();
+        result
+    }
+
+    pub(super) async fn native_finalize(&self, identity: NativeRunIdentity) -> Result<(), String> {
+        self.require_native_capability()?;
+        let (response_tx, response_rx) = oneshot::channel();
+        self.send(DriverCommand::NativeFinalize {
+            identity,
+            response_tx,
+        })
+        .await?;
+        self.receive(response_rx).await
+    }
+
+    fn require_native_capability(&self) -> Result<(), String> {
+        require_native_capability(&self.capabilities)
+    }
+}
+
+pub(super) fn require_native_capability(capabilities: &CapabilitySet) -> Result<(), String> {
+    let native = Capability::new(NATIVE_RUST_V1_CAPABILITY)
+        .map_err(|error| format!("invalid native capability: {error}"))?;
+    if !capabilities.contains(&native) {
+        return Err(format!(
+            "code-mode host does not support `{NATIVE_RUST_V1_CAPABILITY}`"
+        ));
+    }
+    Ok(())
+}
+
+impl Connection {
     async fn with_transport_deadline<T>(
         &self,
         runtime_timeout: Duration,

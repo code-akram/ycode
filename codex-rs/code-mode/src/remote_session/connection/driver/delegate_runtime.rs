@@ -69,6 +69,7 @@ enum DelegateTask {
 enum DelegateStartError {
     Duplicate(DelegateRequestId),
     CapacityExceeded,
+    UnsupportedNative,
 }
 
 pub(super) struct DelegateEffects {
@@ -137,6 +138,9 @@ impl DelegateRuntime {
                 cell_id: target.cell_id.clone(),
                 text,
             },
+            DelegateRequest::NativeInvokeTool { .. } => {
+                return Err(DelegateStartError::UnsupportedNative);
+            }
         };
         let delegate = target.delegate;
         let task_cancellation = cancellation.clone();
@@ -258,6 +262,23 @@ impl ConnectionDriver {
         let wire_cell_id = match &request {
             DelegateRequest::InvokeTool { invocation } => &invocation.cell_id,
             DelegateRequest::Notify { cell_id, .. } => cell_id,
+            DelegateRequest::NativeInvokeTool {
+                run_id,
+                call_id,
+                request,
+            } => {
+                let result = self.native_delegates.start(
+                    id,
+                    session_id,
+                    run_id.clone(),
+                    call_id.clone(),
+                    request.clone(),
+                );
+                return match result {
+                    Ok(()) => true,
+                    Err(error) => self.send_delegate_response(id, Err(error)),
+                };
+            }
         };
         let target = match self.sessions.delegate_target(&session_id, wire_cell_id) {
             Ok(target) => target,
@@ -275,6 +296,10 @@ impl ConnectionDriver {
                     "code-mode host exceeded the limit of {MAX_PENDING_DELEGATE_CALLS} pending delegate calls"
                 )),
             ),
+            Err(DelegateStartError::UnsupportedNative) => self.send_delegate_response(
+                id,
+                Err("native-rust-v1 is unavailable on remote code-mode sessions".to_string()),
+            ),
         }
     }
 
@@ -285,6 +310,20 @@ impl ConnectionDriver {
     ) -> bool {
         let effects = self.delegates.complete(id, result);
         self.apply_delegate_effects(effects)
+    }
+
+    pub(super) fn complete_native_delegate(
+        &mut self,
+        id: DelegateRequestId,
+        result: Result<codex_code_mode_protocol::host::NativeToolOutcome, String>,
+    ) -> bool {
+        if self.native_delegates.complete(id).is_none() {
+            return true;
+        }
+        self.send_delegate_response(
+            id,
+            result.map(|outcome| DelegateResponse::NativeToolResult { outcome }),
+        )
     }
 
     fn send_delegate_response(

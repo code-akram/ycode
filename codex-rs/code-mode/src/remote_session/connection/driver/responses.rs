@@ -20,6 +20,8 @@ use super::types::InitialResponse;
 use super::types::PendingRequest;
 use super::types::RemoteSession;
 use super::types::UnclaimedExecute;
+use crate::native::NativeExecution;
+use crate::native::validate_execution;
 
 impl ConnectionDriver {
     pub(super) fn flush_deferred_waits(&mut self) -> bool {
@@ -98,6 +100,11 @@ impl ConnectionDriver {
                     codex_code_mode_protocol::host::DelegateRequest::Notify { cell_id, .. } => {
                         cell_id
                     }
+                    codex_code_mode_protocol::host::DelegateRequest::NativeInvokeTool {
+                        ..
+                    } => {
+                        return false;
+                    }
                 };
                 !self.sessions.contains_cell(session_id, cell_id)
                     && self.requests.has_pending_execute_for_session(session_id)
@@ -132,6 +139,7 @@ impl ConnectionDriver {
                     )
                 });
                 self.delegates.cancel(id);
+                self.native_delegates.cancel(id);
                 true
             }
             HostToClient::CellClosed {
@@ -329,6 +337,74 @@ impl ConnectionDriver {
                     return false;
                 }
             },
+            PendingRequest::NativeExecute {
+                key,
+                identity,
+                cancellation: _,
+                response_tx,
+            } => {
+                self.native_delegates.unregister(&key);
+                let response = match result {
+                    Ok(HostResponse::NativeCompleted {
+                        session_id,
+                        thread_id,
+                        run_id,
+                        source_hash,
+                        evidence,
+                    }) if session_id.as_str() == identity.session_id
+                        && thread_id == identity.thread_id
+                        && run_id == identity.run_id =>
+                    {
+                        Ok(NativeExecution::Completed {
+                            identity,
+                            source_hash,
+                            evidence: *evidence,
+                        })
+                    }
+                    Ok(HostResponse::NativeFailed {
+                        session_id,
+                        thread_id,
+                        run_id,
+                        failure,
+                    }) if session_id.as_str() == identity.session_id
+                        && thread_id == identity.thread_id
+                        && run_id == identity.run_id =>
+                    {
+                        Ok(NativeExecution::Failed { identity, failure })
+                    }
+                    Ok(_) => {
+                        Err("code-mode host returned a mismatched native response".to_string())
+                    }
+                    Err(error) => Err(error),
+                };
+                let response = response.and_then(|result| {
+                    validate_execution(&result)?;
+                    Ok(result)
+                });
+                let _ = response_tx.send(response);
+            }
+            PendingRequest::NativeFinalize {
+                identity,
+                response_tx,
+            } => {
+                let response = match result {
+                    Ok(HostResponse::NativeFinalized {
+                        session_id,
+                        thread_id,
+                        run_id,
+                    }) if session_id.as_str() == identity.session_id
+                        && thread_id == identity.thread_id
+                        && run_id == identity.run_id =>
+                    {
+                        Ok(())
+                    }
+                    Ok(_) => Err(
+                        "code-mode host returned a mismatched native finalize response".to_string(),
+                    ),
+                    Err(error) => Err(error),
+                };
+                let _ = response_tx.send(response);
+            }
         }
         true
     }
@@ -351,6 +427,10 @@ impl ConnectionDriver {
     fn apply_cancellation(&mut self, action: CancellationAction) -> bool {
         match action {
             CancellationAction::Send(id) => self.send_cancel_request(id),
+            CancellationAction::Native { request_id, key } => {
+                self.native_delegates.unregister(&key);
+                self.send_cancel_request(request_id)
+            }
             CancellationAction::Terminate {
                 request_id,
                 execute,

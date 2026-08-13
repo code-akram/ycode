@@ -17,6 +17,7 @@ use codex_code_mode_protocol::host::HostHello;
 use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
+use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::SESSION_RESOURCE_LIMITS_CAPABILITY;
 use codex_code_mode_protocol::host::WireCellId;
@@ -39,6 +40,7 @@ use super::ProcessOwnedCodeModeSession;
 use super::ProcessOwnedCodeModeSessionProvider;
 use super::WebSocketCodeModeSessionProvider;
 use super::connection::ConnectionError;
+use super::connection::require_native_capability;
 use crate::NoopCodeModeSessionDelegate;
 
 #[test]
@@ -49,6 +51,16 @@ fn provider_reuses_its_live_process_host() {
     let second = provider.process_host();
 
     assert!(Arc::ptr_eq(&first, &second));
+}
+
+#[test]
+fn absent_native_capability_fails_closed() {
+    assert_eq!(
+        require_native_capability(&CapabilitySet::empty()),
+        Err(format!(
+            "code-mode host does not support `{NATIVE_RUST_V1_CAPABILITY}`"
+        ))
+    );
 }
 
 #[test]
@@ -123,6 +135,9 @@ async fn websocket_provider_executes_over_shared_connector() {
                     let capability = Capability::new(SESSION_RESOURCE_LIMITS_CAPABILITY)
                         .expect("session-limit capability");
                     assert!(hello.optional_capabilities().contains(&capability));
+                    let native =
+                        Capability::new(NATIVE_RUST_V1_CAPABILITY).expect("native capability");
+                    assert!(!hello.optional_capabilities().contains(&native));
                     assert_eq!(hello.required_capabilities(), &CapabilitySet::empty());
                     vec![HostToClient::HostHello(HostHello::new(
                         ProtocolVersion::V1,

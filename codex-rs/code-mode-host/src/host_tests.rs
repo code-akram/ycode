@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -22,6 +23,7 @@ use codex_code_mode_protocol::host::HostHello;
 use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
+use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::RequestId;
 use codex_code_mode_protocol::host::SESSION_RESOURCE_LIMITS_CAPABILITY;
@@ -42,6 +44,7 @@ use super::HostState;
 use super::MAX_ACTIVE_CELLS;
 use super::MAX_IN_FLIGHT_REQUESTS;
 use super::MAX_RECENT_REQUEST_IDS;
+use super::NegotiatedConnection;
 use super::RequestKind;
 use super::RequestRegistry;
 use super::SeenSessionIds;
@@ -362,6 +365,110 @@ async fn optional_dual_websocket_capability_falls_back_to_a_single_connection() 
 }
 
 #[tokio::test]
+async fn native_capability_is_stdio_only_and_websocket_fails_closed() {
+    let native = Capability::new(NATIVE_RUST_V1_CAPABILITY).expect("native capability");
+    let (host_stream, client_stream) = tokio::io::duplex(/*max_buf_size*/ 1024);
+    let (host_reader, host_writer) = tokio::io::split(host_stream);
+    let (client_reader, client_writer) = tokio::io::split(client_stream);
+    let host = tokio::spawn(run(host_reader, host_writer));
+    let mut reader = FramedReader::new(client_reader);
+    let mut writer = FramedWriter::new(client_writer);
+    writer
+        .write(&client_hello(
+            [ProtocolVersion::V1],
+            CapabilitySet::try_new([native.clone()]).expect("capability set"),
+        ))
+        .await
+        .expect("write native hello");
+    assert_eq!(
+        reader.read::<HostToClient>().await.expect("stdio hello"),
+        Some(HostToClient::HostHello(HostHello::new(
+            ProtocolVersion::V1,
+            CapabilitySet::try_new([native.clone()]).expect("host capability set"),
+        )))
+    );
+    drop(writer);
+    drop(reader);
+    host.await.expect("stdio task").expect("stdio connection");
+
+    let (host_stream, client_stream) = tokio::io::duplex(/*max_buf_size*/ 1024);
+    let (host_reader, host_writer) = tokio::io::split(host_stream);
+    let (client_reader, client_writer) = tokio::io::split(client_stream);
+    let mut reader = FramedReader::new(client_reader);
+    let mut writer = FramedWriter::new(client_writer);
+    writer
+        .write(&client_hello(
+            [ProtocolVersion::V1],
+            CapabilitySet::try_new([native.clone()]).expect("capability set"),
+        ))
+        .await
+        .expect("write websocket hello");
+    let mut host_reader = ConnectionReader::from_reader(host_reader);
+    let mut host_writer = ConnectionWriter::from_writer(host_writer);
+    let registry = BulkConnectionRegistry::default();
+    assert!(matches!(
+        negotiate(&mut host_reader, &mut host_writer, Some(&registry))
+            .await
+            .expect("negotiate websocket"),
+        NegotiatedConnection::Rejected
+    ));
+    assert_eq!(
+        reader
+            .read::<HostToClient>()
+            .await
+            .expect("websocket rejection"),
+        Some(HostToClient::HandshakeRejected {
+            reason: HandshakeRejectReason::MissingRequiredCapability { capability: native },
+        })
+    );
+}
+
+#[tokio::test]
+async fn native_finalize_without_capability_fails_before_artifact_access() {
+    let (host_stream, client_stream) = tokio::io::duplex(/*max_buf_size*/ 2048);
+    let (host_reader, host_writer) = tokio::io::split(host_stream);
+    let (client_reader, client_writer) = tokio::io::split(client_stream);
+    let host = tokio::spawn(run(host_reader, host_writer));
+    let mut reader = FramedReader::new(client_reader);
+    let mut writer = FramedWriter::new(client_writer);
+    writer
+        .write(&client_hello([ProtocolVersion::V1], CapabilitySet::empty()))
+        .await
+        .expect("write hello");
+    reader
+        .read::<HostToClient>()
+        .await
+        .expect("read hello")
+        .expect("host hello");
+    writer
+        .write(&ClientToHost::Request {
+            id: request_id(91),
+            request: HostRequest::NativeFinalize {
+                session_id: session_id("native-finalize"),
+                thread_id: "not-an-identity".into(),
+                run_id: "not-an-identity".into(),
+            },
+        })
+        .await
+        .expect("write native finalize");
+    assert_eq!(
+        reader
+            .read::<HostToClient>()
+            .await
+            .expect("finalize response"),
+        Some(HostToClient::Response {
+            id: request_id(91),
+            result: WireResult::Err {
+                message: "native-rust-v1 was not negotiated on this local stdio connection".into(),
+            },
+        })
+    );
+    drop(writer);
+    drop(reader);
+    host.await.expect("host task").expect("host connection");
+}
+
+#[tokio::test]
 async fn session_resource_limits_are_negotiated_when_optional_or_required() {
     let dual_capability =
         Capability::new(DUAL_WEBSOCKET_CAPABILITY).expect("dual websocket capability");
@@ -595,6 +702,8 @@ async fn request_task_panic_disconnects_host() {
         active_cell_permits: Arc::new(Semaphore::new(MAX_ACTIVE_CELLS)),
         closing: AtomicBool::new(false),
         peer: Arc::clone(&peer),
+        native_enabled: false,
+        native_runs: Mutex::new(HashSet::new()),
     };
     let task = state.request_tasks.spawn(async {
         panic!("request panic probe");
@@ -624,6 +733,8 @@ async fn execute_request_id_remains_active_until_initial_response() {
         active_cell_permits: Arc::new(Semaphore::new(MAX_ACTIVE_CELLS)),
         closing: AtomicBool::new(false),
         peer,
+        native_enabled: false,
+        native_runs: Mutex::new(HashSet::new()),
     });
     let session_id = session_id("session-1");
     state
@@ -686,6 +797,8 @@ async fn active_cell_limit_rejects_execute_without_disconnecting() {
         active_cell_permits: Arc::new(Semaphore::new(/*permits*/ 0)),
         closing: AtomicBool::new(false),
         peer: Arc::clone(&peer),
+        native_enabled: false,
+        native_runs: Mutex::new(HashSet::new()),
     };
     let session_id = session_id("session-1");
     state

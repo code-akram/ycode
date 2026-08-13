@@ -7,6 +7,9 @@ const MAGIC: u32 = 0x5943_4e52;
 const VERSION: u16 = 1;
 const HEADER_BYTES: usize = 12;
 const MAX_FRAME_BYTES: usize = 64 * 1024;
+const MAX_EVIDENCE_BYTES: usize = 16 * 1024;
+const MAX_EVIDENCE_ITEMS: usize = 64;
+const MAX_EVIDENCE_STRING_BYTES: usize = 4 * 1024;
 
 const SPAWN: u16 = 1;
 const JOIN: u16 = 2;
@@ -23,88 +26,75 @@ const FAILURE: u16 = 199;
 // Generated-facing contract. Wire tags and codecs remain private below.
 #[derive(Clone, Debug)]
 pub enum Request {
-    Fetch { query: String, attempt: u8 },
-    Inspect { resource: String, attempt: u8 },
-    Summarize { content: String, attempt: u8 },
-    Retry { prior: Vec<u8>, attempt: u8 },
+    Shell {
+        command: String,
+        workdir: Option<String>,
+        timeout_ms: u32,
+    },
+    ApplyPatch {
+        patch: String,
+    },
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Task(u32);
 #[derive(Clone, Debug)]
 pub enum Outcome {
-    Success(Vec<u8>),
-    Retry { reason: Vec<u8>, next_attempt: u8 },
-    Failure(String),
+    Success { call_id: String, output: Vec<u8> },
+    Retry { call_id: String, reason: String },
+    Failure { call_id: String, message: String },
 }
 #[derive(Clone, Debug)]
-pub struct Evidence(pub Vec<u8>);
+pub struct Evidence {
+    pub version: u16,
+    pub summary: String,
+    pub verified: Vec<String>,
+    pub disputed: Vec<String>,
+    pub unresolved: Vec<String>,
+    pub artifact_refs: Vec<String>,
+    pub partial_failures: Vec<String>,
+    pub provenance_ids: Vec<String>,
+}
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
     Protocol(String),
     Host(String),
 }
-
 pub type Result<T> = std::result::Result<T, Error>;
 pub struct Context {
     input: io::Stdin,
     output: io::Stdout,
     next_task: u32,
 }
-
 pub fn run<T>(workflow: impl FnOnce(&mut Context) -> Result<T>) -> Result<T> {
-    let mut context = Context {
+    workflow(&mut Context {
         input: io::stdin(),
         output: io::stdout(),
         next_task: 1,
-    };
-    workflow(&mut context)
+    })
 }
-
 impl Context {
     pub fn call(&mut self, request: Request) -> Result<Outcome> {
         let task = self.spawn(request)?;
         self.join(task)
     }
-
     pub fn spawn(&mut self, request: Request) -> Result<Task> {
         let task = Task(self.next_task);
         self.next_task = self
             .next_task
             .checked_add(1)
             .ok_or_else(|| Error::Protocol("task id exhausted".into()))?;
-        let (capability, attempt, input) = encode_request(request);
-        let mut payload = Vec::with_capacity(10 + input.len());
+        let mut payload = Vec::new();
         put_u32(&mut payload, task.0);
-        payload.push(capability);
-        payload.push(attempt);
-        put_bytes(&mut payload, &input)?;
+        encode_request(&mut payload, request)?;
         self.exchange(SPAWN, &payload, ACK)?;
         Ok(task)
     }
-
     pub fn join(&mut self, task: Task) -> Result<Outcome> {
         let mut payload = Vec::new();
         put_u32(&mut payload, task.0);
-        let payload = self.exchange(JOIN, &payload, OUTCOME)?;
-        let mut cursor = Cursor::new(&payload);
-        let status = cursor.byte()?;
-        let next_attempt = if status == 1 { cursor.byte()? } else { 0 };
-        let value = cursor.bytes()?.to_vec();
-        cursor.finish()?;
-        match status {
-            0 => Ok(Outcome::Success(value)),
-            1 => Ok(Outcome::Retry {
-                reason: value,
-                next_attempt,
-            }),
-            2 => String::from_utf8(value)
-                .map(Outcome::Failure)
-                .map_err(|_| Error::Protocol("host failure was not UTF-8".into())),
-            _ => Err(Error::Protocol("unknown outcome tag".into())),
-        }
+        decode_outcome(&self.exchange(JOIN, &payload, OUTCOME)?)
     }
-
     pub fn budget(&mut self) -> Result<u32> {
         let payload = self.exchange(BUDGET, &[], BUDGET_RESULT)?;
         let mut cursor = Cursor::new(&payload);
@@ -112,22 +102,22 @@ impl Context {
         cursor.finish()?;
         Ok(remaining)
     }
-
     pub fn cancelled(&mut self) -> Result<bool> {
-        let payload = self.exchange(CANCELLED, &[], CANCELLED_RESULT)?;
-        match payload.as_slice() {
+        match self.exchange(CANCELLED, &[], CANCELLED_RESULT)?.as_slice() {
             [0] => Ok(false),
             [1] => Ok(true),
             _ => Err(Error::Protocol("invalid cancellation response".into())),
         }
     }
-
     pub fn finish(&mut self, evidence: Evidence) -> Result<()> {
-        self.exchange(FINISH, &evidence.0, FINISHED).map(|_| ())
+        let payload = encode_evidence(evidence)?;
+        if payload.len() > MAX_EVIDENCE_BYTES {
+            return Err(Error::Protocol("final evidence too large".into()));
+        }
+        self.exchange(FINISH, &payload, FINISHED).map(|_| ())
     }
 }
 
-// Private deterministic wire codec.
 impl Context {
     fn exchange(&mut self, kind: u16, payload: &[u8], expected: u16) -> Result<Vec<u8>> {
         write_frame(&mut self.output.lock(), kind, payload)?;
@@ -142,13 +132,89 @@ impl Context {
     }
 }
 
-fn encode_request(request: Request) -> (u8, u8, Vec<u8>) {
+fn encode_request(output: &mut Vec<u8>, request: Request) -> Result<()> {
     match request {
-        Request::Fetch { query, attempt } => (1, attempt, query.into_bytes()),
-        Request::Inspect { resource, attempt } => (2, attempt, resource.into_bytes()),
-        Request::Summarize { content, attempt } => (3, attempt, content.into_bytes()),
-        Request::Retry { prior, attempt } => (4, attempt, prior),
+        Request::Shell {
+            command,
+            workdir,
+            timeout_ms,
+        } => {
+            output.push(1);
+            put_string(output, &command)?;
+            match workdir {
+                Some(workdir) => {
+                    output.push(1);
+                    put_string(output, &workdir)?;
+                }
+                None => output.push(0),
+            }
+            put_u32(output, timeout_ms);
+        }
+        Request::ApplyPatch { patch } => {
+            output.push(2);
+            put_string(output, &patch)?;
+        }
     }
+    Ok(())
+}
+
+fn decode_outcome(payload: &[u8]) -> Result<Outcome> {
+    let mut cursor = Cursor::new(payload);
+    let status = cursor.byte()?;
+    let call_id = cursor.string()?;
+    let value = cursor.bytes()?.to_vec();
+    cursor.finish()?;
+    match status {
+        0 => Ok(Outcome::Success {
+            call_id,
+            output: value,
+        }),
+        1 => String::from_utf8(value)
+            .map(|reason| Outcome::Retry { call_id, reason })
+            .map_err(|_| Error::Protocol("retry reason was not UTF-8".into())),
+        2 => String::from_utf8(value)
+            .map(|message| Outcome::Failure { call_id, message })
+            .map_err(|_| Error::Protocol("failure message was not UTF-8".into())),
+        _ => Err(Error::Protocol("unknown outcome tag".into())),
+    }
+}
+
+fn encode_evidence(evidence: Evidence) -> Result<Vec<u8>> {
+    if evidence.version != VERSION {
+        return Err(Error::Protocol("unsupported evidence version".into()));
+    }
+    let mut output = Vec::new();
+    output.extend_from_slice(&evidence.version.to_le_bytes());
+    put_evidence_string(&mut output, &evidence.summary)?;
+    for values in [
+        evidence.verified,
+        evidence.disputed,
+        evidence.unresolved,
+        evidence.artifact_refs,
+        evidence.partial_failures,
+        evidence.provenance_ids,
+    ] {
+        put_evidence_strings(&mut output, values)?;
+    }
+    Ok(output)
+}
+
+fn put_evidence_string(output: &mut Vec<u8>, value: &str) -> Result<()> {
+    if value.len() > MAX_EVIDENCE_STRING_BYTES {
+        return Err(Error::Protocol("evidence string too large".into()));
+    }
+    put_string(output, value)
+}
+
+fn put_evidence_strings(output: &mut Vec<u8>, values: Vec<String>) -> Result<()> {
+    if values.len() > MAX_EVIDENCE_ITEMS {
+        return Err(Error::Protocol("too many evidence items".into()));
+    }
+    put_u32(output, values.len() as u32);
+    for value in values {
+        put_evidence_string(output, &value)?;
+    }
+    Ok(())
 }
 
 impl fmt::Display for Error {
@@ -160,9 +226,7 @@ impl fmt::Display for Error {
         }
     }
 }
-
 impl std::error::Error for Error {}
-
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
         Self::Io(error)
@@ -204,7 +268,6 @@ fn read_frame(reader: &mut impl Read) -> Result<(u16, Vec<u8>)> {
 fn put_u32(output: &mut Vec<u8>, value: u32) {
     output.extend_from_slice(&value.to_le_bytes());
 }
-
 fn put_bytes(output: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
     let length =
         u32::try_from(bytes.len()).map_err(|_| Error::Protocol("value too large".into()))?;
@@ -212,12 +275,14 @@ fn put_bytes(output: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
     output.extend_from_slice(bytes);
     Ok(())
 }
+fn put_string(output: &mut Vec<u8>, value: &str) -> Result<()> {
+    put_bytes(output, value.as_bytes())
+}
 
 struct Cursor<'a> {
     bytes: &'a [u8],
     offset: usize,
 }
-
 impl<'a> Cursor<'a> {
     fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
@@ -251,6 +316,10 @@ impl<'a> Cursor<'a> {
             .ok_or_else(|| Error::Protocol("truncated payload".into()))?;
         self.offset = end;
         Ok(value)
+    }
+    fn string(&mut self) -> Result<String> {
+        String::from_utf8(self.bytes()?.to_vec())
+            .map_err(|_| Error::Protocol("string was not UTF-8".into()))
     }
     fn finish(&self) -> Result<()> {
         if self.offset == self.bytes.len() {

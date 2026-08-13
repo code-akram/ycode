@@ -153,6 +153,9 @@ impl HostPeer {
         let cell_id = match &request {
             DelegateRequest::InvokeTool { invocation } => invocation.cell_id.clone().into(),
             DelegateRequest::Notify { cell_id, .. } => cell_id.clone().into(),
+            DelegateRequest::NativeInvokeTool { .. } => {
+                return Err("native delegate requests do not use V8 cell routes".to_string());
+            }
         };
         let (dispatched_tx, dispatched_rx) = oneshot::channel();
         if let Err(err) = self.route_cell_message(
@@ -197,6 +200,61 @@ impl HostPeer {
                 }
                 pending.disarm();
                 Err("code mode delegate request cancelled".to_string())
+            }
+            _ = self.disconnected.cancelled() => {
+                self.pending.lock().await.remove(&id);
+                pending.disarm();
+                Err("code-mode client connection closed".to_string())
+            }
+        }
+    }
+
+    pub(super) async fn call_native(
+        self: &Arc<Self>,
+        session_id: SessionId,
+        request: DelegateRequest,
+        cancellation_token: CancellationToken,
+    ) -> Result<DelegateResponse, String> {
+        if !matches!(request, DelegateRequest::NativeInvokeTool { .. }) {
+            return Err("non-native request sent through native delegate lane".to_string());
+        }
+        if self.disconnected.is_cancelled() {
+            return Err("code-mode client connection closed".to_string());
+        }
+        let permit = Arc::clone(&self.delegate_permits)
+            .try_acquire_owned()
+            .map_err(|_| "code-mode host has too many pending delegate calls".to_string())?;
+        let id = DelegateRequestId::new(self.next_request_id.fetch_add(1, Ordering::Relaxed));
+        let (response_tx, response_rx) = oneshot::channel();
+        self.pending.lock().await.insert(
+            id,
+            PendingDelegate {
+                response_tx,
+                dispatched: true,
+                _permit: permit,
+            },
+        );
+        let mut pending = PendingDelegateRequest::new(Arc::clone(self), id);
+        if let Err(error) = self.send(HostToClient::DelegateRequest {
+            id,
+            session_id,
+            request,
+        }) {
+            self.pending.lock().await.remove(&id);
+            pending.disarm();
+            return Err(error.to_string());
+        }
+        tokio::select! {
+            response = response_rx => {
+                pending.disarm();
+                response.map_err(|_| "code-mode client closed before returning native tool output".to_string())?
+            }
+            _ = cancellation_token.cancelled() => {
+                if self.remove_pending(id).await.is_some() {
+                    let _ = self.send(HostToClient::CancelDelegateRequest { id });
+                }
+                pending.disarm();
+                Err("native delegate request cancelled".to_string())
             }
             _ = self.disconnected.cancelled() => {
                 self.pending.lock().await.remove(&id);

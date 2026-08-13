@@ -1,6 +1,7 @@
 mod delegate;
 mod execute_handler;
 pub(crate) mod execute_spec;
+mod native;
 mod response_adapter;
 mod wait_handler;
 pub(crate) mod wait_spec;
@@ -47,6 +48,7 @@ use codex_utils_output_truncation::truncate_function_output_items_with_policy;
 use delegate::CodeModeDispatchBroker;
 use delegate::CodeModeDispatchWorker;
 pub(crate) use execute_handler::CodeModeExecuteHandler;
+use native::NativeCodeModeDispatchWorker;
 use response_adapter::into_function_call_output_content_items;
 pub(crate) use wait_handler::CodeModeWaitHandler;
 
@@ -75,6 +77,7 @@ pub(crate) struct ExecContext {
 pub(crate) struct CodeModeService {
     session: OnceCell<Arc<dyn CodeModeSession>>,
     session_provider: Arc<dyn CodeModeSessionProvider>,
+    native_client: Option<codex_code_mode::ProcessOwnedNativeCodeModeClient>,
     availability: Result<(), String>,
     dispatch_broker: Arc<CodeModeDispatchBroker>,
     default_exec_yield_time_override_ms: Option<u64>,
@@ -83,8 +86,17 @@ pub(crate) struct CodeModeService {
 }
 
 impl CodeModeService {
+    #[allow(dead_code)] // Test/custom-provider constructor without a process-owned native lane.
     pub(crate) fn new(
         session_provider: Arc<dyn CodeModeSessionProvider>,
+        features: &Features,
+    ) -> Self {
+        Self::new_with_native_client(session_provider, None, features)
+    }
+
+    pub(crate) fn new_with_native_client(
+        session_provider: Arc<dyn CodeModeSessionProvider>,
+        native_client: Option<codex_code_mode::ProcessOwnedNativeCodeModeClient>,
         features: &Features,
     ) -> Self {
         let dispatch_broker = Arc::new(CodeModeDispatchBroker::new());
@@ -92,6 +104,7 @@ impl CodeModeService {
         Self {
             session: OnceCell::new(),
             session_provider,
+            native_client,
             availability,
             dispatch_broker,
             default_exec_yield_time_override_ms: default_exec_yield_time_override_ms(features),
@@ -124,6 +137,12 @@ impl CodeModeService {
     #[allow(dead_code)] // Retained compatibility, test, or architectural seam for non-default consumers.
     pub(crate) fn session_provider(&self) -> Arc<dyn CodeModeSessionProvider> {
         Arc::clone(&self.session_provider)
+    }
+
+    pub(crate) fn native_client(
+        &self,
+    ) -> Option<codex_code_mode::ProcessOwnedNativeCodeModeClient> {
+        self.native_client.clone()
     }
 
     pub(crate) async fn execute(
@@ -194,6 +213,26 @@ impl CodeModeService {
         Some(
             self.dispatch_broker
                 .start_turn_worker(exec, step_context, tracker),
+        )
+    }
+
+    /// Internal bridge from the one-shot native task into the real tool runtime.
+    pub(crate) fn start_native_worker(
+        &self,
+        identity: codex_code_mode::NativeRunIdentity,
+        attempt: u8,
+        session: Arc<Session>,
+        step_context: Arc<StepContext>,
+        tracker: SharedTurnDiffTracker,
+        cancellation: CancellationToken,
+    ) -> Arc<NativeCodeModeDispatchWorker> {
+        NativeCodeModeDispatchWorker::new(
+            identity,
+            attempt,
+            session,
+            step_context,
+            tracker,
+            cancellation,
         )
     }
 

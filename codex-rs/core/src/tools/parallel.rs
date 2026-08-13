@@ -95,12 +95,13 @@ impl ToolCallRuntime {
         source: ToolCallSource,
         cancellation_token: CancellationToken,
     ) -> impl std::future::Future<Output = Result<AnyToolResult, FunctionCallError>> {
-        if self
-            .step_context
-            .turn
-            .config
-            .features
-            .enabled(codex_features::Feature::ExecutedToolCallMetadata)
+        if !matches!(source, ToolCallSource::NativeCodeMode { .. })
+            && self
+                .step_context
+                .turn
+                .config
+                .features
+                .enabled(codex_features::Feature::ExecutedToolCallMetadata)
             && let Some(executed_tool_calls) = self.session.services.executed_tool_calls.as_ref()
         {
             executed_tool_calls.record_tool_call(

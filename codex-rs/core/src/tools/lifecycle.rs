@@ -96,5 +96,31 @@ fn extension_tool_call_source(source: ToolCallSource) -> ExtensionToolCallSource
             cell_id,
             runtime_tool_call_id,
         },
+        ToolCallSource::NativeCodeMode {
+            run_id,
+            runtime_call_id,
+        } => ExtensionToolCallSource::NativeCodeMode {
+            run_id,
+            runtime_call_id,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_tool_lifecycle_preserves_run_attribution_without_cell_id() {
+        assert_eq!(
+            extension_tool_call_source(ToolCallSource::NativeCodeMode {
+                run_id: "run-1".to_string(),
+                runtime_call_id: "call-2".to_string(),
+            }),
+            ExtensionToolCallSource::NativeCodeMode {
+                run_id: "run-1".to_string(),
+                runtime_call_id: "call-2".to_string(),
+            }
+        );
     }
 }

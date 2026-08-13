@@ -157,6 +157,8 @@ pub(crate) enum CodexResponsesRequestKind {
     Prewarm,
     Compaction(CompactionTurnMetadata),
     Memory,
+    NativeCodeModeGeneration,
+    NativeCodeModeRepair,
 }
 
 impl CodexResponsesRequestKind {
@@ -166,6 +168,10 @@ impl CodexResponsesRequestKind {
             CodexResponsesRequestKind::Prewarm => ("prewarm", None),
             CodexResponsesRequestKind::Compaction(metadata) => ("compaction", Some(metadata)),
             CodexResponsesRequestKind::Memory => ("memory", None),
+            CodexResponsesRequestKind::NativeCodeModeGeneration => {
+                ("native_code_mode_generation", None)
+            }
+            CodexResponsesRequestKind::NativeCodeModeRepair => ("native_code_mode_repair", None),
         }
     }
 

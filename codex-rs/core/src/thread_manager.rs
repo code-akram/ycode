@@ -305,6 +305,7 @@ pub(crate) struct ThreadManagerState {
     environment_manager: Arc<EnvironmentManager>,
     skills_service: Arc<HostSkillsService>,
     code_mode_session_provider: Arc<dyn CodeModeSessionProvider>,
+    native_code_mode_client: Option<codex_code_mode::ProcessOwnedNativeCodeModeClient>,
     extensions: Arc<ExtensionRegistry<Config>>,
     user_instructions_provider: Arc<dyn UserInstructionsProvider>,
     thread_store: Arc<dyn ThreadStore>,
@@ -382,14 +383,20 @@ impl ThreadManager {
             config.bundled_skills_enabled(),
             restriction_product,
         ));
-        let code_mode_session_provider: Arc<dyn CodeModeSessionProvider> =
-            if config.features.enabled(Feature::CodeModeHost)
-                || config.code_mode.disable_in_process_fallback
-            {
-                Arc::new(ProcessOwnedCodeModeSessionProvider::default())
-            } else {
-                Arc::new(DisabledCodeModeSessionProvider)
-            };
+        let (code_mode_session_provider, native_code_mode_client): (
+            Arc<dyn CodeModeSessionProvider>,
+            Option<codex_code_mode::ProcessOwnedNativeCodeModeClient>,
+        ) = if config.features.enabled(Feature::CodeModeHost)
+            || config.code_mode.disable_in_process_fallback
+        {
+            let provider = Arc::new(ProcessOwnedCodeModeSessionProvider::default());
+            (
+                Arc::clone(&provider) as Arc<dyn CodeModeSessionProvider>,
+                Some(provider.native_client()),
+            )
+        } else {
+            (Arc::new(DisabledCodeModeSessionProvider), None)
+        };
         Self {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
@@ -398,6 +405,7 @@ impl ThreadManager {
                 environment_manager,
                 skills_service,
                 code_mode_session_provider,
+                native_code_mode_client,
                 extensions,
                 user_instructions_provider,
                 thread_store,
@@ -423,6 +431,7 @@ impl ThreadManager {
             unreachable!("code-mode session provider must be set before thread manager is shared");
         };
         state.code_mode_session_provider = provider;
+        state.native_code_mode_client = None;
         self
     }
 
@@ -434,9 +443,12 @@ impl ThreadManager {
         let Some(state) = Arc::get_mut(&mut self.state) else {
             unreachable!("new thread manager state should not be shared");
         };
-        state.code_mode_session_provider = Arc::new(
-            ProcessOwnedCodeModeSessionProvider::with_host_program(host_program),
-        );
+        let provider = Arc::new(ProcessOwnedCodeModeSessionProvider::with_host_program(
+            host_program,
+        ));
+        state.code_mode_session_provider =
+            Arc::clone(&provider) as Arc<dyn CodeModeSessionProvider>;
+        state.native_code_mode_client = Some(provider.native_client());
         self
     }
 
@@ -521,6 +533,7 @@ impl ThreadManager {
                 environment_manager,
                 skills_service,
                 code_mode_session_provider: Arc::new(DisabledCodeModeSessionProvider),
+                native_code_mode_client: None,
                 extensions: empty_extension_registry(),
                 user_instructions_provider: Arc::new(
                     crate::test_support::EmptyUserInstructionsProvider,
@@ -1561,6 +1574,7 @@ impl ThreadManagerState {
             environment_manager: Arc::clone(&self.environment_manager),
             skills_service: Arc::clone(&self.skills_service),
             code_mode_session_provider: Arc::clone(&self.code_mode_session_provider),
+            native_code_mode_client: self.native_code_mode_client.clone(),
             extensions: Arc::clone(&self.extensions),
             conversation_history: initial_history,
             requested_history_mode: history_mode,

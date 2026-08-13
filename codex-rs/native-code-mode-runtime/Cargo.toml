@@ -1,16 +1,12 @@
 [package]
-name = "codex-native-code-mode-host"
+name = "codex-native-code-mode-runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
 
-[[bin]]
-name = "codex-native-code-mode-spike"
-path = "src/main.rs"
-
 [lib]
-name = "codex_native_code_mode_host"
+name = "codex_native_code_mode_runtime"
 path = "src/lib.rs"
 doctest = false
 
@@ -19,10 +15,14 @@ workspace = true
 
 [dependencies]
 libc = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
+uuid = { workspace = true }
 
 [dev-dependencies]
+codex-native-code-mode-sdk = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }

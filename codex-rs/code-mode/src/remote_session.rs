@@ -23,12 +23,19 @@ use codex_http_client::OutboundProxyPolicy;
 use codex_install_context::InstallContext;
 use tokio::sync::Semaphore;
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 use self::connection::Connection;
 use self::connection::ConnectionError;
 use self::connection::RemoteSession;
 use self::connection::SessionCleanup;
 use crate::NoopCodeModeSessionDelegate;
+use crate::native::NativeCodeModeDelegate;
+use crate::native::NativeExecute;
+use crate::native::NativeExecution;
+use crate::native::NativeRunIdentity;
+use crate::native::validate_execute;
+use crate::native::validate_identity;
 
 mod connection;
 
@@ -57,6 +64,13 @@ impl ProcessOwnedCodeModeSessionProvider {
 
     fn process_host(&self) -> Arc<OwnedCodeModeHost> {
         Arc::clone(&self.host)
+    }
+
+    /// Returns the native lane of this provider's one lazy adjacent-host connection.
+    pub fn native_client(&self) -> ProcessOwnedNativeCodeModeClient {
+        ProcessOwnedNativeCodeModeClient {
+            host: self.process_host(),
+        }
     }
 }
 
@@ -178,6 +192,49 @@ enum HostEndpoint {
         websocket_url: String,
         http_client_factory: HttpClientFactory,
     },
+}
+
+/// Internal native Rust facade sharing a process-owned provider's adjacent host.
+#[derive(Clone)]
+pub struct ProcessOwnedNativeCodeModeClient {
+    host: Arc<OwnedCodeModeHost>,
+}
+
+impl ProcessOwnedNativeCodeModeClient {
+    pub async fn execute(
+        &self,
+        request: NativeExecute,
+        delegate: Arc<dyn NativeCodeModeDelegate>,
+        cancellation: CancellationToken,
+    ) -> Result<NativeExecution, String> {
+        validate_execute(&request)?;
+        let HostEndpoint::Process(_) = &self.host.endpoint else {
+            return Err(
+                "native-rust-v1 is unavailable on remote code-mode connections".to_string(),
+            );
+        };
+        self.host
+            .connection()
+            .await
+            .map_err(|error| error.to_string())?
+            .native_execute(request, delegate, cancellation)
+            .await
+    }
+
+    pub async fn finalize(&self, identity: NativeRunIdentity) -> Result<(), String> {
+        validate_identity(&identity)?;
+        let HostEndpoint::Process(_) = &self.host.endpoint else {
+            return Err(
+                "native-rust-v1 is unavailable on remote code-mode connections".to_string(),
+            );
+        };
+        self.host
+            .connection()
+            .await
+            .map_err(|error| error.to_string())?
+            .native_finalize(identity)
+            .await
+    }
 }
 
 struct OwnedCodeModeHost {

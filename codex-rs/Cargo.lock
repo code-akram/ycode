@@ -1531,6 +1531,7 @@ dependencies = [
  "codex-code-mode",
  "codex-code-mode-protocol",
  "codex-code-mode-runtime",
+ "codex-native-code-mode-runtime",
  "codex-protocol",
  "codex-utils-cargo-bin",
  "futures",
@@ -2286,15 +2287,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-native-code-mode-host"
+name = "codex-native-code-mode-runtime"
 version = "0.147.0"
 dependencies = [
+ "codex-native-code-mode-sdk",
  "libc",
  "pretty_assertions",
+ "serde",
+ "serde_json",
  "sha2 0.10.9",
  "tempfile",
  "tokio",
  "tokio-util",
+ "uuid",
 ]
 
 [[package]]

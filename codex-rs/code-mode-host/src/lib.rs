@@ -22,6 +22,7 @@ use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
+use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::RequestId;
 use codex_code_mode_protocol::host::SESSION_RESOURCE_LIMITS_CAPABILITY;
@@ -46,6 +47,7 @@ use self::transport::ConnectionWriter;
 pub use self::transport::DEFAULT_LISTEN_URL;
 
 mod delegate;
+mod native;
 mod peer;
 mod transport;
 
@@ -59,7 +61,7 @@ const BULK_PAIRING_TIMEOUT: Duration = Duration::from_secs(10);
 
 enum NegotiatedConnection {
     Rejected,
-    Single,
+    Single { native_enabled: bool },
     Dual(BulkConnectionRegistration),
 }
 
@@ -109,12 +111,12 @@ async fn run_connection(
     bulk_connections: Option<BulkConnectionRegistry>,
 ) -> Result<()> {
     let negotiated = negotiate(&mut reader, &mut writer, bulk_connections.as_ref()).await?;
-    let bulk_connection = match negotiated {
+    let (bulk_connection, native_enabled) = match negotiated {
         NegotiatedConnection::Rejected => return Ok(()),
-        NegotiatedConnection::Single => None,
+        NegotiatedConnection::Single { native_enabled } => (None, native_enabled),
         NegotiatedConnection::Dual(mut registration) => {
             match tokio::time::timeout(BULK_PAIRING_TIMEOUT, registration.receive()).await {
-                Ok(Ok(connection)) => Some(connection),
+                Ok(Ok(connection)) => (Some(connection), false),
                 Ok(Err(_)) => {
                     anyhow::bail!("code-mode host bulk websocket pairing was abandoned");
                 }
@@ -148,6 +150,8 @@ async fn run_connection(
         active_cell_permits: Arc::clone(&limits.active_cell_permits),
         closing: AtomicBool::new(false),
         peer: Arc::clone(&peer),
+        native_enabled,
+        native_runs: Mutex::new(HashSet::new()),
     });
     let writer_disconnected = peer.disconnection_token();
     let writer_task = tokio::spawn(async move {
@@ -323,10 +327,21 @@ async fn negotiate(
         || client_hello
             .optional_capabilities()
             .contains(&resource_limits_capability);
+    let native_capability = Capability::new(NATIVE_RUST_V1_CAPABILITY)?;
+    let native_requested = client_hello
+        .required_capabilities()
+        .contains(&native_capability)
+        || client_hello
+            .optional_capabilities()
+            .contains(&native_capability);
+    // Native execution is process-owned stdio only. WebSocket connections always pass a bulk
+    // registry, even when the client does not request the dual lane.
+    let native_enabled = native_requested && bulk_connections.is_none();
     let host_capabilities = CapabilitySet::try_new(
         [
             registration.is_some().then_some(dual_capability),
             resource_limits_requested.then_some(resource_limits_capability),
+            native_enabled.then_some(native_capability),
         ]
         .into_iter()
         .flatten(),
@@ -356,7 +371,7 @@ async fn negotiate(
     } else {
         (
             HostHello::new(ProtocolVersion::V1, host_capabilities),
-            NegotiatedConnection::Single,
+            NegotiatedConnection::Single { native_enabled },
         )
     };
     writer
@@ -375,6 +390,8 @@ struct HostState {
     active_cell_permits: Arc<Semaphore>,
     closing: AtomicBool,
     peer: Arc<HostPeer>,
+    native_enabled: bool,
+    native_runs: Mutex<HashSet<(String, String)>>,
 }
 
 impl HostState {
@@ -552,6 +569,103 @@ impl HostState {
                 };
                 self.respond(request_id, result);
             }
+            HostRequest::NativeExecute { request } => {
+                if !self.native_enabled {
+                    self.respond(
+                        request_id,
+                        Err(
+                            "native-rust-v1 was not negotiated on this local stdio connection"
+                                .to_string(),
+                        ),
+                    );
+                    return;
+                }
+                if cancellation.is_cancelled() {
+                    self.respond(
+                        request_id,
+                        Err("native execution request cancelled".to_string()),
+                    );
+                    return;
+                }
+                let key = (request.thread_id.clone(), request.run_id.clone());
+                {
+                    let mut runs = self
+                        .native_runs
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    if !runs.insert(key.clone()) {
+                        self.respond(
+                            request_id,
+                            Err("native run already has an execution owner".to_string()),
+                        );
+                        return;
+                    }
+                }
+                let _run = NativeRunGuard {
+                    runs: &self.native_runs,
+                    key,
+                };
+                let response =
+                    match native::execute(Arc::clone(&self.peer), request, cancellation).await {
+                        native::NativeExecutionResult::Completed {
+                            session_id,
+                            thread_id,
+                            run_id,
+                            source_hash,
+                            evidence,
+                        } => HostResponse::NativeCompleted {
+                            session_id,
+                            thread_id,
+                            run_id,
+                            source_hash,
+                            evidence: Box::new(evidence),
+                        },
+                        native::NativeExecutionResult::Failed {
+                            session_id,
+                            thread_id,
+                            run_id,
+                            failure,
+                        } => HostResponse::NativeFailed {
+                            session_id,
+                            thread_id,
+                            run_id,
+                            failure,
+                        },
+                    };
+                self.respond(request_id, Ok(response));
+            }
+            HostRequest::NativeFinalize {
+                session_id,
+                thread_id,
+                run_id,
+            } => {
+                if !self.native_enabled {
+                    self.respond(
+                        request_id,
+                        Err(
+                            "native-rust-v1 was not negotiated on this local stdio connection"
+                                .to_string(),
+                        ),
+                    );
+                    return;
+                }
+                if self
+                    .native_runs
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .contains(&(thread_id.clone(), run_id.clone()))
+                {
+                    self.respond(request_id, Err("native run is still active".to_string()));
+                    return;
+                }
+                let result =
+                    native::finalize(&thread_id, &run_id).map(|()| HostResponse::NativeFinalized {
+                        session_id,
+                        thread_id,
+                        run_id,
+                    });
+                self.respond(request_id, result);
+            }
         }
     }
 
@@ -655,6 +769,8 @@ enum RequestKind {
     Wait,
     Terminate,
     ShutdownSession,
+    NativeExecute,
+    NativeFinalize,
 }
 
 impl RequestKind {
@@ -665,11 +781,27 @@ impl RequestKind {
             HostRequest::Wait { .. } => Self::Wait,
             HostRequest::Terminate { .. } => Self::Terminate,
             HostRequest::ShutdownSession { .. } => Self::ShutdownSession,
+            HostRequest::NativeExecute { .. } => Self::NativeExecute,
+            HostRequest::NativeFinalize { .. } => Self::NativeFinalize,
         }
     }
 
     fn is_cancellable(self) -> bool {
-        matches!(self, Self::Execute | Self::Wait)
+        matches!(self, Self::Execute | Self::Wait | Self::NativeExecute)
+    }
+}
+
+struct NativeRunGuard<'a> {
+    runs: &'a Mutex<HashSet<(String, String)>>,
+    key: (String, String),
+}
+
+impl Drop for NativeRunGuard<'_> {
+    fn drop(&mut self) {
+        self.runs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.key);
     }
 }
 
