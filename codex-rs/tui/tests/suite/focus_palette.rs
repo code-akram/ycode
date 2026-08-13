@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
@@ -57,6 +58,11 @@ fn quiet_mini_pty_lifecycle_ticks_without_backend_events_and_restores_terminal()
 
     let fresh = compact_screen(&terminal.screen_contents());
     insta::assert_snapshot!("quiet_mini_fresh_pty", fresh);
+    let (_, fresh_cursor_col) = terminal.parser.screen().cursor_position();
+    ensure!(
+        fresh_cursor_col == 2,
+        "fresh composer cursor must use the two-column transcript gutter, got {fresh_cursor_col}"
+    );
     ensure!(!terminal.screen_contains("context left"));
     ensure!(!terminal.screen_contains("/ commands"));
     ensure!(!terminal.screen_contains("gpt-5.6-terra"));
@@ -68,9 +74,15 @@ fn quiet_mini_pty_lifecycle_ticks_without_backend_events_and_restores_terminal()
     terminal.write_input(b"!sleep 2.4\r")?;
     let started = Instant::now();
     let mut observed = [None, None, None];
+    let mut spinner_frames = BTreeSet::new();
     while started.elapsed() < STATUS_TIMEOUT && observed[2].is_none() {
         terminal.read_output(Duration::from_millis(/*millis*/ 20))?;
         let screen = terminal.screen_contents();
+        if let Some(line) = status_line(&screen)
+            && let Some(frame) = line.chars().next()
+        {
+            spinner_frames.insert(frame);
+        }
         for second in 0..=2 {
             let suffix = format!(" {second}s");
             if status_line(&screen).is_some_and(|line| line.ends_with(&suffix))
@@ -84,6 +96,13 @@ fn quiet_mini_pty_lifecycle_ticks_without_backend_events_and_restores_terminal()
         observed.iter().all(Option::is_some),
         "silent shell work did not visibly progress through 0s/1s/2s: {observed:?}; screen:\n{}",
         terminal.screen_contents(),
+    );
+    ensure!(
+        spinner_frames.len() >= 2
+            && spinner_frames
+                .iter()
+                .all(|frame| ('⠁'..='⣿').contains(frame)),
+        "production Mini status did not animate through changing braille frames: {spinner_frames:?}"
     );
     let zero_seconds = observed[0].expect("checked above");
     let one_second = observed[1].expect("checked above");
@@ -104,8 +123,11 @@ fn quiet_mini_pty_lifecycle_ticks_without_backend_events_and_restores_terminal()
     let screen = terminal.screen_contents();
     let status = status_line(&screen).context("missing Mini status line")?;
     ensure!(
-        status.starts_with('•'),
-        "reduced-motion glyph missing: {status:?}"
+        status
+            .chars()
+            .next()
+            .is_some_and(|frame| ('⠁'..='⣿').contains(&frame)),
+        "animated braille spinner missing: {status:?}"
     );
     ensure!(!status.contains("Working"));
     ensure!(!status.contains('(') && !status.contains(')'));
@@ -113,10 +135,22 @@ fn quiet_mini_pty_lifecycle_ticks_without_backend_events_and_restores_terminal()
         .lines()
         .position(|line| line.trim() == status)
         .context("status row not found")?;
-    let (cursor_row, _) = terminal.parser.screen().cursor_position();
+    let raw_status = screen
+        .lines()
+        .nth(status_row)
+        .context("raw status row not found")?;
+    ensure!(
+        raw_status.starts_with("  "),
+        "status must use the transcript/composer gutter: {raw_status:?}"
+    );
+    let (cursor_row, cursor_col) = terminal.parser.screen().cursor_position();
     ensure!(
         status_row + 1 == usize::from(cursor_row),
         "status row must sit immediately above editor cursor: status={status_row}, cursor={cursor_row}"
+    );
+    ensure!(
+        cursor_col == 2,
+        "active composer cursor must remain on the two-column gutter, got {cursor_col}"
     );
     insta::assert_snapshot!(
         "quiet_mini_active_pty",
@@ -133,6 +167,11 @@ fn quiet_mini_pty_lifecycle_ticks_without_backend_events_and_restores_terminal()
     ensure!(
         status_line(&terminal.screen_contents()).is_none(),
         "status row remained visible after the completed turn"
+    );
+    let (_, restored_cursor_col) = terminal.parser.screen().cursor_position();
+    ensure!(
+        restored_cursor_col == 2,
+        "completed turn did not restore the padded composer cursor: {restored_cursor_col}"
     );
     let completed = compact_screen(&terminal.screen_contents());
     insta::assert_snapshot!("quiet_mini_shell_trace_pty", completed);
@@ -407,8 +446,23 @@ fn compact_screen(screen: &str) -> String {
         .lines()
         .map(str::trim_end)
         .filter(|line| !line.is_empty())
+        .map(normalize_status_spinner_frame)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn normalize_status_spinner_frame(line: &str) -> String {
+    let Some(non_space) = line.find(|character: char| !character.is_whitespace()) else {
+        return line.to_string();
+    };
+    let Some(frame) = line[non_space..].chars().next() else {
+        return line.to_string();
+    };
+    if !('⠁'..='⣿').contains(&frame) {
+        return line.to_string();
+    }
+    let rest = &line[non_space + frame.len_utf8()..];
+    format!("{}⠋{rest}", &line[..non_space])
 }
 
 fn status_line(screen: &str) -> Option<String> {

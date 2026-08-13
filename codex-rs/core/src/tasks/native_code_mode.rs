@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use codex_code_mode::NativeExecute;
 use codex_code_mode::NativeExecution;
@@ -43,14 +45,18 @@ const MODEL_OUTPUT_BYTES: usize = 256 * 1024;
 const EVIDENCE_ITEMS: usize = 64;
 const EVIDENCE_STRING_BYTES: usize = 4 * 1024;
 const NATIVE_PROTOCOL_VERSION: u16 = 1;
+const INITIAL_RESPONSES_TIMEOUT: Duration = Duration::from_secs(90);
+const REPAIR_RESPONSES_TIMEOUT: Duration = Duration::from_secs(60);
 
 const SDK_CONTRACT: &str = r#"SDK v1 (`ycode_native_sdk`, std only):
-- `run(|context: &mut Context| -> Result<()>)`
+- `run(|context: &mut Context| -> Result<()>) -> Result<()>`
 - Request::Shell { command: String, workdir: Option<String>, timeout_ms: u32 }
 - Request::ApplyPatch { patch: String }
-- Outcome::Success { call_id, output }, Retry { call_id, reason }, Failure { call_id, message }
+- Outcome::Success { call_id: String, output: Vec<u8> }
+- Outcome::Retry { call_id: String, reason: String }
+- Outcome::Failure { call_id: String, message: String }
 - Evidence { version: 1, summary, verified, disputed, unresolved, artifact_refs, partial_failures, provenance_ids }
-- Context operations: call, spawn, join, budget, cancelled, finish
+- Context operations: call(Request) -> Result<Outcome>, spawn(Request) -> Result<Task>, join(Task) -> Result<Outcome>, budget() -> Result<u32>, cancelled() -> Result<bool>, finish(Evidence) -> Result<()>
 - Public concepts: Request, Task, Outcome, Evidence, Error, Result, Context"#;
 
 #[derive(Clone)]
@@ -326,21 +332,31 @@ impl ResponsesSourceGenerator {
         // turn history or prior native response state.
         let mut client = self.session.services.model_client.new_session();
         let inference_trace = InferenceTraceContext::disabled();
-        let stream = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => return Err("native generation cancelled".to_string()),
-            stream = client.stream(
-                &prompt,
-                &self.turn.model_info,
-                self.turn.reasoning_effort.clone(),
-                self.turn.reasoning_summary,
-                self.turn.config.service_tier.clone(),
-                &metadata,
-                &inference_trace,
-            ) => stream.map_err(|error| bounded_error(format!("native Responses request failed: {error}")))?,
+        let timeout = responses_timeout(request.kind);
+        let label = match request.kind {
+            GenerationKind::Initial => "native source generation",
+            GenerationKind::Repair => "native compiler repair",
         };
         let mut token_usage = None;
-        let source = collect_source(stream, cancellation, &mut token_usage).await;
+        let response_cancellation = cancellation.child_token();
+        let response = async {
+            let stream = client
+                .stream(
+                    &prompt,
+                    &self.turn.model_info,
+                    self.turn.reasoning_effort.clone(),
+                    self.turn.reasoning_summary,
+                    self.turn.config.service_tier.clone(),
+                    &metadata,
+                    &inference_trace,
+                )
+                .await
+                .map_err(|error| {
+                    bounded_error(format!("native Responses request failed: {error}"))
+                })?;
+            collect_source(stream, response_cancellation, &mut token_usage).await
+        };
+        let source = await_bounded_generation(response, cancellation, timeout, label).await;
         self.session
             .record_token_usage_info(&self.turn, token_usage.as_ref())
             .await
@@ -348,6 +364,32 @@ impl ResponsesSourceGenerator {
                 bounded_error(format!("native Responses usage accounting failed: {error}"))
             })?;
         source
+    }
+}
+
+fn responses_timeout(kind: GenerationKind) -> Duration {
+    match kind {
+        GenerationKind::Initial => INITIAL_RESPONSES_TIMEOUT,
+        GenerationKind::Repair => REPAIR_RESPONSES_TIMEOUT,
+    }
+}
+
+async fn await_bounded_generation<F>(
+    response: F,
+    cancellation: CancellationToken,
+    timeout: Duration,
+    label: &str,
+) -> Result<String, String>
+where
+    F: Future<Output = Result<String, String>>,
+{
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err(format!("{label} cancelled")),
+        result = tokio::time::timeout(timeout, response) => match result {
+            Ok(result) => result,
+            Err(_) => Err(format!("{label} timed out after {} seconds", timeout.as_secs())),
+        },
     }
 }
 
@@ -466,10 +508,19 @@ async fn orchestrate_inner(
     {
         Ok(source) => source,
         Err(error) => {
+            let interrupted = cancellation.is_cancelled();
             return failure_evidence(
                 identity,
-                "Native Rust source generation failed",
-                &error,
+                if interrupted {
+                    "Native Rust Code Mode interrupted"
+                } else {
+                    "Native Rust source generation failed"
+                },
+                if interrupted {
+                    "native source generation cancelled"
+                } else {
+                    &error
+                },
                 None,
             );
         }
@@ -536,6 +587,12 @@ async fn orchestrate_inner(
         }
         Err(error) => {
             let finalize = executor.finalize(identity.clone()).await;
+            let interrupted = cancellation.is_cancelled();
+            let error = if interrupted {
+                "native compiler repair cancelled".to_string()
+            } else {
+                error
+            };
             let detail = match finalize {
                 Ok(()) => error,
                 Err(finalize_error) => {
@@ -544,7 +601,11 @@ async fn orchestrate_inner(
             };
             return failure_evidence(
                 identity,
-                "Native Rust compiler repair failed",
+                if interrupted {
+                    "Native Rust Code Mode interrupted"
+                } else {
+                    "Native Rust compiler repair failed"
+                },
                 &detail,
                 Some(1),
             );
@@ -1415,7 +1476,11 @@ mod tests {
             .await
             .expect("cancelled repair orchestration settles")
             .expect("orchestration task joins");
-        assert!(evidence.summary.contains("repair failed"));
+        assert_eq!(evidence.summary, "Native Rust Code Mode interrupted");
+        assert_eq!(
+            evidence.partial_failures,
+            ["native compiler repair cancelled"]
+        );
         assert_eq!(calls.load(Ordering::Acquire), 2);
         let completed: serde_json::Value = serde_json::from_slice(
             &std::fs::read(run_dir.join("manifest.json")).expect("completed run manifest"),
@@ -1535,6 +1600,13 @@ mod tests {
             }))
         );
         assert!(initial.base_instructions.text.contains(SDK_CONTRACT));
+        assert!(initial.base_instructions.text.contains("output: Vec<u8>"));
+        assert!(
+            initial
+                .base_instructions
+                .text
+                .contains("cancelled() -> Result<bool>")
+        );
         assert!(
             initial
                 .base_instructions
@@ -2121,6 +2193,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn responses_wait_is_bounded_and_cancellable_without_polling() {
+        let timed_out = await_bounded_generation(
+            std::future::pending(),
+            CancellationToken::new(),
+            Duration::from_millis(10),
+            "native compiler repair",
+        )
+        .await
+        .expect_err("pending repair response must time out");
+        assert_eq!(
+            timed_out,
+            "native compiler repair timed out after 0 seconds"
+        );
+
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let cancelled = await_bounded_generation(
+            std::future::pending(),
+            cancellation,
+            Duration::from_secs(30),
+            "native source generation",
+        )
+        .await
+        .expect_err("cancelled generation must settle");
+        assert_eq!(cancelled, "native source generation cancelled");
+        assert_eq!(
+            responses_timeout(GenerationKind::Initial),
+            Duration::from_secs(90)
+        );
+        assert_eq!(
+            responses_timeout(GenerationKind::Repair),
+            Duration::from_secs(60)
+        );
+    }
+
+    #[tokio::test]
     async fn native_session_task_cancels_generation_records_one_evidence_and_resets() {
         let server = responses::start_mock_server().await;
         Mock::given(method("POST"))
@@ -2226,7 +2334,8 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0], history_before[0]);
         let encoded = serde_json::to_string(&history[1]).expect("terminal item serializes");
-        assert!(encoded.contains("Native Rust source generation failed"));
+        assert!(encoded.contains("Native Rust Code Mode interrupted"));
+        assert!(encoded.contains("native source generation cancelled"));
         assert!(!encoded.contains("task text must stay out of history"));
 
         // Starting another task is possible immediately: no mode bit or retained task owner needs

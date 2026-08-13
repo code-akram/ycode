@@ -1919,6 +1919,95 @@ async fn ui_snapshots_small_heights_task_running() {
     }
 }
 
+#[tokio::test]
+async fn composer_and_status_share_adaptive_transcript_gutter_at_narrow_widths() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    for width in 1_u16..=5 {
+        let idle_area = Rect::new(0, 0, width, chat.desired_height(width).max(1));
+        let (idle_x, _) = chat
+            .cursor_pos(idle_area)
+            .expect("idle composer cursor remains visible");
+        assert_eq!(idle_x, crate::transcript_gutter::layout(width).left);
+    }
+
+    handle_turn_started(&mut chat, "native-turn");
+    for width in 1_u16..=5 {
+        let area = Rect::new(0, 0, width, chat.desired_height(width).max(2));
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        chat.render(area, &mut buffer);
+        let (cursor_x, cursor_y) = chat
+            .cursor_pos(area)
+            .expect("running composer cursor remains visible");
+        let gutter = crate::transcript_gutter::layout(width).left;
+        assert_eq!(cursor_x, gutter, "width={width}");
+        assert!(
+            cursor_y > 0,
+            "status must stay immediately above the cursor"
+        );
+        assert!(
+            ('⠁'..='⣿').contains(
+                &buffer[(gutter, cursor_y - 1)]
+                    .symbol()
+                    .chars()
+                    .next()
+                    .expect("status glyph")
+            ),
+            "width={width}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn mini_enables_status_animation_without_enabling_general_bottom_pane_animation() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    assert_eq!(
+        chat.bottom_pane.animation_modes_for_test(),
+        (false, true),
+        "Mini must keep composer/reasoning animation off while animating only status"
+    );
+
+    handle_turn_started(&mut chat, "status-only-animation");
+    assert!(chat.bottom_pane.status_indicator_visible());
+    assert_eq!(chat.bottom_pane.animation_modes_for_test(), (false, true));
+}
+
+#[tokio::test]
+async fn terminal_outcomes_restore_the_padded_idle_composer() {
+    fn assert_restored(chat: &ChatWidget, outcome: &str) {
+        assert!(!chat.is_task_running_for_test(), "{outcome}");
+        for width in 1_u16..=5 {
+            let area = Rect::new(0, 0, width, chat.desired_height(width).max(1));
+            let (cursor_x, _) = chat
+                .cursor_pos(area)
+                .unwrap_or_else(|| panic!("{outcome} composer cursor remains visible"));
+            assert_eq!(
+                cursor_x,
+                crate::transcript_gutter::layout(width).left,
+                "{outcome} width={width}"
+            );
+        }
+    }
+
+    let (mut completed, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    handle_turn_started(&mut completed, "completed");
+    handle_turn_completed(&mut completed, "completed", /*duration_ms*/ None);
+    assert_restored(&completed, "success");
+
+    let (mut failed, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    handle_turn_started(&mut failed, "failed");
+    handle_error(
+        &mut failed,
+        "native failure",
+        /*codex_error_info*/ None,
+    );
+    assert_restored(&failed, "failure");
+
+    let (mut interrupted, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    handle_turn_started(&mut interrupted, "interrupted");
+    handle_turn_interrupted(&mut interrupted, "interrupted");
+    assert_restored(&interrupted, "interrupt");
+}
+
 // Snapshot test: status widget active (StatusIndicatorView)
 // Ensures the VT100 rendering of the status indicator is stable when active.
 #[tokio::test]

@@ -172,6 +172,7 @@ pub(crate) struct BottomPane {
     is_task_running: bool,
     esc_backtrack_hint: bool,
     animations_enabled: bool,
+    status_animations_enabled: bool,
 
     /// Inline status indicator shown above the composer while a task is running.
     status: Option<StatusIndicatorWidget>,
@@ -236,6 +237,7 @@ impl BottomPane {
             pending_input_preview: PendingInputPreview::new(),
             esc_backtrack_hint: false,
             animations_enabled,
+            status_animations_enabled: animations_enabled,
             context_window_percent: None,
             context_window_used_tokens: None,
             keymap,
@@ -873,7 +875,7 @@ impl BottomPane {
                     self.status = Some(StatusIndicatorWidget::new(
                         self.app_event_tx.clone(),
                         self.frame_requester.clone(),
-                        self.animations_enabled,
+                        self.status_animations_enabled,
                     ));
                 }
                 if let Some(status) = self.status.as_mut() {
@@ -908,7 +910,7 @@ impl BottomPane {
             self.status = Some(StatusIndicatorWidget::new(
                 self.app_event_tx.clone(),
                 self.frame_requester.clone(),
-                self.animations_enabled,
+                self.status_animations_enabled,
             ));
             if let Some(status) = self.status.as_mut() {
                 status.set_interrupt_binding(
@@ -926,6 +928,15 @@ impl BottomPane {
             status.set_interrupt_hint_visible(visible);
             self.request_redraw();
         }
+    }
+
+    pub(crate) fn set_status_animations_enabled(&mut self, enabled: bool) {
+        self.status_animations_enabled = enabled;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn animation_modes_for_test(&self) -> (bool, bool) {
+        (self.animations_enabled, self.status_animations_enabled)
     }
 
     pub(crate) fn set_context_window(&mut self, percent: Option<i64>, used_tokens: Option<i64>) {

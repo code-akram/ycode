@@ -251,13 +251,13 @@ fn blockquote_with_ordered_list() {
     let expected = Text::from_iter([
         Line::from_iter(vec![
             Span::from("> "),
-            "1. ".light_blue(),
+            "1. ".light_cyan().not_bold(),
             Span::from("first"),
         ])
         .green(),
         Line::from_iter(vec![
             Span::from("> "),
-            "2. ".light_blue(),
+            "2. ".light_cyan().not_bold(),
             Span::from("second"),
         ])
         .green(),
@@ -586,8 +586,8 @@ fn list_unordered_multiple() {
 fn list_ordered() {
     let text = render_markdown_text("1. List item 1\n2. List item 2\n");
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "List item 1".into()]),
-        Line::from_iter(["2. ".light_blue(), "List item 2".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "List item 1".into()]),
+        Line::from_iter(["2. ".light_cyan().not_bold(), "List item 2".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -606,8 +606,8 @@ fn list_nested() {
 fn list_ordered_custom_start() {
     let text = render_markdown_text("3. First\n4. Second\n");
     let expected = Text::from_iter([
-        Line::from_iter(["3. ".light_blue(), "First".into()]),
-        Line::from_iter(["4. ".light_blue(), "Second".into()]),
+        Line::from_iter(["3. ".light_cyan().not_bold(), "First".into()]),
+        Line::from_iter(["4. ".light_cyan().not_bold(), "Second".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -617,11 +617,11 @@ fn nested_unordered_in_ordered() {
     let md = "1. Outer\n    - Inner A\n    - Inner B\n2. Next\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Outer".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "Outer".into()]),
         Line::from_iter(["    - ", "Inner A"]),
         Line::from_iter(["    - ", "Inner B"]),
         Line::default(),
-        Line::from_iter(["2. ".light_blue(), "Next".into()]),
+        Line::from_iter(["2. ".light_cyan().not_bold(), "Next".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -632,8 +632,8 @@ fn nested_ordered_in_unordered() {
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
         Line::from_iter(["- ", "Outer"]),
-        Line::from_iter(["    1. ".light_blue(), "One".into()]),
-        Line::from_iter(["    2. ".light_blue(), "Two".into()]),
+        Line::from_iter(["    1. ".light_cyan().not_bold(), "One".into()]),
+        Line::from_iter(["    2. ".light_cyan().not_bold(), "Two".into()]),
         Line::default(),
         Line::from_iter(["- ", "Last"]),
     ]);
@@ -645,11 +645,11 @@ fn loose_list_item_multiple_paragraphs() {
     let md = "1. First paragraph\n\n   Second paragraph of same item\n\n2. Next item\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "First paragraph".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "First paragraph".into()]),
         Line::default(),
         Line::from_iter(["   ", "Second paragraph of same item"]),
         Line::default(),
-        Line::from_iter(["2. ".light_blue(), "Next item".into()]),
+        Line::from_iter(["2. ".light_cyan().not_bold(), "Next item".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -670,11 +670,11 @@ fn deeply_nested_mixed_three_levels() {
     let md = "1. A\n    - B\n        1. C\n2. D\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "A".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "A".into()]),
         Line::from_iter(["    - ", "B"]),
-        Line::from_iter(["        1. ".light_blue(), "C".into()]),
+        Line::from_iter(["        1. ".light_cyan().not_bold(), "C".into()]),
         Line::default(),
-        Line::from_iter(["2. ".light_blue(), "D".into()]),
+        Line::from_iter(["2. ".light_cyan().not_bold(), "D".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -684,8 +684,8 @@ fn loose_items_due_to_blank_line_between_items() {
     let md = "1. First\n\n2. Second\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "First".into()]),
-        Line::from_iter(["2. ".light_blue(), "Second".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "First".into()]),
+        Line::from_iter(["2. ".light_cyan().not_bold(), "Second".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -695,8 +695,8 @@ fn mixed_tight_then_loose_in_one_list() {
     let md = "1. Tight\n\n2.\n   Loose\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Tight".into()]),
-        Line::from_iter(["2. ".light_blue(), "Loose".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "Tight".into()]),
+        Line::from_iter(["2. ".light_cyan().not_bold(), "Loose".into()]),
     ]);
     assert_eq!(text, expected);
 }
@@ -706,7 +706,7 @@ fn ordered_item_with_indented_continuation_is_tight() {
     let md = "1. Foo\n   Bar\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Foo".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "Foo".into()]),
         Line::from_iter(["   ", "Bar"]),
     ]);
     assert_eq!(text, expected);
@@ -715,7 +715,7 @@ fn ordered_item_with_indented_continuation_is_tight() {
 #[test]
 fn inline_code() {
     let text = render_markdown_text("Example of `Inline code`");
-    let expected = Line::from_iter(["Example of ".into(), "Inline code".cyan()]).into();
+    let expected = Line::from_iter(["Example of ".into(), "Inline code".light_cyan().not_bold()]).into();
     assert_eq!(text, expected);
 }
 
@@ -759,7 +759,7 @@ fn link() {
     let expected = Text::from(Line::from_iter([
         "Link".into(),
         " (".into(),
-        "https://example.com".cyan().underlined(),
+        "https://example.com".light_cyan().not_bold().underlined(),
         ")".into(),
     ]));
     assert_eq!(text, expected);
@@ -778,7 +778,7 @@ fn file_link_hides_destination() {
         Path::new("/Users/example/code/codex"),
     );
     let expected =
-        Text::from(Line::from_iter(["codex-rs/tui/src/markdown_render.rs".cyan()]));
+        Text::from(Line::from_iter(["codex-rs/tui/src/markdown_render.rs".light_cyan().not_bold()]));
     assert_eq!(text, expected);
 }
 
@@ -789,7 +789,7 @@ fn file_link_decodes_percent_encoded_bare_path_destination() {
         Path::new("/Users/example/code/codex"),
     );
     let expected = Text::from(Line::from_iter([
-        "Example Folder/Résumé/report.md".cyan(),
+        "Example Folder/Résumé/report.md".light_cyan().not_bold(),
     ]));
     assert_eq!(text, expected);
 }
@@ -801,7 +801,7 @@ fn file_link_appends_line_number_when_label_lacks_it() {
         Path::new("/Users/example/code/codex"),
     );
     let expected = Text::from(Line::from_iter([
-        "codex-rs/tui/src/markdown_render.rs:74".cyan(),
+        "codex-rs/tui/src/markdown_render.rs:74".light_cyan().not_bold(),
     ]));
     assert_eq!(text, expected);
 }
@@ -812,7 +812,7 @@ fn file_link_keeps_absolute_paths_outside_cwd() {
         "[README.md:74](/Users/example/code/codex/README.md:74)",
         Path::new("/Users/example/code/codex/codex-rs/tui"),
     );
-    let expected = Text::from(Line::from_iter(["/Users/example/code/codex/README.md:74".cyan()]));
+    let expected = Text::from(Line::from_iter(["/Users/example/code/codex/README.md:74".light_cyan().not_bold()]));
     assert_eq!(text, expected);
 }
 
@@ -824,7 +824,7 @@ fn file_link_appends_hash_anchor_when_label_lacks_it() {
     );
     let expected =
         Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3".cyan(),
+            "codex-rs/tui/src/markdown_render.rs:74:3".light_cyan().not_bold(),
         ]));
     assert_eq!(text, expected);
 }
@@ -837,7 +837,7 @@ fn file_link_uses_target_path_for_hash_anchor() {
     );
     let expected =
         Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3".cyan(),
+            "codex-rs/tui/src/markdown_render.rs:74:3".light_cyan().not_bold(),
         ]));
     assert_eq!(text, expected);
 }
@@ -850,7 +850,7 @@ fn file_link_appends_range_when_label_lacks_it() {
     );
     let expected =
         Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
+            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".light_cyan().not_bold(),
         ]));
     assert_eq!(text, expected);
 }
@@ -863,7 +863,7 @@ fn file_link_uses_target_path_for_range() {
     );
     let expected =
         Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
+            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".light_cyan().not_bold(),
         ]));
     assert_eq!(text, expected);
 }
@@ -876,7 +876,7 @@ fn file_link_appends_hash_range_when_label_lacks_it() {
     );
     let expected =
         Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
+            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".light_cyan().not_bold(),
         ]));
     assert_eq!(text, expected);
 }
@@ -890,7 +890,7 @@ fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
     let expected = Text::from(Line::from_iter([
         "bold".bold(),
         " plain ".into(),
-        "codex-rs/tui/src/markdown_render.rs:74:3".cyan(),
+        "codex-rs/tui/src/markdown_render.rs:74:3".light_cyan().not_bold(),
     ]));
     assert_eq!(text, expected);
 }
@@ -903,7 +903,7 @@ fn file_link_uses_target_path_for_hash_range() {
     );
     let expected =
         Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
+            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".light_cyan().not_bold(),
         ]));
     assert_eq!(text, expected);
 }
@@ -914,7 +914,7 @@ fn url_link_shows_destination() {
     let expected = Text::from(Line::from_iter([
         "docs".into(),
         " (".into(),
-        "https://example.com/docs".cyan().underlined(),
+        "https://example.com/docs".light_cyan().not_bold().underlined(),
         ")".into(),
     ]));
     assert_eq!(text, expected);
@@ -1419,9 +1419,9 @@ fn nested_five_levels_mixed_lists() {
     let md = "1. First\n   - Second level\n     1. Third level (ordered)\n        - Fourth level (bullet)\n          - Fifth level to test indent consistency\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "First".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "First".into()]),
         Line::from_iter(["    - ", "Second level"]),
-        Line::from_iter(["        1. ".light_blue(), "Third level (ordered)".into()]),
+        Line::from_iter(["        1. ".light_cyan().not_bold(), "Third level (ordered)".into()]),
         Line::from_iter(["            - ", "Fourth level (bullet)"]),
         Line::from_iter([
             "                - ",
@@ -1456,7 +1456,7 @@ fn html_in_tight_ordered_item_soft_breaks_with_space() {
     let md = "1. Foo\n   <i>Bar</i>\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Foo".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "Foo".into()]),
         Line::from_iter(["   ", "<i>", "Bar", "</i>"]),
     ]);
     assert_eq!(text, expected);
@@ -1504,7 +1504,7 @@ fn ordered_item_continuation_paragraph_is_indented() {
     let md = "1. Intro\n\n   More details about intro\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "Intro".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "Intro".into()]),
         Line::default(),
         Line::from_iter(["   ", "More details about intro"]),
     ]);
@@ -1516,12 +1516,12 @@ fn nested_item_continuation_paragraph_is_indented() {
     let md = "1. A\n    - B\n\n      Continuation for B\n2. C\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
-        Line::from_iter(["1. ".light_blue(), "A".into()]),
+        Line::from_iter(["1. ".light_cyan().not_bold(), "A".into()]),
         Line::from_iter(["    - ", "B"]),
         Line::default(),
         Line::from_iter(["      ", "Continuation for B"]),
         Line::default(),
-        Line::from_iter(["2. ".light_blue(), "C".into()]),
+        Line::from_iter(["2. ".light_cyan().not_bold(), "C".into()]),
     ]);
     assert_eq!(text, expected);
 }

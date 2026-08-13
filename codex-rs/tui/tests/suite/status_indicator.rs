@@ -26,30 +26,36 @@ fn ansi_escape_line_strips_escape_sequences() {
 }
 
 #[test]
-fn palette_role_source_ownership_keeps_human_teal_exclusive() {
+fn palette_role_source_ownership_keeps_human_blue_exclusive() {
     let lib_rs =
         codex_utils_cargo_bin::find_resource!("src/lib.rs").expect("locate codex-tui source");
     let src_dir = lib_rs.parent().expect("lib.rs has a parent").to_path_buf();
     let style = std::fs::read_to_string(src_dir.join("style.rs")).expect("read style source");
-    assert_eq!(style.matches("(45, 212, 191)").count(), 1);
-    assert_eq!(style.matches("(96, 165, 250)").count(), 1);
+    assert_eq!(style.matches("(58, 139, 253)").count(), 1);
+    assert_eq!(style.matches("(0, 91, 211)").count(), 1);
+    assert_eq!(style.matches("(34, 211, 238)").count(), 1);
+    assert_eq!(style.matches("(0, 112, 138)").count(), 1);
 
     let mut files = Vec::new();
     collect_rust_files(&src_dir, &mut files).expect("collect TUI source files");
     let mut callers = Vec::new();
     for path in files {
+        let relative = path
+            .strip_prefix(&src_dir)
+            .expect("source path under TUI source")
+            .to_string_lossy()
+            .replace('\\', "/");
+        if relative == "style.rs" || relative.ends_with("/tests.rs") || relative.contains("/tests/")
+        {
+            continue;
+        }
         let contents = std::fs::read_to_string(&path).expect("read TUI source file");
         if contents.contains("human_prompt_style()") {
-            callers.push(
-                path.strip_prefix(&src_dir)
-                    .expect("source path under TUI source")
-                    .to_string_lossy()
-                    .replace('\\', "/"),
-            );
+            callers.push(relative);
         }
     }
     callers.sort();
-    assert_eq!(callers, ["history_cell/messages.rs", "style.rs"]);
+    assert_eq!(callers, ["history_cell/messages.rs", "history_cell/mod.rs"]);
 }
 
 fn collect_rust_files(dir: &Path, files: &mut Vec<PathBuf>) -> std::io::Result<()> {

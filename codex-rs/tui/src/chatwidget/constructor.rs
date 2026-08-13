@@ -76,16 +76,22 @@ impl ChatWidget {
             app_event_tx: app_event_tx.clone(),
             frame_requester: frame_requester.clone(),
             codex_op_target,
-            bottom_pane: BottomPane::new(BottomPaneParams {
-                frame_requester,
-                app_event_tx,
-                has_input_focus: true,
-                enhanced_keys_supported,
-                placeholder_text: placeholder.clone(),
-                disable_paste_burst: config.disable_paste_burst,
-                animations_enabled: false,
-                skills: None,
-            }),
+            bottom_pane: {
+                let mut bottom_pane = BottomPane::new(BottomPaneParams {
+                    frame_requester,
+                    app_event_tx,
+                    has_input_focus: true,
+                    enhanced_keys_supported,
+                    placeholder_text: placeholder.clone(),
+                    disable_paste_burst: config.disable_paste_burst,
+                    animations_enabled: false,
+                    skills: None,
+                });
+                // Mini keeps composer/reasoning effects reduced while its one operational status
+                // row uses the established animated braille activity indicator.
+                bottom_pane.set_status_animations_enabled(/*enabled*/ true);
+                bottom_pane
+            },
             transcript: TranscriptState::new(active_cell),
             raw_output_mode: config.tui_raw_output_mode,
             config,

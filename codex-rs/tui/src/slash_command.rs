@@ -87,7 +87,7 @@ impl SlashCommand {
             }
             SlashCommand::Personality => "choose a communication style for Codex",
             SlashCommand::Goal => "set or view the goal for a long-running task",
-            SlashCommand::CodeMode => "run one native Rust workflow",
+            SlashCommand::CodeMode => "run a workflow in code-mode",
             SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
             SlashCommand::Side | SlashCommand::Btw => {
                 "start a side conversation in an ephemeral fork"
@@ -229,6 +229,10 @@ mod tests {
     #[test]
     fn code_mode_is_inline_idle_main_composer_only() {
         assert_eq!(SlashCommand::CodeMode.command(), "code-mode");
+        assert_eq!(
+            SlashCommand::CodeMode.description(),
+            "run a workflow in code-mode"
+        );
         assert!(SlashCommand::CodeMode.supports_inline_args());
         assert!(!SlashCommand::CodeMode.available_during_task());
         assert!(!SlashCommand::CodeMode.available_in_side_conversation());

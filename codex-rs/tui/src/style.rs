@@ -10,10 +10,10 @@ use crate::terminal_palette::stdout_color_level;
 use ratatui::style::Color;
 use ratatui::style::Style;
 
-const HUMAN_PROMPT_DARK_RGB: (u8, u8, u8) = (45, 212, 191);
-const HUMAN_PROMPT_LIGHT_RGB: (u8, u8, u8) = (0, 121, 107);
-const OPERATIONAL_BLUE_DARK_RGB: (u8, u8, u8) = (96, 165, 250);
-const OPERATIONAL_BLUE_LIGHT_RGB: (u8, u8, u8) = (0, 82, 180);
+const HUMAN_PROMPT_DARK_RGB: (u8, u8, u8) = (58, 139, 253);
+const HUMAN_PROMPT_LIGHT_RGB: (u8, u8, u8) = (0, 91, 211);
+const OPERATIONAL_CYAN_DARK_RGB: (u8, u8, u8) = (34, 211, 238);
+const OPERATIONAL_CYAN_LIGHT_RGB: (u8, u8, u8) = (0, 112, 138);
 // Decorative table rules should remain visible without competing with cell content.
 const TABLE_SEPARATOR_FG_ALPHA: f32 = 0.20;
 
@@ -36,7 +36,7 @@ pub(crate) fn human_prompt_style() -> Style {
     human_prompt_style_for(default_bg(), stdout_color_level())
 }
 
-/// Returns the operational blue used by paths, commands, references, and active controls.
+/// Returns the operational cyan used by paths, commands, references, and active controls.
 pub(crate) fn operational_accent_style() -> Style {
     accent_style()
 }
@@ -68,7 +68,7 @@ fn human_prompt_style_for(
         HUMAN_PROMPT_DARK_RGB
     };
     let color = match color_level {
-        StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown => Color::LightCyan,
+        StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown => Color::LightBlue,
         StdoutColorLevel::TrueColor | StdoutColorLevel::Ansi256 => {
             best_color_for_level(target, color_level)
         }
@@ -81,12 +81,12 @@ fn operational_accent_style_for(
     color_level: StdoutColorLevel,
 ) -> Style {
     let target = if terminal_bg.is_some_and(is_light) {
-        OPERATIONAL_BLUE_LIGHT_RGB
+        OPERATIONAL_CYAN_LIGHT_RGB
     } else {
-        OPERATIONAL_BLUE_DARK_RGB
+        OPERATIONAL_CYAN_DARK_RGB
     };
     let color = match color_level {
-        StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown => Color::LightBlue,
+        StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown => Color::LightCyan,
         StdoutColorLevel::TrueColor | StdoutColorLevel::Ansi256 => {
             best_color_for_level(target, color_level)
         }
@@ -134,7 +134,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn human_prompt_teal_and_operational_blue_are_distinct_at_every_color_level() {
+    fn human_blue_and_operational_cyan_are_distinct_at_every_color_level() {
         for level in [
             StdoutColorLevel::TrueColor,
             StdoutColorLevel::Ansi256,
@@ -152,12 +152,96 @@ mod tests {
 
     #[test]
     fn truecolor_roles_use_fixed_mini_palette_values() {
-        let human = human_prompt_style_for(Some((0, 0, 0)), StdoutColorLevel::TrueColor);
-        let operational =
+        let human_dark = human_prompt_style_for(Some((0, 0, 0)), StdoutColorLevel::TrueColor);
+        let human_light =
+            human_prompt_style_for(Some((255, 255, 255)), StdoutColorLevel::TrueColor);
+        let operational_dark =
             operational_accent_style_for(Some((0, 0, 0)), StdoutColorLevel::TrueColor);
+        let operational_light =
+            operational_accent_style_for(Some((255, 255, 255)), StdoutColorLevel::TrueColor);
 
-        assert_eq!(human.fg, Some(rgb_color(HUMAN_PROMPT_DARK_RGB)));
-        assert_eq!(operational.fg, Some(rgb_color(OPERATIONAL_BLUE_DARK_RGB)));
+        assert_eq!(human_dark.fg, Some(rgb_color(HUMAN_PROMPT_DARK_RGB)));
+        assert_eq!(human_light.fg, Some(rgb_color(HUMAN_PROMPT_LIGHT_RGB)));
+        assert_eq!(
+            operational_dark.fg,
+            Some(rgb_color(OPERATIONAL_CYAN_DARK_RGB))
+        );
+        assert_eq!(
+            operational_light.fg,
+            Some(rgb_color(OPERATIONAL_CYAN_LIGHT_RGB))
+        );
+        assert_eq!(
+            human_prompt_style_for(None, StdoutColorLevel::Ansi16).fg,
+            Some(Color::LightBlue)
+        );
+        assert_eq!(
+            operational_accent_style_for(None, StdoutColorLevel::Ansi16).fg,
+            Some(Color::LightCyan)
+        );
+    }
+
+    #[test]
+    fn human_truecolor_values_are_declared_only_by_the_exclusive_human_role() {
+        let lib_rs = codex_utils_cargo_bin::find_resource!("src/lib.rs")
+            .expect("failed to locate TUI source");
+        let src_dir = lib_rs.parent().expect("lib.rs should have a parent");
+        let mut source_files = Vec::new();
+        collect_rust_files(src_dir, &mut source_files).expect("failed to collect TUI source files");
+
+        for (red, green, blue) in [(58_u8, 139_u8, 253_u8), (0_u8, 91_u8, 211_u8)] {
+            let literal = format!("({red}, {green}, {blue})");
+            let owners = source_files
+                .iter()
+                .filter_map(|path| {
+                    let contents = fs::read_to_string(path).ok()?;
+                    contents.contains(&literal).then(|| {
+                        path.strip_prefix(src_dir)
+                            .expect("source under src")
+                            .to_string_lossy()
+                            .replace('\\', "/")
+                    })
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(owners, ["style.rs"], "exclusive color {literal}");
+        }
+    }
+
+    #[test]
+    fn ansi_light_blue_is_owned_only_by_the_submitted_human_fallback() {
+        let lib_rs = codex_utils_cargo_bin::find_resource!("src/lib.rs")
+            .expect("failed to locate TUI source");
+        let src_dir = lib_rs.parent().expect("lib.rs should have a parent");
+        let mut source_files = Vec::new();
+        collect_rust_files(src_dir, &mut source_files).expect("failed to collect TUI source files");
+
+        let mut owners = Vec::new();
+        for path in source_files {
+            let relative = path
+                .strip_prefix(src_dir)
+                .expect("source under src")
+                .to_string_lossy()
+                .replace('\\', "/");
+            if relative.ends_with("_tests.rs")
+                || relative.ends_with("/tests.rs")
+                || relative.contains("/tests/")
+            {
+                continue;
+            }
+            let contents = fs::read_to_string(&path).expect("read TUI source");
+            let production = contents.split("#[cfg(test)]").next().unwrap_or(&contents);
+            for (index, line) in production.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or_default();
+                if code.contains("Color::LightBlue") || code.contains(".light_blue()") {
+                    owners.push(format!("{relative}:{}", index + 1));
+                }
+            }
+        }
+
+        assert_eq!(owners.len(), 1, "production LightBlue owners: {owners:?}");
+        assert!(
+            owners[0].starts_with("style.rs:"),
+            "human ANSI fallback must own LightBlue: {owners:?}"
+        );
     }
 
     #[test]
@@ -175,6 +259,12 @@ mod tests {
                 .expect("source file should be under src")
                 .to_string_lossy()
                 .replace('\\', "/");
+            if relative == "style.rs"
+                || relative.ends_with("/tests.rs")
+                || relative.contains("/tests/")
+            {
+                continue;
+            }
             let contents = fs::read_to_string(&path)
                 .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
             for (index, line) in contents.lines().enumerate() {
@@ -183,17 +273,15 @@ mod tests {
                 }
             }
         }
+        call_sites.sort();
 
-        assert!(
-            call_sites.iter().all(|site| site.starts_with("style.rs:")
-                || site.starts_with("history_cell/messages.rs:")),
-            "exclusive human-prompt style escaped its owner: {call_sites:?}"
-        );
-        assert!(
+        assert_eq!(
             call_sites
                 .iter()
-                .any(|site| site.starts_with("history_cell/messages.rs:")),
-            "submitted prompt renderer must own the human-prompt style"
+                .map(|site| site.split(':').next().expect("site path"))
+                .collect::<Vec<_>>(),
+            ["history_cell/messages.rs", "history_cell/mod.rs"],
+            "exclusive human-prompt style escaped its two submitted-human renderers"
         );
     }
 

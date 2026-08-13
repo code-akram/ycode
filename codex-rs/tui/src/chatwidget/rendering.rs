@@ -37,17 +37,55 @@ impl ChatWidget {
         }
         flex.push(
             /*flex*/ 0,
-            self.bottom_pane
-                .as_renderable_with_composer_right_reserve(active_cell_right_reserve)
-                .inset(Insets::tlbr(
-                    /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
-                )),
+            RenderableItem::Owned(Box::new(ComposerAreaRenderable {
+                bottom_pane: &self.bottom_pane,
+                right_reserve: active_cell_right_reserve,
+            }))
+            .inset(Insets::tlbr(
+                /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
+            )),
         );
         RenderableItem::Owned(Box::new(flex))
     }
 
     pub(crate) fn note_rendered_width(&self, width: u16) {
         self.last_rendered_width.set(Some(width as usize));
+    }
+}
+
+/// Keeps the live status/composer surface on the same adaptive left gutter as transcript rows.
+struct ComposerAreaRenderable<'a> {
+    bottom_pane: &'a BottomPane,
+    right_reserve: u16,
+}
+
+impl Renderable for ComposerAreaRenderable<'_> {
+    fn render(&self, area: Rect, buf: &mut Buffer) {
+        let area = crate::transcript_gutter::inset_rect(area);
+        self.bottom_pane
+            .as_renderable_with_composer_right_reserve(self.right_reserve)
+            .render(area, buf);
+    }
+
+    fn desired_height(&self, width: u16) -> u16 {
+        let width = crate::transcript_gutter::layout(width).content_width;
+        self.bottom_pane
+            .as_renderable_with_composer_right_reserve(self.right_reserve)
+            .desired_height(width)
+    }
+
+    fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
+        let area = crate::transcript_gutter::inset_rect(area);
+        self.bottom_pane
+            .as_renderable_with_composer_right_reserve(self.right_reserve)
+            .cursor_pos(area)
+    }
+
+    fn cursor_style(&self, area: Rect) -> crossterm::cursor::SetCursorStyle {
+        let area = crate::transcript_gutter::inset_rect(area);
+        self.bottom_pane
+            .as_renderable_with_composer_right_reserve(self.right_reserve)
+            .cursor_style(area)
     }
 }
 

@@ -117,7 +117,7 @@ impl Default for MarkdownStyles {
             emphasis: Style::new().italic(),
             strong: Style::new().bold(),
             strikethrough: Style::new().crossed_out(),
-            ordered_list_marker: Style::new().light_blue(),
+            ordered_list_marker: crate::style::operational_reference_style(),
             unordered_list_marker: Style::new(),
             link: crate::style::operational_reference_style().underlined(),
             blockquote: Style::new().green(),

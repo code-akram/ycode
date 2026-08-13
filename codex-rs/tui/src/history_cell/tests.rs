@@ -1152,7 +1152,7 @@ fn user_history_cell_trims_trailing_blank_message_lines_with_text_elements() {
 }
 
 #[test]
-fn user_prompt_chevron_wrapped_multiline_text_and_elements_share_human_teal() {
+fn user_prompt_chevron_wrapped_multiline_text_and_elements_share_exclusive_human_blue() {
     let message = "human intent with a styled reference\nand a wide 界 continuation".to_string();
     let cell = UserHistoryCell {
         message,
@@ -1822,7 +1822,7 @@ fn consolidation_walker_replaces_agent_message_cells() {
 }
 
 #[test]
-fn native_invocation_uses_human_teal_and_artifact_uses_operational_blue() {
+fn native_invocation_uses_human_blue_and_artifact_uses_operational_cyan() {
     let invocation = native_code_mode_lifecycle_cell(
         codex_cli_protocol::NativeCodeModePhase::Invocation,
         "inspect".to_string(),
