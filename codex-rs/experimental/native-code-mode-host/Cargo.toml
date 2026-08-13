@@ -1,0 +1,28 @@
+[package]
+name = "codex-native-code-mode-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "codex-native-code-mode-spike"
+path = "src/main.rs"
+
+[lib]
+name = "codex_native_code_mode_host"
+path = "src/lib.rs"
+doctest = false
+
+[lints]
+workspace = true
+
+[dependencies]
+libc = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tokio-util = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

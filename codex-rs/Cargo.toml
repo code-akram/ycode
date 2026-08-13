@@ -39,6 +39,8 @@ members = [
     "exec-server",
     "exec-server/tests/support",
     "execpolicy",
+    "experimental/native-code-mode-host",
+    "experimental/native-code-mode-sdk",
     "ext/agent",
     "ext/extension-api",
     "ext/goal",

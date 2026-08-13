@@ -1,0 +1,14 @@
+[package]
+name = "codex-native-code-mode-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "ycode_native_sdk"
+path = "src/lib.rs"
+doctest = false
+
+[lints]
+workspace = true

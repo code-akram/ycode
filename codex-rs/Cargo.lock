@@ -2286,6 +2286,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-native-code-mode-host"
+version = "0.147.0"
+dependencies = [
+ "libc",
+ "pretty_assertions",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "codex-native-code-mode-sdk"
+version = "0.147.0"
+
+[[package]]
 name = "codex-network-proxy"
 version = "0.147.0"
 dependencies = [
