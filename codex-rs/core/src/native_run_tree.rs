@@ -22,6 +22,7 @@ pub enum NativeRunNodeKind {
     Repair,
     Workflow { attempt: u8, pid: Option<u32> },
     ToolCall,
+    Agent,
     Process { pid: u32 },
     Finalization,
 }
@@ -40,6 +41,7 @@ pub enum NativeRunCancelScope {
     None,
     Run,
     Call,
+    Agent,
 }
 
 #[derive(Clone, Debug)]

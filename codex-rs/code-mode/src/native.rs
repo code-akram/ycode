@@ -12,6 +12,9 @@ pub const NATIVE_SOURCE_BYTES: usize = 64 * 1024;
 pub const NATIVE_DIAGNOSTIC_BYTES: usize = 64 * 1024;
 pub const NATIVE_EVIDENCE_BYTES: usize = 16 * 1024;
 pub const NATIVE_CALL_OUTPUT_BYTES: usize = 64 * 1024;
+pub const NATIVE_AGENT_TASK_BYTES: usize = 16 * 1024;
+pub const NATIVE_AGENT_MODEL_BYTES: usize = 128;
+pub const NATIVE_AGENT_EFFORT_BYTES: usize = 32;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct NativeRunIdentity {
@@ -60,6 +63,7 @@ pub struct NativeToolInvocation {
 
 pub type NativeToolFuture<'a> =
     Pin<Box<dyn Future<Output = Result<NativeToolOutcome, String>> + Send + 'a>>;
+pub type NativeSettleFuture<'a> = Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
 
 pub trait NativeCodeModeDelegate: Send + Sync {
     fn invoke<'a>(
@@ -67,6 +71,12 @@ pub trait NativeCodeModeDelegate: Send + Sync {
         invocation: NativeToolInvocation,
         cancellation: CancellationToken,
     ) -> NativeToolFuture<'a>;
+
+    /// Wait for ownership created by one invocation to settle after its caller is revoked.
+    /// Delegates without independently owned work need no additional settlement.
+    fn settle_invocation<'a>(&'a self, _runtime_call_id: &'a str) -> NativeSettleFuture<'a> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 pub(crate) fn validate_execute(request: &NativeExecute) -> Result<(), String> {
@@ -97,6 +107,23 @@ pub(crate) fn validate_tool_request(request: &NativeToolRequest) -> Result<(), S
         }
         NativeToolRequest::ApplyPatch { patch } => {
             bounded("native apply_patch input", patch, NATIVE_CALL_OUTPUT_BYTES)?;
+        }
+        NativeToolRequest::Agent {
+            task,
+            model,
+            reasoning_effort,
+        } => {
+            bounded_nonempty("native agent task", task, NATIVE_AGENT_TASK_BYTES)?;
+            if let Some(model) = model {
+                bounded_nonempty("native agent model", model, NATIVE_AGENT_MODEL_BYTES)?;
+            }
+            if let Some(reasoning_effort) = reasoning_effort {
+                bounded_nonempty(
+                    "native agent reasoning effort",
+                    reasoning_effort,
+                    NATIVE_AGENT_EFFORT_BYTES,
+                )?;
+            }
         }
     }
     Ok(())
@@ -160,6 +187,13 @@ fn bounded(label: &str, value: &str, limit: usize) -> Result<(), String> {
     Ok(())
 }
 
+fn bounded_nonempty(label: &str, value: &str, limit: usize) -> Result<(), String> {
+    if value.is_empty() || value.len() > limit {
+        return Err(format!("{label} must contain 1..={limit} bytes"));
+    }
+    Ok(())
+}
+
 fn bounded_identifier(label: &str, value: &str) -> Result<(), String> {
     if value.is_empty() || value.len() > 256 {
         return Err(format!("{label} must contain 1..=256 bytes"));
@@ -208,6 +242,30 @@ mod tests {
         assert!(
             validate_tool_request(&NativeToolRequest::ApplyPatch {
                 patch: "x".repeat(NATIVE_CALL_OUTPUT_BYTES + 1),
+            })
+            .is_err()
+        );
+        assert!(
+            validate_tool_request(&NativeToolRequest::Agent {
+                task: "x".repeat(NATIVE_AGENT_TASK_BYTES + 1),
+                model: None,
+                reasoning_effort: None,
+            })
+            .is_err()
+        );
+        assert!(
+            validate_tool_request(&NativeToolRequest::Agent {
+                task: "verify".to_string(),
+                model: Some(String::new()),
+                reasoning_effort: None,
+            })
+            .is_err()
+        );
+        assert!(
+            validate_tool_request(&NativeToolRequest::Agent {
+                task: "verify".to_string(),
+                model: None,
+                reasoning_effort: Some("x".repeat(NATIVE_AGENT_EFFORT_BYTES + 1)),
             })
             .is_err()
         );

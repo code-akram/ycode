@@ -45,8 +45,15 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::Weak;
+#[cfg(test)]
+use std::sync::atomic::AtomicBool;
+#[cfg(test)]
+use std::sync::atomic::AtomicU64;
 use tokio::sync::watch;
+#[cfg(test)]
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 pub(crate) use self::execution::AgentExecutionGuard;
@@ -106,6 +113,76 @@ pub(crate) struct AgentControl {
     agent_execution_limiter: Arc<AgentExecutionLimiter>,
     /// Session-scoped state shared by the root thread and every cloned sub-agent control handle.
     rollout_budget: Arc<RolloutBudget>,
+    #[cfg(test)]
+    native_test_hooks: Arc<NativeAgentTestHooks>,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct NativeAgentTestHooks {
+    fail_after_create: AtomicBool,
+    fail_subscribe: AtomicBool,
+    graceful_shutdown_delay_ms: AtomicU64,
+    force_shutdown_delay_ms: AtomicU64,
+    pause_after_registration: std::sync::Mutex<Option<NativeAgentRegistrationPause>>,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct NativeAgentOwnershipHandoff {
+    thread_id: Arc<OnceLock<ThreadId>>,
+    published: Arc<tokio::sync::Notify>,
+}
+
+impl NativeAgentOwnershipHandoff {
+    pub(crate) fn publish(&self, thread_id: ThreadId) -> CodexResult<()> {
+        self.thread_id.set(thread_id).map_err(|existing| {
+            CodexErr::Fatal(format!(
+                "native agent ownership was already published for {existing}"
+            ))
+        })?;
+        self.published.notify_waiters();
+        Ok(())
+    }
+
+    pub(crate) fn thread_id(&self) -> Option<ThreadId> {
+        self.thread_id.get().copied()
+    }
+
+    pub(crate) async fn wait_for_thread_id(&self) -> ThreadId {
+        loop {
+            let published = self.published.notified();
+            if let Some(thread_id) = self.thread_id() {
+                return thread_id;
+            }
+            published.await;
+        }
+    }
+}
+
+#[cfg(test)]
+struct NativeAgentRegistrationPause {
+    reached: CancellationToken,
+    release: CancellationToken,
+}
+
+#[cfg(test)]
+pub(crate) struct NativeAgentRegistrationPauseHandle {
+    reached: CancellationToken,
+    release: CancellationToken,
+}
+
+#[cfg(test)]
+impl NativeAgentRegistrationPauseHandle {
+    pub(crate) async fn wait_until_reached(&self) {
+        self.reached.cancelled().await;
+    }
+}
+
+#[cfg(test)]
+impl Drop for NativeAgentRegistrationPauseHandle {
+    fn drop(&mut self) {
+        self.release.cancel();
+    }
 }
 
 impl AgentControl {
@@ -136,6 +213,93 @@ impl AgentControl {
 
     pub(crate) fn rollout_budget(&self) -> &RolloutBudget {
         self.rollout_budget.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_native_spawn_after_create_for_test(&self) {
+        self.native_test_hooks
+            .fail_after_create
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn spawned_agent_count_for_test(&self) -> usize {
+        self.state.live_agents().len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_native_status_subscription_for_test(&self) {
+        self.native_test_hooks
+            .fail_subscribe
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn delay_next_native_graceful_shutdown_for_test(&self, delay: std::time::Duration) {
+        self.native_test_hooks.graceful_shutdown_delay_ms.store(
+            u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Release,
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn delay_next_native_force_shutdown_for_test(&self, delay: std::time::Duration) {
+        self.native_test_hooks.force_shutdown_delay_ms.store(
+            u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Release,
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pause_next_native_spawn_after_registration_for_test(
+        &self,
+    ) -> NativeAgentRegistrationPauseHandle {
+        let pause = NativeAgentRegistrationPause {
+            reached: CancellationToken::new(),
+            release: CancellationToken::new(),
+        };
+        let handle = NativeAgentRegistrationPauseHandle {
+            reached: pause.reached.clone(),
+            release: pause.release.clone(),
+        };
+        *self
+            .native_test_hooks
+            .pause_after_registration
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(pause);
+        handle
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn persisted_native_spawn_children_for_test(
+        &self,
+        parent_thread_id: ThreadId,
+    ) -> CodexResult<Vec<ThreadId>> {
+        let state = self.upgrade()?;
+        let Some(agent_graph_store) = state.agent_graph_store() else {
+            return Ok(Vec::new());
+        };
+        agent_graph_store
+            .list_thread_spawn_children(parent_thread_id, /*status_filter*/ None)
+            .await
+            .map_err(|error| CodexErr::Fatal(format!("failed to load native spawn edges: {error}")))
+    }
+
+    pub(crate) async fn subscribe_native_agent_status(
+        &self,
+        agent_id: ThreadId,
+    ) -> CodexResult<watch::Receiver<AgentStatus>> {
+        #[cfg(test)]
+        if self
+            .native_test_hooks
+            .fail_subscribe
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+        {
+            return Err(CodexErr::Fatal(
+                "injected native status subscription failure".to_string(),
+            ));
+        }
+        self.subscribe_status(agent_id).await
     }
 
     /// Send rich user input items to an existing agent thread.

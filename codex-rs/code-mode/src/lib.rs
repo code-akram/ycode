@@ -7,6 +7,7 @@ pub use native::NativeExecute;
 pub use native::NativeExecution;
 pub use native::NativeProgress;
 pub use native::NativeRunIdentity;
+pub use native::NativeSettleFuture;
 pub use native::NativeToolFuture;
 pub use native::NativeToolInvocation;
 pub use remote_session::DisabledCodeModeSessionProvider;

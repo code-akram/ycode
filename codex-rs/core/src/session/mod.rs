@@ -308,6 +308,9 @@ pub(crate) struct SessionIo {
     // Shared future for the background submission loop completion so multiple
     // callers can wait for shutdown.
     pub(crate) session_loop_termination: SessionLoopTermination,
+    // The native-agent ownership path uses this only after bounded graceful shutdown failed.
+    // Ordinary shutdown continues to use the submission protocol above.
+    pub(crate) session_loop_abort: Option<tokio::task::AbortHandle>,
 }
 
 pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
@@ -622,11 +625,13 @@ impl Session {
                 .instrument(info_span!("session_loop", thread_id = %thread_id))
                 .await;
         });
+        let session_loop_abort = session_loop_handle.abort_handle();
         let io = SessionIo {
             tx_sub,
             rx_event,
             agent_status: agent_status_rx,
             session_loop_termination: session_loop_termination_from_handle(session_loop_handle),
+            session_loop_abort: Some(session_loop_abort),
         };
 
         Ok((session, io))
@@ -695,6 +700,13 @@ impl SessionIo {
         }
         session_loop_termination.await;
         Ok(())
+    }
+
+    pub(crate) async fn force_abort_and_wait(&self) {
+        if let Some(abort) = self.session_loop_abort.as_ref() {
+            abort.abort();
+        }
+        self.session_loop_termination.clone().await;
     }
 
     pub(crate) async fn next_event(&self) -> CodexResult<Event> {

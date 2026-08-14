@@ -251,6 +251,7 @@ impl Renderable for NativeRunTreeView {
             .map(|node| match node.cancel_scope {
                 NativeRunCancelScope::Run => " · x cancel run",
                 NativeRunCancelScope::Call => " · x cancel call",
+                NativeRunCancelScope::Agent => " · x cancel agent",
                 NativeRunCancelScope::None => "",
             })
             .unwrap_or_default();
@@ -320,6 +321,13 @@ fn detail_lines(node: &NativeRunNode, width: u16) -> Vec<Line<'static>> {
             &mut lines,
             "cancel · ",
             "selected call",
+            Style::default(),
+            width,
+        ),
+        NativeRunCancelScope::Agent => push_wrapped_detail(
+            &mut lines,
+            "cancel · ",
+            "selected agent",
             Style::default(),
             width,
         ),
@@ -431,6 +439,7 @@ fn kind_label(kind: NativeRunNodeKind) -> String {
         } => format!("workflow {attempt} · pid {pid}"),
         NativeRunNodeKind::Workflow { attempt, pid: None } => format!("workflow {attempt}"),
         NativeRunNodeKind::ToolCall => "tool call".to_string(),
+        NativeRunNodeKind::Agent => "agent".to_string(),
         NativeRunNodeKind::Process { pid } => format!("process · pid {pid}"),
         NativeRunNodeKind::Finalization => "finalization".to_string(),
     }
@@ -565,6 +574,36 @@ mod tests {
         assert!(detail.contains("id · generation"));
         view.handle_key_event(KeyEvent::from(KeyCode::Left));
         assert!(!view.detail);
+    }
+
+    #[test]
+    fn agent_node_has_truthful_selective_cancel_label_and_bounded_detail() {
+        let mut snapshot = snapshot();
+        snapshot.nodes.push(NativeRunNode {
+            stable_id: "agent-native-run-a1-1".into(),
+            parent_id: Some("run".into()),
+            launch_ordinal: 2,
+            kind: NativeRunNodeKind::Agent,
+            status: NativeRunNodeStatus::Running,
+            started_at: Instant::now(),
+            finished_at: None,
+            summary: "agent task · 19 bytes · model inherited · reasoning inherited".into(),
+            recent: "pending".into(),
+            artifact_refs: Vec::new(),
+            cancel_scope: NativeRunCancelScope::Agent,
+        });
+        let (_tx, rx) = watch::channel(Some(snapshot));
+        let (events, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut view = NativeRunTreeView::new(rx, AppEventSender::new(events)).expect("view");
+        view.handle_key_event(KeyEvent::from(KeyCode::Down));
+        view.handle_key_event(KeyEvent::from(KeyCode::Down));
+        let tree = rendered_lines(&view, 72, 8).join("\n");
+        assert!(tree.contains("agent"));
+        assert!(tree.contains("x cancel agent"));
+        view.handle_key_event(KeyEvent::from(KeyCode::Enter));
+        let details = rendered_lines(&view, 48, 10).join("\n");
+        assert!(details.contains("kind · agent"));
+        assert!(details.contains("cancel · selected agent"));
     }
 
     #[test]

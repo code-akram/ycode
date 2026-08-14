@@ -116,6 +116,7 @@ pub(crate) async fn run_codex_thread_interactive(
         rx_event: rx_sub,
         agent_status: io.agent_status.clone(),
         session_loop_termination: io.session_loop_termination.clone(),
+        session_loop_abort: io.session_loop_abort.clone(),
     };
     let io_for_events = Arc::clone(&io);
     tokio::spawn(async move {
@@ -190,6 +191,7 @@ pub(crate) async fn run_codex_thread_one_shot(
     let ops_tx = io.tx_sub.clone();
     let agent_status = io.agent_status.clone();
     let session_loop_termination = io.session_loop_termination.clone();
+    let session_loop_abort = io.session_loop_abort.clone();
     let io_for_bridge = io;
     tokio::spawn(async move {
         while let Ok(event) = io_for_bridge.next_event().await {
@@ -227,6 +229,7 @@ pub(crate) async fn run_codex_thread_one_shot(
             tx_sub: tx_closed,
             agent_status,
             session_loop_termination,
+            session_loop_abort,
         },
     ))
 }

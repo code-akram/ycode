@@ -5071,6 +5071,7 @@ async fn shutdown_and_wait_allows_multiple_waiters() {
         rx_event,
         agent_status: watch::channel(AgentStatus::PendingInit).1,
         session_loop_termination: session_loop_termination_from_handle(session_loop_handle),
+        session_loop_abort: None,
     });
 
     let waiter_1 = {
@@ -5107,6 +5108,7 @@ async fn shutdown_and_wait_waits_when_shutdown_is_already_in_progress() {
         rx_event,
         agent_status: watch::channel(AgentStatus::PendingInit).1,
         session_loop_termination: session_loop_termination_from_handle(session_loop_handle),
+        session_loop_abort: None,
     });
 
     let waiter = {

@@ -64,6 +64,54 @@ const RAW_CALL_SOURCE: &str = r#"#![forbid(unsafe_code)]
 use ycode_native_sdk::{run, Request};
 fn main() { run(|context| { for index in 0..32 { let _ = context.call(Request::Shell { command: index.to_string(), workdir: None, timeout_ms: 100 })?; } Ok(()) }).unwrap(); }
 "#;
+const AGENT_FANOUT_SOURCE: &str = r#"#![forbid(unsafe_code)]
+use ycode_native_sdk::{run, Evidence, Outcome, Request};
+fn main() {
+    run(|context| {
+        let tasks = [
+            ("producer", None, None),
+            ("critic", Some("gpt-5.6"), Some("high")),
+            ("verifier", None, Some("medium")),
+        ];
+        let mut pending = Vec::new();
+        for (task, model, reasoning_effort) in tasks {
+            pending.push(context.spawn(Request::Agent {
+                task: task.to_string(),
+                model: model.map(str::to_string),
+                reasoning_effort: reasoning_effort.map(str::to_string),
+            })?);
+        }
+        let mut verified = Vec::new();
+        let mut provenance_ids = Vec::new();
+        for task in pending {
+            match context.join(task)? {
+                Outcome::Success { call_id, output } => {
+                    provenance_ids.push(call_id);
+                    verified.push(String::from_utf8(output).unwrap());
+                }
+                Outcome::Retry { call_id, reason } => {
+                    provenance_ids.push(call_id);
+                    verified.push(format!("retry:{reason}"));
+                }
+                Outcome::Failure { call_id, message } => {
+                    provenance_ids.push(call_id);
+                    verified.push(format!("failure:{message}"));
+                }
+            }
+        }
+        context.finish(Evidence {
+            version: 1,
+            summary: "producer critic verifier settled in launch order".into(),
+            verified,
+            disputed: vec![],
+            unresolved: vec![],
+            artifact_refs: vec![],
+            partial_failures: vec![],
+            provenance_ids,
+        })
+    }).unwrap();
+}
+"#;
 const LARGE_OUTCOME_SOURCE: &str = r#"#![forbid(unsafe_code)]
 use ycode_native_sdk::{run, Evidence, Outcome, Request};
 fn main() { run(|context| { let outcome = context.call(Request::Shell { command: "large".into(), workdir: None, timeout_ms: 100 })?; let failure = match outcome { Outcome::Failure { message, .. } => message, _ => "missing bound".into() }; context.finish(Evidence { version: 1, summary: "bounded".into(), verified: vec![], disputed: vec![], unresolved: vec![], artifact_refs: vec![], partial_failures: vec![failure], provenance_ids: vec![] }) }).unwrap(); }
@@ -271,6 +319,16 @@ impl NativeCapabilityDelegate for FakeDelegate {
                 NativeRequest::ApplyPatch { patch } => {
                     format!("patch:{}", patch.len()).into_bytes()
                 }
+                NativeRequest::Agent {
+                    task,
+                    model,
+                    reasoning_effort,
+                } => format!(
+                    "agent:{task}:{}:{}",
+                    model.as_deref().unwrap_or("inherited"),
+                    reasoning_effort.as_deref().unwrap_or("inherited")
+                )
+                .into_bytes(),
             };
             Ok(NativeOutcome::Success(value))
         })
@@ -425,6 +483,36 @@ async fn typed_success_cache_artifacts_and_explicit_cleanup() {
     let run_dir = artifact.run_dir().to_path_buf();
     artifact.cleanup().unwrap();
     assert!(!run_dir.exists());
+}
+
+#[tokio::test]
+async fn real_rust_context_spawn_join_preserves_agent_launch_and_all_settled_order() {
+    let root = tempfile::tempdir().unwrap();
+    let delegate = Arc::new(FakeDelegate::default());
+    let runtime = host(root.path(), Arc::clone(&delegate), Limits::default()).await;
+    let artifact = prepare(&runtime, AGENT_FANOUT_SOURCE);
+    let report = runtime
+        .execute(&artifact, CancellationToken::new())
+        .await
+        .unwrap();
+    let evidence = decode_evidence(&report.evidence).unwrap();
+    assert_eq!(
+        evidence.summary,
+        "producer critic verifier settled in launch order"
+    );
+    assert_eq!(
+        evidence.verified,
+        [
+            "agent:producer:inherited:inherited",
+            "agent:critic:gpt-5.6:high",
+            "agent:verifier:inherited:medium",
+        ]
+    );
+    assert_eq!(evidence.provenance_ids.len(), 3);
+    assert_eq!(report.total_calls, 3);
+    assert_eq!(report.owned_tasks_after, 0);
+    assert_eq!(delegate.active.load(Ordering::Acquire), 0);
+    artifact.cleanup().unwrap();
 }
 
 #[tokio::test]

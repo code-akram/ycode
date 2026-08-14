@@ -27,6 +27,7 @@ async fn forward_events_filters_private_events_before_blocked_send_is_cancelled(
         rx_event: rx_events,
         agent_status,
         session_loop_termination: completed_session_loop_termination(),
+        session_loop_abort: None,
     });
 
     let (tx_out, rx_out) = bounded(1);
@@ -109,6 +110,7 @@ async fn forward_ops_preserves_submission_trace_context() {
         rx_event: rx_events,
         agent_status,
         session_loop_termination: completed_session_loop_termination(),
+        session_loop_abort: None,
     });
     let (tx_ops, rx_ops) = bounded(1);
     let cancel = CancellationToken::new();
@@ -188,6 +190,7 @@ async fn handle_request_user_input_preserves_non_blocking_flag_for_round_trip() 
         rx_event: rx_events_child,
         agent_status,
         session_loop_termination: completed_session_loop_termination(),
+        session_loop_abort: None,
     });
     let cancel_token = CancellationToken::new();
     let child_event_id = "child-request-1".to_string();

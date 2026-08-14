@@ -492,6 +492,28 @@ fn additive_native_v1_wire_shapes_are_typed_and_pinned() {
         }),
     );
     assert_wire_round_trip(
+        DelegateRequest::NativeInvokeTool {
+            run_id: "20000000-0000-4000-8000-000000000002".into(),
+            call_id: "native-agent-1".into(),
+            request: NativeToolRequest::Agent {
+                task: "verify the proposed finding".into(),
+                model: Some("gpt-5.6".into()),
+                reasoning_effort: Some("high".into()),
+            },
+        },
+        json!({
+            "type": "native/tool/invoke",
+            "runId": "20000000-0000-4000-8000-000000000002",
+            "callId": "native-agent-1",
+            "request": {
+                "tool": "agent",
+                "task": "verify the proposed finding",
+                "model": "gpt-5.6",
+                "reasoningEffort": "high"
+            },
+        }),
+    );
+    assert_wire_round_trip(
         DelegateResponse::NativeToolResult {
             outcome: NativeToolOutcome::Success {
                 output: b"ok".to_vec(),

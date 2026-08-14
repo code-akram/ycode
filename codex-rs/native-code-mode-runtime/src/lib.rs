@@ -92,6 +92,11 @@ pub enum NativeRequest {
     ApplyPatch {
         patch: String,
     },
+    Agent {
+        task: String,
+        model: Option<String>,
+        reasoning_effort: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3123,6 +3128,11 @@ fn parse_spawn(payload: &[u8]) -> io::Result<(u32, NativeRequest)> {
         2 => NativeRequest::ApplyPatch {
             patch: cursor.string()?,
         },
+        3 => NativeRequest::Agent {
+            task: cursor.bounded_string(16 * 1024, "agent task")?,
+            model: cursor.optional_bounded_string(128, "agent model")?,
+            reasoning_effort: cursor.optional_bounded_string(32, "agent reasoning effort")?,
+        },
         _ => return Err(invalid_data("unknown native request tag")),
     };
     cursor.finish()?;
@@ -3224,6 +3234,24 @@ impl<'a> PayloadCursor<'a> {
         String::from_utf8(self.bytes()?.to_vec()).map_err(|_| invalid_data("invalid UTF-8"))
     }
 
+    fn bounded_string(&mut self, limit: usize, label: &str) -> io::Result<String> {
+        let bytes = self.bytes()?;
+        if bytes.is_empty() || bytes.len() > limit {
+            return Err(invalid_data(format!(
+                "{label} must contain 1..={limit} bytes"
+            )));
+        }
+        String::from_utf8(bytes.to_vec()).map_err(|_| invalid_data("invalid UTF-8"))
+    }
+
+    fn optional_bounded_string(&mut self, limit: usize, label: &str) -> io::Result<Option<String>> {
+        match self.byte()? {
+            0 => Ok(None),
+            1 => self.bounded_string(limit, label).map(Some),
+            _ => Err(invalid_data("invalid optional string tag")),
+        }
+    }
+
     fn finish(&self) -> io::Result<()> {
         (self.offset == self.bytes.len())
             .then_some(())
@@ -3231,8 +3259,8 @@ impl<'a> PayloadCursor<'a> {
     }
 }
 
-fn invalid_data(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
+fn invalid_data(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
 #[derive(Debug, Serialize)]
@@ -3561,6 +3589,51 @@ mod tests {
     use super::*;
     use std::os::unix::process::CommandExt as _;
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn agent_spawn_codec_is_typed_bounded_and_rejects_unknown_tags() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&7_u32.to_le_bytes());
+        payload.push(3);
+        put_bytes(&mut payload, b"verify one issue").unwrap();
+        payload.push(1);
+        put_bytes(&mut payload, b"gpt-5.6").unwrap();
+        payload.push(1);
+        put_bytes(&mut payload, b"high").unwrap();
+        assert_eq!(
+            parse_spawn(&payload).unwrap(),
+            (
+                7,
+                NativeRequest::Agent {
+                    task: "verify one issue".to_string(),
+                    model: Some("gpt-5.6".to_string()),
+                    reasoning_effort: Some("high".to_string()),
+                }
+            )
+        );
+
+        let mut oversized = Vec::new();
+        oversized.extend_from_slice(&8_u32.to_le_bytes());
+        oversized.push(3);
+        put_bytes(&mut oversized, &vec![b'x'; 16 * 1024 + 1]).unwrap();
+        oversized.push(0);
+        oversized.push(0);
+        assert!(
+            parse_spawn(&oversized)
+                .unwrap_err()
+                .to_string()
+                .contains("agent task")
+        );
+
+        let mut unknown = 9_u32.to_le_bytes().to_vec();
+        unknown.push(99);
+        assert!(
+            parse_spawn(&unknown)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown native request tag")
+        );
+    }
 
     #[test]
     fn bounded_host_event_capacity_covers_the_complete_execution_set() {

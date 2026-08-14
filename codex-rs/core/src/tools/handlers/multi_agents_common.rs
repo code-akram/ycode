@@ -274,9 +274,42 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
     requested_model: Option<&str>,
     requested_reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<(), FunctionCallError> {
-    let requested_model = requested_model.or(turn.config.agent_default_subagent_model.as_deref());
-    let requested_reasoning_effort = requested_reasoning_effort
-        .or_else(|| turn.config.agent_default_subagent_reasoning_effort.clone());
+    apply_spawn_agent_model_overrides(
+        session,
+        turn,
+        config,
+        requested_model.or(turn.config.agent_default_subagent_model.as_deref()),
+        requested_reasoning_effort
+            .or_else(|| turn.config.agent_default_subagent_reasoning_effort.clone()),
+    )
+    .await
+}
+
+/// Apply only explicit native-agent overrides so omission inherits the native root turn exactly.
+pub(crate) async fn apply_explicit_spawn_agent_model_overrides(
+    session: &Session,
+    turn: &TurnContext,
+    config: &mut Config,
+    requested_model: Option<&str>,
+    requested_reasoning_effort: Option<ReasoningEffort>,
+) -> Result<(), FunctionCallError> {
+    apply_spawn_agent_model_overrides(
+        session,
+        turn,
+        config,
+        requested_model,
+        requested_reasoning_effort,
+    )
+    .await
+}
+
+async fn apply_spawn_agent_model_overrides(
+    session: &Session,
+    turn: &TurnContext,
+    config: &mut Config,
+    requested_model: Option<&str>,
+    requested_reasoning_effort: Option<ReasoningEffort>,
+) -> Result<(), FunctionCallError> {
     if requested_model.is_none() && requested_reasoning_effort.is_none() {
         return Ok(());
     }

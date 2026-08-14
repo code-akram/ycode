@@ -78,6 +78,7 @@ struct DisconnectNativeDelegate {
 struct NonCooperativeNativeDelegate {
     started: Arc<Notify>,
     dropped: Arc<Notify>,
+    settled: Arc<Notify>,
 }
 
 struct DropSignal(Arc<Notify>);
@@ -98,6 +99,13 @@ impl NativeCodeModeDelegate for NonCooperativeNativeDelegate {
             let _dropped = DropSignal(Arc::clone(&self.dropped));
             self.started.notify_one();
             std::future::pending().await
+        })
+    }
+
+    fn settle_invocation<'a>(&'a self, _runtime_call_id: &'a str) -> crate::NativeSettleFuture<'a> {
+        Box::pin(async move {
+            self.settled.notify_one();
+            Ok(())
         })
     }
 }
@@ -640,6 +648,7 @@ async fn non_cooperative_native_delegate_is_forcibly_settled_on_cancel_and_unreg
         };
         let started = Arc::new(Notify::new());
         let dropped = Arc::new(Notify::new());
+        let settled = Arc::new(Notify::new());
         let (response_tx, response_rx) = oneshot::channel();
         harness
             .command_tx
@@ -653,6 +662,7 @@ async fn non_cooperative_native_delegate_is_forcibly_settled_on_cancel_and_unreg
                 delegate: Arc::new(NonCooperativeNativeDelegate {
                     started: Arc::clone(&started),
                     dropped: Arc::clone(&dropped),
+                    settled: Arc::clone(&settled),
                 }),
                 progress_tx: None,
                 caller_cancellation: CancellationToken::new(),
@@ -725,6 +735,9 @@ async fn non_cooperative_native_delegate_is_forcibly_settled_on_cancel_and_unreg
         tokio::time::timeout(Duration::from_secs(1), dropped.notified())
             .await
             .expect("non-cooperative delegate future must be forcibly dropped");
+        tokio::time::timeout(Duration::from_secs(1), settled.notified())
+            .await
+            .expect("driver joins delegate-owned cleanup after forced abort");
         wait_for_native_tasks(&harness.native_tasks).await;
         assert!(
             tokio::time::timeout(Duration::from_millis(150), harness.outgoing_rx.recv())
@@ -745,6 +758,7 @@ async fn non_cooperative_native_delegate_is_forcibly_settled_on_disconnect() {
     };
     let started = Arc::new(Notify::new());
     let dropped = Arc::new(Notify::new());
+    let settled = Arc::new(Notify::new());
     let (response_tx, response_rx) = oneshot::channel();
     harness
         .command_tx
@@ -758,6 +772,7 @@ async fn non_cooperative_native_delegate_is_forcibly_settled_on_disconnect() {
             delegate: Arc::new(NonCooperativeNativeDelegate {
                 started: Arc::clone(&started),
                 dropped: Arc::clone(&dropped),
+                settled: Arc::clone(&settled),
             }),
             progress_tx: None,
             caller_cancellation: CancellationToken::new(),
@@ -803,6 +818,9 @@ async fn non_cooperative_native_delegate_is_forcibly_settled_on_disconnect() {
     tokio::time::timeout(Duration::from_secs(1), dropped.notified())
         .await
         .expect("disconnect must forcibly drop non-cooperative delegate");
+    tokio::time::timeout(Duration::from_secs(1), settled.notified())
+        .await
+        .expect("disconnect joins delegate-owned cleanup after forced abort");
     tokio::time::timeout(Duration::from_secs(1), &mut harness.driver_task)
         .await
         .expect("driver should settle non-cooperative delegate")

@@ -42,6 +42,11 @@ impl RolloutBudget {
         });
     }
 
+    #[cfg(test)]
+    pub(crate) fn weighted_tokens_used_for_test(&self) -> Option<f64> {
+        self.lock().map(|state| state.weighted_tokens_used)
+    }
+
     /// Returns true once the configured budget is exhausted, including on later calls.
     pub(crate) fn record_usage(&self, usage: &TokenUsage) -> CodexResult<bool> {
         let Some(mut state) = self.lock() else {

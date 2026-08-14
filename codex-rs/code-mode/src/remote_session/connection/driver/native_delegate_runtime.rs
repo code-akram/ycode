@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 use super::types::DriverEvent;
 use super::types::NativeRunKey;
@@ -25,7 +26,8 @@ use crate::native::validate_tool_request;
 
 const MAX_RECENT_NATIVE_DELEGATE_IDS: usize = 4_096;
 const COOPERATIVE_CANCEL_GRACE: Duration = Duration::from_millis(500);
-const DRIVER_SETTLE_GRACE: Duration = Duration::from_millis(750);
+const DRIVER_SETTLE_GRACE: Duration = Duration::from_millis(950);
+const MAX_CLEANUP_DIAGNOSTIC_BYTES: usize = 1_024;
 
 struct NativeTarget {
     identity: NativeRunIdentity,
@@ -157,7 +159,7 @@ impl NativeDelegateRuntime {
         let completion_stop = CancellationToken::new();
         let invocation = NativeToolInvocation {
             identity: target.identity.clone(),
-            runtime_call_id,
+            runtime_call_id: runtime_call_id.clone(),
             request,
         };
         let delegate = Arc::clone(&target.delegate);
@@ -183,6 +185,14 @@ impl NativeDelegateRuntime {
                 },
                 result = &mut invocation => (result, false),
             };
+            drop(invocation);
+            if stopped && let Err(error) = delegate.settle_invocation(&runtime_call_id).await {
+                warn!(
+                    runtime_call_id,
+                    error = %bounded_cleanup_diagnostic(&error),
+                    "native delegate cleanup failed after response suppression"
+                );
+            }
             let result = result.and_then(|outcome| {
                 validate_tool_outcome(&outcome)?;
                 Ok(outcome)
@@ -257,6 +267,17 @@ impl NativeDelegateRuntime {
     fn reap_finished(&mut self) {
         self.retired_tasks.retain(|task| !task.is_finished());
     }
+}
+
+fn bounded_cleanup_diagnostic(error: &str) -> &str {
+    if error.len() <= MAX_CLEANUP_DIAGNOSTIC_BYTES {
+        return error;
+    }
+    let mut end = MAX_CLEANUP_DIAGNOSTIC_BYTES;
+    while !error.is_char_boundary(end) {
+        end -= 1;
+    }
+    &error[..end]
 }
 
 struct OwnedTask(Arc<AtomicUsize>);

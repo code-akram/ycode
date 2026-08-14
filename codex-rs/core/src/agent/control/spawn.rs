@@ -207,6 +207,8 @@ impl AgentControl {
             SpawnInitialInput::UserInput(initial_input),
             session_source,
             SpawnAgentOptions::default(),
+            /*suppress_completion_notification*/ false,
+            /*native_ownership*/ None,
         ))
         .await?;
         Ok(spawned_agent.thread_id)
@@ -225,6 +227,28 @@ impl AgentControl {
             SpawnInitialInput::UserInput(initial_input),
             session_source,
             options,
+            /*suppress_completion_notification*/ false,
+            /*native_ownership*/ None,
+        ))
+        .await
+    }
+
+    /// Spawn a native-run-owned worker without injecting its completion into the parent thread.
+    pub(crate) async fn spawn_native_agent_with_metadata(
+        &self,
+        config: Config,
+        initial_input: Vec<UserInput>,
+        session_source: SessionSource,
+        options: SpawnAgentOptions,
+        native_ownership: NativeAgentOwnershipHandoff,
+    ) -> CodexResult<LiveAgent> {
+        Box::pin(self.spawn_agent_internal(
+            config,
+            SpawnInitialInput::UserInput(initial_input),
+            Some(session_source),
+            options,
+            /*suppress_completion_notification*/ true,
+            Some(native_ownership),
         ))
         .await
     }
@@ -242,6 +266,8 @@ impl AgentControl {
             SpawnInitialInput::InterAgentCommunication(communication, context),
             session_source,
             options,
+            /*suppress_completion_notification*/ false,
+            /*native_ownership*/ None,
         ))
         .await
     }
@@ -368,6 +394,8 @@ impl AgentControl {
         initial_input: SpawnInitialInput,
         session_source: Option<SessionSource>,
         options: SpawnAgentOptions,
+        suppress_completion_notification: bool,
+        native_ownership: Option<NativeAgentOwnershipHandoff>,
     ) -> CodexResult<LiveAgent> {
         let state = self.upgrade()?;
         let multi_agent_version = state
@@ -475,20 +503,56 @@ impl AgentControl {
         if let Some(residency_slot) = residency_slot {
             residency_slot.commit(new_thread.thread_id);
         }
+        if let Some(native_ownership) = native_ownership.as_ref()
+            && let Err(error) = native_ownership.publish(new_thread.thread_id)
+        {
+            self.force_settle_native_agent_tree(new_thread.thread_id)
+                .await?;
+            return Err(error);
+        }
 
-        // Notify a new thread has been created. This notification will be processed by clients
-        // to subscribe or drain this newly created thread.
-        // TODO(jif) add helper for drain
-        state.notify_thread_created(new_thread.thread_id);
+        #[cfg(test)]
+        if suppress_completion_notification {
+            let pause = self
+                .native_test_hooks
+                .pause_after_registration
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(pause) = pause {
+                pause.reached.cancel();
+                pause.release.cancelled().await;
+            }
+        }
 
-        self.persist_thread_spawn_edge_for_source(
-            new_thread.thread.as_ref(),
-            new_thread.thread_id,
-            notification_source.as_ref(),
-        )
-        .await;
+        // Ordinary spawns retain their established notification chronology. Native workers delay
+        // visibility until their initial input is accepted, making post-create failure
+        // transactional to the native owner.
+        if !suppress_completion_notification {
+            state.notify_thread_created(new_thread.thread_id);
+            self.persist_thread_spawn_edge_for_source(
+                new_thread.thread.as_ref(),
+                new_thread.thread_id,
+                notification_source.as_ref(),
+            )
+            .await;
+        }
 
-        match initial_input {
+        #[cfg(test)]
+        if suppress_completion_notification
+            && self
+                .native_test_hooks
+                .fail_after_create
+                .swap(false, std::sync::atomic::Ordering::AcqRel)
+        {
+            self.force_settle_native_agent_tree(new_thread.thread_id)
+                .await?;
+            return Err(CodexErr::Fatal(
+                "injected native post-create failure".to_string(),
+            ));
+        }
+
+        let initial_input_result = match initial_input {
             SpawnInitialInput::UserInput(input) => {
                 self.send_input_after_capacity_check(
                     new_thread.thread_id,
@@ -496,7 +560,7 @@ impl AgentControl {
                     input,
                     options.parent_turn_id,
                 )
-                .await?;
+                .await
             }
             SpawnInitialInput::InterAgentCommunication(communication, context) => {
                 self.send_inter_agent_communication_after_capacity_check(
@@ -506,10 +570,26 @@ impl AgentControl {
                     context,
                     options.parent_turn_id,
                 )
-                .await?;
+                .await
             }
+        };
+        if let Err(error) = initial_input_result {
+            if suppress_completion_notification {
+                self.force_settle_native_agent_tree(new_thread.thread_id)
+                    .await?;
+            }
+            return Err(error);
         }
-        if multi_agent_version != MultiAgentVersion::V2 {
+        if suppress_completion_notification {
+            state.notify_thread_created(new_thread.thread_id);
+            self.persist_thread_spawn_edge_for_source(
+                new_thread.thread.as_ref(),
+                new_thread.thread_id,
+                notification_source.as_ref(),
+            )
+            .await;
+        }
+        if multi_agent_version != MultiAgentVersion::V2 && !suppress_completion_notification {
             let child_reference = agent_metadata
                 .agent_path
                 .as_ref()

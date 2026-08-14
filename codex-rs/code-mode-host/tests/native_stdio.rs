@@ -434,6 +434,13 @@ fn fake_outcome(request: NativeToolRequest) -> NativeToolOutcome {
         NativeToolRequest::ApplyPatch { patch } => NativeToolOutcome::Success {
             output: format!("patch:{}", patch.len()).into_bytes(),
         },
+        NativeToolRequest::Agent {
+            task,
+            model,
+            reasoning_effort,
+        } => NativeToolOutcome::Success {
+            output: format!("agent:{task}:{model:?}:{reasoning_effort:?}").into_bytes(),
+        },
     }
 }
 

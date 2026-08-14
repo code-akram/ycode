@@ -62,6 +62,8 @@ const SDK_CONTRACT: &str = r#"SDK v1 (`ycode_native_sdk`, std only):
 - `run(|context: &mut Context| -> Result<()>) -> Result<()>`
 - Request::Shell { command: String, workdir: Option<String>, timeout_ms: u32 }
 - Request::ApplyPatch { patch: String }
+- Request::Agent { task: String, model: Option<String>, reasoning_effort: Option<String> }
+- Agent defaults inherit this run's official model/reasoning/service tier. Use an explicit model/reasoning override only when the human explicitly requested it or a clear task-specific reason requires it; overrides use the same validation as ordinary spawn_agent. At most three worker agents may be live; workers cannot spawn descendants.
 - Outcome::Success { call_id: String, output: Vec<u8> }
 - Outcome::Retry { call_id: String, reason: String }
 - Outcome::Failure { call_id: String, message: String }

@@ -75,6 +75,16 @@ impl AgentControl {
     pub(super) fn forget_v2_residency(&self, thread_id: ThreadId) {
         self.v2_residency.remove(thread_id);
     }
+
+    #[cfg(test)]
+    pub(crate) fn native_residency_counts_for_test(&self) -> (usize, usize) {
+        let state = self
+            .v2_residency
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (state.residents.len(), state.pending_slots)
+    }
 }
 
 impl V2Residency {

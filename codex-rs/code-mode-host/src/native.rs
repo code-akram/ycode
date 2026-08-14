@@ -246,6 +246,15 @@ impl NativeCapabilityDelegate for RemoteNativeDelegate {
                     timeout_ms,
                 },
                 NativeRequest::ApplyPatch { patch } => NativeToolRequest::ApplyPatch { patch },
+                NativeRequest::Agent {
+                    task,
+                    model,
+                    reasoning_effort,
+                } => NativeToolRequest::Agent {
+                    task,
+                    model,
+                    reasoning_effort,
+                },
             };
             match self
                 .peer

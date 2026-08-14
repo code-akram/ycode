@@ -380,6 +380,12 @@ pub enum NativeToolRequest {
     },
     #[serde(rename = "applyPatch")]
     ApplyPatch { patch: String },
+    #[serde(rename = "agent")]
+    Agent {
+        task: String,
+        model: Option<String>,
+        reasoning_effort: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

@@ -10,6 +10,9 @@ const MAX_FRAME_BYTES: usize = 64 * 1024;
 const MAX_EVIDENCE_BYTES: usize = 16 * 1024;
 const MAX_EVIDENCE_ITEMS: usize = 64;
 const MAX_EVIDENCE_STRING_BYTES: usize = 4 * 1024;
+const MAX_AGENT_TASK_BYTES: usize = 16 * 1024;
+const MAX_AGENT_MODEL_BYTES: usize = 128;
+const MAX_AGENT_EFFORT_BYTES: usize = 32;
 
 const SPAWN: u16 = 1;
 const JOIN: u16 = 2;
@@ -33,6 +36,11 @@ pub enum Request {
     },
     ApplyPatch {
         patch: String,
+    },
+    Agent {
+        task: String,
+        model: Option<String>,
+        reasoning_effort: Option<String>,
     },
 }
 #[derive(Clone, Copy, Debug)]
@@ -153,6 +161,21 @@ fn encode_request(output: &mut Vec<u8>, request: Request) -> Result<()> {
         Request::ApplyPatch { patch } => {
             output.push(2);
             put_string(output, &patch)?;
+        }
+        Request::Agent {
+            task,
+            model,
+            reasoning_effort,
+        } => {
+            output.push(3);
+            put_bounded_string(output, &task, MAX_AGENT_TASK_BYTES, "agent task")?;
+            put_optional_bounded_string(output, model, MAX_AGENT_MODEL_BYTES, "agent model")?;
+            put_optional_bounded_string(
+                output,
+                reasoning_effort,
+                MAX_AGENT_EFFORT_BYTES,
+                "agent reasoning effort",
+            )?;
         }
     }
     Ok(())
@@ -277,6 +300,33 @@ fn put_bytes(output: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
 }
 fn put_string(output: &mut Vec<u8>, value: &str) -> Result<()> {
     put_bytes(output, value.as_bytes())
+}
+
+fn put_bounded_string(output: &mut Vec<u8>, value: &str, limit: usize, label: &str) -> Result<()> {
+    if value.is_empty() || value.len() > limit {
+        return Err(Error::Protocol(format!(
+            "{label} must contain 1..={limit} bytes"
+        )));
+    }
+    put_string(output, value)
+}
+
+fn put_optional_bounded_string(
+    output: &mut Vec<u8>,
+    value: Option<String>,
+    limit: usize,
+    label: &str,
+) -> Result<()> {
+    match value {
+        Some(value) => {
+            output.push(1);
+            put_bounded_string(output, &value, limit, label)
+        }
+        None => {
+            output.push(0);
+            Ok(())
+        }
+    }
 }
 
 struct Cursor<'a> {

@@ -49,6 +49,7 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
+use codex_state::DirectionalThreadSpawnEdgeStatus;
 use codex_thread_store::ArchiveThreadParams;
 use codex_thread_store::InMemoryThreadStore;
 use codex_thread_store::LocalThreadStore;
@@ -347,6 +348,20 @@ async fn wait_for_live_thread_spawn_children(
     })
     .await
     .expect("expected persisted child tree");
+}
+
+async fn persisted_spawn_children(
+    harness: &AgentControlHarness,
+    parent_thread_id: ThreadId,
+    status: DirectionalThreadSpawnEdgeStatus,
+) -> Vec<ThreadId> {
+    harness
+        .state_db
+        .as_ref()
+        .expect("state db available")
+        .list_thread_spawn_children_with_status(parent_thread_id, status)
+        .await
+        .expect("persisted spawn children load")
 }
 
 async fn assert_thread_not_loaded(manager: &ThreadManager, thread_id: ThreadId) {
@@ -3771,6 +3786,204 @@ async fn resume_agent_from_rollout_does_not_reopen_closed_descendants() {
         .shutdown_agent_tree(parent_thread_id)
         .await
         .expect("tree shutdown after resume should succeed");
+}
+
+#[test]
+fn native_settlement_closes_edge_and_parent_resume_skips_worker() {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_stack_size(16 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .expect("production-sized Tokio runtime")
+        .block_on(native_settlement_closes_edge_and_parent_resume_skips_worker_inner());
+}
+
+async fn native_settlement_closes_edge_and_parent_resume_skips_worker_inner() {
+    let harness = AgentControlHarness::new().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    persist_thread_for_tree_resume(&parent_thread, "native parent persisted").await;
+
+    let native_thread_id = harness
+        .control
+        .spawn_native_agent_with_metadata(
+            harness.config.clone(),
+            text_input("native terminal worker"),
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            }),
+            SpawnAgentOptions {
+                parent_thread_id: Some(parent_thread_id),
+                ..Default::default()
+            },
+            NativeAgentOwnershipHandoff::default(),
+        )
+        .await
+        .expect("native worker spawn succeeds")
+        .thread_id;
+    let ordinary_thread_id = harness
+        .control
+        .spawn_agent(
+            harness.config.clone(),
+            text_input("ordinary resumable worker"),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            })),
+        )
+        .await
+        .expect("ordinary worker spawn succeeds");
+    wait_for_live_thread_spawn_children(
+        &harness.control,
+        parent_thread_id,
+        &[native_thread_id, ordinary_thread_id],
+    )
+    .await;
+
+    harness
+        .control
+        .settle_native_agent(native_thread_id, Duration::from_millis(400))
+        .await
+        .expect("native graceful settlement succeeds");
+    assert_eq!(
+        persisted_spawn_children(
+            &harness,
+            parent_thread_id,
+            DirectionalThreadSpawnEdgeStatus::Open,
+        )
+        .await,
+        vec![ordinary_thread_id],
+        "ordinary shutdown/resume semantics stay open"
+    );
+    assert_eq!(
+        persisted_spawn_children(
+            &harness,
+            parent_thread_id,
+            DirectionalThreadSpawnEdgeStatus::Closed,
+        )
+        .await,
+        vec![native_thread_id]
+    );
+
+    harness
+        .control
+        .shutdown_agent_tree(parent_thread_id)
+        .await
+        .expect("parent tree shutdown succeeds");
+    harness
+        .control
+        .resume_agent_from_rollout(
+            harness.config.clone(),
+            parent_thread_id,
+            SessionSource::Exec,
+        )
+        .await
+        .expect("parent resume succeeds");
+    assert_eq!(
+        harness.control.get_status(native_thread_id).await,
+        AgentStatus::NotFound,
+        "closed native edge is not resurrected"
+    );
+    assert_ne!(
+        harness.control.get_status(ordinary_thread_id).await,
+        AgentStatus::NotFound,
+        "ordinary open child remains resumable"
+    );
+
+    harness
+        .control
+        .close_agent(ordinary_thread_id)
+        .await
+        .expect("ordinary worker cleanup succeeds");
+    harness
+        .control
+        .shutdown_live_agent(parent_thread_id)
+        .await
+        .expect("resumed parent cleanup succeeds");
+}
+
+#[test]
+fn forced_native_settlement_closes_edge_before_releasing_worker() {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_stack_size(16 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .expect("production-sized Tokio runtime")
+        .block_on(forced_native_settlement_closes_edge_before_releasing_worker_inner());
+}
+
+async fn forced_native_settlement_closes_edge_before_releasing_worker_inner() {
+    let harness = AgentControlHarness::new().await;
+    let (parent_thread_id, _parent_thread) = harness.start_thread().await;
+    let native_thread_id = harness
+        .control
+        .spawn_native_agent_with_metadata(
+            harness.config.clone(),
+            text_input("forced native terminal worker"),
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            }),
+            SpawnAgentOptions {
+                parent_thread_id: Some(parent_thread_id),
+                ..Default::default()
+            },
+            NativeAgentOwnershipHandoff::default(),
+        )
+        .await
+        .expect("forced-path native worker spawn succeeds")
+        .thread_id;
+    wait_for_live_thread_spawn_children(&harness.control, parent_thread_id, &[native_thread_id])
+        .await;
+    harness
+        .control
+        .delay_next_native_graceful_shutdown_for_test(Duration::from_millis(600));
+    harness
+        .control
+        .settle_native_agent(native_thread_id, Duration::from_millis(400))
+        .await
+        .expect("forced native settlement succeeds");
+
+    assert!(
+        persisted_spawn_children(
+            &harness,
+            parent_thread_id,
+            DirectionalThreadSpawnEdgeStatus::Open,
+        )
+        .await
+        .is_empty()
+    );
+    assert_eq!(
+        persisted_spawn_children(
+            &harness,
+            parent_thread_id,
+            DirectionalThreadSpawnEdgeStatus::Closed,
+        )
+        .await,
+        vec![native_thread_id]
+    );
+    assert_eq!(
+        harness.control.get_status(native_thread_id).await,
+        AgentStatus::NotFound
+    );
+    assert_eq!(harness.control.spawned_agent_count_for_test(), 0);
+
+    harness
+        .control
+        .shutdown_live_agent(parent_thread_id)
+        .await
+        .expect("forced-path parent cleanup succeeds");
 }
 
 #[tokio::test]
