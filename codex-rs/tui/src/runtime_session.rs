@@ -346,6 +346,38 @@ impl CliRuntimeSession {
             .map_err(Into::into)
     }
 
+    pub(crate) async fn observe_native_code_mode_from_interactive_composer(
+        &self,
+        thread_id: ThreadId,
+        run_id: String,
+    ) -> Result<
+        tokio::sync::watch::Receiver<
+            Option<codex_cli_runtime_client::native_run_tree::NativeRunTreeSnapshot>,
+        >,
+    > {
+        let native = self.native_code_mode.as_ref().ok_or_else(|| {
+            color_eyre::eyre::eyre!(
+                "native Code Mode observation is unavailable outside the live embedded TUI composer"
+            )
+        })?;
+        native.observe(thread_id, run_id).await.map_err(Into::into)
+    }
+
+    pub(crate) async fn cancel_native_code_mode_node_from_interactive_composer(
+        &self,
+        thread_id: ThreadId,
+        run_id: String,
+        node_id: String,
+    ) -> Result<codex_cli_runtime_client::native_run_tree::NativeRunCancelResult> {
+        let native = self.native_code_mode.as_ref().ok_or_else(|| color_eyre::eyre::eyre!(
+            "native Code Mode cancellation is unavailable outside the live embedded TUI composer"
+        ))?;
+        native
+            .cancel_node(thread_id, run_id, node_id)
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) fn codex_home_path(
         &self,
         local_codex_home: &AbsolutePathBuf,

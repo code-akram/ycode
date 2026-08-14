@@ -161,9 +161,14 @@ pub enum HostEventKind {
     WorkflowStarted(u32),
     FirstCapability,
     DescendantPid(u32),
-    OwnedTasksDrained,
     Finished,
 }
+
+/// The runtime emits at most five fixed lifecycle events plus one verified descendant event for
+/// each admitted capability call. Keeping the channel larger than that complete execution set
+/// makes `try_send` non-blocking without permitting unbounded observer memory.
+pub const HOST_EVENT_MAX_PER_EXECUTION: usize = 5 + TOTAL_CALLS as usize;
+pub const HOST_EVENT_CHANNEL_CAPACITY: usize = 40;
 
 #[derive(Debug)]
 pub struct RunArtifact {
@@ -433,7 +438,7 @@ pub struct NativeHost {
     sdk_hash: String,
     root: PathBuf,
     limits: Limits,
-    events: Option<mpsc::UnboundedSender<HostEvent>>,
+    events: Option<mpsc::Sender<HostEvent>>,
     delegate: Arc<dyn NativeCapabilityDelegate>,
 }
 
@@ -505,7 +510,7 @@ impl NativeHost {
         })
     }
 
-    pub fn with_events(mut self, events: mpsc::UnboundedSender<HostEvent>) -> Self {
+    pub fn with_events(mut self, events: mpsc::Sender<HostEvent>) -> Self {
         self.events = Some(events);
         self
     }
@@ -668,18 +673,20 @@ impl NativeHost {
             .compile(&lease.identity, &hash, cancellation.clone())
             .await
         {
-            Ok(compiled) => {
-                self.event(&lease.identity, HostEventKind::Compiled);
-                self.run_child(
-                    &lease.identity,
-                    &compiled.binary,
-                    &hash,
-                    started,
-                    cancellation,
-                    compiled.compiler_spawned,
-                )
-                .await
-            }
+            Ok(compiled) => match self.event(&lease.identity, HostEventKind::Compiled) {
+                Ok(()) => {
+                    self.run_child(
+                        &lease.identity,
+                        &compiled.binary,
+                        &hash,
+                        started,
+                        cancellation,
+                        compiled.compiler_spawned,
+                    )
+                    .await
+                }
+                Err(error) => Err(error),
+            },
             Err(error) => Err(error),
         };
         if artifact.identity.attempt == 1
@@ -744,13 +751,22 @@ impl NativeHost {
         Ok(())
     }
 
-    fn event(&self, artifact: &ArtifactIdentity, kind: HostEventKind) {
+    fn event(&self, artifact: &ArtifactIdentity, kind: HostEventKind) -> Result<(), RunFailure> {
         if let Some(events) = &self.events {
-            let _ = events.send(HostEvent {
-                run_id: artifact.run_id.clone(),
-                kind,
-            });
+            events
+                .try_send(HostEvent {
+                    run_id: artifact.run_id.clone(),
+                    kind,
+                })
+                .map_err(|error| {
+                    failure(
+                        FailureKind::Cleanup,
+                        &format!("native runtime progress delivery failed: {error}"),
+                        artifact.source_hash.clone(),
+                    )
+                })?;
         }
+        Ok(())
     }
 
     async fn compile(
@@ -887,7 +903,15 @@ impl NativeHost {
         })?;
         let pid = child.id().unwrap_or(0);
         let mut group_guard = ProcessGroupGuard::new(pid);
-        self.event(artifact, HostEventKind::CompilerStarted(pid));
+        if let Err(error) = self.event(artifact, HostEventKind::CompilerStarted(pid)) {
+            let cleanup = terminate_group(&mut child, &mut group_guard).await;
+            return Err(failure_after_cleanup(
+                FailureKind::Cleanup,
+                &error.diagnostic,
+                hash.to_string(),
+                cleanup,
+            ));
+        }
         let Some(stderr) = child.stderr.take() else {
             let cleanup = terminate_group(&mut child, &mut group_guard).await;
             return Err(failure_after_cleanup(
@@ -1243,7 +1267,15 @@ impl NativeHost {
         })?;
         let pid = child.id().unwrap_or(0);
         let mut group_guard = ProcessGroupGuard::new(pid);
-        self.event(artifact, HostEventKind::WorkflowStarted(pid));
+        if let Err(error) = self.event(artifact, HostEventKind::WorkflowStarted(pid)) {
+            let cleanup = terminate_group(&mut child, &mut group_guard).await;
+            return Err(failure_after_cleanup(
+                FailureKind::Cleanup,
+                &error.diagnostic,
+                hash.to_string(),
+                cleanup,
+            ));
+        }
         let (Some(mut child_input), Some(mut child_output), Some(child_stderr)) =
             (child.stdin.take(), child.stdout.take(), child.stderr.take())
         else {
@@ -1422,7 +1454,15 @@ impl NativeHost {
                 ));
             }
         };
-        self.event(artifact, HostEventKind::Finished);
+        self.event(artifact, HostEventKind::Finished)
+            .map_err(|error| {
+                process_failure(
+                    FailureKind::Cleanup,
+                    &error.diagnostic,
+                    hash.to_string(),
+                    process_reaped,
+                )
+            })?;
         let first = first_capability
             .get()
             .copied()
@@ -1502,15 +1542,28 @@ impl NativeHost {
                     let first = state.first_capability.set(started.elapsed()).is_ok();
                     if first {
                         update_process_usage(state.workflow_pid, &state.workflow_usage);
-                        self.event(artifact, HostEventKind::FirstCapability);
+                        self.event(artifact, HostEventKind::FirstCapability)
+                            .map_err(|error| (FailureKind::Cleanup, error.diagnostic))?;
                     }
-                    if let Some(pid) = parse_descendant_pid(&request) {
-                        state
-                            .descendants
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .push(pid);
-                        self.event(artifact, HostEventKind::DescendantPid(pid));
+                    if let Some(pid) = verified_descendant_pid(&request, state.workflow_pid) {
+                        let admitted = {
+                            let mut descendants = state
+                                .descendants
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if descendants.len() >= TOTAL_CALLS as usize
+                                || descendants.contains(&pid)
+                            {
+                                false
+                            } else {
+                                descendants.push(pid);
+                                true
+                            }
+                        };
+                        if admitted {
+                            self.event(artifact, HostEventKind::DescendantPid(pid))
+                                .map_err(|error| (FailureKind::Cleanup, error.diagnostic))?;
+                        }
                     }
                     let (result_tx, result_rx) = oneshot::channel();
                     let task = spawn_capability(CapabilityJob {
@@ -1525,10 +1578,6 @@ impl NativeHost {
                         owned: Arc::clone(&state.owned),
                         cancellation: cancellation.clone(),
                         result_tx,
-                        drained_event: self
-                            .events
-                            .as_ref()
-                            .map(|events| (events.clone(), artifact.run_id.clone())),
                     });
                     state
                         .tasks
@@ -1745,7 +1794,6 @@ struct CapabilityJob {
     owned: Arc<AtomicUsize>,
     cancellation: CancellationToken,
     result_tx: oneshot::Sender<CapabilityResult>,
-    drained_event: Option<(mpsc::UnboundedSender<HostEvent>, String)>,
 }
 
 fn spawn_capability(job: CapabilityJob) -> JoinHandle<()> {
@@ -1761,12 +1809,10 @@ fn spawn_capability(job: CapabilityJob) -> JoinHandle<()> {
         owned,
         cancellation,
         result_tx,
-        drained_event,
     } = job;
     owned.fetch_add(1, Ordering::AcqRel);
     let owned_guard = OwnedTaskGuard {
         owned: Arc::clone(&owned),
-        drained_event,
     };
     tokio::spawn(async move {
         let _owned_guard = owned_guard;
@@ -1810,18 +1856,10 @@ fn spawn_capability(job: CapabilityJob) -> JoinHandle<()> {
 
 struct OwnedTaskGuard {
     owned: Arc<AtomicUsize>,
-    drained_event: Option<(mpsc::UnboundedSender<HostEvent>, String)>,
 }
 impl Drop for OwnedTaskGuard {
     fn drop(&mut self) {
-        if self.owned.fetch_sub(1, Ordering::AcqRel) == 1
-            && let Some((events, run_id)) = &self.drained_event
-        {
-            let _ = events.send(HostEvent {
-                run_id: run_id.clone(),
-                kind: HostEventKind::OwnedTasksDrained,
-            });
-        }
+        self.owned.fetch_sub(1, Ordering::AcqRel);
     }
 }
 struct ActiveGuard(Arc<AtomicUsize>);
@@ -3122,11 +3160,17 @@ fn put_bytes(output: &mut Vec<u8>, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-fn parse_descendant_pid(request: &NativeRequest) -> Option<u32> {
+fn verified_descendant_pid(request: &NativeRequest, workflow_pid: u32) -> Option<u32> {
     let NativeRequest::Shell { command, .. } = request else {
         return None;
     };
-    command.strip_prefix("descendant:")?.parse().ok()
+    let pid = command.strip_prefix("descendant:")?.parse().ok()?;
+    if pid == 0 || pid == workflow_pid || !process_exists(pid) {
+        return None;
+    }
+    // SAFETY: `getpgid` only inspects kernel process metadata for the supplied integer PID.
+    let process_group = unsafe { libc::getpgid(pid as libc::pid_t) };
+    (process_group == workflow_pid as libc::pid_t).then_some(pid)
 }
 
 struct PayloadCursor<'a> {
@@ -3515,7 +3559,73 @@ pub fn process_exists(pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::process::CommandExt as _;
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn bounded_host_event_capacity_covers_the_complete_execution_set() {
+        assert_eq!(HOST_EVENT_MAX_PER_EXECUTION, 37);
+        assert!(HOST_EVENT_MAX_PER_EXECUTION <= HOST_EVENT_CHANNEL_CAPACITY);
+    }
+
+    #[test]
+    fn descendant_hint_requires_a_live_nonleader_in_the_owned_process_group() {
+        // SAFETY: getpgrp reads the process group of the current test process.
+        let owned_group = unsafe { libc::getpgrp() } as u32;
+        let mut owned_descendant = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let owned_request = NativeRequest::Shell {
+            command: format!("descendant:{}", owned_descendant.id()),
+            workdir: None,
+            timeout_ms: 1,
+        };
+        assert_eq!(
+            verified_descendant_pid(&owned_request, owned_group),
+            Some(owned_descendant.id())
+        );
+
+        let mut unrelated = std::process::Command::new("/bin/sleep");
+        unrelated.arg("30").process_group(0);
+        let mut unrelated = unrelated.spawn().unwrap();
+        let unrelated_request = NativeRequest::Shell {
+            command: format!("descendant:{}", unrelated.id()),
+            workdir: None,
+            timeout_ms: 1,
+        };
+        assert_eq!(
+            verified_descendant_pid(&unrelated_request, owned_group),
+            None
+        );
+        assert_eq!(
+            verified_descendant_pid(
+                &NativeRequest::Shell {
+                    command: "descendant:4294967295".to_string(),
+                    workdir: None,
+                    timeout_ms: 1,
+                },
+                owned_group,
+            ),
+            None
+        );
+        assert_eq!(
+            verified_descendant_pid(
+                &NativeRequest::Shell {
+                    command: format!("descendant:{owned_group}"),
+                    workdir: None,
+                    timeout_ms: 1,
+                },
+                owned_group,
+            ),
+            None
+        );
+
+        owned_descendant.kill().unwrap();
+        owned_descendant.wait().unwrap();
+        unrelated.kill().unwrap();
+        unrelated.wait().unwrap();
+    }
 
     #[tokio::test]
     async fn frame_rejects_oversize_before_reading_payload() {

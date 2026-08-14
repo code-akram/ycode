@@ -237,6 +237,45 @@ impl CodexThread {
         self.session.start_native_code_mode_task(task).await
     }
 
+    #[doc(hidden)]
+    pub fn observe_native_code_mode_from_interactive_tui(
+        &self,
+        run_id: &str,
+    ) -> CodexResult<
+        tokio::sync::watch::Receiver<Option<crate::native_run_tree::NativeRunTreeSnapshot>>,
+    > {
+        if self.session_source != SessionSource::Cli {
+            return Err(CodexErr::InvalidRequest(
+                "native Code Mode requires the interactive TUI".to_string(),
+            ));
+        }
+        self.session
+            .services
+            .code_mode_service
+            .native_run_trees()
+            .subscribe(&self.session.thread_id.to_string(), run_id)
+            .map_err(CodexErr::InvalidRequest)
+    }
+
+    #[doc(hidden)]
+    pub fn cancel_native_code_mode_node_from_interactive_tui(
+        &self,
+        run_id: &str,
+        node_id: &str,
+    ) -> CodexResult<crate::native_run_tree::NativeRunCancelResult> {
+        if self.session_source != SessionSource::Cli {
+            return Err(CodexErr::InvalidRequest(
+                "native Code Mode requires the interactive TUI".to_string(),
+            ));
+        }
+        self.session
+            .services
+            .code_mode_service
+            .native_run_trees()
+            .cancel(&self.session.thread_id.to_string(), run_id, node_id)
+            .map_err(CodexErr::InvalidRequest)
+    }
+
     pub async fn shutdown_and_wait(&self) -> CodexResult<()> {
         self.io.shutdown_and_wait().await
     }

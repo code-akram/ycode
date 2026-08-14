@@ -764,6 +764,17 @@ impl ChatWidget {
         self.bottom_pane.show_view(Box::new(view));
     }
 
+    pub(crate) fn show_native_run_tree(
+        &mut self,
+        receiver: tokio::sync::watch::Receiver<
+            Option<codex_cli_runtime_client::native_run_tree::NativeRunTreeSnapshot>,
+        >,
+    ) {
+        if let Err(error) = self.bottom_pane.show_native_run_tree(receiver) {
+            self.add_error_message(format!("Native Code Mode tree unavailable: {error}"));
+        }
+    }
+
     pub(crate) fn open_memories_enable_prompt(&mut self) {
         let items = vec![
             SelectionItem {
@@ -1256,6 +1267,17 @@ impl ChatWidget {
     #[cfg(test)]
     pub(crate) fn has_active_view(&self) -> bool {
         self.bottom_pane.has_active_view()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_composer_text_for_test(&mut self, text: &str) {
+        self.bottom_pane
+            .set_composer_text(text.to_string(), Vec::new(), Vec::new());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn composer_text_for_test(&self) -> String {
+        self.bottom_pane.composer_text()
     }
 
     pub(crate) fn show_esc_backtrack_hint(&mut self) {

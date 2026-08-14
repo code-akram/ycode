@@ -17,6 +17,10 @@ use serde_json::json;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
+use crate::native_run_tree::NativeRunCancelScope;
+use crate::native_run_tree::NativeRunNodeKind;
+use crate::native_run_tree::NativeRunNodeStatus;
+use crate::native_run_tree::NativeRunTreeOwner;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::tools::context::SharedTurnDiffTracker;
@@ -40,10 +44,10 @@ pub(crate) struct NativeCodeModeDispatchWorker {
     deadline: Instant,
     permits: Arc<Semaphore>,
     total_calls: AtomicUsize,
-    next_runtime_call: AtomicUsize,
     active_calls: AtomicUsize,
     artifact_bytes: AtomicUsize,
     seen_runtime_calls: Mutex<HashSet<String>>,
+    run_tree: NativeRunTreeOwner,
 }
 
 impl NativeCodeModeDispatchWorker {
@@ -54,6 +58,7 @@ impl NativeCodeModeDispatchWorker {
         step_context: Arc<StepContext>,
         tracker: SharedTurnDiffTracker,
         cancellation: CancellationToken,
+        run_tree: NativeRunTreeOwner,
     ) -> Arc<Self> {
         Arc::new(Self {
             identity,
@@ -63,10 +68,10 @@ impl NativeCodeModeDispatchWorker {
             deadline: Instant::now() + NATIVE_WORKFLOW_TIMEOUT,
             permits: Arc::new(Semaphore::new(NATIVE_CONCURRENT_CALLS)),
             total_calls: AtomicUsize::new(0),
-            next_runtime_call: AtomicUsize::new(1),
             active_calls: AtomicUsize::new(0),
             artifact_bytes: AtomicUsize::new(0),
             seen_runtime_calls: Mutex::new(HashSet::new()),
+            run_tree,
         })
     }
 
@@ -83,7 +88,17 @@ impl NativeCodeModeDispatchWorker {
         invocation: NativeToolInvocation,
         delegate_cancellation: CancellationToken,
     ) -> Result<NativeToolOutcome, String> {
-        self.validate_invocation(&invocation)?;
+        self.invoke_inner_with_encoder(invocation, delegate_cancellation, encode_tool_result)
+            .await
+    }
+
+    async fn invoke_inner_with_encoder(
+        &self,
+        invocation: NativeToolInvocation,
+        delegate_cancellation: CancellationToken,
+        encode_result: impl Fn(&serde_json::Value) -> Result<Vec<u8>, String>,
+    ) -> Result<NativeToolOutcome, String> {
+        let call_ordinal = self.validate_invocation(&invocation)?;
         if self.cancellation.is_cancelled() || delegate_cancellation.is_cancelled() {
             return Err("native tool call cancelled before admission".to_string());
         }
@@ -97,6 +112,7 @@ impl NativeCodeModeDispatchWorker {
         if remaining.is_zero() {
             return Err("native workflow deadline elapsed".to_string());
         }
+        let tree_summary = native_request_summary(&invocation.request);
         let (tool_name, payload) = match invocation.request {
             NativeToolRequest::Shell {
                 command,
@@ -138,6 +154,21 @@ impl NativeCodeModeDispatchWorker {
         self.active_calls.fetch_add(1, Ordering::AcqRel);
         let _active = ActiveCall { worker: self };
         let runtime_call_id = invocation.runtime_call_id;
+        let tree_call_id = format!("call-{runtime_call_id}");
+        self.run_tree.start_ordered(
+            tree_call_id.clone(),
+            format!("workflow-a{}", self.attempt),
+            NativeRunNodeKind::ToolCall,
+            &tree_summary,
+            Some((NativeRunCancelScope::Call, delegate_cancellation.clone())),
+            u64::try_from(call_ordinal).expect("bounded native call ordinal fits u64"),
+        );
+        let mut tree_call = TreeCallSettlement::new(
+            self.run_tree.clone(),
+            tree_call_id,
+            delegate_cancellation.clone(),
+            self.cancellation.clone(),
+        );
         let is_shell = tool_name.name == "shell_command";
         let call = ToolCall {
             tool_name,
@@ -167,55 +198,73 @@ impl NativeCodeModeDispatchWorker {
             result = &mut dispatch => result,
         };
         drop(permit);
-        match result {
-            Ok(result) => {
-                let value = result.code_mode_result();
-                let output = serde_json::to_vec(&value).map_err(|error| {
-                    bounded_error(format!("failed to encode tool result: {error}"))
-                })?;
-                if output.len() > NATIVE_CALL_BYTES || !self.reserve_artifact_bytes(output.len()) {
-                    return Ok(NativeToolOutcome::Failure {
-                        message: "native tool result exceeded its bounded artifact budget"
-                            .to_string(),
-                    });
+        let selectively_cancelled =
+            delegate_cancellation.is_cancelled() && !self.cancellation.is_cancelled();
+        let outcome: Result<NativeToolOutcome, String> = if selectively_cancelled {
+            Ok(NativeToolOutcome::Failure {
+                message: "native tool call cancelled by user".to_string(),
+            })
+        } else {
+            match result {
+                Ok(result) => {
+                    let value = result.code_mode_result();
+                    match encode_result(&value) {
+                        Err(error) => Err(error),
+                        Ok(output)
+                            if output.len() > NATIVE_CALL_BYTES
+                                || !self.reserve_artifact_bytes(output.len()) =>
+                        {
+                            Ok(NativeToolOutcome::Failure {
+                                message: "native tool result exceeded its bounded artifact budget"
+                                    .to_string(),
+                            })
+                        }
+                        Ok(output)
+                            if is_shell
+                                && !value
+                                    .as_str()
+                                    .is_some_and(|text| text.starts_with("Exit code: 0\n")) =>
+                        {
+                            // The canonical complete-result shell handler exposes its Code Mode
+                            // result as a bounded human-readable string beginning with the exit
+                            // status. Keep the generated SDK outcome typed without bypassing or
+                            // duplicating that handler.
+                            Ok(NativeToolOutcome::Failure {
+                                message: bounded_error(
+                                    String::from_utf8_lossy(&output).into_owned(),
+                                ),
+                            })
+                        }
+                        Ok(output) => Ok(NativeToolOutcome::Success { output }),
+                    }
                 }
-                // The canonical complete-result shell handler exposes its Code Mode result as
-                // a bounded human-readable string beginning with the exit status. Keep the
-                // generated SDK outcome typed without bypassing or duplicating that handler.
-                if is_shell
-                    && !value
-                        .as_str()
-                        .is_some_and(|text| text.starts_with("Exit code: 0\n"))
-                {
-                    return Ok(NativeToolOutcome::Failure {
-                        message: bounded_error(String::from_utf8_lossy(&output).into_owned()),
-                    });
-                }
-                Ok(NativeToolOutcome::Success { output })
+                Err(error) => Ok(NativeToolOutcome::Failure {
+                    message: bounded_error(error.to_string()),
+                }),
             }
-            Err(error) => Ok(NativeToolOutcome::Failure {
-                message: bounded_error(error.to_string()),
-            }),
-        }
+        };
+        tree_call.settle(&outcome);
+        outcome
     }
 
-    fn validate_invocation(&self, invocation: &NativeToolInvocation) -> Result<(), String> {
+    fn validate_invocation(&self, invocation: &NativeToolInvocation) -> Result<usize, String> {
         if invocation.identity != self.identity {
             self.cancellation.cancel();
             return Err("native delegate identity does not match its owner".to_string());
         }
         let call_id = invocation.runtime_call_id.as_str();
-        let expected = self.next_runtime_call.fetch_add(1, Ordering::AcqRel);
-        let expected = format!(
-            "native-{}-a{}-{expected}",
-            self.identity.run_id, self.attempt
-        );
-        if call_id != expected {
+        let prefix = format!("native-{}-a{}-", self.identity.run_id, self.attempt);
+        let Some(ordinal_text) = call_id.strip_prefix(&prefix) else {
             self.cancellation.cancel();
-            return Err(format!(
-                "native runtime call ID is out of sequence: expected {expected}"
-            ));
-        }
+            return Err("native runtime call ID does not match its run owner".to_string());
+        };
+        let ordinal = ordinal_text.parse::<usize>().ok().filter(|ordinal| {
+            (1..=NATIVE_TOTAL_CALLS).contains(ordinal) && ordinal.to_string() == ordinal_text
+        });
+        let Some(ordinal) = ordinal else {
+            self.cancellation.cancel();
+            return Err("native runtime call ID has an invalid launch ordinal".to_string());
+        };
         let mut seen = self
             .seen_runtime_calls
             .lock()
@@ -224,7 +273,7 @@ impl NativeCodeModeDispatchWorker {
             self.cancellation.cancel();
             return Err("duplicate native runtime call ID".to_string());
         }
-        Ok(())
+        Ok(ordinal)
     }
 
     fn reserve_artifact_bytes(&self, bytes: usize) -> bool {
@@ -235,6 +284,88 @@ impl NativeCodeModeDispatchWorker {
                     .filter(|next| *next <= NATIVE_TOTAL_ARTIFACT_BYTES)
             })
             .is_ok()
+    }
+}
+
+fn encode_tool_result(value: &serde_json::Value) -> Result<Vec<u8>, String> {
+    serde_json::to_vec(value)
+        .map_err(|error| bounded_error(format!("failed to encode tool result: {error}")))
+}
+
+struct TreeCallSettlement {
+    run_tree: NativeRunTreeOwner,
+    stable_id: String,
+    delegate_cancellation: CancellationToken,
+    run_cancellation: CancellationToken,
+    settled: bool,
+}
+
+impl TreeCallSettlement {
+    fn new(
+        run_tree: NativeRunTreeOwner,
+        stable_id: String,
+        delegate_cancellation: CancellationToken,
+        run_cancellation: CancellationToken,
+    ) -> Self {
+        Self {
+            run_tree,
+            stable_id,
+            delegate_cancellation,
+            run_cancellation,
+            settled: false,
+        }
+    }
+
+    fn settle(&mut self, outcome: &Result<NativeToolOutcome, String>) {
+        let cancelled =
+            self.delegate_cancellation.is_cancelled() || self.run_cancellation.is_cancelled();
+        let (status, recent) = match outcome {
+            Ok(NativeToolOutcome::Success { .. }) => (NativeRunNodeStatus::Succeeded, "completed"),
+            Ok(NativeToolOutcome::Retry { reason }) => {
+                (NativeRunNodeStatus::Failed, reason.as_str())
+            }
+            Ok(NativeToolOutcome::Failure { message }) => (
+                if cancelled {
+                    NativeRunNodeStatus::Cancelled
+                } else {
+                    NativeRunNodeStatus::Failed
+                },
+                message.as_str(),
+            ),
+            Err(error) => (
+                if cancelled {
+                    NativeRunNodeStatus::Cancelled
+                } else {
+                    NativeRunNodeStatus::Failed
+                },
+                error.as_str(),
+            ),
+        };
+        self.run_tree.settle(&self.stable_id, status, recent);
+        self.settled = true;
+    }
+}
+
+impl Drop for TreeCallSettlement {
+    fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
+        let cancelled =
+            self.delegate_cancellation.is_cancelled() || self.run_cancellation.is_cancelled();
+        self.run_tree.settle(
+            &self.stable_id,
+            if cancelled {
+                NativeRunNodeStatus::Cancelled
+            } else {
+                NativeRunNodeStatus::Failed
+            },
+            if cancelled {
+                "tool call cancelled before settlement"
+            } else {
+                "tool call ended before settlement"
+            },
+        );
     }
 }
 
@@ -263,6 +394,22 @@ fn exact_handler_payload_bytes(payload: &ToolPayload) -> usize {
         ToolPayload::Function { arguments } => arguments.len(),
         ToolPayload::Custom { input } => input.len(),
         ToolPayload::ToolSearch { .. } => unreachable!("native Code Mode exposes no tool search"),
+    }
+}
+
+fn native_request_summary(request: &NativeToolRequest) -> String {
+    match request {
+        NativeToolRequest::Shell {
+            command,
+            workdir,
+            timeout_ms,
+        } => format!(
+            "shell request · {} command bytes · workdir {} · timeout {}ms",
+            command.len(),
+            if workdir.is_some() { "set" } else { "default" },
+            timeout_ms
+        ),
+        NativeToolRequest::ApplyPatch { patch } => format!("apply patch · {} bytes", patch.len()),
     }
 }
 
@@ -344,7 +491,7 @@ mod tests {
             thread_id: "00000000-0000-4000-8000-000000000011".to_string(),
             run_id: "00000000-0000-4000-8000-000000000012".to_string(),
         };
-        let worker = test_worker(
+        let (worker, tree_registry) = test_worker_and_registry(
             identity.clone(),
             Arc::clone(&session),
             Arc::clone(&turn),
@@ -415,11 +562,17 @@ mod tests {
             NATIVE_TOTAL_ARTIFACT_BYTES
         );
         assert_eq!(lifecycle_starts.load(Ordering::Acquire), 1);
+        assert_terminal_and_not_cancellable(
+            &tree_registry,
+            &identity,
+            "call-native-00000000-0000-4000-8000-000000000012-a1-2",
+            NativeRunNodeStatus::Failed,
+        );
 
         let rejected = worker
             .invoke_inner(
                 NativeToolInvocation {
-                    identity,
+                    identity: identity.clone(),
                     runtime_call_id: "native-00000000-0000-4000-8000-000000000012-a1-3".to_string(),
                     request: NativeToolRequest::ApplyPatch {
                         patch: "x".to_string(),
@@ -436,6 +589,34 @@ mod tests {
         ));
         assert_eq!(worker.owned_counts(), (0, 0));
         assert_eq!(lifecycle_starts.load(Ordering::Acquire), 1);
+
+        worker.artifact_bytes.store(0, Ordering::Release);
+        let encoding_failure = worker
+            .invoke_inner_with_encoder(
+                NativeToolInvocation {
+                    identity: identity.clone(),
+                    runtime_call_id: "native-00000000-0000-4000-8000-000000000012-a1-4".to_string(),
+                    request: NativeToolRequest::Shell {
+                        command: "printf ok".to_string(),
+                        workdir: Some("/tmp".to_string()),
+                        timeout_ms: 1_000,
+                    },
+                },
+                CancellationToken::new(),
+                |_| Err("failed to encode tool result: injected serializer failure".to_string()),
+            )
+            .await;
+        assert!(
+            encoding_failure
+                .unwrap_err()
+                .contains("injected serializer failure")
+        );
+        assert_terminal_and_not_cancellable(
+            &tree_registry,
+            &identity,
+            "call-native-00000000-0000-4000-8000-000000000012-a1-4",
+            NativeRunNodeStatus::Failed,
+        );
     }
 
     #[tokio::test]
@@ -459,46 +640,79 @@ mod tests {
             )
             .await;
         let history_before = session.clone_history().await.into_raw_items();
-        let registry = ToolRegistry::from_tools([
-            Arc::new(ShellCommandHandler::from(
-                ShellCommandBackendConfig::Classic,
-            )) as Arc<dyn crate::tools::registry::CoreToolRuntime>,
-            Arc::new(ApplyPatchHandler::new(/*multi_environment*/ false))
-                as Arc<dyn crate::tools::registry::CoreToolRuntime>,
-        ]);
-        let step = StepContext::for_test(Arc::clone(&turn))
-            .with_tool_router_for_test(Arc::new(ToolRouter::from_parts(registry, Vec::new())));
-        let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
         let identity = NativeRunIdentity {
             session_id: "native-session".to_string(),
             thread_id: "00000000-0000-4000-8000-000000000001".to_string(),
             run_id: "00000000-0000-4000-8000-000000000002".to_string(),
         };
         let cancellation = CancellationToken::new();
-        let worker = NativeCodeModeDispatchWorker::new(
+        let (worker, tree_registry) = test_worker_and_registry(
             identity.clone(),
-            1,
             Arc::clone(&session),
-            step,
-            tracker,
+            Arc::clone(&turn),
             cancellation.clone(),
         );
         let provider =
             ProcessOwnedCodeModeSessionProvider::with_host_program(PathBuf::from(host_program));
         let client = provider.native_client();
+        std::fs::write(workspace.path().join("native-proof.txt"), "seed\n")
+            .expect("seed concurrent fixture");
         let source = fixture_source(workspace.path());
-        let result = client
-            .execute(
-                NativeExecute {
-                    identity: identity.clone(),
-                    attempt: 1,
-                    task: "create and patch one deterministic file".to_string(),
-                    source,
-                },
-                worker.clone(),
-                cancellation,
-            )
+        let execute_client = client.clone();
+        let execute_identity = identity.clone();
+        let execute_worker = Arc::clone(&worker);
+        let execute_cancellation = cancellation.clone();
+        let execute = tokio::spawn(async move {
+            execute_client
+                .execute(
+                    NativeExecute {
+                        identity: execute_identity,
+                        attempt: 1,
+                        task: "concurrently inspect and patch one deterministic file".to_string(),
+                        source,
+                    },
+                    execute_worker,
+                    execute_cancellation,
+                )
+                .await
+        });
+        let mut observation = tree_registry
+            .subscribe(&identity.thread_id, &identity.run_id)
+            .expect("active tree");
+        let call_nodes = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let snapshot = observation.borrow().clone().expect("active snapshot");
+                let calls = snapshot
+                    .nodes
+                    .iter()
+                    .filter(|node| node.kind == NativeRunNodeKind::ToolCall)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if calls.len() == 2 {
+                    break calls;
+                }
+                observation.changed().await.expect("tree remains active");
+            }
+        })
+        .await
+        .expect("both concurrent calls become observable");
+        assert!(call_nodes[0].launch_ordinal < call_nodes[1].launch_ordinal);
+        assert!(
+            call_nodes
+                .iter()
+                .all(|node| node.parent_id.as_deref() == Some("workflow-a1"))
+        );
+        assert!(call_nodes[0].summary.starts_with("shell request ·"));
+        assert!(call_nodes[1].summary.starts_with("apply patch · "));
+        assert!(call_nodes[1].summary.ends_with(" bytes"));
+        assert!(
+            call_nodes
+                .iter()
+                .all(|node| !node.summary.contains("native-proof"))
+        );
+        let result = execute
             .await
+            .expect("native task joins")
             .expect("native execution should complete");
         let NativeExecution::Completed { evidence, .. } = result else {
             panic!("native execution should return Evidence: {result:?}")
@@ -544,6 +758,12 @@ mod tests {
                 if message.as_bytes().len() <= NATIVE_CALL_BYTES
                     && message.contains("Exit code: 7")
         ));
+        assert_terminal_and_not_cancellable(
+            &tree_registry,
+            &identity,
+            "call-native-00000000-0000-4000-8000-000000000002-a1-3",
+            NativeRunNodeStatus::Failed,
+        );
 
         let patch_failure = worker
             .invoke_inner(
@@ -617,6 +837,7 @@ mod tests {
             )),
             Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
             CancellationToken::new(),
+            test_run_tree(&rejected_identity, CancellationToken::new()),
         );
         let rejected = client
             .execute(
@@ -814,6 +1035,119 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn native_selected_shell_cancellation_is_typed_and_leaves_run_owned() {
+        let Some(host_program) = std::env::var_os("YCODE_TEST_CODE_MODE_HOST") else {
+            eprintln!("skipping selected native cancellation without YCODE_TEST_CODE_MODE_HOST");
+            return;
+        };
+        let workspace = tempfile::tempdir().expect("temp workspace");
+        let codex_home = tempfile::tempdir().expect("temp ycode home");
+        let _home = EnvGuard::set("CODEX_HOME", codex_home.path().as_os_str());
+        let cwd = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
+            workspace.path().to_path_buf(),
+        )
+        .expect("cwd");
+        let (session, turn, _events) =
+            crate::session::tests::make_session_and_context_in_cwd_for_tests(
+                codex_home.path(),
+                cwd,
+            )
+            .await;
+        let history_before = session.clone_history().await.into_raw_items();
+        let provider =
+            ProcessOwnedCodeModeSessionProvider::with_host_program(PathBuf::from(host_program));
+        let client = provider.native_client();
+        let source = selective_cancellation_fixture_source(workspace.path());
+        let mut samples_ms = Vec::new();
+        for sample in 0..20 {
+            let pid_path = workspace.path().join("native-selected-cancel.pid");
+            let _ = std::fs::remove_file(&pid_path);
+            let identity = NativeRunIdentity {
+                session_id: "native-selected-cancel-session".into(),
+                thread_id: "00000000-0000-4000-8000-000000000014".into(),
+                run_id: format!("00000000-0000-4000-9000-{sample:012x}"),
+            };
+            let cancellation = CancellationToken::new();
+            let (worker, registry) = test_worker_and_registry(
+                identity.clone(),
+                Arc::clone(&session),
+                Arc::clone(&turn),
+                cancellation.clone(),
+            );
+            let execute_client = client.clone();
+            let execute_identity = identity.clone();
+            let run_source = source.clone();
+            let execute = tokio::spawn(async move {
+                execute_client
+                    .execute(
+                        NativeExecute {
+                            identity: execute_identity,
+                            attempt: 1,
+                            task: "handle one selectively cancelled shell".into(),
+                            source: run_source,
+                        },
+                        worker.clone(),
+                        cancellation,
+                    )
+                    .await
+                    .map(|result| (result, worker))
+            });
+            let pid = wait_for_pid(&pid_path).await;
+            assert!(process_exists(pid));
+            let observed = registry
+                .subscribe(&identity.thread_id, &identity.run_id)
+                .expect("active run tree");
+            let snapshot = observed.borrow().clone().expect("active snapshot");
+            let call_summary = snapshot
+                .nodes
+                .iter()
+                .find(|node| node.kind == NativeRunNodeKind::ToolCall)
+                .expect("live tool node")
+                .summary
+                .as_str();
+            assert!(call_summary.starts_with("shell request ·"));
+            assert!(!call_summary.contains("sleep"));
+            assert!(!call_summary.contains(&workspace.path().display().to_string()));
+            let started = Instant::now();
+            assert_eq!(
+                registry.cancel(
+                    &identity.thread_id,
+                    &identity.run_id,
+                    &format!("call-native-{}-a1-1", identity.run_id),
+                ),
+                Ok(crate::native_run_tree::NativeRunCancelResult::Requested)
+            );
+            let (execution, worker) = tokio::time::timeout(Duration::from_secs(1), execute)
+                .await
+                .expect("selected cancellation settles within one second")
+                .expect("join")
+                .expect("native response");
+            let elapsed = started.elapsed();
+            assert!(!process_exists(pid));
+            assert_eq!(worker.owned_counts(), (0, 0));
+            assert!(
+                matches!(execution, NativeExecution::Completed { evidence, .. } if evidence.summary == "selected cancellation handled")
+            );
+            samples_ms.push(elapsed.as_secs_f64() * 1_000.0);
+        }
+        let mut ranked = samples_ms.clone();
+        ranked.sort_by(f64::total_cmp);
+        let p50 = ranked[9];
+        let p95 = ranked[18];
+        let max = ranked[19];
+        eprintln!(
+            "native selected-shell cancellation ms raw={samples_ms:?} p50={p50:.3} p95={p95:.3} max={max:.3}"
+        );
+        assert!(p95 <= 250.0);
+        assert!(max < 1_000.0);
+        assert_eq!(
+            session.clone_history().await.into_raw_items(),
+            history_before
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn native_host_disconnect_cancels_real_shell_and_clears_owners() {
         let Some(host_program) = std::env::var_os("YCODE_TEST_CODE_MODE_HOST") else {
             eprintln!("skipping native disconnect integration without YCODE_TEST_CODE_MODE_HOST");
@@ -932,6 +1266,45 @@ mod tests {
         turn: Arc<crate::session::turn_context::TurnContext>,
         cancellation: CancellationToken,
     ) -> Arc<NativeCodeModeDispatchWorker> {
+        test_worker_and_registry(identity, session, turn, cancellation).0
+    }
+
+    fn assert_terminal_and_not_cancellable(
+        registry: &crate::native_run_tree::NativeRunTreeRegistry,
+        identity: &NativeRunIdentity,
+        stable_id: &str,
+        expected_status: NativeRunNodeStatus,
+    ) {
+        let snapshot = registry
+            .subscribe(&identity.thread_id, &identity.run_id)
+            .expect("active tree")
+            .borrow()
+            .clone()
+            .expect("active snapshot");
+        let node = snapshot
+            .nodes
+            .iter()
+            .find(|node| node.stable_id == stable_id)
+            .expect("call node");
+        assert_eq!(node.status, expected_status);
+        assert!(node.finished_at.is_some());
+        assert_eq!(
+            registry
+                .cancel(&identity.thread_id, &identity.run_id, stable_id)
+                .expect("settled call cancellation is bounded"),
+            crate::native_run_tree::NativeRunCancelResult::NotCancellable
+        );
+    }
+
+    fn test_worker_and_registry(
+        identity: NativeRunIdentity,
+        session: Arc<crate::session::session::Session>,
+        turn: Arc<crate::session::turn_context::TurnContext>,
+        cancellation: CancellationToken,
+    ) -> (
+        Arc<NativeCodeModeDispatchWorker>,
+        Arc<crate::native_run_tree::NativeRunTreeRegistry>,
+    ) {
         let registry = ToolRegistry::from_tools([
             Arc::new(ShellCommandHandler::from(
                 ShellCommandBackendConfig::Classic,
@@ -941,14 +1314,57 @@ mod tests {
         ]);
         let step = StepContext::for_test(turn)
             .with_tool_router_for_test(Arc::new(ToolRouter::from_parts(registry, Vec::new())));
-        NativeCodeModeDispatchWorker::new(
+        let tree_registry = Arc::new(crate::native_run_tree::NativeRunTreeRegistry::default());
+        let run_tree = tree_registry
+            .begin(identity.clone(), "test", cancellation.clone())
+            .expect("tree");
+        run_tree.start(
+            "workflow-a1",
+            "run",
+            crate::native_run_tree::NativeRunNodeKind::Workflow {
+                attempt: 1,
+                pid: Some(1),
+            },
+            "test workflow",
+            Some((
+                crate::native_run_tree::NativeRunCancelScope::Run,
+                cancellation.clone(),
+            )),
+        );
+        let worker = NativeCodeModeDispatchWorker::new(
             identity,
             1,
             session,
             step,
             Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
             cancellation,
-        )
+            run_tree,
+        );
+        (worker, tree_registry)
+    }
+
+    fn test_run_tree(
+        identity: &NativeRunIdentity,
+        cancellation: CancellationToken,
+    ) -> crate::native_run_tree::NativeRunTreeOwner {
+        let registry = Arc::new(crate::native_run_tree::NativeRunTreeRegistry::default());
+        let owner = registry
+            .begin(identity.clone(), "test", cancellation.clone())
+            .expect("tree");
+        owner.start(
+            "workflow-a1",
+            "run",
+            crate::native_run_tree::NativeRunNodeKind::Workflow {
+                attempt: 1,
+                pid: Some(1),
+            },
+            "test workflow",
+            Some((
+                crate::native_run_tree::NativeRunCancelScope::Run,
+                cancellation,
+            )),
+        );
+        owner
     }
 
     async fn wait_for_pid(path: &std::path::Path) -> u32 {
@@ -1032,6 +1448,29 @@ fn workflow(context: &mut Context) -> Result<()> {{
         )
     }
 
+    fn selective_cancellation_fixture_source(workspace: &std::path::Path) -> String {
+        let workdir = workspace.to_string_lossy();
+        format!(
+            r#"use ycode_native_sdk as sdk;
+use sdk::{{Context, Evidence, Outcome, Request, Result}};
+fn main() {{ if let Err(error) = sdk::run(workflow) {{ eprintln!("{{error}}"); std::process::exit(1); }} }}
+fn workflow(context: &mut Context) -> Result<()> {{
+    let outcome = context.call(Request::Shell {{
+        command: "echo $$ > native-selected-cancel.pid; exec sleep 30".to_string(),
+        workdir: Some({workdir:?}.to_string()), timeout_ms: 30_000,
+    }})?;
+    let call_id = match outcome {{
+        Outcome::Failure {{ call_id, message }} if message == "native tool call cancelled by user" => call_id,
+        other => return Err(sdk::Error::Host(format!("unexpected outcome: {{other:?}}"))),
+    }};
+    context.finish(Evidence {{ version: 1, summary: "selected cancellation handled".to_string(),
+        verified: vec!["cancelled call returned a typed outcome".to_string()], disputed: vec![], unresolved: vec![],
+        artifact_refs: vec![], partial_failures: vec![], provenance_ids: vec![call_id] }})
+}}
+"#
+        )
+    }
+
     fn fixture_source(workspace: &std::path::Path) -> String {
         let workdir = workspace.to_string_lossy();
         format!(
@@ -1046,20 +1485,20 @@ fn main() {{
 }}
 
 fn workflow(context: &mut Context) -> Result<()> {{
-    let shell = context.call(Request::Shell {{
-        command: "printf 'seed\n' > native-proof.txt".to_string(),
+    let shell = context.spawn(Request::Shell {{
+        command: "sleep 0.2; printf checked".to_string(),
         workdir: Some({workdir:?}.to_string()),
         timeout_ms: 5_000,
     }})?;
-    let shell_id = match shell {{
+    let patch = context.spawn(Request::ApplyPatch {{
+        patch: "*** Begin Patch\n*** Update File: native-proof.txt\n@@\n seed\n+patched\n*** End Patch".to_string(),
+    }})?;
+    let shell_id = match context.join(shell)? {{
         Outcome::Success {{ call_id, .. }} => call_id,
         Outcome::Retry {{ reason, .. }} => return Err(sdk::Error::Host(reason)),
         Outcome::Failure {{ message, .. }} => return Err(sdk::Error::Host(message)),
     }};
-    let patch = context.call(Request::ApplyPatch {{
-        patch: "*** Begin Patch\n*** Update File: native-proof.txt\n@@\n seed\n+patched\n*** End Patch".to_string(),
-    }})?;
-    let patch_id = match patch {{
+    let patch_id = match context.join(patch)? {{
         Outcome::Success {{ call_id, .. }} => call_id,
         Outcome::Retry {{ reason, .. }} => return Err(sdk::Error::Host(reason)),
         Outcome::Failure {{ message, .. }} => return Err(sdk::Error::Host(message)),
@@ -1070,7 +1509,7 @@ fn workflow(context: &mut Context) -> Result<()> {{
         verified: vec!["native-proof.txt contains seed and patched".to_string()],
         disputed: vec![],
         unresolved: vec![],
-        artifact_refs: vec!["native-proof.txt".to_string()],
+        artifact_refs: vec![],
         partial_failures: vec![],
         provenance_ids: vec![shell_id, patch_id],
     }})

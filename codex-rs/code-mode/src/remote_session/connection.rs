@@ -27,6 +27,7 @@ use codex_code_mode_protocol::host::FramedWriter;
 use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
 use codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
+use codex_code_mode_protocol::host::NATIVE_RUST_OBSERVE_V1_CAPABILITY;
 use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::RequestId;
@@ -301,12 +302,18 @@ impl Connection {
                 .map_err(|error| error.to_string())?;
             let native_capability =
                 Capability::new(NATIVE_RUST_V1_CAPABILITY).map_err(|error| error.to_string())?;
+            let native_observe_capability = Capability::new(NATIVE_RUST_OBSERVE_V1_CAPABILITY)
+                .map_err(|error| error.to_string())?;
             let optional_capabilities = if bulk_connection_options.is_some() {
                 CapabilitySet::try_new([dual_capability.clone(), session_limits_capability])
                     .map_err(|error| error.to_string())?
             } else if native_allowed {
-                CapabilitySet::try_new([session_limits_capability, native_capability])
-                    .map_err(|error| error.to_string())?
+                CapabilitySet::try_new([
+                    session_limits_capability,
+                    native_capability,
+                    native_observe_capability,
+                ])
+                .map_err(|error| error.to_string())?
             } else {
                 CapabilitySet::try_new([session_limits_capability])
                     .map_err(|error| error.to_string())?
@@ -621,10 +628,13 @@ impl Connection {
         &self,
         request: NativeExecute,
         delegate: Arc<dyn NativeCodeModeDelegate>,
-        progress_tx: Option<mpsc::UnboundedSender<crate::native::NativeProgress>>,
+        progress_tx: Option<mpsc::Sender<crate::native::NativeProgress>>,
         cancellation: CancellationToken,
     ) -> Result<NativeExecution, String> {
         self.require_native_capability()?;
+        if progress_tx.is_some() {
+            self.require_native_observe_capability()?;
+        }
         let caller = CallerCancellation {
             token: cancellation,
             armed: true,
@@ -657,6 +667,10 @@ impl Connection {
     fn require_native_capability(&self) -> Result<(), String> {
         require_native_capability(&self.capabilities)
     }
+
+    fn require_native_observe_capability(&self) -> Result<(), String> {
+        require_native_observe_capability(&self.capabilities)
+    }
 }
 
 pub(super) fn require_native_capability(capabilities: &CapabilitySet) -> Result<(), String> {
@@ -665,6 +679,19 @@ pub(super) fn require_native_capability(capabilities: &CapabilitySet) -> Result<
     if !capabilities.contains(&native) {
         return Err(format!(
             "code-mode host does not support `{NATIVE_RUST_V1_CAPABILITY}`"
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn require_native_observe_capability(
+    capabilities: &CapabilitySet,
+) -> Result<(), String> {
+    let observe = Capability::new(NATIVE_RUST_OBSERVE_V1_CAPABILITY)
+        .map_err(|error| format!("invalid native observation capability: {error}"))?;
+    if !capabilities.contains(&observe) {
+        return Err(format!(
+            "code-mode host does not support `{NATIVE_RUST_OBSERVE_V1_CAPABILITY}`"
         ));
     }
     Ok(())

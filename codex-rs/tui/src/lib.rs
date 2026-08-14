@@ -2059,6 +2059,31 @@ mod tests {
                 .to_string()
                 .contains("outside the live embedded TUI composer")
         );
+        let observe_error = cli_runtime
+            .observe_native_code_mode_from_interactive_composer(
+                started.session.thread_id,
+                "run-id".to_string(),
+            )
+            .await
+            .expect_err("ordinary client must lack native observation authority");
+        assert!(
+            observe_error
+                .to_string()
+                .contains("outside the live embedded TUI composer")
+        );
+        let cancel_error = cli_runtime
+            .cancel_native_code_mode_node_from_interactive_composer(
+                started.session.thread_id,
+                "run-id".to_string(),
+                "run".to_string(),
+            )
+            .await
+            .expect_err("ordinary client must lack native cancellation authority");
+        assert!(
+            cancel_error
+                .to_string()
+                .contains("outside the live embedded TUI composer")
+        );
         cli_runtime.shutdown().await?;
         Ok(())
     }

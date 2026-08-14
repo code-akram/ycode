@@ -22,6 +22,9 @@ pub const SESSION_RESOURCE_LIMITS_CAPABILITY: &str = "session-cell-execution-res
 /// Additive native Rust execution lane. It is advertised only on process-owned stdio.
 pub const NATIVE_RUST_V1_CAPABILITY: &str = "native-rust-v1";
 
+/// Detailed native compiler/workflow/process progress for the active-run tree.
+pub const NATIVE_RUST_OBSERVE_V1_CAPABILITY: &str = "native-rust-observe-v1";
+
 /// Selects one socket of a negotiated dual-WebSocket connection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TransportLane {

@@ -152,10 +152,10 @@ impl ConnectionDriver {
                 session_id,
                 thread_id,
                 run_id,
-                phase: codex_code_mode_protocol::host::NativeProgressPhase::WorkflowStarted,
+                phase,
             } => match self
                 .requests
-                .native_workflow_started(id, &session_id, &thread_id, &run_id)
+                .native_progress(id, &session_id, &thread_id, &run_id, phase)
             {
                 Ok(()) => true,
                 Err(error) => {

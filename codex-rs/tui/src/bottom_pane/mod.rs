@@ -80,6 +80,7 @@ mod footer;
 mod list_selection_view;
 mod memories_settings_view;
 mod mentions_v2;
+mod native_run_tree_view;
 pub(crate) mod prompt_args;
 mod skill_popup;
 mod skills_toggle_view;
@@ -94,6 +95,7 @@ pub(crate) use list_selection_view::SelectionDescriptionLayout;
 pub(crate) use list_selection_view::SelectionRowDisplay;
 pub(crate) use list_selection_view::SelectionViewParams;
 pub(crate) use memories_settings_view::MemoriesSettingsView;
+pub(crate) use native_run_tree_view::NativeRunTreeView;
 pub(crate) use skills_toggle_view::SkillsToggleItem;
 pub(crate) use skills_toggle_view::SkillsToggleView;
 use slash_commands::ServiceTierCommand;
@@ -978,6 +980,17 @@ impl BottomPane {
             self.keymap.list.clone(),
         );
         self.push_view(Box::new(view));
+    }
+
+    pub(crate) fn show_native_run_tree(
+        &mut self,
+        receiver: tokio::sync::watch::Receiver<
+            Option<codex_cli_runtime_client::native_run_tree::NativeRunTreeSnapshot>,
+        >,
+    ) -> Result<(), String> {
+        let view = NativeRunTreeView::new(receiver, self.app_event_tx.clone())?;
+        self.push_view(Box::new(view));
+        Ok(())
     }
 
     fn apply_standard_popup_hint(&self, params: &mut list_selection_view::SelectionViewParams) {

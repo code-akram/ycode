@@ -2945,13 +2945,22 @@ impl ChatComposer {
             if parse_slash_name(raw_text)
                 .is_some_and(|(name, _, _)| name == SlashCommand::CodeMode.command())
             {
+                let is_bare =
+                    parse_slash_name(raw_text).is_some_and(|(_, rest, _)| rest.trim().is_empty());
                 self.stage_slash_command_history(&SlashCommandItem::Builtin(
                     SlashCommand::CodeMode,
                 ));
                 self.record_pending_slash_command_history();
                 self.draft.textarea.set_text_clearing_elements("");
                 self.draft.is_bash_mode = false;
-                return (InputResult::NativeCodeModeBlocked, true);
+                return (
+                    if is_bare {
+                        InputResult::NativeCodeMode(String::new())
+                    } else {
+                        InputResult::NativeCodeModeBlocked
+                    },
+                    true,
+                );
             }
             let defer_slash_validation = self.slash_input().should_parse_on_dequeue(raw_text);
             let preserve_pending_pastes = defer_slash_validation
@@ -8490,6 +8499,18 @@ mod tests {
         let (result, _) = composer.handle_submission(/*should_queue*/ true);
 
         assert_eq!(result, InputResult::NativeCodeModeBlocked);
+        assert!(composer.draft.textarea.is_empty());
+    }
+
+    #[test]
+    fn active_bare_code_mode_uses_private_native_result_instead_of_queueing() {
+        let (mut composer, _rx) = new_test_composer();
+        composer
+            .draft
+            .textarea
+            .set_text_clearing_elements("/code-mode");
+        let (result, _) = composer.handle_submission(/*should_queue*/ true);
+        assert_eq!(result, InputResult::NativeCodeMode(String::new()));
         assert!(composer.draft.textarea.is_empty());
     }
 

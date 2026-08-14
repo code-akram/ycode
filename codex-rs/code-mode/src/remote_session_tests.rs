@@ -17,6 +17,7 @@ use codex_code_mode_protocol::host::HostHello;
 use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
+use codex_code_mode_protocol::host::NATIVE_RUST_OBSERVE_V1_CAPABILITY;
 use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::SESSION_RESOURCE_LIMITS_CAPABILITY;
@@ -41,6 +42,7 @@ use super::ProcessOwnedCodeModeSessionProvider;
 use super::WebSocketCodeModeSessionProvider;
 use super::connection::ConnectionError;
 use super::connection::require_native_capability;
+use super::connection::require_native_observe_capability;
 use crate::NoopCodeModeSessionDelegate;
 
 #[test]
@@ -59,6 +61,16 @@ fn absent_native_capability_fails_closed() {
         require_native_capability(&CapabilitySet::empty()),
         Err(format!(
             "code-mode host does not support `{NATIVE_RUST_V1_CAPABILITY}`"
+        ))
+    );
+}
+
+#[test]
+fn absent_native_observation_capability_fails_closed() {
+    assert_eq!(
+        require_native_observe_capability(&CapabilitySet::empty()),
+        Err(format!(
+            "code-mode host does not support `{NATIVE_RUST_OBSERVE_V1_CAPABILITY}`"
         ))
     );
 }

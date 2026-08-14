@@ -177,7 +177,9 @@ impl SlashCommand {
             | SlashCommand::Exit
             | SlashCommand::Side
             | SlashCommand::Btw => true,
-            SlashCommand::CodeMode => false,
+            // Only the live composer may submit this command. During a task the composer admits
+            // bare `/code-mode` for the active native tree; task-bearing forms still fail closed.
+            SlashCommand::CodeMode => true,
             SlashCommand::Rollout => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
         }
@@ -234,7 +236,7 @@ mod tests {
             "run workflow in code-mode"
         );
         assert!(SlashCommand::CodeMode.supports_inline_args());
-        assert!(!SlashCommand::CodeMode.available_during_task());
+        assert!(SlashCommand::CodeMode.available_during_task());
         assert!(!SlashCommand::CodeMode.available_in_side_conversation());
         assert!(
             super::built_in_slash_commands()

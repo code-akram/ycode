@@ -323,6 +323,11 @@ pub enum HostResponse {
 #[serde(rename_all = "camelCase")]
 pub enum NativeProgressPhase {
     WorkflowStarted,
+    CompilerStarted { pid: u32 },
+    Compiled,
+    WorkflowProcessStarted { pid: u32 },
+    DescendantStarted { pid: u32 },
+    Finished,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

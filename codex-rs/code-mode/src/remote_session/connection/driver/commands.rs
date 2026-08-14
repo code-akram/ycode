@@ -323,7 +323,7 @@ impl ConnectionDriver {
         &mut self,
         request: NativeExecute,
         delegate: Arc<dyn NativeCodeModeDelegate>,
-        progress_tx: Option<mpsc::UnboundedSender<crate::native::NativeProgress>>,
+        progress_tx: Option<mpsc::Sender<crate::native::NativeProgress>>,
         caller_cancellation: CancellationToken,
         response_tx: oneshot::Sender<Result<NativeExecution, String>>,
     ) -> bool {
@@ -357,7 +357,7 @@ impl ConnectionDriver {
             key: key.clone(),
             identity: request.identity,
             progress_tx,
-            workflow_started: false,
+            progress_state: super::types::NativeProgressState::default(),
             cancellation: CancellableRequest::new(caller_cancellation),
             response_tx,
         };

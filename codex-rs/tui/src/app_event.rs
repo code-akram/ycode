@@ -153,6 +153,15 @@ pub(crate) enum AppEvent {
         thread_id: ThreadId,
         task: String,
     },
+    OpenNativeCodeModeTree {
+        thread_id: ThreadId,
+        run_id: String,
+    },
+    CancelNativeCodeModeNode {
+        thread_id: ThreadId,
+        run_id: String,
+        node_id: String,
+    },
 
     /// Submit an op to the specified thread, regardless of current focus.
     #[allow(dead_code)]

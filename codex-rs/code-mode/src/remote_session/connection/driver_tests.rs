@@ -279,7 +279,7 @@ async fn native_delegate_routes_only_to_exact_short_lived_owner() {
         thread_id: "00000000-0000-4000-8000-000000000001".to_string(),
         run_id: "00000000-0000-4000-8000-000000000002".to_string(),
     };
-    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(64);
     let (response_tx, response_rx) = oneshot::channel();
     harness
         .command_tx
@@ -318,13 +318,31 @@ async fn native_delegate_routes_only_to_exact_short_lived_owner() {
             session_id: SessionId::new(identity.session_id.clone()).expect("session"),
             thread_id: identity.thread_id.clone(),
             run_id: identity.run_id.clone(),
-            phase: codex_code_mode_protocol::host::NativeProgressPhase::WorkflowStarted,
+            phase: codex_code_mode_protocol::host::NativeProgressPhase::Compiled,
+        }))
+        .await
+        .expect("native compiled progress");
+    assert_eq!(
+        progress_rx.recv().await,
+        Some(crate::native::NativeProgress::Compiled)
+    );
+
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::NativeProgress {
+            id: RequestId::new(1),
+            session_id: SessionId::new(identity.session_id.clone()).expect("session"),
+            thread_id: identity.thread_id.clone(),
+            run_id: identity.run_id.clone(),
+            phase: codex_code_mode_protocol::host::NativeProgressPhase::WorkflowProcessStarted {
+                pid: 42,
+            },
         }))
         .await
         .expect("native workflow progress");
     assert_eq!(
         progress_rx.recv().await,
-        Some(crate::native::NativeProgress::WorkflowStarted)
+        Some(crate::native::NativeProgress::WorkflowProcessStarted { pid: 42 })
     );
 
     harness
@@ -461,6 +479,60 @@ async fn native_delegate_routes_only_to_exact_short_lived_owner() {
         harness.outgoing_rx.recv().await.expect("late response"),
         "unknown or mismatched native delegate target",
     );
+}
+
+#[tokio::test]
+async fn out_of_order_native_progress_fails_closed_and_settles_ownership() {
+    let mut harness = DriverHarness::start();
+    let identity = NativeRunIdentity {
+        session_id: "native-progress-order".to_string(),
+        thread_id: "00000000-0000-4000-8000-000000000021".to_string(),
+        run_id: "00000000-0000-4000-8000-000000000022".to_string(),
+    };
+    let (progress_tx, _progress_rx) = tokio::sync::mpsc::channel(64);
+    let (response_tx, response_rx) = oneshot::channel();
+    harness
+        .command_tx
+        .send(DriverCommand::NativeExecute {
+            request: NativeExecute {
+                identity: identity.clone(),
+                attempt: 1,
+                task: "reject malformed progress".to_string(),
+                source: "fn main() {}".to_string(),
+            },
+            delegate: Arc::new(NativeDelegate),
+            progress_tx: Some(progress_tx),
+            caller_cancellation: CancellationToken::new(),
+            response_tx,
+        })
+        .await
+        .expect("native execute command");
+    harness.outgoing_rx.recv().await.expect("execute frame");
+    harness
+        .event_tx
+        .send(DriverEvent::HostMessage(HostToClient::NativeProgress {
+            id: RequestId::new(1),
+            session_id: SessionId::new(identity.session_id).expect("session"),
+            thread_id: identity.thread_id,
+            run_id: identity.run_id,
+            phase: codex_code_mode_protocol::host::NativeProgressPhase::WorkflowProcessStarted {
+                pid: 42,
+            },
+        }))
+        .await
+        .expect("out-of-order progress");
+    let error = tokio::time::timeout(Duration::from_secs(1), response_rx)
+        .await
+        .expect("pending request settles")
+        .expect("response channel")
+        .expect_err("malformed progress fails request");
+    assert!(error.contains("workflow start out of order"));
+    tokio::time::timeout(Duration::from_secs(1), &mut harness.driver_task)
+        .await
+        .expect("driver settles")
+        .expect("driver join");
+    assert!(!harness.alive.load(Ordering::Acquire));
+    assert_eq!(harness.native_tasks.load(Ordering::Acquire), 0);
 }
 
 fn assert_delegate_error(frame: EncodedFrame, expected: &str) {

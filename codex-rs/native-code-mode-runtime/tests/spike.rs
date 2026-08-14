@@ -14,6 +14,7 @@ use std::time::Duration;
 use codex_native_code_mode_runtime::CONCURRENT_CALLS;
 use codex_native_code_mode_runtime::DIAGNOSTIC_BYTES;
 use codex_native_code_mode_runtime::FailureKind;
+use codex_native_code_mode_runtime::HOST_EVENT_CHANNEL_CAPACITY;
 use codex_native_code_mode_runtime::HostEventKind;
 use codex_native_code_mode_runtime::Limits;
 use codex_native_code_mode_runtime::NativeCall;
@@ -920,7 +921,7 @@ async fn cancellation_reaps_cpu_and_descendant_process_groups() {
         ("descendant", DESCENDANT_SOURCE),
     ] {
         let root = tempfile::tempdir().unwrap();
-        let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+        let (events_tx, mut events_rx) = mpsc::channel(HOST_EVENT_CHANNEL_CAPACITY);
         let host = host(
             root.path(),
             Arc::new(FakeDelegate::default()),
@@ -981,6 +982,122 @@ async fn cancellation_reaps_cpu_and_descendant_process_groups() {
         assert!(nearest_rank(&samples_ms, 95) <= 250.0);
         println!("native-cancel-{class}-ms={samples_ms:?}");
     }
+}
+
+#[tokio::test]
+async fn bounded_progress_overflow_fails_workflow_start_and_reaps_instead_of_deadlocking() {
+    let root = tempfile::tempdir().unwrap();
+    let (events_tx, mut events_rx) = mpsc::channel(1);
+    let host = host(
+        root.path(),
+        Arc::new(FakeDelegate::default()),
+        Limits::default(),
+    )
+    .await
+    .with_events(events_tx.clone());
+    let run_id = "51000000-0000-4000-8000-000000000001";
+    let artifact = host
+        .prepare_run(
+            THREAD_ID,
+            run_id,
+            "bounded progress overflow",
+            1,
+            SUCCESS_SOURCE.as_bytes(),
+        )
+        .unwrap();
+    let execution = host.execute(&artifact, CancellationToken::new());
+    tokio::pin!(execution);
+
+    let compiler = tokio::select! {
+        event = events_rx.recv() => event.unwrap(),
+        result = &mut execution => panic!("execution settled before compiler event: {result:?}"),
+    };
+    assert!(matches!(compiler.kind, HostEventKind::CompilerStarted(_)));
+    let compiled = tokio::select! {
+        event = events_rx.recv() => event.unwrap(),
+        result = &mut execution => panic!("execution settled before compiled event: {result:?}"),
+    };
+    assert!(matches!(compiled.kind, HostEventKind::Compiled));
+    events_tx
+        .try_send(codex_native_code_mode_runtime::HostEvent {
+            run_id: run_id.to_string(),
+            kind: HostEventKind::FirstCapability,
+        })
+        .unwrap();
+
+    let failure = tokio::time::timeout(Duration::from_secs(2), &mut execution)
+        .await
+        .expect("progress overflow must settle without delegate-gate deadlock")
+        .unwrap_err();
+    assert_eq!(failure.kind, FailureKind::Cleanup);
+    assert!(failure.diagnostic.contains("progress delivery failed"));
+    assert_eq!(failure.process_reaped, Some(true));
+    assert_eq!(failure.owned_tasks_after, 0);
+    artifact.cleanup().unwrap();
+}
+
+#[tokio::test]
+async fn generated_fake_and_unrelated_descendant_hints_never_emit_process_events() {
+    let root = tempfile::tempdir().unwrap();
+    let (events_tx, mut events_rx) = mpsc::channel(HOST_EVENT_CHANNEL_CAPACITY);
+    let host = host(
+        root.path(),
+        Arc::new(FakeDelegate::default()),
+        Limits::default(),
+    )
+    .await
+    .with_events(events_tx);
+    let source = format!(
+        r#"#![forbid(unsafe_code)]
+use ycode_native_sdk as sdk;
+use sdk::{{Context, Evidence, Outcome, Request, Result}};
+fn main() {{ sdk::run(workflow).unwrap(); }}
+fn workflow(context: &mut Context) -> Result<()> {{
+    let mut provenance = Vec::new();
+    for pid in [{}, 4_294_967_295_u32] {{
+        let result = context.call(Request::Shell {{
+            command: format!("descendant:{{pid}}"), workdir: None, timeout_ms: 1_000,
+        }})?;
+        match result {{
+            Outcome::Success {{ call_id, .. }} => provenance.push(call_id),
+            Outcome::Retry {{ reason, .. }} | Outcome::Failure {{ message: reason, .. }} =>
+                return Err(sdk::Error::Host(reason)),
+        }}
+    }}
+    context.finish(Evidence {{ version: 1, summary: "fake descendants ignored".into(),
+        verified: vec![], disputed: vec![], unresolved: vec![], artifact_refs: vec![],
+        partial_failures: vec![], provenance_ids: provenance }})
+}}
+"#,
+        std::process::id()
+    );
+    let run_id = "52000000-0000-4000-8000-000000000001";
+    let artifact = host
+        .prepare_run(
+            THREAD_ID,
+            run_id,
+            "reject invented descendants",
+            1,
+            source.as_bytes(),
+        )
+        .unwrap();
+    let execution = host.execute(&artifact, CancellationToken::new());
+    tokio::pin!(execution);
+    let mut events = Vec::new();
+    let report = loop {
+        tokio::select! {
+            event = events_rx.recv() => events.push(event.expect("progress remains open").kind),
+            result = &mut execution => break result.unwrap(),
+        }
+    };
+    assert_eq!(report.total_calls, 2);
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, HostEventKind::DescendantPid(_)))
+    );
+    assert!(report.observed_descendant_pids.is_empty());
+    artifact.cleanup().unwrap();
 }
 
 fn nearest_rank(samples: &[f64], percentile: usize) -> f64 {
@@ -1191,7 +1308,7 @@ async fn compile_timeout_drop_and_spawn_failure_own_processes_truthfully() {
 #[tokio::test]
 async fn exclusive_lease_compile_cancel_drop_timeout_and_crash_settle_ownership() {
     let root = tempfile::tempdir().unwrap();
-    let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+    let (events_tx, mut events_rx) = mpsc::channel(HOST_EVENT_CHANNEL_CAPACITY);
     let runtime = host(
         root.path(),
         Arc::new(FakeDelegate::default()),
@@ -1225,7 +1342,7 @@ async fn exclusive_lease_compile_cancel_drop_timeout_and_crash_settle_ownership(
 
     let compiler = root.path().join("drop-rustc");
     write_fake_compiler(&compiler);
-    let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+    let (events_tx, mut events_rx) = mpsc::channel(HOST_EVENT_CHANNEL_CAPACITY);
     let drop_host = NativeHost::new(
         compiler,
         tools().sdk.clone(),

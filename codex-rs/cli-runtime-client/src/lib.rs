@@ -75,6 +75,8 @@ pub mod legacy_core {
         }
     }
 }
+#[doc(hidden)]
+pub use codex_core::native_run_tree;
 
 // Covers the embedded drain and final task join.
 const IN_PROCESS_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(45);
@@ -399,10 +401,29 @@ enum ClientCommand {
     },
 }
 
-struct InteractiveTuiNativeCommand {
-    thread_id: ThreadId,
-    task: String,
-    response_tx: oneshot::Sender<IoResult<String>>,
+enum InteractiveTuiNativeCommand {
+    Start {
+        thread_id: ThreadId,
+        task: String,
+        response_tx: oneshot::Sender<IoResult<String>>,
+    },
+    Observe {
+        thread_id: ThreadId,
+        run_id: String,
+        response_tx: oneshot::Sender<
+            IoResult<
+                tokio::sync::watch::Receiver<
+                    Option<codex_core::native_run_tree::NativeRunTreeSnapshot>,
+                >,
+            >,
+        >,
+    },
+    CancelNode {
+        thread_id: ThreadId,
+        run_id: String,
+        node_id: String,
+        response_tx: oneshot::Sender<IoResult<codex_core::native_run_tree::NativeRunCancelResult>>,
+    },
 }
 
 /// Opaque, non-cloneable authority retained by the embedded interactive TUI session.
@@ -417,7 +438,7 @@ impl InteractiveTuiNativeCodeModeHandle {
     pub async fn start(&self, thread_id: ThreadId, task: String) -> IoResult<String> {
         let (response_tx, response_rx) = oneshot::channel();
         self.command_tx
-            .send(InteractiveTuiNativeCommand {
+            .send(InteractiveTuiNativeCommand::Start {
                 thread_id,
                 task,
                 response_tx,
@@ -433,6 +454,64 @@ impl InteractiveTuiNativeCodeModeHandle {
             IoError::new(
                 ErrorKind::BrokenPipe,
                 "native Code Mode response channel is closed",
+            )
+        })?
+    }
+
+    pub async fn observe(
+        &self,
+        thread_id: ThreadId,
+        run_id: String,
+    ) -> IoResult<
+        tokio::sync::watch::Receiver<Option<codex_core::native_run_tree::NativeRunTreeSnapshot>>,
+    > {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(InteractiveTuiNativeCommand::Observe {
+                thread_id,
+                run_id,
+                response_tx,
+            })
+            .await
+            .map_err(|_| {
+                IoError::new(
+                    ErrorKind::BrokenPipe,
+                    "interactive TUI native observation channel is closed",
+                )
+            })?;
+        response_rx.await.map_err(|_| {
+            IoError::new(
+                ErrorKind::BrokenPipe,
+                "native observation response channel is closed",
+            )
+        })?
+    }
+
+    pub async fn cancel_node(
+        &self,
+        thread_id: ThreadId,
+        run_id: String,
+        node_id: String,
+    ) -> IoResult<codex_core::native_run_tree::NativeRunCancelResult> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_tx
+            .send(InteractiveTuiNativeCommand::CancelNode {
+                thread_id,
+                run_id,
+                node_id,
+                response_tx,
+            })
+            .await
+            .map_err(|_| {
+                IoError::new(
+                    ErrorKind::BrokenPipe,
+                    "interactive TUI native cancellation channel is closed",
+                )
+            })?;
+        response_rx.await.map_err(|_| {
+            IoError::new(
+                ErrorKind::BrokenPipe,
+                "native cancellation response channel is closed",
             )
         })?
     }
@@ -591,16 +670,19 @@ impl InProcessCliRuntimeClient {
                     }
                     native = native_command_rx.recv(), if native_stream_enabled => {
                         match native {
-                            Some(InteractiveTuiNativeCommand { thread_id, task, response_tx }) => {
-                                let result = match native_runtime.as_ref() {
-                                    Some(native_runtime) => {
-                                        native_runtime.start(thread_id, task).await
-                                    }
-                                    None => Err(IoError::new(
-                                        ErrorKind::PermissionDenied,
-                                        "interactive TUI native Code Mode capability is unavailable",
-                                    )),
-                                };
+                            Some(InteractiveTuiNativeCommand::Start { thread_id, task, response_tx }) => {
+                                let result = native_runtime.as_ref().ok_or_else(|| IoError::new(ErrorKind::PermissionDenied, "interactive TUI native Code Mode capability is unavailable"));
+                                let result = match result { Ok(native) => native.start(thread_id, task).await, Err(error) => Err(error) };
+                                let _ = response_tx.send(result);
+                            }
+                            Some(InteractiveTuiNativeCommand::Observe { thread_id, run_id, response_tx }) => {
+                                let result = native_runtime.as_ref().ok_or_else(|| IoError::new(ErrorKind::PermissionDenied, "interactive TUI native observation capability is unavailable"));
+                                let result = match result { Ok(native) => native.observe(thread_id, run_id).await, Err(error) => Err(error) };
+                                let _ = response_tx.send(result);
+                            }
+                            Some(InteractiveTuiNativeCommand::CancelNode { thread_id, run_id, node_id, response_tx }) => {
+                                let result = native_runtime.as_ref().ok_or_else(|| IoError::new(ErrorKind::PermissionDenied, "interactive TUI native cancellation capability is unavailable"));
+                                let result = match result { Ok(native) => native.cancel_node(thread_id, run_id, node_id).await, Err(error) => Err(error) };
                                 let _ = response_tx.send(result);
                             }
                             None => native_stream_enabled = false,

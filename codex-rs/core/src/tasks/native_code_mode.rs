@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use codex_code_mode::NativeCodeModeDelegate;
@@ -31,6 +33,10 @@ use tokio_util::sync::CancellationToken;
 use super::SessionTask;
 use super::SessionTaskResult;
 use crate::client_common::Prompt;
+use crate::native_run_tree::NativeRunCancelScope;
+use crate::native_run_tree::NativeRunNodeKind;
+use crate::native_run_tree::NativeRunNodeStatus;
+use crate::native_run_tree::NativeRunTreeOwner;
 use crate::responses_metadata::CodexResponsesRequestKind;
 use crate::session::TurnInput;
 use crate::session::session::Session;
@@ -84,11 +90,53 @@ struct SessionNativeLifecycle {
     session: Arc<Session>,
     turn: Arc<TurnContext>,
     identity: NativeRunIdentity,
+    run_tree: NativeRunTreeOwner,
+    compile_attempt: AtomicU8,
+    cancellation: CancellationToken,
 }
 
 impl NativeLifecycle for SessionNativeLifecycle {
     fn transition<'a>(&'a self, phase: NativeCodeModePhase) -> BoxFuture<'a, ()> {
         Box::pin(async move {
+            match phase {
+                NativeCodeModePhase::Generating => self.run_tree.start(
+                    "generation",
+                    "run",
+                    NativeRunNodeKind::Generation,
+                    "source generation",
+                    None,
+                ),
+                NativeCodeModePhase::Compiling => {
+                    let attempt = self.compile_attempt.fetch_add(1, Ordering::AcqRel) + 1;
+                    if attempt == 1 {
+                        self.run_tree.settle(
+                            "generation",
+                            NativeRunNodeStatus::Succeeded,
+                            "source admitted",
+                        );
+                    }
+                    self.run_tree.start(
+                        format!("compile-{attempt}"),
+                        "run",
+                        NativeRunNodeKind::Compile { attempt, pid: None },
+                        &format!("compile attempt {attempt}"),
+                        Some((NativeRunCancelScope::Run, self.cancellation.clone())),
+                    );
+                }
+                NativeCodeModePhase::Repairing => self.run_tree.start(
+                    "repair",
+                    "run",
+                    NativeRunNodeKind::Repair,
+                    "compiler repair",
+                    None,
+                ),
+                NativeCodeModePhase::Repair => self.run_tree.settle(
+                    "repair",
+                    NativeRunNodeStatus::Succeeded,
+                    "repaired source admitted",
+                ),
+                _ => {}
+            }
             emit_native_lifecycle(
                 self.session.as_ref(),
                 self.turn.as_ref(),
@@ -139,6 +187,12 @@ impl SessionTask for NativeCodeModeTask {
             thread_id: session.thread_id.to_string(),
             run_id: uuid::Uuid::new_v4().to_string(),
         };
+        let run_tree = session
+            .services
+            .code_mode_service
+            .native_run_trees()
+            .begin(identity.clone(), &self.task, cancellation.clone())
+            .map_err(codex_protocol::error::CodexErr::InvalidRequest)?;
         emit_native_lifecycle(
             session.as_ref(),
             ctx.as_ref(),
@@ -152,6 +206,9 @@ impl SessionTask for NativeCodeModeTask {
             session: Arc::clone(&session),
             turn: Arc::clone(&ctx),
             identity: identity.clone(),
+            run_tree: run_tree.clone(),
+            compile_attempt: AtomicU8::new(0),
+            cancellation: cancellation.clone(),
         };
         lifecycle.transition(NativeCodeModePhase::Generating).await;
         let terminal = match prepare_live_backends(
@@ -159,6 +216,7 @@ impl SessionTask for NativeCodeModeTask {
             Arc::clone(&ctx),
             identity.clone(),
             cancellation.clone(),
+            run_tree.clone(),
         )
         .await
         {
@@ -183,6 +241,7 @@ impl SessionTask for NativeCodeModeTask {
         };
 
         if let Some(reference) = terminal.evidence.artifact_refs.first().cloned() {
+            run_tree.add_ref("run", &reference);
             emit_native_lifecycle(
                 session.as_ref(),
                 ctx.as_ref(),
@@ -197,12 +256,27 @@ impl SessionTask for NativeCodeModeTask {
         // the normal turn/history builders. This equality is checked immediately before the one
         // terminal item crosses the canonical history boundary.
         if session.clone_history().await.into_raw_items() != history_before {
+            run_tree.settle_unfinished(NativeRunNodeStatus::Failed);
+            run_tree.finish(NativeRunNodeStatus::Failed);
             return Err(codex_protocol::error::CodexErr::Fatal(
                 "native Code Mode history changed before terminal Evidence".to_string(),
             ));
         }
 
         let (evidence_text, item, outcome) = terminal_evidence_item(terminal, &identity);
+        let terminal_status = match &outcome {
+            NativeCodeModePhase::Succeeded => NativeRunNodeStatus::Succeeded,
+            NativeCodeModePhase::Interrupted => NativeRunNodeStatus::Cancelled,
+            _ => NativeRunNodeStatus::Failed,
+        };
+        run_tree.settle_unfinished(terminal_status);
+        run_tree.start(
+            "finalization",
+            "run",
+            NativeRunNodeKind::Finalization,
+            "terminal evidence",
+            None,
+        );
         emit_native_lifecycle(
             session.as_ref(),
             ctx.as_ref(),
@@ -214,6 +288,8 @@ impl SessionTask for NativeCodeModeTask {
         session
             .record_response_item_and_emit_turn_item(ctx.as_ref(), item)
             .await;
+        run_tree.settle("finalization", NativeRunNodeStatus::Succeeded, "settled");
+        run_tree.finish(terminal_status);
         Ok(Some(evidence_text))
     }
 }
@@ -415,6 +491,7 @@ struct ProcessNativeExecutor {
     step: Arc<StepContext>,
     tracker: SharedTurnDiffTracker,
     identity: NativeRunIdentity,
+    run_tree: NativeRunTreeOwner,
 }
 
 struct WorkflowStartedDelegate {
@@ -464,7 +541,10 @@ impl NativeExecutor for ProcessNativeExecutor {
                 Arc::clone(&self.session),
                 Arc::clone(&self.step),
                 Arc::clone(&self.tracker),
-                cancellation.clone(),
+                crate::tools::code_mode::NativeWorkerOwnership {
+                    cancellation: cancellation.clone(),
+                    run_tree: self.run_tree.clone(),
+                },
             );
             let worker: Arc<dyn NativeCodeModeDelegate> = worker;
             let (workflow_started_tx, workflow_started_rx) = tokio::sync::watch::channel(false);
@@ -472,34 +552,150 @@ impl NativeExecutor for ProcessNativeExecutor {
                 worker,
                 workflow_started: workflow_started_rx,
             });
-            let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
-            let execution =
-                self.client
-                    .execute_with_progress(request, delegate, progress_tx, cancellation);
+            let (progress_tx, mut progress_rx) =
+                tokio::sync::mpsc::channel(crate::native_run_tree::NATIVE_RUN_TREE_MAX_NODES);
+            let attempt = request.attempt;
+            let execution = self.client.execute_with_progress(
+                request,
+                delegate,
+                progress_tx,
+                cancellation.clone(),
+            );
             tokio::pin!(execution);
-            tokio::select! {
-                biased;
-                progress = progress_rx.recv() => {
-                    if matches!(progress, Some(NativeProgress::WorkflowStarted)) {
-                        emit_native_lifecycle(
-                            self.session.as_ref(),
-                            self.step.turn.as_ref(),
-                            &self.identity,
-                            NativeCodeModePhase::Running,
-                            String::new(),
-                        )
-                        .await;
-                        let _ = workflow_started_tx.send(true);
+            let compile_id = format!("compile-{attempt}");
+            let workflow_id = format!("workflow-a{attempt}");
+            let mut workflow_started = false;
+            let mut progress_open = true;
+            loop {
+                tokio::select! {
+                    biased;
+                    progress = progress_rx.recv(), if progress_open => {
+                        match progress {
+                            Some(NativeProgress::CompilerStarted { pid }) => {
+                                self.run_tree.update_kind(
+                                    &compile_id,
+                                    NativeRunNodeKind::Compile { attempt, pid: Some(pid) },
+                                );
+                                add_compile_source_ref(
+                                    &self.run_tree,
+                                    &self.identity,
+                                    attempt,
+                                    &compile_id,
+                                );
+                            }
+                            Some(NativeProgress::Compiled) => {
+                                // A cache hit has no compiler process event. Compiled is still
+                                // authoritative proof that prepare_run retained this attempt.
+                                add_compile_source_ref(
+                                    &self.run_tree,
+                                    &self.identity,
+                                    attempt,
+                                    &compile_id,
+                                );
+                                self.run_tree.settle(
+                                    &compile_id, NativeRunNodeStatus::Succeeded, "compiled",
+                                );
+                            }
+                            Some(NativeProgress::WorkflowStarted) => {
+                                workflow_started = true;
+                                self.run_tree.start(
+                                    workflow_id.clone(), "run",
+                                    NativeRunNodeKind::Workflow { attempt, pid: None },
+                                    "workflow process",
+                                    Some((NativeRunCancelScope::Run, cancellation.clone())),
+                                );
+                                emit_native_lifecycle(
+                                    self.session.as_ref(), self.step.turn.as_ref(), &self.identity,
+                                    NativeCodeModePhase::Running, String::new(),
+                                ).await;
+                                let _ = workflow_started_tx.send(true);
+                            }
+                            Some(NativeProgress::WorkflowProcessStarted { pid }) => {
+                                workflow_started = true;
+                                self.run_tree.start(
+                                    workflow_id.clone(), "run",
+                                    NativeRunNodeKind::Workflow { attempt, pid: Some(pid) },
+                                    &format!("workflow pid {pid}"),
+                                    Some((NativeRunCancelScope::Run, cancellation.clone())),
+                                );
+                                emit_native_lifecycle(
+                                    self.session.as_ref(), self.step.turn.as_ref(), &self.identity,
+                                    NativeCodeModePhase::Running, String::new(),
+                                ).await;
+                                let _ = workflow_started_tx.send(true);
+                            }
+                            Some(NativeProgress::DescendantStarted { pid }) => self.run_tree.start(
+                                format!("process-{pid}"), workflow_id.clone(),
+                                NativeRunNodeKind::Process { pid }, &format!("descendant pid {pid}"),
+                                Some((NativeRunCancelScope::Run, cancellation.clone())),
+                            ),
+                            Some(NativeProgress::Finished) => self.run_tree.settle(
+                                &workflow_id, NativeRunNodeStatus::Succeeded, "finished",
+                            ),
+                            // A settled host response removes the pending request and drops this
+                            // sender before the response receiver necessarily wins this select.
+                            // The execution result remains the authoritative terminal signal.
+                            None => progress_open = false,
+                        }
                     }
-                    execution.await
+                    result = &mut execution => {
+                        let status = if matches!(&result, Ok(NativeExecution::Completed { .. })) {
+                            NativeRunNodeStatus::Succeeded
+                        } else if cancellation.is_cancelled()
+                            || matches!(&result, Ok(NativeExecution::Failed { failure, .. }) if failure.kind == "Cancelled")
+                        {
+                            NativeRunNodeStatus::Cancelled
+                        } else {
+                            NativeRunNodeStatus::Failed
+                        };
+                        if workflow_started {
+                            self.run_tree.settle_unfinished(status);
+                        } else {
+                            self.run_tree.settle(&compile_id, status, "execution did not start");
+                        }
+                        break result;
+                    }
                 }
-                result = &mut execution => result,
             }
         })
     }
 
     fn finalize<'a>(&'a self, identity: NativeRunIdentity) -> BoxFuture<'a, Result<(), String>> {
-        Box::pin(async move { self.client.finalize(identity).await })
+        Box::pin(async move {
+            self.run_tree.start(
+                "host-finalize",
+                "run",
+                NativeRunNodeKind::Finalization,
+                "abandon repair-pending run",
+                None,
+            );
+            let result = self.client.finalize(identity).await;
+            self.run_tree.settle(
+                "host-finalize",
+                if result.is_ok() {
+                    NativeRunNodeStatus::Succeeded
+                } else {
+                    NativeRunNodeStatus::Failed
+                },
+                if result.is_ok() {
+                    "settled"
+                } else {
+                    "finalization failed"
+                },
+            );
+            result
+        })
+    }
+}
+
+fn add_compile_source_ref(
+    run_tree: &NativeRunTreeOwner,
+    identity: &NativeRunIdentity,
+    attempt: u8,
+    compile_id: &str,
+) {
+    if let Ok(reference) = artifact_uri(identity, &format!("attempt-{attempt}/source.rs")) {
+        run_tree.add_ref(compile_id, &reference);
     }
 }
 
@@ -508,6 +704,7 @@ async fn prepare_live_backends(
     turn: Arc<TurnContext>,
     identity: NativeRunIdentity,
     cancellation: CancellationToken,
+    run_tree: NativeRunTreeOwner,
 ) -> Result<(ResponsesSourceGenerator, ProcessNativeExecutor), String> {
     let client = session
         .services
@@ -537,6 +734,7 @@ async fn prepare_live_backends(
             step,
             tracker,
             identity,
+            run_tree,
         },
     ))
 }
@@ -1575,11 +1773,22 @@ mod tests {
             run_id: "50000000-0000-4000-8000-000000000005".to_string(),
         };
         let cancellation = CancellationToken::new();
+        let run_tree = session
+            .services
+            .code_mode_service
+            .native_run_trees()
+            .begin(
+                identity.clone(),
+                "repair cancellation test",
+                cancellation.clone(),
+            )
+            .expect("run tree");
         let (_responses, executor) = prepare_live_backends(
             Arc::clone(&session),
             turn,
             identity.clone(),
             cancellation.clone(),
+            run_tree,
         )
         .await
         .expect("real native executor");
@@ -1937,6 +2146,50 @@ mod tests {
                 .iter()
                 .all(|reference| reference.ends_with("/attempt-1/source.rs"))
         );
+    }
+
+    #[test]
+    fn cold_and_cache_hit_compile_progress_expose_only_the_retained_source_ref() {
+        for cache_hit in [false, true] {
+            let identity = identity();
+            let registry = Arc::new(crate::native_run_tree::NativeRunTreeRegistry::default());
+            let owner = registry
+                .begin(identity.clone(), "inspect", CancellationToken::new())
+                .expect("begin");
+            owner.start(
+                "compile-1",
+                "run",
+                NativeRunNodeKind::Compile {
+                    attempt: 1,
+                    pid: None,
+                },
+                "compile attempt 1",
+                None,
+            );
+            if !cache_hit {
+                add_compile_source_ref(&owner, &identity, 1, "compile-1");
+            }
+            // Both cold compiles and cache hits receive Compiled. Repeating the
+            // authoritative reference must not duplicate it.
+            add_compile_source_ref(&owner, &identity, 1, "compile-1");
+            owner.settle("compile-1", NativeRunNodeStatus::Succeeded, "compiled");
+
+            let receiver = registry
+                .subscribe(&identity.thread_id, &identity.run_id)
+                .expect("subscribe");
+            let snapshot = receiver.borrow().clone().expect("active");
+            let compile = snapshot
+                .nodes
+                .iter()
+                .find(|node| node.stable_id == "compile-1")
+                .expect("compile node");
+            assert_eq!(
+                compile.artifact_refs,
+                [artifact_uri(&identity, "attempt-1/source.rs").expect("source uri")],
+                "cache_hit={cache_hit}"
+            );
+            assert!(snapshot.nodes[0].artifact_refs.is_empty());
+        }
     }
 
     #[tokio::test]
@@ -2803,14 +3056,20 @@ mod tests {
         })
         .await
         .expect("repaired native SessionTask settles");
-        assert_eq!(response.requests().len(), 2);
+        let observed_history = session.clone_history().await.into_raw_items();
+        assert_eq!(
+            response.requests().len(),
+            2,
+            "terminal history: {:?}",
+            observed_history.last()
+        );
         let usage = session
             .token_usage_info()
             .await
             .expect("both Responses calls are accounted");
         assert_eq!(usage.total_token_usage.total_tokens, 28);
         assert_eq!(usage.last_token_usage.total_tokens, 17);
-        let history = session.clone_history().await.into_raw_items();
+        let history = observed_history;
         assert_eq!(history.len(), history_before.len() + 1);
         assert_eq!(&history[..history_before.len()], history_before.as_slice());
         let terminal = serde_json::to_string(history.last().expect("one terminal Evidence"))

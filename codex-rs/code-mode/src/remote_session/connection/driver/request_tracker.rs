@@ -14,6 +14,8 @@ use super::types::PendingRequest;
 use super::types::RemoteSession;
 use super::types::UnclaimedExecute;
 
+const MAX_NATIVE_PROGRESS_DESCENDANTS: usize = 64;
+
 pub(super) enum CancellationAction {
     Send(RequestId),
     Native {
@@ -95,17 +97,18 @@ impl RequestTracker {
         self.pending.remove(&id)
     }
 
-    pub(super) fn native_workflow_started(
+    pub(super) fn native_progress(
         &mut self,
         id: RequestId,
         session_id: &SessionId,
         thread_id: &str,
         run_id: &str,
+        phase: codex_code_mode_protocol::host::NativeProgressPhase,
     ) -> Result<(), String> {
         let Some(PendingRequest::NativeExecute {
             identity,
             progress_tx,
-            workflow_started,
+            progress_state,
             ..
         }) = self.pending.get_mut(&id)
         else {
@@ -119,12 +122,75 @@ impl RequestTracker {
         {
             return Err("code-mode host returned mismatched native progress identity".to_string());
         }
-        if *workflow_started {
-            return Err("code-mode host returned duplicate native workflow start".to_string());
-        }
-        *workflow_started = true;
+        use codex_code_mode_protocol::host::NativeProgressPhase;
+        let progress = match phase {
+            NativeProgressPhase::WorkflowStarted => {
+                if progress_state.workflow_started {
+                    return Err(
+                        "code-mode host returned duplicate native workflow start".to_string()
+                    );
+                }
+                progress_state.compiled = true;
+                progress_state.workflow_started = true;
+                crate::native::NativeProgress::WorkflowStarted
+            }
+            NativeProgressPhase::CompilerStarted { pid } => {
+                if progress_state.compiler_started
+                    || progress_state.compiled
+                    || progress_state.workflow_started
+                {
+                    return Err("code-mode host returned compiler start out of order".to_string());
+                }
+                progress_state.compiler_started = true;
+                crate::native::NativeProgress::CompilerStarted { pid }
+            }
+            NativeProgressPhase::Compiled => {
+                if progress_state.compiled || progress_state.workflow_started {
+                    return Err(
+                        "code-mode host returned duplicate native compile completion".to_string(),
+                    );
+                }
+                progress_state.compiled = true;
+                crate::native::NativeProgress::Compiled
+            }
+            NativeProgressPhase::WorkflowProcessStarted { pid } => {
+                if !progress_state.compiled || progress_state.workflow_started {
+                    return Err(
+                        "code-mode host returned native workflow start out of order".to_string()
+                    );
+                }
+                progress_state.workflow_started = true;
+                crate::native::NativeProgress::WorkflowProcessStarted { pid }
+            }
+            NativeProgressPhase::DescendantStarted { pid } => {
+                if !progress_state.workflow_started
+                    || progress_state.descendants.len() >= MAX_NATIVE_PROGRESS_DESCENDANTS
+                    || !progress_state.descendants.insert(pid)
+                {
+                    return Err(
+                        "code-mode host returned invalid native descendant progress".to_string()
+                    );
+                }
+                crate::native::NativeProgress::DescendantStarted { pid }
+            }
+            NativeProgressPhase::Finished => {
+                if !progress_state.workflow_started || progress_state.finished {
+                    return Err("code-mode host returned native finish out of order".to_string());
+                }
+                progress_state.finished = true;
+                crate::native::NativeProgress::Finished
+            }
+        };
         if let Some(progress_tx) = progress_tx {
-            let _ = progress_tx.send(crate::native::NativeProgress::WorkflowStarted);
+            match progress_tx.try_send(progress) {
+                Ok(()) | Err(mpsc::error::TrySendError::Closed(_)) => {}
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    return Err(
+                        "native progress observation channel exceeded its fixed capacity"
+                            .to_string(),
+                    );
+                }
+            }
         }
         Ok(())
     }

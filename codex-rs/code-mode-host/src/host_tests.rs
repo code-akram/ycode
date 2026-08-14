@@ -23,6 +23,7 @@ use codex_code_mode_protocol::host::HostHello;
 use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
+use codex_code_mode_protocol::host::NATIVE_RUST_OBSERVE_V1_CAPABILITY;
 use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::RequestId;
@@ -367,6 +368,8 @@ async fn optional_dual_websocket_capability_falls_back_to_a_single_connection() 
 #[tokio::test]
 async fn native_capability_is_stdio_only_and_websocket_fails_closed() {
     let native = Capability::new(NATIVE_RUST_V1_CAPABILITY).expect("native capability");
+    let observe =
+        Capability::new(NATIVE_RUST_OBSERVE_V1_CAPABILITY).expect("native observation capability");
     let (host_stream, client_stream) = tokio::io::duplex(/*max_buf_size*/ 1024);
     let (host_reader, host_writer) = tokio::io::split(host_stream);
     let (client_reader, client_writer) = tokio::io::split(client_stream);
@@ -376,7 +379,7 @@ async fn native_capability_is_stdio_only_and_websocket_fails_closed() {
     writer
         .write(&client_hello(
             [ProtocolVersion::V1],
-            CapabilitySet::try_new([native.clone()]).expect("capability set"),
+            CapabilitySet::try_new([native.clone(), observe.clone()]).expect("capability set"),
         ))
         .await
         .expect("write native hello");
@@ -384,7 +387,7 @@ async fn native_capability_is_stdio_only_and_websocket_fails_closed() {
         reader.read::<HostToClient>().await.expect("stdio hello"),
         Some(HostToClient::HostHello(HostHello::new(
             ProtocolVersion::V1,
-            CapabilitySet::try_new([native.clone()]).expect("host capability set"),
+            CapabilitySet::try_new([native.clone(), observe]).expect("host capability set"),
         )))
     );
     drop(writer);
@@ -703,6 +706,7 @@ async fn request_task_panic_disconnects_host() {
         closing: AtomicBool::new(false),
         peer: Arc::clone(&peer),
         native_enabled: false,
+        native_observe_enabled: false,
         native_runs: Mutex::new(HashSet::new()),
     };
     let task = state.request_tasks.spawn(async {
@@ -734,6 +738,7 @@ async fn execute_request_id_remains_active_until_initial_response() {
         closing: AtomicBool::new(false),
         peer,
         native_enabled: false,
+        native_observe_enabled: false,
         native_runs: Mutex::new(HashSet::new()),
     });
     let session_id = session_id("session-1");
@@ -798,6 +803,7 @@ async fn active_cell_limit_rejects_execute_without_disconnecting() {
         closing: AtomicBool::new(false),
         peer: Arc::clone(&peer),
         native_enabled: false,
+        native_observe_enabled: false,
         native_runs: Mutex::new(HashSet::new()),
     };
     let session_id = session_id("session-1");

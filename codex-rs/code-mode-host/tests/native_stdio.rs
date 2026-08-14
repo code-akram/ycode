@@ -16,6 +16,7 @@ use codex_code_mode_protocol::host::FramedWriter;
 use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
+use codex_code_mode_protocol::host::NATIVE_RUST_OBSERVE_V1_CAPABILITY;
 use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::NativeExecuteRequest;
 use codex_code_mode_protocol::host::NativeProgressPhase;
@@ -139,11 +140,12 @@ async fn adjacent_stdio_native_lane_is_capability_gated_typed_and_fast() {
     let mut writer = FramedWriter::new(child.stdin.take().expect("host stdin"));
     let mut reader = FramedReader::new(child.stdout.take().expect("host stdout"));
     let capability = Capability::new(NATIVE_RUST_V1_CAPABILITY).unwrap();
+    let observe = Capability::new(NATIVE_RUST_OBSERVE_V1_CAPABILITY).unwrap();
     writer
         .write(&ClientToHost::ClientHello(
             ClientHello::new(
                 SupportedProtocolVersions::try_new([ProtocolVersion::V1]).unwrap(),
-                CapabilitySet::try_new([capability.clone()]).unwrap(),
+                CapabilitySet::try_new([capability.clone(), observe]).unwrap(),
                 CapabilitySet::empty(),
             )
             .unwrap(),
@@ -189,7 +191,7 @@ async fn adjacent_stdio_native_lane_is_capability_gated_typed_and_fast() {
                     id,
                     session_id,
                     thread_id,
-                    phase: NativeProgressPhase::WorkflowStarted,
+                    phase: NativeProgressPhase::WorkflowProcessStarted { .. },
                     ..
                 } => {
                     assert_eq!(id, RequestId::new(sample + 1));
@@ -199,6 +201,7 @@ async fn adjacent_stdio_native_lane_is_capability_gated_typed_and_fast() {
                     assert!(!observed_first);
                     observed_workflow_start = true;
                 }
+                HostToClient::NativeProgress { .. } => {}
                 HostToClient::DelegateRequest {
                     id,
                     request: DelegateRequest::NativeInvokeTool { request, .. },
@@ -285,11 +288,12 @@ async fn native_wire_evidence_cap_and_repair_finalize_are_truthful() {
     let mut writer = FramedWriter::new(child.stdin.take().expect("host stdin"));
     let mut reader = FramedReader::new(child.stdout.take().expect("host stdout"));
     let capability = Capability::new(NATIVE_RUST_V1_CAPABILITY).unwrap();
+    let observe = Capability::new(NATIVE_RUST_OBSERVE_V1_CAPABILITY).unwrap();
     writer
         .write(&ClientToHost::ClientHello(
             ClientHello::new(
                 SupportedProtocolVersions::try_new([ProtocolVersion::V1]).unwrap(),
-                CapabilitySet::try_new([capability]).unwrap(),
+                CapabilitySet::try_new([capability, observe]).unwrap(),
                 CapabilitySet::empty(),
             )
             .unwrap(),
@@ -464,8 +468,11 @@ async fn workflow_start_progress_precedes_no_tool_rust_work_and_finish() {
         .write(&ClientToHost::ClientHello(
             ClientHello::new(
                 SupportedProtocolVersions::try_new([ProtocolVersion::V1]).unwrap(),
-                CapabilitySet::try_new([Capability::new(NATIVE_RUST_V1_CAPABILITY).unwrap()])
-                    .unwrap(),
+                CapabilitySet::try_new([
+                    Capability::new(NATIVE_RUST_V1_CAPABILITY).unwrap(),
+                    Capability::new(NATIVE_RUST_OBSERVE_V1_CAPABILITY).unwrap(),
+                ])
+                .unwrap(),
                 CapabilitySet::empty(),
             )
             .unwrap(),
@@ -496,19 +503,25 @@ async fn workflow_start_progress_precedes_no_tool_rust_work_and_finish() {
         .await
         .unwrap();
     let started = Instant::now();
-    let HostToClient::NativeProgress {
-        id,
-        session_id,
-        thread_id,
-        run_id: observed_run_id,
-        phase: NativeProgressPhase::WorkflowStarted,
-    } = tokio::time::timeout(Duration::from_secs(10), reader.read())
-        .await
-        .expect("workflow start timeout")
-        .unwrap()
-        .unwrap()
-    else {
-        panic!("workflow start was not the first native execution message");
+    let (id, session_id, thread_id, observed_run_id) = loop {
+        match tokio::time::timeout(Duration::from_secs(10), reader.read())
+            .await
+            .expect("workflow start timeout")
+            .unwrap()
+            .unwrap()
+        {
+            HostToClient::NativeProgress {
+                id,
+                session_id,
+                thread_id,
+                run_id,
+                phase: NativeProgressPhase::WorkflowProcessStarted { .. },
+            } => {
+                break (id, session_id, thread_id, run_id);
+            }
+            HostToClient::NativeProgress { .. } => {}
+            other => panic!("unexpected message before workflow start: {other:?}"),
+        }
     };
     assert_eq!(id, request_id);
     assert_eq!(session_id.as_str(), "native-progress");
@@ -516,19 +529,26 @@ async fn workflow_start_progress_precedes_no_tool_rust_work_and_finish() {
     assert_eq!(observed_run_id, run_id);
     let progress_at = started.elapsed();
 
-    let HostToClient::Response {
-        id,
-        result:
-            WireResult::Ok {
-                value: HostResponse::NativeCompleted { evidence, .. },
-            },
-    } = tokio::time::timeout(Duration::from_secs(2), reader.read())
-        .await
-        .expect("no-tool workflow timeout")
-        .unwrap()
-        .unwrap()
-    else {
-        panic!("no-tool workflow did not complete after its start progress");
+    let (id, evidence) = loop {
+        match tokio::time::timeout(Duration::from_secs(2), reader.read())
+            .await
+            .expect("no-tool workflow timeout")
+            .unwrap()
+            .unwrap()
+        {
+            HostToClient::NativeProgress {
+                phase: NativeProgressPhase::Finished,
+                ..
+            } => {}
+            HostToClient::Response {
+                id,
+                result:
+                    WireResult::Ok {
+                        value: HostResponse::NativeCompleted { evidence, .. },
+                    },
+            } => break (id, evidence),
+            other => panic!("unexpected no-tool workflow message: {other:?}"),
+        }
     };
     assert_eq!(id, request_id);
     assert_eq!(evidence.summary, "no-tool workflow completed");
@@ -565,8 +585,11 @@ async fn retained_invalid_then_corrected_stdio_shape_returns_concrete_protocol_f
         .write(&ClientToHost::ClientHello(
             ClientHello::new(
                 SupportedProtocolVersions::try_new([ProtocolVersion::V1]).unwrap(),
-                CapabilitySet::try_new([Capability::new(NATIVE_RUST_V1_CAPABILITY).unwrap()])
-                    .unwrap(),
+                CapabilitySet::try_new([
+                    Capability::new(NATIVE_RUST_V1_CAPABILITY).unwrap(),
+                    Capability::new(NATIVE_RUST_OBSERVE_V1_CAPABILITY).unwrap(),
+                ])
+                .unwrap(),
                 CapabilitySet::empty(),
             )
             .unwrap(),
@@ -607,13 +630,14 @@ async fn retained_invalid_then_corrected_stdio_shape_returns_concrete_protocol_f
         {
             HostToClient::NativeProgress {
                 id,
-                phase: NativeProgressPhase::WorkflowStarted,
+                phase: NativeProgressPhase::WorkflowProcessStarted { .. },
                 ..
             } => {
                 assert_eq!(id, RequestId::new(910));
                 assert!(!invalid_started);
                 invalid_started = true;
             }
+            HostToClient::NativeProgress { .. } => {}
             HostToClient::DelegateRequest {
                 id,
                 request: DelegateRequest::NativeInvokeTool { request, .. },
@@ -700,9 +724,10 @@ async fn retained_invalid_then_corrected_stdio_shape_returns_concrete_protocol_f
             .expect("corrected workflow response")
         {
             HostToClient::NativeProgress {
-                phase: NativeProgressPhase::WorkflowStarted,
+                phase: NativeProgressPhase::WorkflowProcessStarted { .. },
                 ..
             } => {}
+            HostToClient::NativeProgress { .. } => {}
             HostToClient::DelegateRequest {
                 id,
                 request: DelegateRequest::NativeInvokeTool { request, .. },

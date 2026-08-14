@@ -185,6 +185,23 @@ enum InProcessClientMessage {
         task: String,
         response_tx: oneshot::Sender<IoResult<String>>,
     },
+    ObserveNativeCodeMode {
+        thread_id: ThreadId,
+        run_id: String,
+        response_tx: oneshot::Sender<
+            IoResult<
+                tokio::sync::watch::Receiver<
+                    Option<codex_core::native_run_tree::NativeRunTreeSnapshot>,
+                >,
+            >,
+        >,
+    },
+    CancelNativeCodeModeNode {
+        thread_id: ThreadId,
+        run_id: String,
+        node_id: String,
+        response_tx: oneshot::Sender<IoResult<codex_core::native_run_tree::NativeRunCancelResult>>,
+    },
     Shutdown {
         done_tx: oneshot::Sender<()>,
     },
@@ -197,6 +214,23 @@ enum ProcessorCommand {
         thread_id: ThreadId,
         task: String,
         response_tx: oneshot::Sender<IoResult<String>>,
+    },
+    ObserveNativeCodeMode {
+        thread_id: ThreadId,
+        run_id: String,
+        response_tx: oneshot::Sender<
+            IoResult<
+                tokio::sync::watch::Receiver<
+                    Option<codex_core::native_run_tree::NativeRunTreeSnapshot>,
+                >,
+            >,
+        >,
+    },
+    CancelNativeCodeModeNode {
+        thread_id: ThreadId,
+        run_id: String,
+        node_id: String,
+        response_tx: oneshot::Sender<IoResult<codex_core::native_run_tree::NativeRunCancelResult>>,
     },
 }
 
@@ -242,6 +276,64 @@ impl InteractiveTuiNativeCodeModeHandle {
             IoError::new(
                 ErrorKind::BrokenPipe,
                 format!("native Code Mode response channel closed: {err}"),
+            )
+        })?
+    }
+
+    pub async fn observe(
+        &self,
+        thread_id: ThreadId,
+        run_id: String,
+    ) -> IoResult<
+        tokio::sync::watch::Receiver<Option<codex_core::native_run_tree::NativeRunTreeSnapshot>>,
+    > {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.client_tx
+            .send(InProcessClientMessage::ObserveNativeCodeMode {
+                thread_id,
+                run_id,
+                response_tx,
+            })
+            .await
+            .map_err(|_| {
+                IoError::new(
+                    ErrorKind::BrokenPipe,
+                    "interactive native observation channel closed",
+                )
+            })?;
+        response_rx.await.map_err(|_| {
+            IoError::new(
+                ErrorKind::BrokenPipe,
+                "native observation response channel closed",
+            )
+        })?
+    }
+
+    pub async fn cancel_node(
+        &self,
+        thread_id: ThreadId,
+        run_id: String,
+        node_id: String,
+    ) -> IoResult<codex_core::native_run_tree::NativeRunCancelResult> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.client_tx
+            .send(InProcessClientMessage::CancelNativeCodeModeNode {
+                thread_id,
+                run_id,
+                node_id,
+                response_tx,
+            })
+            .await
+            .map_err(|_| {
+                IoError::new(
+                    ErrorKind::BrokenPipe,
+                    "interactive native cancellation channel closed",
+                )
+            })?;
+        response_rx.await.map_err(|_| {
+            IoError::new(
+                ErrorKind::BrokenPipe,
+                "native cancellation response channel closed",
             )
         })?
     }
@@ -567,6 +659,16 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                                     .map_err(|err| IoError::new(ErrorKind::InvalidInput, err.to_string()));
                                 let _ = response_tx.send(result);
                             }
+                            Some(ProcessorCommand::ObserveNativeCodeMode { thread_id, run_id, response_tx }) => {
+                                let result = processor.observe_native_code_mode_from_interactive_tui(thread_id, run_id).await
+                                    .map_err(|err| IoError::new(ErrorKind::InvalidInput, err.to_string()));
+                                let _ = response_tx.send(result);
+                            }
+                            Some(ProcessorCommand::CancelNativeCodeModeNode { thread_id, run_id, node_id, response_tx }) => {
+                                let result = processor.cancel_native_code_mode_node_from_interactive_tui(thread_id, run_id, node_id).await
+                                    .map_err(|err| IoError::new(ErrorKind::InvalidInput, err.to_string()));
+                                let _ = response_tx.send(result);
+                            }
                             None => {
                                 break;
                             }
@@ -701,6 +803,32 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                                         )));
                                     }
                                     break;
+                                }
+                            }
+                        }
+                        Some(InProcessClientMessage::ObserveNativeCodeMode { thread_id, run_id, response_tx }) => {
+                            let command = ProcessorCommand::ObserveNativeCodeMode { thread_id, run_id, response_tx };
+                            if let Err(error) = processor_tx.try_send(command) {
+                                let (is_full, command) = match error {
+                                    mpsc::error::TrySendError::Full(command) => (true, command),
+                                    mpsc::error::TrySendError::Closed(command) => (false, command),
+                                };
+                                if let ProcessorCommand::ObserveNativeCodeMode { response_tx, .. } = command {
+                                    let kind = if is_full { ErrorKind::WouldBlock } else { ErrorKind::BrokenPipe };
+                                    let _ = response_tx.send(Err(IoError::new(kind, "native observation queue unavailable")));
+                                }
+                            }
+                        }
+                        Some(InProcessClientMessage::CancelNativeCodeModeNode { thread_id, run_id, node_id, response_tx }) => {
+                            let command = ProcessorCommand::CancelNativeCodeModeNode { thread_id, run_id, node_id, response_tx };
+                            if let Err(error) = processor_tx.try_send(command) {
+                                let (is_full, command) = match error {
+                                    mpsc::error::TrySendError::Full(command) => (true, command),
+                                    mpsc::error::TrySendError::Closed(command) => (false, command),
+                                };
+                                if let ProcessorCommand::CancelNativeCodeModeNode { response_tx, .. } = command {
+                                    let kind = if is_full { ErrorKind::WouldBlock } else { ErrorKind::BrokenPipe };
+                                    let _ = response_tx.send(Err(IoError::new(kind, "native cancellation queue unavailable")));
                                 }
                             }
                         }

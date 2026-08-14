@@ -107,7 +107,7 @@ async fn code_mode_live_composer_emits_only_private_native_app_event() {
 }
 
 #[tokio::test]
-async fn bare_and_active_code_mode_never_start_native_work() {
+async fn bare_code_mode_opens_only_the_active_native_run() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.thread_id = Some(ThreadId::new());
 
@@ -121,7 +121,28 @@ async fn bare_and_active_code_mode_never_start_native_work() {
     assert!(op_rx.try_recv().is_err());
 
     handle_turn_started(&mut chat, "active-turn");
-    submit_composer_text(&mut chat, "/code-mode must not queue");
+    chat.active_native_code_mode_run = Some("run-1".to_string());
+    chat.start_native_code_mode_from_live_composer(String::new());
+    let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            AppEvent::OpenNativeCodeModeTree { run_id, .. } if run_id == "run-1"
+        )),
+        "events: {events:?}"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, AppEvent::StartNativeCodeMode { .. }))
+    );
+
+    chat.bottom_pane.set_composer_text(
+        "/code-mode must not queue".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
     assert!(
         !events
@@ -129,6 +150,152 @@ async fn bare_and_active_code_mode_never_start_native_work() {
             .any(|event| matches!(event, AppEvent::StartNativeCodeMode { .. }))
     );
     assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn product_native_tree_overlay_restores_draft_cursor_and_quiet_status() {
+    use codex_cli_runtime_client::native_run_tree::NativeRunCancelScope;
+    use codex_cli_runtime_client::native_run_tree::NativeRunIdentity;
+    use codex_cli_runtime_client::native_run_tree::NativeRunNode;
+    use codex_cli_runtime_client::native_run_tree::NativeRunNodeKind;
+    use codex_cli_runtime_client::native_run_tree::NativeRunNodeStatus;
+    use codex_cli_runtime_client::native_run_tree::NativeRunTreeSnapshot;
+    use ratatui::style::Modifier;
+    use std::time::Instant;
+
+    fn render(chat: &ChatWidget, width: u16) -> (ratatui::buffer::Buffer, Rect) {
+        let area = Rect::new(0, 0, width, chat.desired_height(width).max(1));
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        chat.render(area, &mut buffer);
+        (buffer, area)
+    }
+
+    let (mut chat, mut events, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    let thread_id = ThreadId::new();
+    let run_id = "2154af33-1fed-4fb4-a821-156a07336f20";
+    chat.thread_id = Some(thread_id);
+    chat.bottom_pane.set_composer_text(
+        "draft survives overlay".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    let draft = chat.bottom_pane.composer_draft_snapshot();
+    handle_turn_started(&mut chat, "native-tree-turn");
+    chat.handle_server_notification(
+        ServerNotification::ItemCompleted(ItemCompletedNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "native-tree-turn".to_string(),
+            completed_at_ms: 0,
+            item: CliRuntimeThreadItem::NativeCodeMode {
+                id: "native-running".to_string(),
+                run_id: run_id.to_string(),
+                phase: codex_cli_protocol::NativeCodeModePhase::Running,
+                text: String::new(),
+            },
+        }),
+        /*replay_kind*/ None,
+    );
+    let started_at = Instant::now();
+    let snapshot = NativeRunTreeSnapshot {
+        identity: NativeRunIdentity {
+            session_id: thread_id.to_string(),
+            thread_id: thread_id.to_string(),
+            run_id: run_id.to_string(),
+        },
+        nodes: vec![
+            NativeRunNode {
+                stable_id: "run".to_string(),
+                parent_id: None,
+                launch_ordinal: 0,
+                kind: NativeRunNodeKind::Run,
+                status: NativeRunNodeStatus::Running,
+                started_at,
+                finished_at: None,
+                summary: "inspect repository".to_string(),
+                recent: String::new(),
+                artifact_refs: Vec::new(),
+                cancel_scope: NativeRunCancelScope::Run,
+            },
+            NativeRunNode {
+                stable_id: "compile-1".to_string(),
+                parent_id: Some("run".to_string()),
+                launch_ordinal: 1,
+                kind: NativeRunNodeKind::Compile {
+                    attempt: 1,
+                    pid: Some(42),
+                },
+                status: NativeRunNodeStatus::Running,
+                started_at,
+                finished_at: None,
+                summary: "compile attempt 1".to_string(),
+                recent: String::new(),
+                artifact_refs: vec![format!(
+                    "native-code-mode://{thread_id}/{run_id}/attempt-1/source.rs"
+                )],
+                cancel_scope: NativeRunCancelScope::Run,
+            },
+        ],
+        local_error: None,
+    };
+    let (_tree_tx, tree_rx) = tokio::sync::watch::channel(Some(snapshot));
+    chat.show_native_run_tree(tree_rx);
+    assert!(chat.bottom_pane.has_active_view());
+    assert!(chat.cursor_pos(Rect::new(0, 0, 80, 14)).is_none());
+
+    for width in [80_u16, 48] {
+        let (buffer, area) = render(&chat, width);
+        let gutter = crate::transcript_gutter::layout(width).left;
+        let title_row = (0..area.height)
+            .find(|row| buffer[(gutter, *row)].symbol() == "C")
+            .expect("tree title starts at adaptive gutter");
+        assert_eq!(buffer[(gutter, title_row)].symbol(), "C");
+        assert!(
+            buffer
+                .content
+                .iter()
+                .all(|cell| !cell.modifier.contains(Modifier::BOLD))
+        );
+    }
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+    assert!(
+        std::iter::from_fn(|| events.try_recv().ok()).any(|event| matches!(
+            event,
+            AppEvent::CancelNativeCodeModeNode { node_id, .. } if node_id == "run"
+        ))
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(render_bottom_popup(&chat, 48).contains("id · compile-1"));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    assert!(!chat.bottom_pane.has_active_view());
+    assert_eq!(chat.bottom_pane.composer_draft_snapshot(), draft);
+    for width in [80_u16, 48] {
+        let (buffer, area) = render(&chat, width);
+        let (cursor_x, cursor_y) = chat.cursor_pos(area).expect("restored composer cursor");
+        let gutter = crate::transcript_gutter::layout(width).left;
+        assert_eq!(buffer[(gutter, cursor_y)].symbol(), "d");
+        assert_eq!(cursor_x, gutter + "draft survives overlay".len() as u16);
+        assert!(cursor_y > 0);
+        assert!(
+            buffer[(gutter, cursor_y - 1)].symbol().starts_with('⠁')
+                || ('⠁'..='⣿').contains(
+                    &buffer[(gutter, cursor_y - 1)]
+                        .symbol()
+                        .chars()
+                        .next()
+                        .expect("status spinner"),
+                )
+        );
+        let text = buffer
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("draft survives overlay"));
+        assert!(text.contains("running"));
+    }
 }
 
 #[tokio::test]

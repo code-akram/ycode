@@ -25,6 +25,7 @@ use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
 use crate::function_tool::FunctionCallError;
+use crate::native_run_tree::NativeRunTreeRegistry;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::original_image_detail::sanitize_original_image_detail as sanitize_image_detail_items;
 use crate::session::session::Session;
@@ -74,10 +75,16 @@ pub(crate) struct ExecContext {
     pub(super) turn: Arc<TurnContext>,
 }
 
+pub(crate) struct NativeWorkerOwnership {
+    pub(crate) cancellation: CancellationToken,
+    pub(crate) run_tree: crate::native_run_tree::NativeRunTreeOwner,
+}
+
 pub(crate) struct CodeModeService {
     session: OnceCell<Arc<dyn CodeModeSession>>,
     session_provider: Arc<dyn CodeModeSessionProvider>,
     native_client: Option<codex_code_mode::ProcessOwnedNativeCodeModeClient>,
+    native_run_trees: Arc<NativeRunTreeRegistry>,
     availability: Result<(), String>,
     dispatch_broker: Arc<CodeModeDispatchBroker>,
     default_exec_yield_time_override_ms: Option<u64>,
@@ -105,6 +112,7 @@ impl CodeModeService {
             session: OnceCell::new(),
             session_provider,
             native_client,
+            native_run_trees: Arc::new(NativeRunTreeRegistry::default()),
             availability,
             dispatch_broker,
             default_exec_yield_time_override_ms: default_exec_yield_time_override_ms(features),
@@ -143,6 +151,10 @@ impl CodeModeService {
         &self,
     ) -> Option<codex_code_mode::ProcessOwnedNativeCodeModeClient> {
         self.native_client.clone()
+    }
+
+    pub(crate) fn native_run_trees(&self) -> Arc<NativeRunTreeRegistry> {
+        Arc::clone(&self.native_run_trees)
     }
 
     pub(crate) async fn execute(
@@ -224,7 +236,7 @@ impl CodeModeService {
         session: Arc<Session>,
         step_context: Arc<StepContext>,
         tracker: SharedTurnDiffTracker,
-        cancellation: CancellationToken,
+        ownership: NativeWorkerOwnership,
     ) -> Arc<NativeCodeModeDispatchWorker> {
         NativeCodeModeDispatchWorker::new(
             identity,
@@ -232,7 +244,8 @@ impl CodeModeService {
             session,
             step_context,
             tracker,
-            cancellation,
+            ownership.cancellation,
+            ownership.run_tree,
         )
     }
 

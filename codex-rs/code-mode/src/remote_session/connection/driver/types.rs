@@ -70,7 +70,7 @@ pub(in crate::remote_session::connection) enum DriverCommand {
     NativeExecute {
         request: NativeExecute,
         delegate: Arc<dyn NativeCodeModeDelegate>,
-        progress_tx: Option<mpsc::UnboundedSender<crate::native::NativeProgress>>,
+        progress_tx: Option<mpsc::Sender<crate::native::NativeProgress>>,
         caller_cancellation: CancellationToken,
         response_tx: oneshot::Sender<Result<NativeExecution, String>>,
     },
@@ -191,8 +191,8 @@ pub(super) enum PendingRequest {
     NativeExecute {
         key: NativeRunKey,
         identity: NativeRunIdentity,
-        progress_tx: Option<mpsc::UnboundedSender<crate::native::NativeProgress>>,
-        workflow_started: bool,
+        progress_tx: Option<mpsc::Sender<crate::native::NativeProgress>>,
+        progress_state: NativeProgressState,
         cancellation: CancellableRequest,
         response_tx: oneshot::Sender<Result<NativeExecution, String>>,
     },
@@ -200,6 +200,15 @@ pub(super) enum PendingRequest {
         identity: NativeRunIdentity,
         response_tx: oneshot::Sender<Result<(), String>>,
     },
+}
+
+#[derive(Default)]
+pub(super) struct NativeProgressState {
+    pub(super) compiler_started: bool,
+    pub(super) compiled: bool,
+    pub(super) workflow_started: bool,
+    pub(super) finished: bool,
+    pub(super) descendants: std::collections::HashSet<u32>,
 }
 
 pub(super) struct DeferredWait {

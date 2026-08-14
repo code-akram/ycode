@@ -124,6 +124,28 @@ fn native_workflow_progress_round_trips_on_the_control_lane() {
 }
 
 #[test]
+fn detailed_native_progress_is_additive_and_keeps_legacy_workflow_tag() {
+    let message = HostToClient::NativeProgress {
+        id: request_id(8),
+        session_id: session_id(),
+        thread_id: "thread-1".to_string(),
+        run_id: "run-1".to_string(),
+        phase: NativeProgressPhase::WorkflowProcessStarted { pid: 42 },
+    };
+    assert_wire_round_trip(
+        message,
+        json!({
+            "type": "native/progress",
+            "id": 8,
+            "sessionId": "session-1",
+            "threadId": "thread-1",
+            "runId": "run-1",
+            "phase": { "workflowProcessStarted": { "pid": 42 } },
+        }),
+    );
+}
+
+#[test]
 fn message_families_use_dedicated_transport_lanes() {
     for (message, lane) in [
         (

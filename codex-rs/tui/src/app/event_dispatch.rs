@@ -36,6 +36,43 @@ impl App {
                     ));
                 }
             }
+            AppEvent::OpenNativeCodeModeTree { thread_id, run_id } => {
+                if self.chat_widget.thread_id() != Some(thread_id)
+                    || self.chat_widget.is_active_side_conversation()
+                {
+                    self.chat_widget.add_error_message(
+                        "Native Code Mode tree requires the active human composer.".to_string(),
+                    );
+                } else {
+                    match cli_runtime
+                        .observe_native_code_mode_from_interactive_composer(thread_id, run_id)
+                        .await
+                    {
+                        Ok(receiver) => self.chat_widget.show_native_run_tree(receiver),
+                        Err(error) => self.chat_widget.add_error_message(format!(
+                            "Native Code Mode tree unavailable: {error}"
+                        )),
+                    }
+                }
+            }
+            AppEvent::CancelNativeCodeModeNode {
+                thread_id,
+                run_id,
+                node_id,
+            } => {
+                if self.chat_widget.thread_id() == Some(thread_id)
+                    && !self.chat_widget.is_active_side_conversation()
+                    && let Err(error) = cli_runtime
+                        .cancel_native_code_mode_node_from_interactive_composer(
+                            thread_id, run_id, node_id,
+                        )
+                        .await
+                {
+                    self.chat_widget.add_error_message(format!(
+                        "Native Code Mode cancellation failed: {error}"
+                    ));
+                }
+            }
             AppEvent::NewSession { name } => {
                 self.start_fresh_session_with_summary_hint(
                     tui,

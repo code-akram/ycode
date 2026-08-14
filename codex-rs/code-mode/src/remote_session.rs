@@ -215,7 +215,7 @@ impl ProcessOwnedNativeCodeModeClient {
         &self,
         request: NativeExecute,
         delegate: Arc<dyn NativeCodeModeDelegate>,
-        progress_tx: tokio::sync::mpsc::UnboundedSender<crate::native::NativeProgress>,
+        progress_tx: tokio::sync::mpsc::Sender<crate::native::NativeProgress>,
         cancellation: CancellationToken,
     ) -> Result<NativeExecution, String> {
         self.execute_inner(request, delegate, Some(progress_tx), cancellation)
@@ -226,7 +226,7 @@ impl ProcessOwnedNativeCodeModeClient {
         &self,
         request: NativeExecute,
         delegate: Arc<dyn NativeCodeModeDelegate>,
-        progress_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::native::NativeProgress>>,
+        progress_tx: Option<tokio::sync::mpsc::Sender<crate::native::NativeProgress>>,
         cancellation: CancellationToken,
     ) -> Result<NativeExecution, String> {
         validate_execute(&request)?;

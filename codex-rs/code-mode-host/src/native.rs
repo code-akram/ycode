@@ -13,6 +13,7 @@ use codex_code_mode_protocol::host::NativeToolRequest;
 use codex_code_mode_protocol::host::RequestId;
 use codex_code_mode_protocol::host::SessionId;
 use codex_native_code_mode_runtime::FINAL_EVIDENCE_BYTES;
+use codex_native_code_mode_runtime::HOST_EVENT_CHANNEL_CAPACITY;
 use codex_native_code_mode_runtime::HostEventKind;
 use codex_native_code_mode_runtime::Limits;
 use codex_native_code_mode_runtime::NativeCall;
@@ -53,11 +54,12 @@ pub(super) async fn execute(
     request_id: RequestId,
     request: NativeExecuteRequest,
     cancellation: CancellationToken,
+    detailed_progress: bool,
 ) -> NativeExecutionResult {
     let session_id = request.session_id.clone();
     let thread_id = request.thread_id.clone();
     let run_id = request.run_id.clone();
-    let result = execute_inner(peer, request_id, &request, cancellation).await;
+    let result = execute_inner(peer, request_id, &request, cancellation, detailed_progress).await;
     match result {
         Ok((source_hash, evidence)) => NativeExecutionResult::Completed {
             session_id,
@@ -80,6 +82,7 @@ async fn execute_inner(
     request_id: RequestId,
     request: &NativeExecuteRequest,
     cancellation: CancellationToken,
+    detailed_progress: bool,
 ) -> Result<(String, NativeEvidence), RunFailure> {
     let root = native_store_root().map_err(admission_failure)?;
     let sdk = materialize_sdk(&root, SDK_BYTES, SDK_HASH).map_err(|error| {
@@ -90,7 +93,7 @@ async fn execute_inner(
         session_id: request.session_id.clone(),
         run_id: request.run_id.clone(),
     });
-    let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (events_tx, mut events_rx) = tokio::sync::mpsc::channel(HOST_EVENT_CHANNEL_CAPACITY);
     let host = NativeHost::discover(sdk, root, Limits::default(), delegate)
         .await?
         .with_events(events_tx);
@@ -101,25 +104,51 @@ async fn execute_inner(
         request.attempt,
         request.source.as_bytes(),
     )?;
-    let mut execution = Box::pin(host.execute(&artifact, cancellation));
+    let mut execution = Box::pin(host.execute(&artifact, cancellation.clone()));
     let report = loop {
         tokio::select! {
             biased;
             event = events_rx.recv() => {
                 let Some(event) = event else {
+                    cancellation.cancel();
+                    let _ = execution.await;
                     return Err(admission_failure(
                         "native runtime progress channel closed before execution settled"
                             .to_string(),
                     ));
                 };
-                if matches!(event.kind, HostEventKind::WorkflowStarted(_)) {
-                    let _ = peer.send(HostToClient::NativeProgress {
+                let phase = if detailed_progress { match event.kind {
+                    HostEventKind::CompilerStarted(pid) => {
+                        Some(NativeProgressPhase::CompilerStarted { pid })
+                    }
+                    HostEventKind::Compiled => Some(NativeProgressPhase::Compiled),
+                    HostEventKind::WorkflowStarted(pid) => {
+                        Some(NativeProgressPhase::WorkflowProcessStarted { pid })
+                    }
+                    HostEventKind::DescendantPid(pid) => {
+                        Some(NativeProgressPhase::DescendantStarted { pid })
+                    }
+                    HostEventKind::Finished => Some(NativeProgressPhase::Finished),
+                    HostEventKind::FirstCapability => None,
+                }} else if matches!(event.kind, HostEventKind::WorkflowStarted(_)) {
+                    Some(NativeProgressPhase::WorkflowStarted)
+                } else {
+                    None
+                };
+                if let Some(phase) = phase {
+                    if let Err(error) = peer.send(HostToClient::NativeProgress {
                         id: request_id,
                         session_id: request.session_id.clone(),
                         thread_id: request.thread_id.clone(),
                         run_id: request.run_id.clone(),
-                        phase: NativeProgressPhase::WorkflowStarted,
-                    });
+                        phase,
+                    }) {
+                        cancellation.cancel();
+                        let _ = execution.await;
+                        return Err(admission_failure(format!(
+                            "native progress delivery failed: {error}"
+                        )));
+                    }
                 }
             }
             report = &mut execution => break report?,

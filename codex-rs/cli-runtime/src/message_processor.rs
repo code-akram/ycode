@@ -375,6 +375,31 @@ impl MessageProcessor {
             .await
     }
 
+    pub(crate) async fn observe_native_code_mode_from_interactive_tui(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+        run_id: String,
+    ) -> codex_protocol::error::Result<
+        tokio::sync::watch::Receiver<Option<codex_core::native_run_tree::NativeRunTreeSnapshot>>,
+    > {
+        self.thread_manager
+            .get_thread(thread_id)
+            .await?
+            .observe_native_code_mode_from_interactive_tui(&run_id)
+    }
+
+    pub(crate) async fn cancel_native_code_mode_node_from_interactive_tui(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+        run_id: String,
+        node_id: String,
+    ) -> codex_protocol::error::Result<codex_core::native_run_tree::NativeRunCancelResult> {
+        self.thread_manager
+            .get_thread(thread_id)
+            .await?
+            .cancel_native_code_mode_node_from_interactive_tui(&run_id, &node_id)
+    }
+
     pub(crate) fn clear_runtime_references(&self) {
         self.account_processor.clear_external_auth();
         self.models_refresh_worker.shutdown();

@@ -22,6 +22,7 @@ use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
+use codex_code_mode_protocol::host::NATIVE_RUST_OBSERVE_V1_CAPABILITY;
 use codex_code_mode_protocol::host::NATIVE_RUST_V1_CAPABILITY;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::RequestId;
@@ -61,7 +62,10 @@ const BULK_PAIRING_TIMEOUT: Duration = Duration::from_secs(10);
 
 enum NegotiatedConnection {
     Rejected,
-    Single { native_enabled: bool },
+    Single {
+        native_enabled: bool,
+        native_observe_enabled: bool,
+    },
     Dual(BulkConnectionRegistration),
 }
 
@@ -111,12 +115,15 @@ async fn run_connection(
     bulk_connections: Option<BulkConnectionRegistry>,
 ) -> Result<()> {
     let negotiated = negotiate(&mut reader, &mut writer, bulk_connections.as_ref()).await?;
-    let (bulk_connection, native_enabled) = match negotiated {
+    let (bulk_connection, native_enabled, native_observe_enabled) = match negotiated {
         NegotiatedConnection::Rejected => return Ok(()),
-        NegotiatedConnection::Single { native_enabled } => (None, native_enabled),
+        NegotiatedConnection::Single {
+            native_enabled,
+            native_observe_enabled,
+        } => (None, native_enabled, native_observe_enabled),
         NegotiatedConnection::Dual(mut registration) => {
             match tokio::time::timeout(BULK_PAIRING_TIMEOUT, registration.receive()).await {
-                Ok(Ok(connection)) => (Some(connection), false),
+                Ok(Ok(connection)) => (Some(connection), false, false),
                 Ok(Err(_)) => {
                     anyhow::bail!("code-mode host bulk websocket pairing was abandoned");
                 }
@@ -151,6 +158,7 @@ async fn run_connection(
         closing: AtomicBool::new(false),
         peer: Arc::clone(&peer),
         native_enabled,
+        native_observe_enabled,
         native_runs: Mutex::new(HashSet::new()),
     });
     let writer_disconnected = peer.disconnection_token();
@@ -337,11 +345,20 @@ async fn negotiate(
     // Native execution is process-owned stdio only. WebSocket connections always pass a bulk
     // registry, even when the client does not request the dual lane.
     let native_enabled = native_requested && bulk_connections.is_none();
+    let native_observe_capability = Capability::new(NATIVE_RUST_OBSERVE_V1_CAPABILITY)?;
+    let native_observe_requested = client_hello
+        .required_capabilities()
+        .contains(&native_observe_capability)
+        || client_hello
+            .optional_capabilities()
+            .contains(&native_observe_capability);
+    let native_observe_enabled = native_enabled && native_observe_requested;
     let host_capabilities = CapabilitySet::try_new(
         [
             registration.is_some().then_some(dual_capability),
             resource_limits_requested.then_some(resource_limits_capability),
             native_enabled.then_some(native_capability),
+            native_observe_enabled.then_some(native_observe_capability),
         ]
         .into_iter()
         .flatten(),
@@ -371,7 +388,10 @@ async fn negotiate(
     } else {
         (
             HostHello::new(ProtocolVersion::V1, host_capabilities),
-            NegotiatedConnection::Single { native_enabled },
+            NegotiatedConnection::Single {
+                native_enabled,
+                native_observe_enabled,
+            },
         )
     };
     writer
@@ -391,6 +411,7 @@ struct HostState {
     closing: AtomicBool,
     peer: Arc<HostPeer>,
     native_enabled: bool,
+    native_observe_enabled: bool,
     native_runs: Mutex<HashSet<(String, String)>>,
 }
 
@@ -610,6 +631,7 @@ impl HostState {
                     request_id,
                     request,
                     cancellation,
+                    self.native_observe_enabled,
                 )
                 .await
                 {

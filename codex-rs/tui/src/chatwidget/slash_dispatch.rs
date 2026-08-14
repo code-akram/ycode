@@ -43,6 +43,18 @@ impl ChatWidget {
     pub(super) fn start_native_code_mode_from_live_composer(&mut self, task: String) {
         let task = task.trim().to_string();
         if task.is_empty() {
+            if let (Some(thread_id), Some(run_id)) =
+                (self.thread_id, self.active_native_code_mode_run.clone())
+                && !self.active_side_conversation
+                && !self.blocks_direct_input
+            {
+                self.bottom_pane.drain_pending_submission_state();
+                self.bottom_pane.record_pending_slash_command_history();
+                self.app_event_tx
+                    .send(AppEvent::OpenNativeCodeModeTree { thread_id, run_id });
+                self.request_redraw();
+                return;
+            }
             self.add_info_message(CODE_MODE_USAGE.to_string(), None);
             self.bottom_pane.record_pending_slash_command_history();
             return;
